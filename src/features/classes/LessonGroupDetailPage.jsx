@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, MapPin, Users } from 'lucide-react';
+import { Clock, MapPin, Users, Pencil } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import WeeklyExpandableCalendar from '../../components/calendar/WeeklyExpandableCalendar';
 import AttendancePanel from '../attendance/AttendancePanel';
 import LessonNotePanel, { SharedNoteSection } from '../notes/LessonNotePanel';
+import EditGroupModal from './EditGroupModal';
 import { today, formatDateShort } from '../../utils/date';
 import { classTypeColors } from '../../utils/format';
 import { DAY_NAMES } from '../../utils/recurringClass';
@@ -31,6 +32,7 @@ export default function LessonGroupDetailPage() {
   const [selectedDate, setSelectedDate] = useState(today());
   const [sessionTab, setSessionTab] = useState('attendance');
   const [selectedStudentId, setSelectedStudentId] = useState(null);
+  const [showEdit, setShowEdit] = useState(false);
 
   const group = repeatGroups.find((g) => g.id === selectedRepeatGroupId);
 
@@ -64,10 +66,9 @@ export default function LessonGroupDetailPage() {
   const totalCount = groupClasses.length;
   const completedCount = groupClasses.filter((c) => c.date < todayStr).length;
 
-  // 이 수업 그룹의 날짜만 dot 표시
+  // 실제 class 데이터 기준으로 dot 표시
   const schedules = groupClasses.map((c) => ({ date: c.date, type: 'class' }));
 
-  // 선택 날짜의 이 수업 회차
   const selectedClass = groupClasses.find((c) => c.date === selectedDate);
 
   const effectiveStudentId = selectedStudentId || groupStudents[0]?.id || null;
@@ -81,7 +82,19 @@ export default function LessonGroupDetailPage() {
 
   return (
     <div>
-      <Header title={groupName} onBack={goBackFromRepeatGroup} />
+      <Header
+        title={groupName}
+        onBack={goBackFromRepeatGroup}
+        right={
+          <motion.button
+            whileTap={{ scale: 0.88 }}
+            onClick={() => setShowEdit(true)}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100"
+          >
+            <Pencil size={15} className="text-gray-600" />
+          </motion.button>
+        }
+      />
 
       <div className="pt-14">
         {/* 수업 그룹 정보 카드 */}
@@ -194,12 +207,10 @@ export default function LessonGroupDetailPage() {
                   ))}
                 </div>
 
-                {/* 출결 */}
                 {sessionTab === 'attendance' && (
                   <AttendancePanel cls={selectedClass} />
                 )}
 
-                {/* 수업 기록 */}
                 {sessionTab === 'record' && (
                   <>
                     {isMultiStudent && <SharedNoteSection cls={selectedClass} />}
@@ -239,6 +250,10 @@ export default function LessonGroupDetailPage() {
           </AnimatePresence>
         </div>
       </div>
+
+      {showEdit && (
+        <EditGroupModal groupId={group.id} onClose={() => setShowEdit(false)} />
+      )}
     </div>
   );
 }

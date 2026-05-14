@@ -1,9 +1,14 @@
 import { useState } from 'react';
-import { Plus, ChevronRight, ChevronDown, X, CalendarDays, RefreshCw, MessageCircle } from 'lucide-react';
+import {
+  Plus, ChevronRight, ChevronDown, MoreHorizontal,
+  RefreshCw, CalendarDays, MessageCircle, Trash2, Pencil,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import ClassFormModal from './ClassFormModal';
+import EditGroupModal from './EditGroupModal';
+import EditClassModal from './EditClassModal';
 import { today, formatDateShort } from '../../utils/date';
 import { classTypeColors } from '../../utils/format';
 import { DAY_NAMES } from '../../utils/recurringClass';
@@ -16,11 +21,11 @@ const formatDaysBullet = (daysOfWeek) =>
     .join(' · ');
 
 const VIEW_FILTERS = [
-  { id: 'all',       label: '전체' },
-  { id: 'regular',   label: '정기' },
-  { id: 'group',     label: '그룹' },
-  { id: 'oneoff',    label: '단발' },
-  { id: 'consult',   label: '상담' },
+  { id: 'all',     label: '전체' },
+  { id: 'regular', label: '정기' },
+  { id: 'group',   label: '그룹' },
+  { id: 'oneoff',  label: '단발' },
+  { id: 'consult', label: '상담' },
 ];
 
 const SORT_OPTIONS = [
@@ -61,13 +66,19 @@ export default function ClassesPage() {
   const {
     repeatGroups, classes, students, attendanceRecords, lessonRecords,
     navigateToRepeatGroup, navigateToClass,
+    deleteRepeatGroup, deleteClass,
   } = useAcademyStore();
 
   const [showActionSheet, setShowActionSheet] = useState(false);
-  const [formState, setFormState] = useState(null); // { mode, singleType }
+  const [formState, setFormState] = useState(null);
   const [viewFilter, setViewFilter] = useState('all');
   const [sortBy, setSortBy] = useState('nextClass');
   const [showSortSheet, setShowSortSheet] = useState(false);
+
+  // 카드 메뉴 상태
+  const [menuState, setMenuState] = useState(null); // { kind: 'group'|'single', id }
+  const [editGroupId, setEditGroupId] = useState(null);
+  const [editClassId, setEditClassId] = useState(null);
 
   const todayStr = today();
 
@@ -76,7 +87,34 @@ export default function ClassesPage() {
     setTimeout(() => setFormState({ mode: action.mode, singleType: action.type }), 200);
   };
 
-  // ── Build unified group items ────────────────────────────────────────────
+  const openMenu = (e, kind, id) => {
+    e.stopPropagation();
+    setMenuState({ kind, id });
+  };
+
+  const handleMenuEdit = () => {
+    if (menuState.kind === 'group') {
+      setEditGroupId(menuState.id);
+    } else {
+      setEditClassId(menuState.id);
+    }
+    setMenuState(null);
+  };
+
+  const handleMenuDelete = () => {
+    if (menuState.kind === 'group') {
+      if (window.confirm('수업 그룹과 모든 일정을 삭제할까요?')) {
+        deleteRepeatGroup(menuState.id);
+      }
+    } else {
+      if (window.confirm('이 수업을 삭제할까요?')) {
+        deleteClass(menuState.id);
+      }
+    }
+    setMenuState(null);
+  };
+
+  // ── Build unified items ────────────────────────────────────────────────────
   const groupItems = repeatGroups.map((group) => {
     const groupClasses = classes.filter((c) => c.repeatGroupId === group.id);
     const groupStudents = students.filter((s) => group.studentIds.includes(s.id));
@@ -100,14 +138,14 @@ export default function ClassesPage() {
         )
     ).length;
 
-    const unwrittenNotes = pastClasses.filter((c) => {
-      return c.studentIds.some(
+    const unwrittenNotes = pastClasses.filter((c) =>
+      c.studentIds.some(
         (sid) =>
           !lessonRecords.some(
             (lr) => lr.classId === c.id && lr.studentId === sid && lr.content?.trim()
           )
-      );
-    }).length;
+      )
+    ).length;
 
     return {
       kind: 'group',
@@ -148,7 +186,7 @@ export default function ClassesPage() {
       };
     });
 
-  // ── Filter ───────────────────────────────────────────────────────────────
+  // ── Filter ─────────────────────────────────────────────────────────────────
   const filteredGroups = groupItems.filter((item) => {
     if (viewFilter === 'all') return true;
     if (viewFilter === 'regular') return item.groupType === '정기 과외';
@@ -158,8 +196,7 @@ export default function ClassesPage() {
 
   const filteredSingles = singleItems.filter((item) => {
     if (viewFilter === 'all') return true;
-    if (viewFilter === 'regular') return false;
-    if (viewFilter === 'group') return false;
+    if (viewFilter === 'regular' || viewFilter === 'group') return false;
     if (viewFilter === 'oneoff') return ['단발 수업', '보강'].includes(item.cls.type);
     if (viewFilter === 'consult') return item.cls.type === '상담';
     return true;
@@ -167,16 +204,14 @@ export default function ClassesPage() {
 
   const allItems = [...filteredGroups, ...filteredSingles];
 
-  // ── Sort ─────────────────────────────────────────────────────────────────
+  // ── Sort ───────────────────────────────────────────────────────────────────
   const sortedItems = [...allItems].sort((a, b) => {
     if (sortBy === 'nextClass') {
-      const aDate = (a.nextClass?.date) || '9999-99-99';
-      const bDate = (b.nextClass?.date) || '9999-99-99';
+      const aDate = a.nextClass?.date || '9999-99-99';
+      const bDate = b.nextClass?.date || '9999-99-99';
       return aDate.localeCompare(bDate);
     }
-    if (sortBy === 'recent') {
-      return b.createdId.localeCompare(a.createdId);
-    }
+    if (sortBy === 'recent') return b.createdId.localeCompare(a.createdId);
     if (sortBy === 'studentName') {
       const aName = a.kind === 'group' ? (a.groupStudents[0]?.name || '') : (a.clsStudents[0]?.name || '');
       const bName = b.kind === 'group' ? (b.groupStudents[0]?.name || '') : (b.clsStudents[0]?.name || '');
@@ -187,13 +222,12 @@ export default function ClassesPage() {
       const bSubj = b.kind === 'group' ? b.group.subject : b.cls.subject;
       return (aSubj || '').localeCompare(bSubj || '', 'ko');
     }
-    if (sortBy === 'incomplete') {
-      return b.unwrittenNotes - a.unwrittenNotes;
-    }
+    if (sortBy === 'incomplete') return b.unwrittenNotes - a.unwrittenNotes;
     return 0;
   });
 
-  const isEmpty = sortedItems.length === 0 && repeatGroups.length === 0 && classes.filter(c => !c.repeatGroupId).length === 0;
+  const isEmpty =
+    repeatGroups.length === 0 && classes.filter((c) => !c.repeatGroupId).length === 0;
   const currentSortLabel = SORT_OPTIONS.find((o) => o.id === sortBy)?.label || '';
 
   return (
@@ -212,14 +246,13 @@ export default function ClassesPage() {
       />
 
       <div className="pt-14 pb-6">
-        {/* 설명 */}
         <div className="px-4 pt-5 mb-3">
           <p className="text-sm text-gray-400">등록한 수업을 종류별로 관리해요.</p>
         </div>
 
-        {/* 보기 필터 pills */}
+        {/* 보기 필터 */}
         <div className="px-4 mb-3">
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {VIEW_FILTERS.map((f) => (
               <motion.button
                 key={f.id}
@@ -237,7 +270,7 @@ export default function ClassesPage() {
           </div>
         </div>
 
-        {/* 정렬 버튼 */}
+        {/* 정렬 */}
         {sortedItems.length > 0 && (
           <div className="px-4 mb-3 flex justify-end">
             <motion.button
@@ -269,28 +302,28 @@ export default function ClassesPage() {
           </div>
         )}
 
-        {/* 필터 결과 없음 */}
         {!isEmpty && sortedItems.length === 0 && (
           <div className="mx-4 bg-white rounded-2xl p-6 shadow-sm text-center">
             <p className="text-sm text-gray-500">해당 조건의 수업이 없어요.</p>
           </div>
         )}
 
-        {/* 수업 카드 목록 */}
+        {/* 카드 목록 */}
         <div className="px-4 flex flex-col gap-3">
           {sortedItems.map((item) =>
             item.kind === 'group' ? (
               <GroupCard
                 key={item.id}
                 item={item}
-                todayStr={todayStr}
                 onPress={() => navigateToRepeatGroup(item.id)}
+                onMenu={(e) => openMenu(e, 'group', item.id)}
               />
             ) : (
               <SingleCard
                 key={item.id}
                 item={item}
                 onPress={() => navigateToClass(item.id)}
+                onMenu={(e) => openMenu(e, 'single', item.id)}
               />
             )
           )}
@@ -302,21 +335,16 @@ export default function ClassesPage() {
         {showActionSheet && (
           <>
             <motion.div
-              key="dim"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              key="add-dim"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/40 z-40"
               onClick={() => setShowActionSheet(false)}
             />
             <motion.div
-              key="sheet"
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
+              key="add-sheet"
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10 safe-bottom"
+              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
               <p className="text-base font-bold text-gray-900 mb-4">수업 추가</p>
@@ -350,26 +378,77 @@ export default function ClassesPage() {
         )}
       </AnimatePresence>
 
+      {/* 카드 "..." 메뉴 Bottom Sheet */}
+      <AnimatePresence>
+        {menuState && (
+          <>
+            <motion.div
+              key="menu-dim"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 z-40"
+              onClick={() => setMenuState(null)}
+            />
+            <motion.div
+              key="menu-sheet"
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
+            >
+              <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+              <div className="flex flex-col gap-2">
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={handleMenuEdit}
+                  className="flex items-center gap-3 px-4 py-4 bg-gray-50 rounded-2xl text-left"
+                >
+                  <Pencil size={18} className="text-blue-500" />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">수정하기</p>
+                    <p className="text-xs text-gray-400 mt-0.5">수업 정보를 변경해요</p>
+                  </div>
+                </motion.button>
+
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={handleMenuDelete}
+                  className="flex items-center gap-3 px-4 py-4 bg-red-50 rounded-2xl text-left"
+                >
+                  <Trash2 size={18} className="text-red-500" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-600">삭제하기</p>
+                    <p className="text-xs text-red-400 mt-0.5">
+                      {menuState.kind === 'group' ? '수업 그룹과 모든 일정이 삭제돼요' : '이 수업이 삭제돼요'}
+                    </p>
+                  </div>
+                </motion.button>
+              </div>
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setMenuState(null)}
+                className="w-full mt-3 py-3 rounded-2xl bg-gray-100 text-sm font-semibold text-gray-600"
+              >
+                취소
+              </motion.button>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* 정렬 Bottom Sheet */}
       <AnimatePresence>
         {showSortSheet && (
           <>
             <motion.div
               key="sort-dim"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="fixed inset-0 bg-black/40 z-40"
               onClick={() => setShowSortSheet(false)}
             />
             <motion.div
               key="sort-sheet"
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
+              initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10 safe-bottom"
+              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
               <p className="text-base font-bold text-gray-900 mb-4">정렬 기준</p>
@@ -395,7 +474,7 @@ export default function ClassesPage() {
         )}
       </AnimatePresence>
 
-      {/* 수업 등록 폼 모달 */}
+      {/* 수업 등록 폼 */}
       {formState && (
         <ClassFormModal
           onClose={() => setFormState(null)}
@@ -403,23 +482,34 @@ export default function ClassesPage() {
           initialSingleType={formState.singleType}
         />
       )}
+
+      {/* 수업 그룹 수정 */}
+      {editGroupId && (
+        <EditGroupModal groupId={editGroupId} onClose={() => setEditGroupId(null)} />
+      )}
+
+      {/* 단발 수업 수정 */}
+      {editClassId && (
+        <EditClassModal classId={editClassId} onClose={() => setEditClassId(null)} />
+      )}
     </div>
   );
 }
 
 // ── Group Card ────────────────────────────────────────────────────────────────
 
-function GroupCard({ item, todayStr, onPress }) {
-  const { group, groupType, namePrefix, groupStudents, groupClasses, nextClass,
-    incompleteAttendance, unwrittenNotes, totalCount, completedCount } = item;
+function GroupCard({ item, onPress, onMenu }) {
+  const {
+    group, groupType, namePrefix, groupStudents, groupClasses, nextClass,
+    incompleteAttendance, unwrittenNotes, totalCount, completedCount,
+  } = item;
 
   return (
-    <motion.button
+    <motion.div
       whileTap={{ scale: 0.97 }}
       onClick={onPress}
-      className="bg-white rounded-2xl p-4 shadow-sm text-left w-full"
+      className="bg-white rounded-2xl p-4 shadow-sm cursor-pointer select-none"
     >
-      {/* 상단: 타입 라벨 + 뱃지 */}
       <div className="flex items-center justify-between mb-2.5">
         <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${classTypeColors[groupType] || 'bg-gray-100 text-gray-600'}`}>
           {groupType}
@@ -435,39 +525,36 @@ function GroupCard({ item, todayStr, onPress }) {
               알림장 {unwrittenNotes}
             </span>
           )}
-          <ChevronRight size={15} className="text-gray-300" />
+          <button
+            onClick={onMenu}
+            className="w-7 h-7 flex items-center justify-center rounded-full active:bg-gray-100 ml-1"
+          >
+            <MoreHorizontal size={15} className="text-gray-400" />
+          </button>
         </div>
       </div>
 
-      {/* 수업명 */}
       <p className="font-bold text-gray-900 text-base mb-0.5">
         {namePrefix} {group.subject}
       </p>
-
-      {/* 학생 이름 */}
       <p className="text-sm text-gray-500 mb-2">
         {groupStudents.map((s) => s.name).join(', ')}
         {groupStudents.length > 1 && ` (${groupStudents.length}명)`}
       </p>
 
-      {/* 일정 정보 */}
       <div className="flex flex-col gap-1">
         <p className="text-xs text-gray-400">
           {group.repeatType} {formatDaysBullet(group.daysOfWeek)}요일 · {group.startTime} – {group.endTime}
         </p>
-        {group.location && (
-          <p className="text-xs text-gray-400">{group.location}</p>
-        )}
+        {group.location && <p className="text-xs text-gray-400">{group.location}</p>}
       </div>
 
-      {/* 다음 수업 */}
       {nextClass && (
         <p className="text-xs text-blue-600 font-semibold mt-2.5">
           다음 수업 {formatDateShort(nextClass.date)}
         </p>
       )}
 
-      {/* 진행 현황 */}
       <div className="flex gap-2 mt-2.5 pt-2.5 border-t border-gray-50">
         <span className="text-[11px] text-gray-400">총 {totalCount}회</span>
         <span className="text-[11px] text-gray-300">·</span>
@@ -475,25 +562,30 @@ function GroupCard({ item, todayStr, onPress }) {
         <span className="text-[11px] text-gray-300">·</span>
         <span className="text-[11px] text-gray-400">남은 {Math.max(0, totalCount - completedCount)}회</span>
       </div>
-    </motion.button>
+    </motion.div>
   );
 }
 
 // ── Single Card ───────────────────────────────────────────────────────────────
 
-function SingleCard({ item, onPress }) {
+function SingleCard({ item, onPress, onMenu }) {
   const { cls, clsStudents } = item;
   return (
-    <motion.button
+    <motion.div
       whileTap={{ scale: 0.97 }}
       onClick={onPress}
-      className="bg-white rounded-2xl p-4 shadow-sm text-left w-full"
+      className="bg-white rounded-2xl p-4 shadow-sm cursor-pointer select-none"
     >
       <div className="flex items-center justify-between mb-2">
         <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${classTypeColors[cls.type] || 'bg-gray-100 text-gray-600'}`}>
           {cls.type}
         </span>
-        <ChevronRight size={15} className="text-gray-300" />
+        <button
+          onClick={onMenu}
+          className="w-7 h-7 flex items-center justify-center rounded-full active:bg-gray-100"
+        >
+          <MoreHorizontal size={15} className="text-gray-400" />
+        </button>
       </div>
       <p className="font-bold text-gray-900 mb-0.5">{cls.name}</p>
       {clsStudents.length > 0 && (
@@ -503,6 +595,6 @@ function SingleCard({ item, onPress }) {
         {formatDateShort(cls.date)} · {cls.startTime} – {cls.endTime}
       </p>
       {cls.location && <p className="text-xs text-gray-400 mt-0.5">{cls.location}</p>}
-    </motion.button>
+    </motion.div>
   );
 }

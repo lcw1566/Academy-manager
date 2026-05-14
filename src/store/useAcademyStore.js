@@ -196,6 +196,140 @@ const useAcademyStore = create(
     get().showToast('앞으로의 수업이 삭제되었습니다.');
   },
 
+  // ─── 수업 그룹 수정 (기본 정보만) ──────────────────────────────────────────
+  updateRepeatGroup: (groupId, data) => {
+    const allStudents = get().students;
+    const studentIds = data.studentIds || [];
+    const firstStudent = allStudents.find((s) => s.id === studentIds[0]);
+    const studentCount = studentIds.length;
+    const namePrefix =
+      studentCount <= 1
+        ? firstStudent?.name || ''
+        : `${firstStudent?.name || ''} 외 ${studentCount - 1}명`;
+    const classLabel = studentCount <= 1 ? '과외' : '그룹과외';
+    const classType = studentCount <= 1 ? '정기 과외' : '그룹 과외';
+    const className = `${namePrefix} ${data.subject} ${classLabel}`;
+
+    set((s) => ({
+      repeatGroups: s.repeatGroups.map((g) => (g.id === groupId ? { ...g, ...data } : g)),
+      classes: s.classes.map((c) => {
+        if (c.repeatGroupId !== groupId) return c;
+        return {
+          ...c,
+          name: className,
+          subject: data.subject,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          location: data.location,
+          studentIds,
+          type: classType,
+          memo: data.memo || c.memo,
+        };
+      }),
+    }));
+    get().showToast('수업 정보가 수정되었습니다.');
+  },
+
+  // ─── 수업 그룹 수정 + 미래 일정 재생성 ────────────────────────────────────
+  updateRepeatGroupFuture: (groupId, data, fromDate) => {
+    const { classes, attendanceRecords, lessonRecords, students: allStudents } = get();
+
+    const studentIds = data.studentIds || [];
+    const firstStudent = allStudents.find((s) => s.id === studentIds[0]);
+    const studentCount = studentIds.length;
+    const namePrefix =
+      studentCount <= 1
+        ? firstStudent?.name || ''
+        : `${firstStudent?.name || ''} 외 ${studentCount - 1}명`;
+    const classLabel = studentCount <= 1 ? '과외' : '그룹과외';
+    const classType = studentCount <= 1 ? '정기 과외' : '그룹 과외';
+    const className = `${namePrefix} ${data.subject} ${classLabel}`;
+
+    // 기준일 이후 수업 중 기록이 있는 것은 보존
+    const futureGroupClasses = classes.filter(
+      (c) => c.repeatGroupId === groupId && c.date >= fromDate
+    );
+    const classesWithRecords = new Set(
+      futureGroupClasses
+        .filter(
+          (c) =>
+            attendanceRecords.some((a) => a.classId === c.id) ||
+            lessonRecords.some((lr) => lr.classId === c.id)
+        )
+        .map((c) => c.id)
+    );
+
+    // 기록 없는 미래 수업 제거 후 나머지 기본 정보 업데이트
+    const remainingClasses = classes
+      .filter(
+        (c) =>
+          !(c.repeatGroupId === groupId && c.date >= fromDate && !classesWithRecords.has(c.id))
+      )
+      .map((c) => {
+        if (c.repeatGroupId !== groupId) return c;
+        return {
+          ...c,
+          name: className,
+          subject: data.subject,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          location: data.location,
+          studentIds,
+          type: classType,
+        };
+      });
+
+    // 새 날짜 생성
+    const newDates = generateClassDates({
+      daysOfWeek: data.daysOfWeek,
+      startDate: fromDate,
+      endDate: data.endDate || null,
+      repeatType: data.repeatType,
+    });
+
+    const existingDates = new Set(
+      remainingClasses.filter((c) => c.repeatGroupId === groupId).map((c) => c.date)
+    );
+    const datesToCreate = newDates.filter((d) => !existingDates.has(d));
+
+    const ts = Date.now();
+    const newClasses = datesToCreate.map((date, i) => ({
+      id: `c${ts}_${i}`,
+      name: className,
+      type: classType,
+      subject: data.subject,
+      date,
+      startTime: data.startTime,
+      endTime: data.endTime,
+      location: data.location,
+      teacherId: '',
+      studentIds,
+      repeatGroupId: groupId,
+      repeatType: data.repeatType,
+      memo: data.memo || '',
+    }));
+
+    set((s) => ({
+      repeatGroups: s.repeatGroups.map((g) => (g.id === groupId ? { ...g, ...data } : g)),
+      classes: [...remainingClasses, ...newClasses],
+    }));
+    get().showToast('앞으로의 수업 일정이 새로 반영되었어요.');
+  },
+
+  // ─── 수업 그룹 전체 삭제 ────────────────────────────────────────────────────
+  deleteRepeatGroup: (groupId) => {
+    const classIds = new Set(
+      get().classes.filter((c) => c.repeatGroupId === groupId).map((c) => c.id)
+    );
+    set((s) => ({
+      repeatGroups: s.repeatGroups.filter((g) => g.id !== groupId),
+      classes: s.classes.filter((c) => c.repeatGroupId !== groupId),
+      attendanceRecords: s.attendanceRecords.filter((a) => !classIds.has(a.classId)),
+      lessonRecords: s.lessonRecords.filter((lr) => !classIds.has(lr.classId)),
+    }));
+    get().showToast('수업 그룹이 삭제되었습니다.');
+  },
+
   // ─── Attendance ────────────────────────────────────
   updateAttendance: (classId, studentId, date, status) => {
     const existing = get().attendanceRecords.find(

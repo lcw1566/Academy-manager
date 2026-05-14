@@ -38,9 +38,40 @@ const toneDescriptions = {
   improvement: '보완할 점과 개선 방향 중심 톤',
 };
 
-// ─── Gemini API 호출 ──────────────────────────────────────────────────────────
+// 시도할 모델 순서 (앞에서부터 순차 시도)
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
-export const generateNoticeWithAI = async ({ studentName, content, materials, homework, nextPlan, evaluation, memo, tone = 'friendly', apiKey }) => {
+async function callGeminiModel(apiKey, model, prompt) {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 512 },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = err?.error?.message || `API 오류 (${res.status})`;
+    throw new Error(msg);
+  }
+
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('빈 응답을 받았습니다.');
+  return text.trim();
+}
+
+// ─── Gemini API 호출 (모델 순차 fallback) ────────────────────────────────────
+
+export const generateNoticeWithAI = async ({
+  studentName, content, materials, homework, nextPlan,
+  evaluation, memo, tone = 'friendly', apiKey,
+}) => {
   if (!apiKey) throw new Error('API 키가 없습니다.');
 
   const evalLabels = {
@@ -54,6 +85,7 @@ export const generateNoticeWithAI = async ({ studentName, content, materials, ho
     .map(([k, v]) => `${evalLabels[k]}: ${levelLabels[v]}`)
     .join(', ');
 
+  // 개인정보 최소화: 학생 이름과 수업 관련 정보만 포함
   const prompt = `
 당신은 학원/과외 선생님이 학부모에게 보내는 수업 알림장을 작성하는 도우미입니다.
 
@@ -80,31 +112,21 @@ export const generateNoticeWithAI = async ({ studentName, content, materials, ho
 알림장만 출력하세요. 설명이나 제목은 붙이지 마세요.
 `.trim();
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 512 },
-      }),
+  let lastError;
+  for (const model of GEMINI_MODELS) {
+    try {
+      const text = await callGeminiModel(apiKey, model, prompt);
+      return text;
+    } catch (err) {
+      console.error(`[Gemini] ${model} 실패:`, err.message);
+      lastError = err;
     }
-  );
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const msg = err?.error?.message || `API 오류 (${res.status})`;
-    throw new Error(msg);
   }
 
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('응답을 받지 못했습니다.');
-  return text.trim();
+  throw lastError || new Error('모든 AI 모델 호출에 실패했습니다.');
 };
 
-// ─── Mock fallback (API 키 없을 때) ──────────────────────────────────────────
+// ─── Mock fallback ────────────────────────────────────────────────────────────
 
 export const generateNotice = ({
   studentName = '학생',
@@ -114,53 +136,64 @@ export const generateNotice = ({
   memo = '',
   tone = 'friendly',
 }) => {
+  const name = studentName;
   const lines = [];
 
   if (tone === 'plain') {
     lines.push('안녕하세요.');
   } else {
-    lines.push('안녕하세요, 어머님 (아버님).');
+    lines.push('안녕하세요, 학부모님.');
   }
 
   if (content) {
-    lines.push(`오늘 ${studentName} 학생은 ${content}을(를) 학습했습니다.`);
+    lines.push(`오늘은 ${content}을(를) 중심으로 수업을 진행했습니다.`);
   }
 
   const keys = ['focus', 'attitude', 'understanding', 'homework', 'achievement'];
-  const evalParts = keys
-    .filter((k) => evaluation[k] && evalSentences[k]?.[evaluation[k]])
-    .map((k) => evalSentences[k][evaluation[k]]);
 
-  if (evalParts.length > 0) {
-    if (tone === 'praise') {
-      const praise = keys.filter((k) => evaluation[k] === 'good' || evaluation[k] === 'great')
-        .map((k) => evalSentences[k][evaluation[k]]);
-      if (praise.length > 0) lines.push(praise.join(' '));
-    } else if (tone === 'improvement') {
-      const improve = keys.filter((k) => evaluation[k] === 'poor' || evaluation[k] === 'fair')
-        .map((k) => evalSentences[k][evaluation[k]]);
-      if (improve.length > 0) lines.push(improve.join(' '));
+  if (tone === 'praise') {
+    const praise = keys
+      .filter((k) => evaluation[k] === 'good' || evaluation[k] === 'great')
+      .map((k) => evalSentences[k][evaluation[k]]);
+    if (praise.length > 0) {
+      lines.push(`${name} 학생은 ${praise.slice(0, 2).join(' ')}`);
     } else {
-      lines.push(evalParts.slice(0, 3).join(' '));
+      lines.push(`${name} 학생이 오늘도 열심히 수업에 임해주었습니다.`);
+    }
+  } else if (tone === 'improvement') {
+    const improve = keys
+      .filter((k) => evaluation[k] === 'poor' || evaluation[k] === 'fair')
+      .map((k) => evalSentences[k][evaluation[k]]);
+    if (improve.length > 0) {
+      lines.push(`${name} 학생은 ${improve.slice(0, 2).join(' ')}`);
+      lines.push('가정에서 꾸준한 복습을 부탁드립니다.');
+    }
+  } else {
+    const evalParts = keys
+      .filter((k) => evaluation[k] && evalSentences[k]?.[evaluation[k]])
+      .slice(0, 3)
+      .map((k) => evalSentences[k][evaluation[k]]);
+    if (evalParts.length > 0) {
+      lines.push(`${name} 학생은 ${evalParts.join(' ')}`);
     }
   }
 
   if (memo) lines.push(memo);
-  if (homework) lines.push(`오늘 숙제는 ${homework}입니다. 가정에서 확인 부탁드립니다.`);
+
+  if (homework) {
+    lines.push(`오늘 숙제는 ${homework}입니다. 가정에서 확인 부탁드립니다.`);
+  } else {
+    lines.push('다음 수업도 잘 부탁드립니다.');
+  }
+
   lines.push('감사합니다.');
 
   return lines.filter(Boolean).join('\n');
 };
 
 export const generatePaymentNotice = ({
-  month,
-  amount,
-  dueDate,
-  isOverdue = false,
-  depositorName = '',
-  bankName = '',
-  bankAccount = '',
-  accountHolder = '',
+  month, amount, dueDate, isOverdue = false,
+  depositorName = '', bankName = '', bankAccount = '', accountHolder = '',
 }) => {
   const monthStr = month ? month.replace('-', '년 ') + '월' : '';
   const amountStr = new Intl.NumberFormat('ko-KR').format(amount) + '원';

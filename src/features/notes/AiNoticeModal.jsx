@@ -12,34 +12,48 @@ const TONES = [
 ];
 
 export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClose }) {
-  const { students, geminiApiKey, setActiveTab, showToast } = useAcademyStore();
+  const { students, geminiApiKey, showToast } = useAcademyStore();
   const student = students.find((s) => s.id === studentId);
 
   const [tone, setTone] = useState('friendly');
   const [edited, setEdited] = useState('');
   const [step, setStep] = useState('config'); // 'config' | 'loading' | 'edit'
   const [error, setError] = useState('');
+  const [usedFallback, setUsedFallback] = useState(false);
 
   const handleGenerate = async () => {
     setStep('loading');
     setError('');
+    setUsedFallback(false);
 
     try {
       let text;
       if (geminiApiKey) {
-        text = await generateNoticeWithAI({
-          studentName: student?.name || '학생',
-          content: form.content,
-          materials: form.materials,
-          homework: form.homework,
-          nextPlan: form.nextPlan,
-          evaluation: form.evaluation,
-          memo: form.memo,
-          tone,
-          apiKey: geminiApiKey,
-        });
+        try {
+          text = await generateNoticeWithAI({
+            studentName: student?.name || '학생',
+            content: form.content,
+            materials: form.materials,
+            homework: form.homework,
+            nextPlan: form.nextPlan,
+            evaluation: form.evaluation,
+            memo: form.memo,
+            tone,
+            apiKey: geminiApiKey,
+          });
+        } catch (aiErr) {
+          console.error('[AI Notice] AI 생성 실패, 기본 알림장으로 대체:', aiErr.message);
+          text = generateNotice({
+            studentName: student?.name || '학생',
+            content: form.content,
+            homework: form.homework,
+            evaluation: form.evaluation,
+            memo: form.memo,
+            tone,
+          });
+          setUsedFallback(true);
+        }
       } else {
-        // Mock fallback
         text = generateNotice({
           studentName: student?.name || '학생',
           content: form.content,
@@ -109,7 +123,7 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
                 <p className="text-xs font-semibold text-yellow-800">Gemini API 키 미설정</p>
                 <p className="text-xs text-yellow-600 mt-0.5">
                   더보기 → API 설정에서 키를 등록하면 AI가 직접 알림장을 작성해줍니다.
-                  지금은 템플릿 기반 미리보기로 생성됩니다.
+                  지금은 템플릿 기반으로 생성됩니다.
                 </p>
               </div>
             </div>
@@ -133,7 +147,6 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
             </div>
           </div>
 
-          {/* Error */}
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
               <p className="text-xs text-red-600 font-medium">오류: {error}</p>
@@ -180,6 +193,16 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
               다시 생성
             </button>
           </div>
+
+          {usedFallback && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              <p className="text-xs text-amber-700 font-medium">
+                AI 연결이 원활하지 않아 기본 알림장으로 생성했어요.
+              </p>
+              <p className="text-xs text-amber-500 mt-0.5">직접 수정 후 사용하세요.</p>
+            </div>
+          )}
+
           <textarea
             value={edited}
             onChange={(e) => setEdited(e.target.value)}
