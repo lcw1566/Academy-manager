@@ -9,7 +9,7 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Segoe UI', sans-serif;
-  background-color: #f9fafb;
+  background-color: #F5F6F8;
   margin: 0;
   padding: 0;
   overscroll-behavior: none;
@@ -21,4 +21,14 @@ textarea {
 
 .input {
   @apply w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-400 bg-white;
+}
+
+/* iPhone safe area 대응 */
+.bottom-nav {
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  min-height: calc(60px + env(safe-area-inset-bottom));
+}
+
+.main-content {
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
 }

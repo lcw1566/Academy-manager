@@ -1,3 +1,4 @@
+import { AnimatePresence } from 'framer-motion';
 import useAcademyStore from './store/useAcademyStore';
 import RoleSelectPage from './features/auth/RoleSelectPage';
 import AppLayout from './components/AppLayout';
@@ -7,9 +8,11 @@ export default function App() {
   const { role, toast } = useAcademyStore();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#F5F6F8]">
       {!role ? <RoleSelectPage /> : <AppLayout />}
-      {toast && <Toast message={toast.message} type={toast.type} />}
+      <AnimatePresence>
+        {toast && <Toast key={toast.message} message={toast.message} type={toast.type} />}
+      </AnimatePresence>
     </div>
   );
 }

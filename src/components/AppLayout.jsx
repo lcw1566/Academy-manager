@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import useAcademyStore from '../store/useAcademyStore';
 import BottomNav from './BottomNav';
 import DashboardPage from '../features/dashboard/DashboardPage';
@@ -8,8 +9,20 @@ import StudentDetailPage from '../features/students/StudentDetailPage';
 import PaymentsPage from '../features/payments/PaymentsPage';
 import MorePage from '../features/more/MorePage';
 
+const pageVariants = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit:    { opacity: 0, y: 4 },
+};
+
 export default function AppLayout() {
   const { activeTab, selectedClassId, selectedStudentId } = useAcademyStore();
+
+  const pageKey = selectedClassId
+    ? `class-${selectedClassId}`
+    : selectedStudentId
+    ? `student-${selectedStudentId}`
+    : activeTab;
 
   const renderContent = () => {
     if (activeTab === 'home')     return <DashboardPage />;
@@ -21,9 +34,20 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <main className="max-w-md mx-auto pb-20">
-        {renderContent()}
+    <div className="min-h-screen bg-[#F5F6F8]">
+      <main className="main-content max-w-md mx-auto">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={pageKey}
+            variants={pageVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+          >
+            {renderContent()}
+          </motion.div>
+        </AnimatePresence>
       </main>
       <BottomNav />
     </div>

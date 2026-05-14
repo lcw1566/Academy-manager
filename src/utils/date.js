@@ -51,6 +51,37 @@ export const formatMonth = (monthStr) => {
   return `${year}년 ${parseInt(month)}월`;
 };
 
+export const getWeekDates = (dateStr) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const sunday = new Date(d);
+  sunday.setDate(d.getDate() - d.getDay());
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(sunday);
+    day.setDate(sunday.getDate() + i);
+    return day.toISOString().split('T')[0];
+  });
+};
+
+export const getMonthDates = (dateStr) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const result = Array(firstDay.getDay()).fill(null);
+  for (let i = 1; i <= lastDay.getDate(); i++) {
+    result.push(new Date(year, month, i).toISOString().split('T')[0]);
+  }
+  while (result.length % 7 !== 0) result.push(null);
+  return result;
+};
+
+export const isSameMonth = (dateStr, pivotStr) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  const p = new Date(pivotStr + 'T00:00:00');
+  return d.getFullYear() === p.getFullYear() && d.getMonth() === p.getMonth();
+};
+
 export const greetingByTime = () => {
   const hour = new Date().getHours();
   if (hour < 12) return '좋은 아침이에요';
