@@ -5,6 +5,7 @@ import Modal from '../../components/Modal';
 import useAcademyStore from '../../store/useAcademyStore';
 import { getTodayYMD } from '../../utils/date';
 import { DAY_OPTIONS, formatDays, generateClassDates } from '../../utils/recurringClass';
+import { calculateDurationHours } from '../../utils/billing';
 
 export default function EditGroupModal({ groupId, onClose }) {
   const { repeatGroups, students, updateRepeatGroup, updateRepeatGroupFuture } = useAcademyStore();
@@ -20,7 +21,9 @@ export default function EditGroupModal({ groupId, onClose }) {
     startDate: group?.startDate || getTodayYMD(),
     endDate: group?.endDate || '',
     repeatType: group?.repeatType || '매주',
+    billingType: group?.billingType || 'monthly',
     monthlyFee: group?.monthlyFee || '',
+    hourlyRate: group?.hourlyRate || '',
     paymentDay: group?.paymentDay || '',
     memo: group?.memo || '',
   });
@@ -67,7 +70,9 @@ export default function EditGroupModal({ groupId, onClose }) {
   const buildData = () => ({
     ...form,
     studentIds: selectedStudentIds,
+    billingType: form.billingType || 'monthly',
     monthlyFee: Number(form.monthlyFee) || 0,
+    hourlyRate: Number(form.hourlyRate) || 0,
     paymentDay: Number(form.paymentDay) || 10,
   });
 
@@ -268,17 +273,51 @@ export default function EditGroupModal({ groupId, onClose }) {
 
           {/* 수납 정보 */}
           <div className="border-t border-gray-100 pt-4">
-            <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">수납 정보</p>
+            <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">과외비 설정</p>
+
+            <div className="flex gap-0 bg-gray-100 rounded-xl p-1 mb-4">
+              <button
+                type="button"
+                onClick={() => setF('billingType', 'monthly')}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  form.billingType !== 'hourly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                월 수업료
+              </button>
+              <button
+                type="button"
+                onClick={() => setF('billingType', 'hourly')}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  form.billingType === 'hourly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                시급 계산
+              </button>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <Section label="월 수업료 (원)">
-                <input
-                  type="number"
-                  value={form.monthlyFee}
-                  onChange={(e) => setF('monthlyFee', e.target.value)}
-                  placeholder="300000"
-                  className="input"
-                />
-              </Section>
+              {form.billingType === 'hourly' ? (
+                <Section label="시급 (원)">
+                  <input
+                    type="number"
+                    value={form.hourlyRate}
+                    onChange={(e) => setF('hourlyRate', e.target.value)}
+                    placeholder="30000"
+                    className="input"
+                  />
+                </Section>
+              ) : (
+                <Section label="월 수업료 (원)">
+                  <input
+                    type="number"
+                    value={form.monthlyFee}
+                    onChange={(e) => setF('monthlyFee', e.target.value)}
+                    placeholder="400000"
+                    className="input"
+                  />
+                </Section>
+              )}
               <Section label="결제일 (매월)">
                 <input
                   type="number"
@@ -290,6 +329,11 @@ export default function EditGroupModal({ groupId, onClose }) {
                 />
               </Section>
             </div>
+            {form.billingType === 'hourly' && (
+              <p className="text-xs text-gray-400 mt-2">
+                수업 시간 {calculateDurationHours(form.startTime, form.endTime)}시간 기준으로 월별 자동 계산돼요
+              </p>
+            )}
           </div>
 
           {/* 메모 */}
@@ -322,7 +366,7 @@ export default function EditGroupModal({ groupId, onClose }) {
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
               className="fixed bottom-0 left-0 right-0 z-[70] bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
@@ -344,12 +388,14 @@ export default function EditGroupModal({ groupId, onClose }) {
                   onClick={handleScopeFuture}
                   className="text-left bg-blue-50 rounded-2xl p-4 border border-blue-100"
                 >
-                  <p className="font-semibold text-blue-800 mb-0.5">앞으로의 일정에 적용</p>
+                  <p className="font-semibold text-blue-800 mb-0.5">앞으로의 일정과 과외비 다시 계산</p>
                   <p className="text-xs text-blue-600">
-                    오늘부터 미래 수업 일정을 새로 만들어요.
+                    오늘부터 미래 수업 일정과 과외비를 새로 만들어요.
                     {previewCount > 0 && ` 약 ${previewCount}개 수업이 생성됩니다.`}
                   </p>
-                  <p className="text-xs text-blue-400 mt-1">이미 기록된 수업은 그대로 유지해요.</p>
+                  <p className="text-xs text-blue-400 mt-1">
+                    이미 기록된 수업과 수납 완료된 금액은 변경하지 않아요.
+                  </p>
                 </motion.button>
               </div>
 

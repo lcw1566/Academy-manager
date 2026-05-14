@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, MapPin, Users, Pencil } from 'lucide-react';
+import { Clock, MapPin, Users, Pencil, CalendarCheck } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import WeeklyExpandableCalendar from '../../components/calendar/WeeklyExpandableCalendar';
 import AttendancePanel from '../attendance/AttendancePanel';
 import LessonNotePanel, { SharedNoteSection } from '../notes/LessonNotePanel';
 import EditGroupModal from './EditGroupModal';
+import EditClassInstanceModal from './EditClassInstanceModal';
 import { today, formatDateShort } from '../../utils/date';
 import { classTypeColors } from '../../utils/format';
 import { DAY_NAMES } from '../../utils/recurringClass';
@@ -33,6 +34,7 @@ export default function LessonGroupDetailPage() {
   const [sessionTab, setSessionTab] = useState('attendance');
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [showEdit, setShowEdit] = useState(false);
+  const [showInstanceEdit, setShowInstanceEdit] = useState(false);
 
   const group = repeatGroups.find((g) => g.id === selectedRepeatGroupId);
 
@@ -179,15 +181,49 @@ export default function LessonGroupDetailPage() {
               >
                 {/* 회차 정보 */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">
-                  <p className="text-base font-bold text-gray-900 mb-0.5">
-                    {formatDateShort(selectedClass.date)}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {selectedClass.startTime} – {selectedClass.endTime}
-                  </p>
-                  {selectedClass.location && (
-                    <p className="text-xs text-gray-400 mt-0.5">{selectedClass.location}</p>
-                  )}
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-base font-bold text-gray-900">
+                          {formatDateShort(selectedClass.date)}
+                        </p>
+                        {selectedClass.status && selectedClass.status !== 'scheduled' && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            selectedClass.status === 'completed' ? 'bg-green-50 text-green-700' :
+                            selectedClass.status === 'canceled'  ? 'bg-red-50 text-red-700' :
+                            selectedClass.status === 'makeup_needed' ? 'bg-orange-50 text-orange-700' :
+                            'bg-blue-50 text-blue-700'
+                          }`}>
+                            {selectedClass.status === 'completed' ? '완료' :
+                             selectedClass.status === 'canceled'  ? '취소' :
+                             selectedClass.status === 'makeup_needed' ? '보강 예정' : '날짜 변경됨'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-500 mt-0.5">
+                        {selectedClass.startTime} – {selectedClass.endTime}
+                      </p>
+                      {selectedClass.location && (
+                        <p className="text-xs text-gray-400 mt-0.5">{selectedClass.location}</p>
+                      )}
+                      {selectedClass.isOverridden && selectedClass.originalDate && selectedClass.originalDate !== selectedClass.date && (
+                        <p className="text-xs text-amber-600 mt-1">
+                          날짜 변경 · 원래 {formatDateShort(selectedClass.originalDate)} 수업
+                        </p>
+                      )}
+                      {selectedClass.rescheduleReason && (
+                        <p className="text-xs text-gray-400 mt-0.5">사유: {selectedClass.rescheduleReason}</p>
+                      )}
+                    </div>
+                    <motion.button
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => setShowInstanceEdit(true)}
+                      className="flex items-center gap-1 text-xs text-blue-600 font-semibold bg-blue-50 px-3 py-1.5 rounded-xl flex-shrink-0 ml-2"
+                    >
+                      <CalendarCheck size={13} />
+                      회차 수정
+                    </motion.button>
+                  </div>
                 </div>
 
                 {/* 탭 */}
@@ -253,6 +289,13 @@ export default function LessonGroupDetailPage() {
 
       {showEdit && (
         <EditGroupModal groupId={group.id} onClose={() => setShowEdit(false)} />
+      )}
+
+      {showInstanceEdit && selectedClass && (
+        <EditClassInstanceModal
+          cls={selectedClass}
+          onClose={() => setShowInstanceEdit(false)}
+        />
       )}
     </div>
   );

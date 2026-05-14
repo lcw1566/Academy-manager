@@ -7,6 +7,7 @@ import Modal from '../../components/Modal';
 import { formatCurrency, paymentStatusMap } from '../../utils/format';
 import { getCurrentMonth, formatMonth } from '../../utils/date';
 import { generatePaymentNotice } from '../../utils/aiNotice';
+import { formatBillingDetail } from '../../utils/billing';
 
 const STATUS_ORDER = { unpaid: 0, partial: 1, pending: 2, paid: 3, exempt: 4 };
 
@@ -100,6 +101,9 @@ export default function PaymentsPage() {
                         {effectiveDepositorName && (
                           <p className="text-xs text-gray-500 mt-0.5">입금자명: {effectiveDepositorName}</p>
                         )}
+                        {formatBillingDetail(payment) && (
+                          <p className="text-xs text-blue-500 mt-0.5">{formatBillingDetail(payment)}</p>
+                        )}
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-gray-900">{formatCurrency(payment.amount)}</p>
@@ -108,6 +112,13 @@ export default function PaymentsPage() {
                         </span>
                       </div>
                     </div>
+                    {payment.isProrated && (
+                      <div className="bg-blue-50 rounded-xl px-3 py-1.5 mb-2">
+                        <p className="text-xs text-blue-600">
+                          월 중간 시작으로 {payment.calculatedSessionCount}/{payment.fullMonthSessionCount}회 기준 계산됐어요
+                        </p>
+                      </div>
+                    )}
 
                     {payment.status === 'partial' && payment.paidAmount != null && (
                       <p className="text-xs text-orange-600 mb-2">

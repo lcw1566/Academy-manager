@@ -4,13 +4,21 @@ import Modal from '../../components/Modal';
 import useAcademyStore from '../../store/useAcademyStore';
 import { today } from '../../utils/date';
 import { DAY_OPTIONS, formatDays, generateClassDates } from '../../utils/recurringClass';
+import {
+  calculateDurationHours,
+  calculateMonthSessionCount,
+  calculateFullMonthSessionCount,
+  calculateMonthlyProratedFee,
+  calculateHourlyFee,
+} from '../../utils/billing';
+import { formatCurrency } from '../../utils/format';
 
 const MODE_RECURRING = 'recurring';
 const MODE_SINGLE = 'single';
 const SINGLE_TYPES = ['단발 수업', '보강', '상담'];
 
 export default function ClassFormModal({ onClose, preselectedStudentIds = [], initialMode = MODE_RECURRING, initialSingleType }) {
-  const { students, addRepeatGroup, addClass, showToast } = useAcademyStore();
+  const { students, addRepeatGroup, addClass } = useAcademyStore();
   const [mode, setMode] = useState(initialMode);
 
   // ── Recurring form state ──────────────────────────
@@ -24,7 +32,9 @@ export default function ClassFormModal({ onClose, preselectedStudentIds = [], in
     startDate: today(),
     endDate: '',
     repeatType: '매주',
+    billingType: 'monthly',
     monthlyFee: '',
+    hourlyRate: '',
     paymentDay: '',
     memo: '',
   });
@@ -82,7 +92,9 @@ export default function ClassFormModal({ onClose, preselectedStudentIds = [], in
       ...rForm,
       studentIds: selectedStudentIds,
       studentName: students.find((s) => s.id === selectedStudentIds[0])?.name || '',
+      billingType: rForm.billingType || 'monthly',
       monthlyFee: Number(rForm.monthlyFee) || 0,
+      hourlyRate: Number(rForm.hourlyRate) || 0,
       paymentDay: Number(rForm.paymentDay) || 10,
     });
     onClose();
@@ -178,6 +190,54 @@ function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds
       setField('subject', sub);
     }
   };
+
+  // ── Billing preview calculations ─────────────────
+  const startMonth = form.startDate?.slice(0, 7) || '';
+  const monthStart = startMonth ? `${startMonth}-01` : '';
+  const isStartMidMonth = form.startDate > monthStart;
+
+  const durationHours = useMemo(
+    () => calculateDurationHours(form.startTime, form.endTime),
+    [form.startTime, form.endTime]
+  );
+
+  const actualSessions = useMemo(() => {
+    if (!startMonth || form.daysOfWeek.length === 0) return 0;
+    return calculateMonthSessionCount({
+      yearMonth: startMonth,
+      daysOfWeek: form.daysOfWeek,
+      startDate: form.startDate,
+      endDate: form.endDate || null,
+      repeatType: form.repeatType,
+    });
+  }, [startMonth, form.daysOfWeek, form.startDate, form.endDate, form.repeatType]);
+
+  const fullMonthSessions = useMemo(() => {
+    if (!startMonth || form.daysOfWeek.length === 0) return 0;
+    return calculateFullMonthSessionCount({
+      yearMonth: startMonth,
+      daysOfWeek: form.daysOfWeek,
+      endDate: form.endDate || null,
+      repeatType: form.repeatType,
+    });
+  }, [startMonth, form.daysOfWeek, form.endDate, form.repeatType]);
+
+  const isProrated = isStartMidMonth && actualSessions < fullMonthSessions && fullMonthSessions > 0;
+
+  const estimatedFirstMonth = useMemo(() => {
+    if (form.billingType === 'hourly') {
+      const rate = Number(form.hourlyRate) || 0;
+      if (!rate) return 0;
+      return calculateHourlyFee({ hourlyRate: rate, durationHours, sessionCount: actualSessions });
+    }
+    const fee = Number(form.monthlyFee) || 0;
+    if (!fee) return 0;
+    return isProrated
+      ? calculateMonthlyProratedFee({ monthlyFee: fee, fullMonthSessionCount: fullMonthSessions, actualSessionCount: actualSessions })
+      : fee;
+  }, [form.billingType, form.monthlyFee, form.hourlyRate, durationHours, actualSessions, fullMonthSessions, isProrated]);
+
+  const hasPaymentInput = form.billingType === 'hourly' ? !!form.hourlyRate : !!form.monthlyFee;
 
   return (
     <div className="flex flex-col gap-4">
@@ -289,6 +349,9 @@ function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds
           <input type="time" value={form.endTime} onChange={(e) => setField('endTime', e.target.value)} className="input" />
         </Field>
       </div>
+      {durationHours > 0 && (
+        <p className="text-xs text-gray-400 -mt-2">수업 시간: {durationHours}시간</p>
+      )}
 
       {/* Dates */}
       <div className="grid grid-cols-2 gap-3">
@@ -345,19 +408,54 @@ function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds
         </div>
       )}
 
-      {/* Payment info */}
+      {/* Payment section */}
       <div className="border-t border-gray-100 pt-4">
-        <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">수납 정보</p>
+        <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">과외비 설정</p>
+
+        {/* Billing type toggle */}
+        <div className="flex gap-0 bg-gray-100 rounded-xl p-1 mb-4">
+          <button
+            type="button"
+            onClick={() => setField('billingType', 'monthly')}
+            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              form.billingType === 'monthly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+            }`}
+          >
+            월 수업료
+          </button>
+          <button
+            type="button"
+            onClick={() => setField('billingType', 'hourly')}
+            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              form.billingType === 'hourly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+            }`}
+          >
+            시급 계산
+          </button>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
-          <Field label="월 수업료 (원)">
-            <input
-              type="number"
-              value={form.monthlyFee}
-              onChange={(e) => setField('monthlyFee', e.target.value)}
-              placeholder="300000"
-              className="input"
-            />
-          </Field>
+          {form.billingType === 'monthly' ? (
+            <Field label="월 수업료 (원)">
+              <input
+                type="number"
+                value={form.monthlyFee}
+                onChange={(e) => setField('monthlyFee', e.target.value)}
+                placeholder="400000"
+                className="input"
+              />
+            </Field>
+          ) : (
+            <Field label="시급 (원)">
+              <input
+                type="number"
+                value={form.hourlyRate}
+                onChange={(e) => setField('hourlyRate', e.target.value)}
+                placeholder="30000"
+                className="input"
+              />
+            </Field>
+          )}
           <Field label="결제일 (매월)">
             <input
               type="number"
@@ -369,8 +467,31 @@ function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds
             />
           </Field>
         </div>
-        {form.monthlyFee && (
-          <p className="text-xs text-blue-600 mt-2">선택된 학생별로 이번 달 수납 예정 항목이 자동 생성됩니다</p>
+
+        {/* Billing preview card */}
+        {hasPaymentInput && actualSessions > 0 && estimatedFirstMonth > 0 && (
+          <div className="mt-3 bg-white border border-gray-200 rounded-xl p-4">
+            <p className="text-xs text-gray-500 mb-1">
+              {startMonth.replace('-', '년 ')}월 예상 과외비
+            </p>
+            <p className="text-xl font-bold text-gray-900">
+              {formatCurrency(estimatedFirstMonth)}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              {form.billingType === 'hourly' ? (
+                `${Number(form.hourlyRate).toLocaleString('ko-KR')}원 × ${durationHours}시간 × ${actualSessions}회`
+              ) : isProrated ? (
+                `월 중간 시작으로 ${actualSessions}/${fullMonthSessions}회 기준으로 계산됐어요`
+              ) : (
+                `${actualSessions}회 수업 기준`
+              )}
+            </p>
+            {isProrated && (
+              <p className="text-xs text-blue-500 mt-1">
+                월 중간에 시작해서 첫 달 금액이 자동 조정됐어요
+              </p>
+            )}
+          </div>
         )}
       </div>
 

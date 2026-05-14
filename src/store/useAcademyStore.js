@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { generateClassDates } from '../utils/recurringClass';
 import { getCurrentMonth } from '../utils/date';
+import { generatePaymentForMonth } from '../utils/billing';
 
 const defaultTutorProfile = {
   name: '과외 선생님',
@@ -105,6 +106,10 @@ const useAcademyStore = create(
     set((s) => ({ classes: s.classes.map((c) => (c.id === id ? { ...c, ...data } : c)) }));
     get().showToast('수업이 수정되었습니다.');
   },
+  // Patch a single class instance without triggering the generic toast
+  updateClassInstance: (id, data) => {
+    set((s) => ({ classes: s.classes.map((c) => (c.id === id ? { ...c, ...data } : c)) }));
+  },
   deleteClass: (id) => {
     set((s) => ({ classes: s.classes.filter((c) => c.id !== id) }));
     get().showToast('수업이 삭제되었습니다.');
@@ -149,31 +154,47 @@ const useAcademyStore = create(
       memo: groupData.memo || '',
     }));
 
-    const currentMonth = getCurrentMonth();
-    const [year, month] = currentMonth.split('-');
-    const day = String(groupData.paymentDay || 10).padStart(2, '0');
+    const startMonth = groupData.startDate?.slice(0, 7) || getCurrentMonth();
+    const billingType = groupData.billingType || 'monthly';
+    const hasPayment =
+      billingType === 'hourly' ? (groupData.hourlyRate || 0) > 0 : (groupData.monthlyFee || 0) > 0;
 
     const newPayments = [];
-    if (groupData.monthlyFee > 0) {
+    if (hasPayment) {
+      const [yr, mo] = startMonth.split('-');
+      const day = String(groupData.paymentDay || 10).padStart(2, '0');
+
       for (const studentId of studentIds) {
-        const existingPayment = get().payments.find(
-          (p) => p.studentId === studentId && p.month === currentMonth
+        const existing = get().payments.find(
+          (p) => p.studentId === studentId && p.month === startMonth && p.repeatGroupId === groupId
         );
-        if (!existingPayment) {
-          const student = allStudents.find((s) => s.id === studentId);
-          newPayments.push({
-            id: `p${ts}_${studentId}`,
-            studentId,
-            month: currentMonth,
-            amount: groupData.monthlyFee,
-            dueDate: `${year}-${month}-${day}`,
-            status: 'pending',
-            paidDate: null,
-            paidAmount: null,
-            depositorName: student?.depositorName || '',
-            memo: '',
-          });
+        if (existing) continue;
+
+        const student = allStudents.find((s) => s.id === studentId);
+        const paymentInfo = generatePaymentForMonth({
+          group: newGroup,
+          classes: newClasses,
+          month: startMonth,
+        });
+
+        let memo = '';
+        if (paymentInfo.isProrated) {
+          memo = `${startMonth.replace('-', '년 ')}월은 ${paymentInfo.calculatedSessionCount}회 기준으로 계산됐어요`;
         }
+
+        newPayments.push({
+          id: `p${ts}_${studentId}`,
+          studentId,
+          repeatGroupId: groupId,
+          month: startMonth,
+          ...paymentInfo,
+          dueDate: `${yr}-${mo}-${day}`,
+          status: 'pending',
+          paidDate: null,
+          paidAmount: null,
+          depositorName: student?.depositorName || '',
+          memo,
+        });
       }
     }
 
@@ -230,9 +251,9 @@ const useAcademyStore = create(
     get().showToast('수업 정보가 수정되었습니다.');
   },
 
-  // ─── 수업 그룹 수정 + 미래 일정 재생성 ────────────────────────────────────
+  // ─── 수업 그룹 수정 + 미래 일정 재생성 + 과외비 재계산 ────────────────────
   updateRepeatGroupFuture: (groupId, data, fromDate) => {
-    const { classes, attendanceRecords, lessonRecords, students: allStudents } = get();
+    const { classes, attendanceRecords, lessonRecords, students: allStudents, payments } = get();
 
     const studentIds = data.studentIds || [];
     const firstStudent = allStudents.find((s) => s.id === studentIds[0]);
@@ -245,7 +266,7 @@ const useAcademyStore = create(
     const classType = studentCount <= 1 ? '정기 과외' : '그룹 과외';
     const className = `${namePrefix} ${data.subject} ${classLabel}`;
 
-    // 기준일 이후 수업 중 기록이 있는 것은 보존
+    // Keep future classes that have records; update remaining
     const futureGroupClasses = classes.filter(
       (c) => c.repeatGroupId === groupId && c.date >= fromDate
     );
@@ -259,7 +280,6 @@ const useAcademyStore = create(
         .map((c) => c.id)
     );
 
-    // 기록 없는 미래 수업 제거 후 나머지 기본 정보 업데이트
     const remainingClasses = classes
       .filter(
         (c) =>
@@ -267,19 +287,9 @@ const useAcademyStore = create(
       )
       .map((c) => {
         if (c.repeatGroupId !== groupId) return c;
-        return {
-          ...c,
-          name: className,
-          subject: data.subject,
-          startTime: data.startTime,
-          endTime: data.endTime,
-          location: data.location,
-          studentIds,
-          type: classType,
-        };
+        return { ...c, name: className, subject: data.subject, startTime: data.startTime, endTime: data.endTime, location: data.location, studentIds, type: classType };
       });
 
-    // 새 날짜 생성
     const newDates = generateClassDates({
       daysOfWeek: data.daysOfWeek,
       startDate: fromDate,
@@ -309,11 +319,83 @@ const useAcademyStore = create(
       memo: data.memo || '',
     }));
 
+    const allNewGroupClasses = [...remainingClasses, ...newClasses].filter(
+      (c) => c.repeatGroupId === groupId
+    );
+
+    // ── Payment recalculation ──────────────────────────────────────
+    const fromMonth = fromDate.slice(0, 7);
+    const billingType = data.billingType || 'monthly';
+    const hasPayment =
+      billingType === 'hourly' ? (data.hourlyRate || 0) > 0 : (data.monthlyFee || 0) > 0;
+
+    // Remove pending/unpaid future payments for this group
+    const keptPayments = payments.filter(
+      (p) =>
+        !(p.repeatGroupId === groupId &&
+          p.month >= fromMonth &&
+          p.status !== 'paid' &&
+          p.status !== 'exempt')
+    );
+
+    const newPayments = [];
+    if (hasPayment) {
+      const affectedMonths = [
+        ...new Set(
+          allNewGroupClasses
+            .filter((c) => c.date >= fromDate)
+            .map((c) => c.date.slice(0, 7))
+        ),
+      ].sort();
+
+      const updatedGroup = { ...data, id: groupId };
+      const payDay = String(data.paymentDay || 10).padStart(2, '0');
+
+      for (const month of affectedMonths) {
+        for (const studentId of studentIds) {
+          const alreadyKept = keptPayments.find(
+            (p) => p.studentId === studentId && p.month === month && p.repeatGroupId === groupId
+          );
+          if (alreadyKept) continue;
+
+          const student = allStudents.find((s) => s.id === studentId);
+          const [yr, mo] = month.split('-');
+          const paymentInfo = generatePaymentForMonth({
+            group: updatedGroup,
+            classes: allNewGroupClasses,
+            month,
+          });
+
+          if (paymentInfo.amount <= 0 && paymentInfo.calculatedSessionCount === 0) continue;
+
+          let memo = '';
+          if (paymentInfo.isProrated) {
+            memo = `${month.replace('-', '년 ')}월은 ${paymentInfo.calculatedSessionCount}회 기준으로 계산됐어요`;
+          }
+
+          newPayments.push({
+            id: `p${ts}_${month}_${studentId}`,
+            studentId,
+            repeatGroupId: groupId,
+            month,
+            ...paymentInfo,
+            dueDate: `${yr}-${mo}-${payDay}`,
+            status: 'pending',
+            paidDate: null,
+            paidAmount: null,
+            depositorName: student?.depositorName || '',
+            memo,
+          });
+        }
+      }
+    }
+
     set((s) => ({
       repeatGroups: s.repeatGroups.map((g) => (g.id === groupId ? { ...g, ...data } : g)),
       classes: [...remainingClasses, ...newClasses],
+      payments: [...keptPayments, ...newPayments],
     }));
-    get().showToast('앞으로의 수업 일정이 새로 반영되었어요.');
+    get().showToast('앞으로의 수업 일정과 과외비가 새로 반영됐어요.');
   },
 
   // ─── 수업 그룹 전체 삭제 ────────────────────────────────────────────────────

@@ -88,19 +88,15 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
         ))}
       </div>
 
-      {/* 날짜 그리드 */}
-      <motion.div
-        layout
-        transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-        className="px-2"
-      >
+      {/* 날짜 그리드 — layout 애니메이션 없이 transform/opacity만 사용 */}
+      <div className="px-2">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={isExpanded ? `month-${pivotDate.slice(0, 7)}` : `week-${weekDates[0]}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            transition={{ duration: 0.12 }}
             className="grid grid-cols-7"
           >
             {displayedDates.map((dateStr, i) => {
@@ -116,7 +112,7 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
               return (
                 <motion.button
                   key={dateStr}
-                  whileTap={{ scale: 0.85 }}
+                  whileTap={{ scale: 0.9 }}
                   onClick={() => handleSelect(dateStr)}
                   className="flex flex-col items-center py-1"
                 >
@@ -145,7 +141,7 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
             })}
           </motion.div>
         </AnimatePresence>
-      </motion.div>
+      </div>
 
       {/* 펼치기/접기 버튼 */}
       <motion.button
