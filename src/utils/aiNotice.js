@@ -1,5 +1,9 @@
 import { extractGeminiText, getFinishReasonMessage } from './extractGeminiText';
 
+if (import.meta.env.DEV && !import.meta.env.VITE_GEMINI_API_KEY) {
+  console.warn('[Gemini] Missing VITE_GEMINI_API_KEY — API key must be set in the UI or .env.local');
+}
+
 const evalSentences = {
   focus: {
     great: '수업에 매우 집중하여 참여했습니다.',
@@ -40,37 +44,73 @@ const toneDescriptions = {
   improvement: '보완할 점과 개선 방향 중심 톤',
 };
 
-// 시도할 모델 순서
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+// 시도할 모델 순서 (VITE_GEMINI_MODEL이 설정된 경우 앞에 추가)
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
 
 // SAFETY/RECITATION은 다른 모델로 재시도해도 의미 없음
 const FATAL_FINISH_REASONS = ['SAFETY', 'RECITATION'];
+
+function getModels() {
+  const envModel = import.meta.env.VITE_GEMINI_MODEL;
+  if (envModel && !GEMINI_MODELS.includes(envModel)) {
+    return [envModel, ...GEMINI_MODELS];
+  }
+  return GEMINI_MODELS;
+}
+
+// HTTP 상태 코드 → 사용자 메시지
+function getHttpErrorMessage(status) {
+  const messages = {
+    401: 'API 키가 올바르지 않은 것 같아요. 키를 다시 확인해주세요.',
+    403: '사용 권한이 없거나 키에 제한이 설정되어 있어요.',
+    404: '모델을 찾을 수 없어요.',
+    429: '무료 사용량을 초과했어요. 잠시 후 다시 시도해주세요.',
+  };
+  return messages[status] || `API 오류 (${status})`;
+}
 
 /**
  * 단일 Gemini 모델 호출
  * @returns {{ text: string, finishReason: string }}
  */
 async function callGeminiModel(apiKey, model, prompt) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.9,
-          maxOutputTokens: 1024,
-        },
-      }),
+  let res;
+  try {
+    res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.7,
+            topP: 0.9,
+            maxOutputTokens: 1024,
+          },
+        }),
+      }
+    );
+  } catch (networkErr) {
+    if (import.meta.env.DEV) {
+      console.error('[Gemini] Network/CORS error:', { model, error: networkErr.message });
     }
-  );
+    const err = new Error('브라우저에서 직접 연결하지 못했어요. 네트워크 환경을 확인해주세요.');
+    err.isCors = true;
+    throw err;
+  }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const msg = err?.error?.message || `API 오류 (${res.status})`;
-    throw new Error(msg);
+    const body = await res.json().catch(() => ({}));
+    const apiMessage = body?.error?.message || '';
+    const userMsg = getHttpErrorMessage(res.status);
+    if (import.meta.env.DEV) {
+      console.error('[Gemini] generate notice failed', { model, status: res.status, message: userMsg, apiMessage });
+    }
+    const err = new Error(userMsg);
+    err.status = res.status;
+    err.apiMessage = apiMessage;
+    throw err;
   }
 
   const data = await res.json();
@@ -100,7 +140,8 @@ export const generateNoticeWithAI = async ({
   studentName, content, materials, homework, nextPlan,
   evaluation, memo, tone = 'friendly', apiKey,
 }) => {
-  if (!apiKey) throw new Error('API 키가 없습니다.');
+  const resolvedKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY;
+  if (!resolvedKey) throw new Error('API 키가 없습니다.');
 
   const evalLabels = {
     focus: '집중도', attitude: '수업태도', understanding: '이해도',
@@ -113,7 +154,6 @@ export const generateNoticeWithAI = async ({
     .map(([k, v]) => `${evalLabels[k]}: ${levelLabels[v]}`)
     .join(', ');
 
-  // 개인정보 최소화 프롬프트 (전화번호·주소·계좌번호 제외)
   const prompt = `너는 과외 선생님이 학부모에게 보내는 수업 알림장을 작성하는 도우미다.
 
 아래 정보를 바탕으로 학부모에게 바로 보낼 수 있는 자연스러운 한국어 알림장을 작성해라.
@@ -140,17 +180,16 @@ export const generateNoticeWithAI = async ({
 알림장 본문만 출력하라. 설명, 제목, 라벨 없이 바로 본문으로 시작하라.`.trim();
 
   let lastError;
+  const models = getModels();
 
-  for (const model of GEMINI_MODELS) {
+  for (const model of models) {
     try {
-      const { text, finishReason } = await callGeminiModel(apiKey, model, prompt);
+      const { text, finishReason } = await callGeminiModel(resolvedKey, model, prompt);
 
-      // 콘텐츠 정책 위반 — 재시도해도 달라지지 않으므로 즉시 에러
       if (FATAL_FINISH_REASONS.includes(finishReason)) {
         throw new Error(getFinishReasonMessage(finishReason) || '알림장 생성에 실패했습니다.');
       }
 
-      // 토큰 한도 초과 — 다음 모델로 시도
       if (finishReason === 'MAX_TOKENS') {
         const err = new Error(getFinishReasonMessage('MAX_TOKENS'));
         err.finishReason = 'MAX_TOKENS';
@@ -168,10 +207,25 @@ export const generateNoticeWithAI = async ({
 
       return text;
     } catch (err) {
-      // FATAL 에러는 즉시 상위로 전파
-      if (FATAL_FINISH_REASONS.some((r) => err.message.includes(getFinishReasonMessage(r) || r))) {
+      // 콘텐츠 정책 위반 — 재시도해도 달라지지 않음
+      if (FATAL_FINISH_REASONS.some((r) => err.message === getFinishReasonMessage(r))) {
         throw err;
       }
+
+      // 키/권한/한도 오류 — 다른 모델로 재시도해도 의미 없음
+      if (err.status === 401 || err.status === 403 || err.status === 429 || err.isCors) {
+        throw err;
+      }
+
+      // 404 모델 없음 — 다음 모델로 시도
+      if (err.status === 404) {
+        if (import.meta.env.DEV) {
+          console.warn(`[Gemini] ${model} not found (404), trying next model...`);
+        }
+        lastError = err;
+        continue;
+      }
+
       if (import.meta.env.DEV) {
         console.error(`[Gemini] ${model} 실패:`, err.message);
       }
@@ -180,6 +234,31 @@ export const generateNoticeWithAI = async ({
   }
 
   throw lastError || new Error('모든 AI 모델 호출에 실패했습니다.');
+};
+
+// ─── 연결 테스트 ──────────────────────────────────────────────────────────────
+
+export const testGeminiConnection = async (apiKey) => {
+  const resolvedKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY;
+  if (!resolvedKey) throw new Error('API 키가 없습니다. 키를 입력하거나 저장 후 테스트해주세요.');
+
+  const testPrompt = "테스트입니다. '연결 성공'이라고만 답해주세요.";
+  const models = getModels();
+  let lastError;
+
+  for (const model of models) {
+    try {
+      const { text } = await callGeminiModel(resolvedKey, model, testPrompt);
+      return { model, text };
+    } catch (err) {
+      // 키/권한/한도/CORS — 재시도 의미 없음
+      if (err.status === 401 || err.status === 403 || err.status === 429 || err.isCors) throw err;
+      lastError = err;
+      if (err.status !== 404) break;
+    }
+  }
+
+  throw lastError || new Error('연결 테스트에 실패했습니다.');
 };
 
 // ─── Mock fallback ────────────────────────────────────────────────────────────

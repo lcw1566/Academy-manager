@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { LogOut, Key, Eye, EyeOff, Check, MessageSquare, ChevronRight, Edit2 } from 'lucide-react';
+import { LogOut, Key, Eye, EyeOff, Check, MessageSquare, ChevronRight, Edit2, Wifi, WifiOff, Loader2 } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import Modal from '../../components/Modal';
 import { roleMap, formatPhoneNumber } from '../../utils/format';
+import { testGeminiConnection } from '../../utils/aiNotice';
 
 const NOTICE_TONES = [
   { id: 'friendly',    label: '친절한' },
@@ -25,6 +26,8 @@ export default function MorePage() {
   const [keyInput, setKeyInput] = useState(geminiApiKey);
   const [showKey, setShowKey] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
+  const [testState, setTestState] = useState(null); // null | 'testing' | 'success' | 'error'
+  const [testMsg, setTestMsg] = useState('');
 
   const recentConsultations = consultations
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -40,7 +43,22 @@ export default function MorePage() {
   const handleDeleteKey = () => {
     setKeyInput('');
     setGeminiApiKey('');
+    setTestState(null);
+    setTestMsg('');
     showToast('API 키가 삭제되었습니다.');
+  };
+
+  const handleTestConnection = async () => {
+    setTestState('testing');
+    setTestMsg('');
+    try {
+      const { model } = await testGeminiConnection(keyInput.trim() || geminiApiKey);
+      setTestState('success');
+      setTestMsg(`연결 성공 · ${model}`);
+    } catch (err) {
+      setTestState('error');
+      setTestMsg(err.message);
+    }
   };
 
   return (
@@ -140,10 +158,40 @@ export default function MorePage() {
               </button>
             </div>
 
-            {geminiApiKey && (
-              <button onClick={handleDeleteKey} className="text-xs text-red-400 font-medium">
-                API 키 삭제
-              </button>
+            <div className="flex items-center justify-between">
+              {geminiApiKey && (
+                <button onClick={handleDeleteKey} className="text-xs text-red-400 font-medium">
+                  API 키 삭제
+                </button>
+              )}
+              {(keyInput.trim() || geminiApiKey) && (
+                <button
+                  onClick={handleTestConnection}
+                  disabled={testState === 'testing'}
+                  className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-blue-600 disabled:opacity-50"
+                >
+                  {testState === 'testing' ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : testState === 'success' ? (
+                    <Wifi size={13} />
+                  ) : testState === 'error' ? (
+                    <WifiOff size={13} className="text-red-400" />
+                  ) : (
+                    <Wifi size={13} />
+                  )}
+                  {testState === 'testing' ? '테스트 중...' : 'AI 연결 테스트'}
+                </button>
+              )}
+            </div>
+
+            {testMsg && (
+              <div className={`mt-2 rounded-xl px-3 py-2 text-xs font-medium ${
+                testState === 'success'
+                  ? 'bg-green-50 text-green-700'
+                  : 'bg-red-50 text-red-600'
+              }`}>
+                {testState === 'success' ? '✓ ' : '✗ '}{testMsg}
+              </div>
             )}
 
             <div className="mt-3 bg-gray-50 rounded-xl p-3">

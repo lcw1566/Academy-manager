@@ -15,6 +15,8 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
   const { students, geminiApiKey, showToast } = useAcademyStore();
   const student = students.find((s) => s.id === studentId);
 
+  const resolvedKey = geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
+
   const [tone, setTone] = useState('friendly');
   const [edited, setEdited] = useState('');
   const [step, setStep] = useState('config'); // 'config' | 'loading' | 'edit'
@@ -28,7 +30,7 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
 
     let text = '';
 
-    if (geminiApiKey) {
+    if (resolvedKey) {
       try {
         text = await generateNoticeWithAI({
           studentName: student?.name || '학생',
@@ -39,21 +41,10 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
           evaluation: form.evaluation,
           memo: form.memo,
           tone,
-          apiKey: geminiApiKey,
+          apiKey: resolvedKey,
         });
       } catch (aiErr) {
-        // MAX_TOKENS / SAFETY / RECITATION 같은 명확한 원인은 에러 메시지 노출
-        const isUserFacingError =
-          aiErr.message.includes('끊겼어요') ||
-          aiErr.message.includes('안전 기준') ||
-          aiErr.message.includes('저작권');
-
-        if (isUserFacingError) {
-          // 알림은 남기되 fallback 생성
-          setErrorMsg(aiErr.message);
-        } else if (import.meta.env.DEV) {
-          console.error('[AI Notice] 생성 실패, fallback으로 전환:', aiErr.message);
-        }
+        setErrorMsg(aiErr.message);
 
         text = generateNotice({
           studentName: student?.name || '학생',
@@ -104,7 +95,7 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
             onClick={handleGenerate}
             className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl text-base"
           >
-            ✨ {geminiApiKey ? 'AI로 생성하기' : '미리보기 생성'}
+            ✨ {resolvedKey ? 'AI로 생성하기' : '미리보기 생성'}
           </button>
         ) : step === 'loading' ? (
           <div className="w-full flex items-center justify-center py-3 text-gray-400 gap-2">
@@ -132,7 +123,7 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
       {step === 'config' && (
         <div className="flex flex-col gap-5">
           {/* API key status */}
-          {!geminiApiKey ? (
+          {!resolvedKey ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-start gap-2">
               <Key size={15} className="text-yellow-600 flex-shrink-0 mt-0.5" />
               <div>
