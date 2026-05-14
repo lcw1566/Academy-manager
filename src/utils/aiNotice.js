@@ -1,3 +1,5 @@
+import { extractGeminiText, getFinishReasonMessage } from './extractGeminiText';
+
 const evalSentences = {
   focus: {
     great: '수업에 매우 집중하여 참여했습니다.',
@@ -38,9 +40,16 @@ const toneDescriptions = {
   improvement: '보완할 점과 개선 방향 중심 톤',
 };
 
-// 시도할 모델 순서 (앞에서부터 순차 시도)
+// 시도할 모델 순서
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
+// SAFETY/RECITATION은 다른 모델로 재시도해도 의미 없음
+const FATAL_FINISH_REASONS = ['SAFETY', 'RECITATION'];
+
+/**
+ * 단일 Gemini 모델 호출
+ * @returns {{ text: string, finishReason: string }}
+ */
 async function callGeminiModel(apiKey, model, prompt) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -49,7 +58,11 @@ async function callGeminiModel(apiKey, model, prompt) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 512 },
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.9,
+          maxOutputTokens: 1024,
+        },
       }),
     }
   );
@@ -61,9 +74,24 @@ async function callGeminiModel(apiKey, model, prompt) {
   }
 
   const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('빈 응답을 받았습니다.');
-  return text.trim();
+
+  if (import.meta.env.DEV) {
+    console.log('[Gemini] model:', model);
+    console.log('[Gemini] prompt length:', prompt.length);
+    console.log('[Gemini] raw response:', data);
+    console.log('[Gemini] finishReason:', data.candidates?.[0]?.finishReason);
+    console.log('[Gemini] usageMetadata:', data.usageMetadata);
+  }
+
+  const finishReason = data.candidates?.[0]?.finishReason ?? 'STOP';
+  const text = extractGeminiText(data);
+
+  if (import.meta.env.DEV) {
+    console.log('[Gemini] extracted text length:', text.length);
+    console.log('[Gemini] extracted text:', text);
+  }
+
+  return { text, finishReason };
 }
 
 // ─── Gemini API 호출 (모델 순차 fallback) ────────────────────────────────────
@@ -85,40 +113,68 @@ export const generateNoticeWithAI = async ({
     .map(([k, v]) => `${evalLabels[k]}: ${levelLabels[v]}`)
     .join(', ');
 
-  // 개인정보 최소화: 학생 이름과 수업 관련 정보만 포함
-  const prompt = `
-당신은 학원/과외 선생님이 학부모에게 보내는 수업 알림장을 작성하는 도우미입니다.
+  // 개인정보 최소화 프롬프트 (전화번호·주소·계좌번호 제외)
+  const prompt = `너는 과외 선생님이 학부모에게 보내는 수업 알림장을 작성하는 도우미다.
 
-아래 수업 정보를 바탕으로 학부모에게 보낼 자연스러운 알림장을 작성해주세요.
+아래 정보를 바탕으로 학부모에게 바로 보낼 수 있는 자연스러운 한국어 알림장을 작성해라.
 
-[작성 규칙]
-- 톤: ${toneDescriptions[tone] || '친절하고 따뜻한 톤'}
-- 인사말로 시작하고 감사 인사로 마무리
-- 학생 이름을 자연스럽게 사용
-- 전문적이지만 딱딱하지 않게
-- 대략 3~5문장, 200자 이내
-- 이모지 사용 금지
-- 존댓말 사용
+작성 조건:
+- ${toneDescriptions[tone] || '친절하고 따뜻한 톤'}으로 작성
+- 4~6문장으로 완성
+- 문장이 중간에 끊기지 않게 반드시 완성된 문장으로 마무리
+- 마지막 문장은 반드시 "감사합니다."로 끝낼 것
+- 제목, 마크다운 기호, 불릿(·/-/*), 따옴표 사용 금지
+- 자연스러운 구어체 존댓말 사용
+- 전화번호, 주소, 계좌번호 같은 개인정보 포함 금지
 
-[수업 정보]
-학생 이름: ${studentName}
+수업 정보:
+학생: ${studentName}
+과목: ${content ? '' : '미입력'}
 오늘 배운 내용: ${content || '미입력'}
 교재/페이지: ${materials || '미입력'}
 숙제: ${homework || '없음'}
 다음 수업 계획: ${nextPlan || '미입력'}
 평가: ${evalText || '미입력'}
-특이사항/메모: ${memo || '없음'}
+특이사항: ${memo || '없음'}
 
-알림장만 출력하세요. 설명이나 제목은 붙이지 마세요.
-`.trim();
+알림장 본문만 출력하라. 설명, 제목, 라벨 없이 바로 본문으로 시작하라.`.trim();
 
   let lastError;
+
   for (const model of GEMINI_MODELS) {
     try {
-      const text = await callGeminiModel(apiKey, model, prompt);
+      const { text, finishReason } = await callGeminiModel(apiKey, model, prompt);
+
+      // 콘텐츠 정책 위반 — 재시도해도 달라지지 않으므로 즉시 에러
+      if (FATAL_FINISH_REASONS.includes(finishReason)) {
+        throw new Error(getFinishReasonMessage(finishReason) || '알림장 생성에 실패했습니다.');
+      }
+
+      // 토큰 한도 초과 — 다음 모델로 시도
+      if (finishReason === 'MAX_TOKENS') {
+        const err = new Error(getFinishReasonMessage('MAX_TOKENS'));
+        err.finishReason = 'MAX_TOKENS';
+        lastError = err;
+        if (import.meta.env.DEV) {
+          console.warn(`[Gemini] ${model} MAX_TOKENS hit, trying next model...`);
+        }
+        continue;
+      }
+
+      if (!text) {
+        lastError = new Error('빈 응답을 받았습니다.');
+        continue;
+      }
+
       return text;
     } catch (err) {
-      console.error(`[Gemini] ${model} 실패:`, err.message);
+      // FATAL 에러는 즉시 상위로 전파
+      if (FATAL_FINISH_REASONS.some((r) => err.message.includes(getFinishReasonMessage(r) || r))) {
+        throw err;
+      }
+      if (import.meta.env.DEV) {
+        console.error(`[Gemini] ${model} 실패:`, err.message);
+      }
       lastError = err;
     }
   }
@@ -136,14 +192,9 @@ export const generateNotice = ({
   memo = '',
   tone = 'friendly',
 }) => {
-  const name = studentName;
   const lines = [];
 
-  if (tone === 'plain') {
-    lines.push('안녕하세요.');
-  } else {
-    lines.push('안녕하세요, 학부모님.');
-  }
+  lines.push(tone === 'plain' ? '안녕하세요.' : '안녕하세요, 학부모님.');
 
   if (content) {
     lines.push(`오늘은 ${content}을(를) 중심으로 수업을 진행했습니다.`);
@@ -156,16 +207,16 @@ export const generateNotice = ({
       .filter((k) => evaluation[k] === 'good' || evaluation[k] === 'great')
       .map((k) => evalSentences[k][evaluation[k]]);
     if (praise.length > 0) {
-      lines.push(`${name} 학생은 ${praise.slice(0, 2).join(' ')}`);
+      lines.push(`${studentName} 학생은 ${praise.slice(0, 2).join(' ')}`);
     } else {
-      lines.push(`${name} 학생이 오늘도 열심히 수업에 임해주었습니다.`);
+      lines.push(`${studentName} 학생이 오늘도 열심히 수업에 임해주었습니다.`);
     }
   } else if (tone === 'improvement') {
     const improve = keys
       .filter((k) => evaluation[k] === 'poor' || evaluation[k] === 'fair')
       .map((k) => evalSentences[k][evaluation[k]]);
     if (improve.length > 0) {
-      lines.push(`${name} 학생은 ${improve.slice(0, 2).join(' ')}`);
+      lines.push(`${studentName} 학생은 ${improve.slice(0, 2).join(' ')}`);
       lines.push('가정에서 꾸준한 복습을 부탁드립니다.');
     }
   } else {
@@ -174,7 +225,7 @@ export const generateNotice = ({
       .slice(0, 3)
       .map((k) => evalSentences[k][evaluation[k]]);
     if (evalParts.length > 0) {
-      lines.push(`${name} 학생은 ${evalParts.join(' ')}`);
+      lines.push(`${studentName} 학생은 ${evalParts.join(' ')}`);
     }
   }
 

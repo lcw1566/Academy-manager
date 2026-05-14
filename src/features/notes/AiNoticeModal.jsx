@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, Key } from 'lucide-react';
+import { Loader2, Key, AlertTriangle } from 'lucide-react';
 import Modal from '../../components/Modal';
 import useAcademyStore from '../../store/useAcademyStore';
 import { generateNoticeWithAI, generateNotice } from '../../utils/aiNotice';
@@ -18,42 +18,43 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
   const [tone, setTone] = useState('friendly');
   const [edited, setEdited] = useState('');
   const [step, setStep] = useState('config'); // 'config' | 'loading' | 'edit'
-  const [error, setError] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [usedFallback, setUsedFallback] = useState(false);
 
   const handleGenerate = async () => {
     setStep('loading');
-    setError('');
+    setErrorMsg('');
     setUsedFallback(false);
 
-    try {
-      let text;
-      if (geminiApiKey) {
-        try {
-          text = await generateNoticeWithAI({
-            studentName: student?.name || '학생',
-            content: form.content,
-            materials: form.materials,
-            homework: form.homework,
-            nextPlan: form.nextPlan,
-            evaluation: form.evaluation,
-            memo: form.memo,
-            tone,
-            apiKey: geminiApiKey,
-          });
-        } catch (aiErr) {
-          console.error('[AI Notice] AI 생성 실패, 기본 알림장으로 대체:', aiErr.message);
-          text = generateNotice({
-            studentName: student?.name || '학생',
-            content: form.content,
-            homework: form.homework,
-            evaluation: form.evaluation,
-            memo: form.memo,
-            tone,
-          });
-          setUsedFallback(true);
+    let text = '';
+
+    if (geminiApiKey) {
+      try {
+        text = await generateNoticeWithAI({
+          studentName: student?.name || '학생',
+          content: form.content,
+          materials: form.materials,
+          homework: form.homework,
+          nextPlan: form.nextPlan,
+          evaluation: form.evaluation,
+          memo: form.memo,
+          tone,
+          apiKey: geminiApiKey,
+        });
+      } catch (aiErr) {
+        // MAX_TOKENS / SAFETY / RECITATION 같은 명확한 원인은 에러 메시지 노출
+        const isUserFacingError =
+          aiErr.message.includes('끊겼어요') ||
+          aiErr.message.includes('안전 기준') ||
+          aiErr.message.includes('저작권');
+
+        if (isUserFacingError) {
+          // 알림은 남기되 fallback 생성
+          setErrorMsg(aiErr.message);
+        } else if (import.meta.env.DEV) {
+          console.error('[AI Notice] 생성 실패, fallback으로 전환:', aiErr.message);
         }
-      } else {
+
         text = generateNotice({
           studentName: student?.name || '학생',
           content: form.content,
@@ -62,13 +63,21 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
           memo: form.memo,
           tone,
         });
+        setUsedFallback(true);
       }
-      setEdited(text);
-      setStep('edit');
-    } catch (err) {
-      setError(err.message || '생성 중 오류가 발생했습니다.');
-      setStep('config');
+    } else {
+      text = generateNotice({
+        studentName: student?.name || '학생',
+        content: form.content,
+        homework: form.homework,
+        evaluation: form.evaluation,
+        memo: form.memo,
+        tone,
+      });
     }
+
+    setEdited(text);
+    setStep('edit');
   };
 
   const handleConfirm = () => {
@@ -78,6 +87,7 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
   };
 
   const handleCopy = () => {
+    if (!edited) return;
     navigator.clipboard.writeText(edited).then(() => {
       showToast('알림장이 복사되었습니다.');
     });
@@ -103,10 +113,16 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
           </div>
         ) : (
           <div className="flex gap-2">
-            <button onClick={handleCopy} className="flex-1 bg-gray-100 text-gray-700 font-bold py-3.5 rounded-xl text-sm">
+            <button
+              onClick={handleCopy}
+              className="flex-1 bg-gray-100 text-gray-700 font-bold py-3.5 rounded-xl text-sm"
+            >
               복사하기
             </button>
-            <button onClick={handleConfirm} className="flex-1 bg-blue-600 text-white font-bold py-3.5 rounded-xl text-sm">
+            <button
+              onClick={handleConfirm}
+              className="flex-1 bg-blue-600 text-white font-bold py-3.5 rounded-xl text-sm"
+            >
               저장하기
             </button>
           </div>
@@ -147,12 +163,6 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
             </div>
           </div>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <p className="text-xs text-red-600 font-medium">오류: {error}</p>
-            </div>
-          )}
-
           {/* Tone selection */}
           <div>
             <p className="text-sm font-bold text-gray-800 mb-3">알림장 톤</p>
@@ -189,12 +199,21 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-bold text-gray-800">생성된 알림장</p>
-            <button onClick={() => setStep('config')} className="text-xs text-blue-600 font-medium">
+            <button onClick={() => { setStep('config'); setErrorMsg(''); }} className="text-xs text-blue-600 font-medium">
               다시 생성
             </button>
           </div>
 
-          {usedFallback && (
+          {/* finishReason 경고 (MAX_TOKENS 등) */}
+          {errorMsg && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
+              <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700">{errorMsg}</p>
+            </div>
+          )}
+
+          {/* fallback 안내 */}
+          {usedFallback && !errorMsg && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
               <p className="text-xs text-amber-700 font-medium">
                 AI 연결이 원활하지 않아 기본 알림장으로 생성했어요.
@@ -203,12 +222,14 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
             </div>
           )}
 
+          {/* 알림장 textarea — 전체 텍스트 표시, 잘림 없음 */}
           <textarea
             value={edited}
             onChange={(e) => setEdited(e.target.value)}
-            rows={10}
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm leading-relaxed focus:outline-none focus:border-blue-400"
+            style={{ minHeight: '200px' }}
+            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm leading-relaxed focus:outline-none focus:border-blue-400 resize-y overflow-y-auto"
           />
+
           <p className="text-xs text-gray-400 text-center">직접 수정 후 저장하세요</p>
         </div>
       )}

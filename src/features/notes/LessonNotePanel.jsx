@@ -294,9 +294,13 @@ export default function LessonNotePanel({ cls, studentId, groupMode = false }) {
 
         {form.noticeText ? (
           <>
-            <p className="text-sm text-gray-700 whitespace-pre-line bg-white rounded-xl p-3 border border-blue-100 mb-3">
+            {/* 전체 알림장 텍스트 표시 — truncate/line-clamp 사용 금지, 스크롤 허용 */}
+            <div
+              className="text-sm text-gray-700 whitespace-pre-line bg-white rounded-xl p-3 border border-blue-100 mb-3 overflow-y-auto"
+              style={{ minHeight: '80px', maxHeight: '240px' }}
+            >
               {form.noticeText}
-            </p>
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={handleCopyNotice}
