@@ -43,6 +43,7 @@ const useAcademyStore = create(
   activeTab: 'home',
   selectedClassId: null,
   selectedStudentId: null,
+  selectedRepeatGroupId: null,
 
   // === Data ===
   students: [],
@@ -59,15 +60,17 @@ const useAcademyStore = create(
   toast: null,
 
   // ─── Auth ──────────────────────────────────────────
-  setRole: (role) => set({ role, activeTab: 'home', selectedClassId: null, selectedStudentId: null }),
+  setRole: (role) => set({ role, activeTab: 'home', selectedClassId: null, selectedStudentId: null, selectedRepeatGroupId: null }),
   logout: () => set({ role: null }),
 
   // ─── Navigation ────────────────────────────────────
-  setActiveTab: (tab) => set({ activeTab: tab, selectedClassId: null, selectedStudentId: null }),
-  navigateToClass: (id) => set({ selectedClassId: id, activeTab: 'classes' }),
+  setActiveTab: (tab) => set({ activeTab: tab, selectedClassId: null, selectedStudentId: null, selectedRepeatGroupId: null }),
+  navigateToClass: (id) => set({ selectedClassId: id, activeTab: 'classes', selectedRepeatGroupId: null }),
   navigateToStudent: (id) => set({ selectedStudentId: id, activeTab: 'students' }),
+  navigateToRepeatGroup: (id) => set({ selectedRepeatGroupId: id, activeTab: 'classes', selectedClassId: null }),
   goBackFromClass: () => set({ selectedClassId: null }),
   goBackFromStudent: () => set({ selectedStudentId: null }),
+  goBackFromRepeatGroup: () => set({ selectedRepeatGroupId: null }),
 
   // ─── Toast ─────────────────────────────────────────
   showToast: (message, type = 'success') => {

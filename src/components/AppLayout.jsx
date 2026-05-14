@@ -4,6 +4,7 @@ import BottomNav from './BottomNav';
 import DashboardPage from '../features/dashboard/DashboardPage';
 import ClassesPage from '../features/classes/ClassesPage';
 import ClassDetailPage from '../features/classes/ClassDetailPage';
+import LessonGroupDetailPage from '../features/classes/LessonGroupDetailPage';
 import StudentsPage from '../features/students/StudentsPage';
 import StudentDetailPage from '../features/students/StudentDetailPage';
 import PaymentsPage from '../features/payments/PaymentsPage';
@@ -16,9 +17,11 @@ const pageVariants = {
 };
 
 export default function AppLayout() {
-  const { activeTab, selectedClassId, selectedStudentId } = useAcademyStore();
+  const { activeTab, selectedClassId, selectedStudentId, selectedRepeatGroupId } = useAcademyStore();
 
-  const pageKey = selectedClassId
+  const pageKey = selectedRepeatGroupId
+    ? `repeatgroup-${selectedRepeatGroupId}`
+    : selectedClassId
     ? `class-${selectedClassId}`
     : selectedStudentId
     ? `student-${selectedStudentId}`
@@ -26,7 +29,11 @@ export default function AppLayout() {
 
   const renderContent = () => {
     if (activeTab === 'home')     return <DashboardPage />;
-    if (activeTab === 'classes')  return selectedClassId ? <ClassDetailPage /> : <ClassesPage />;
+    if (activeTab === 'classes') {
+      if (selectedRepeatGroupId) return <LessonGroupDetailPage />;
+      if (selectedClassId)       return <ClassDetailPage />;
+      return <ClassesPage />;
+    }
     if (activeTab === 'students') return selectedStudentId ? <StudentDetailPage /> : <StudentsPage />;
     if (activeTab === 'payments') return <PaymentsPage />;
     if (activeTab === 'more')     return <MorePage />;

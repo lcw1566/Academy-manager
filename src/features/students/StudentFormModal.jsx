@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Check } from 'lucide-react';
 import Modal from '../../components/Modal';
 import useAcademyStore from '../../store/useAcademyStore';
+import { formatPhoneNumber } from '../../utils/format';
 
 const SUBJECTS = ['수학', '영어', '국어', '과학', '물리', '화학', '사회', '역사', '기타'];
 
@@ -258,9 +259,9 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
         {/* Phone */}
         <Field label="학생 연락처">
           <input
-            type="tel"
+            inputMode="tel"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
             placeholder="010-0000-0000"
             className="input"
           />
@@ -269,9 +270,9 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
         {/* Parent phone */}
         <Field label="학부모 연락처">
           <input
-            type="tel"
+            inputMode="tel"
             value={parentPhone}
-            onChange={(e) => setParentPhone(e.target.value)}
+            onChange={(e) => setParentPhone(formatPhoneNumber(e.target.value))}
             placeholder="010-0000-0000"
             className="input"
           />

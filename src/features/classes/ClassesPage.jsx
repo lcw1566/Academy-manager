@@ -1,38 +1,30 @@
 import { useState } from 'react';
-import { Plus, Check, FileText } from 'lucide-react';
+import { Plus, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import ClassFormModal from './ClassFormModal';
-import WeeklyExpandableCalendar from '../../components/calendar/WeeklyExpandableCalendar';
-import { today } from '../../utils/date';
+import { today, formatDateShort } from '../../utils/date';
+import { classTypeColors } from '../../utils/format';
+import { DAY_NAMES } from '../../utils/recurringClass';
+
+const formatDaysBullet = (daysOfWeek) =>
+  daysOfWeek
+    .slice()
+    .sort((a, b) => (a === 0 ? 7 : a) - (b === 0 ? 7 : b))
+    .map((d) => DAY_NAMES[d])
+    .join(' · ');
 
 export default function ClassesPage() {
-  const { classes, students, attendanceRecords, lessonRecords, navigateToClass } = useAcademyStore();
-  const [selectedDate, setSelectedDate] = useState(today());
+  const {
+    repeatGroups, classes, students, attendanceRecords,
+    navigateToRepeatGroup, navigateToClass,
+  } = useAcademyStore();
   const [showForm, setShowForm] = useState(false);
-
   const todayStr = today();
 
-  // 캘린더 dot (수업만)
-  const schedules = classes.map((c) => ({ date: c.date, type: 'class' }));
-
-  // 선택 날짜의 수업
-  const dayClasses = classes
-    .filter((c) => c.date === selectedDate)
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-  const isAttendanceDone = (cls) =>
-    cls.studentIds.every((sid) =>
-      attendanceRecords.some((a) => a.classId === cls.id && a.studentId === sid && a.date === cls.date)
-    );
-
-  const isNoteDone = (cls) =>
-    cls.studentIds.every((sid) =>
-      lessonRecords.some((lr) => lr.classId === cls.id && lr.studentId === sid && lr.date === cls.date)
-    );
-
-  const isPastOrToday = (dateStr) => dateStr <= todayStr;
+  const singleClasses = classes.filter((c) => !c.repeatGroupId);
+  const isEmpty = repeatGroups.length === 0 && singleClasses.length === 0;
 
   return (
     <div>
@@ -49,88 +41,169 @@ export default function ClassesPage() {
         }
       />
 
-      <div className="pt-14">
-        {/* 캘린더 */}
-        <div className="pt-4 mb-4">
-          <WeeklyExpandableCalendar
-            selectedDate={selectedDate}
-            onSelectDate={setSelectedDate}
-            schedules={schedules}
-          />
+      <div className="pt-14 pb-6">
+        {/* 상단 설명 + 버튼 */}
+        <div className="px-4 pt-5 mb-4">
+          <p className="text-sm text-gray-400 mb-3">등록한 정기 과외와 수업을 한눈에 관리해요.</p>
+          <div className="flex gap-2">
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setShowForm(true)}
+              className="flex-1 bg-blue-600 text-white text-sm font-semibold py-2.5 rounded-xl"
+            >
+              정기 과외 등록
+            </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setShowForm(true)}
+              className="flex-1 bg-white text-gray-700 text-sm font-semibold py-2.5 rounded-xl shadow-sm border border-gray-100"
+            >
+              수업 추가
+            </motion.button>
+          </div>
         </div>
 
-        {/* 선택 날짜 수업 목록 */}
-        <div className="px-4 flex flex-col gap-3 pb-4">
-          {dayClasses.length === 0 ? (
-            <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
-              <p className="text-3xl mb-3">📅</p>
-              <p className="font-semibold text-gray-700 mb-1">이 날 수업이 없어요</p>
-              <p className="text-xs text-gray-400 mb-4">정기 과외를 등록하면 자동으로 일정이 채워져요</p>
-              <motion.button
-                whileTap={{ scale: 0.96 }}
-                onClick={() => setShowForm(true)}
-                className="bg-blue-600 text-white text-sm font-semibold px-6 py-2.5 rounded-xl"
-              >
-                정기 과외 등록하기
-              </motion.button>
-            </div>
-          ) : (
-            dayClasses.map((cls) => {
-              const clsStudents = students.filter((s) => cls.studentIds.includes(s.id));
-              const attendanceDone = isAttendanceDone(cls);
-              const noteDone = isNoteDone(cls);
-              const pastOrToday = isPastOrToday(cls.date);
+        {/* Empty state */}
+        {isEmpty && (
+          <div className="mx-4 bg-white rounded-2xl p-8 shadow-sm text-center">
+            <p className="text-3xl mb-3">📚</p>
+            <p className="font-semibold text-gray-700 mb-1">아직 등록된 수업이 없어요.</p>
+            <p className="text-xs text-gray-400 mb-5">
+              정기 과외를 등록하면 수업별로<br />일정과 기록을 관리할 수 있어요.
+            </p>
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setShowForm(true)}
+              className="bg-blue-600 text-white text-sm font-semibold px-6 py-2.5 rounded-xl"
+            >
+              정기 과외 등록하기
+            </motion.button>
+          </div>
+        )}
+
+        {/* 정기 과외 / 그룹 과외 */}
+        {repeatGroups.length > 0 && (
+          <div className="px-4 flex flex-col gap-3">
+            {repeatGroups.map((group) => {
+              const groupClasses = classes.filter((c) => c.repeatGroupId === group.id);
+              const totalCount = groupClasses.length;
+              const completedCount = groupClasses.filter((c) => c.date < todayStr).length;
+              const nextClass = groupClasses
+                .filter((c) => c.date >= todayStr)
+                .sort((a, b) => a.date.localeCompare(b.date))[0];
+
+              const pastClasses = groupClasses.filter((c) => c.date <= todayStr);
+              const incompleteAttendance = pastClasses.filter(
+                (c) =>
+                  !c.studentIds.every((sid) =>
+                    attendanceRecords.some((a) => a.classId === c.id && a.studentId === sid)
+                  )
+              ).length;
+
+              const groupStudents = students.filter((s) => group.studentIds.includes(s.id));
+              const firstStudent = groupStudents[0];
+              const studentCount = groupStudents.length;
+              const namePrefix =
+                studentCount <= 1
+                  ? firstStudent?.name || ''
+                  : `${firstStudent?.name || ''} 외 ${studentCount - 1}명`;
+              const groupType = studentCount <= 1 ? '정기 과외' : '그룹 과외';
+              const groupName = `${namePrefix} ${group.subject} ${groupType}`;
 
               return (
                 <motion.button
-                  key={cls.id}
+                  key={group.id}
                   whileTap={{ scale: 0.97 }}
-                  onClick={() => navigateToClass(cls.id)}
+                  onClick={() => navigateToRepeatGroup(group.id)}
                   className="bg-white rounded-2xl p-4 shadow-sm text-left w-full"
                 >
-                  {/* 시간 + 과목 */}
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                      {cls.startTime} – {cls.endTime}
+                    <span
+                      className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                        classTypeColors[groupType] || 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {groupType}
                     </span>
-                    {cls.subject && (
-                      <span className="text-xs text-gray-500">{cls.subject}</span>
-                    )}
+                    <ChevronRight size={16} className="text-gray-300" />
                   </div>
 
-                  {/* 수업명 */}
-                  <p className="font-bold text-gray-900 text-sm mb-1">{cls.name}</p>
+                  <p className="font-bold text-gray-900 mb-1">{groupName}</p>
 
-                  {/* 학생 + 장소 */}
-                  <p className="text-xs text-gray-400 mb-3">
-                    {clsStudents.map((s) => s.name).join(', ')}
-                    {cls.location ? ` · ${cls.location}` : ''}
+                  <p className="text-xs text-gray-500 mb-1">
+                    {group.repeatType} {formatDaysBullet(group.daysOfWeek)}요일 · {group.startTime} – {group.endTime}
                   </p>
 
-                  {/* 상태 배지 */}
-                  {pastOrToday ? (
-                    <div className="flex gap-2">
-                      <span className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg font-medium ${
-                        attendanceDone ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'
-                      }`}>
-                        <Check size={11} />
-                        출결 {attendanceDone ? '완료' : '미완료'}
-                      </span>
-                      <span className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg font-medium ${
-                        noteDone ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'
-                      }`}>
-                        <FileText size={11} />
-                        기록 {noteDone ? '완료' : '미작성'}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-gray-400">예정된 수업</span>
+                  {group.location && (
+                    <p className="text-xs text-gray-400 mb-2">{group.location}</p>
                   )}
+
+                  {nextClass && (
+                    <p className="text-xs text-blue-600 font-medium mb-2">
+                      다음 수업: {formatDateShort(nextClass.date)}
+                    </p>
+                  )}
+
+                  <div className="flex gap-2 flex-wrap">
+                    <span className="text-xs bg-gray-50 text-gray-500 px-2.5 py-1 rounded-lg">
+                      총 {totalCount}회 · 완료 {completedCount}회
+                    </span>
+                    <span className="text-xs bg-blue-50 text-blue-600 px-2.5 py-1 rounded-lg">
+                      수강생 {studentCount}명
+                    </span>
+                    {incompleteAttendance > 0 && (
+                      <span className="text-xs bg-orange-50 text-orange-600 px-2.5 py-1 rounded-lg font-medium">
+                        출결 미완료 {incompleteAttendance}건
+                      </span>
+                    )}
+                  </div>
                 </motion.button>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
+
+        {/* 단발 수업 / 보강 */}
+        {singleClasses.length > 0 && (
+          <div className={`px-4 flex flex-col gap-3 ${repeatGroups.length > 0 ? 'mt-5' : ''}`}>
+            {repeatGroups.length > 0 && (
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide px-1">단발 수업 / 보강</p>
+            )}
+            {singleClasses
+              .sort((a, b) => a.date.localeCompare(b.date))
+              .map((cls) => {
+                const clsStudents = students.filter((s) => cls.studentIds.includes(s.id));
+                return (
+                  <motion.button
+                    key={cls.id}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => navigateToClass(cls.id)}
+                    className="bg-white rounded-2xl p-4 shadow-sm text-left w-full"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span
+                        className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                          classTypeColors[cls.type] || 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {cls.type}
+                      </span>
+                      <ChevronRight size={16} className="text-gray-300" />
+                    </div>
+                    <p className="font-bold text-gray-900 mb-1">{cls.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {formatDateShort(cls.date)} · {cls.startTime} – {cls.endTime}
+                    </p>
+                    {clsStudents.length > 0 && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        {clsStudents.map((s) => s.name).join(', ')}
+                      </p>
+                    )}
+                  </motion.button>
+                );
+              })}
+          </div>
+        )}
       </div>
 
       {showForm && <ClassFormModal onClose={() => setShowForm(false)} />}

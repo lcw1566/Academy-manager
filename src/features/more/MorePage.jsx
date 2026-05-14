@@ -3,7 +3,7 @@ import { LogOut, Key, Eye, EyeOff, Check, MessageSquare, ChevronRight, Edit2 } f
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import Modal from '../../components/Modal';
-import { roleMap } from '../../utils/format';
+import { roleMap, formatPhoneNumber } from '../../utils/format';
 
 const NOTICE_TONES = [
   { id: 'friendly',    label: '친절한' },
@@ -271,9 +271,9 @@ function ProfileEditModal({ profile, onClose, onSave }) {
 
         <Field label="전화번호">
           <input
-            type="tel"
+            inputMode="tel"
             value={form.phone || ''}
-            onChange={(e) => setField('phone', e.target.value)}
+            onChange={(e) => setField('phone', formatPhoneNumber(e.target.value))}
             placeholder="010-0000-0000"
             className="input"
           />
