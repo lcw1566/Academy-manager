@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
-import { today, getWeekDates, getMonthDates, isSameMonth } from '../../utils/date';
+import {
+  getTodayYMD,
+  getWeekDatesFromYMD,
+  getMonthCalendarDatesFromYMD,
+  isSameMonth,
+  parseYMD,
+  formatDateToYMD,
+} from '../../utils/date';
 
 // schedules: [{ date: 'YYYY-MM-DD', type: 'class'|'consultation'|'payment' }]
 const DOT_COLORS = {
@@ -14,21 +21,24 @@ const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
 export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, schedules = [] }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [pivotDate, setPivotDate] = useState(today());
+  const [pivotDate, setPivotDate] = useState(getTodayYMD());
 
-  const todayStr = today();
-  const weekDates  = getWeekDates(pivotDate);
-  const monthDates = getMonthDates(pivotDate);
+  const todayStr = getTodayYMD();
+  const weekDates  = getWeekDatesFromYMD(pivotDate);
+  const monthDates = getMonthCalendarDatesFromYMD(pivotDate);
   const displayedDates = isExpanded ? monthDates : weekDates;
 
-  const pivot = new Date(pivotDate + 'T00:00:00');
+  const pivot = parseYMD(pivotDate);
   const monthLabel = `${pivot.getFullYear()}년 ${pivot.getMonth() + 1}월`;
 
   const shift = (delta) => {
-    const d = new Date(pivotDate + 'T00:00:00');
-    if (isExpanded) d.setMonth(d.getMonth() + delta);
-    else            d.setDate(d.getDate() + delta * 7);
-    setPivotDate(d.toISOString().split('T')[0]);
+    const d = parseYMD(pivotDate);
+    if (isExpanded) {
+      d.setMonth(d.getMonth() + delta);
+    } else {
+      d.setDate(d.getDate() + delta * 7);
+    }
+    setPivotDate(formatDateToYMD(d));
   };
 
   const dotsForDate = (dateStr) => {
@@ -39,7 +49,6 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
     return types.slice(0, 3);
   };
 
-  // 월간 전환 시 pivotDate를 선택 날짜가 속한 주로 맞춤
   const handleToggle = () => {
     if (isExpanded && selectedDate) {
       setPivotDate(selectedDate);
@@ -47,7 +56,6 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
     setIsExpanded((v) => !v);
   };
 
-  // 주간에서 selectedDate가 속한 주 주간으로 자동 이동
   const handleSelect = (dateStr) => {
     if (!dateStr) return;
     onSelectDate(dateStr);
@@ -98,7 +106,7 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
             {displayedDates.map((dateStr, i) => {
               if (!dateStr) return <div key={`empty-${i}`} className="h-11" />;
 
-              const d = new Date(dateStr + 'T00:00:00');
+              const d = parseYMD(dateStr);
               const dow = d.getDay();
               const isSelected  = dateStr === selectedDate;
               const isToday     = dateStr === todayStr;

@@ -9,9 +9,9 @@ const MODE_RECURRING = 'recurring';
 const MODE_SINGLE = 'single';
 const SINGLE_TYPES = ['단발 수업', '보강', '상담'];
 
-export default function ClassFormModal({ onClose, preselectedStudentIds = [] }) {
+export default function ClassFormModal({ onClose, preselectedStudentIds = [], initialMode = MODE_RECURRING, initialSingleType }) {
   const { students, addRepeatGroup, addClass, showToast } = useAcademyStore();
-  const [mode, setMode] = useState(MODE_RECURRING);
+  const [mode, setMode] = useState(initialMode);
 
   // ── Recurring form state ──────────────────────────
   const [selectedStudentIds, setSelectedStudentIds] = useState(preselectedStudentIds);
@@ -32,7 +32,7 @@ export default function ClassFormModal({ onClose, preselectedStudentIds = [] }) 
   // ── Single class form state ───────────────────────
   const [sForm, setSForm] = useState({
     studentId: '',
-    type: '단발 수업',
+    type: initialSingleType || '단발 수업',
     subject: '',
     date: today(),
     startTime: '16:00',
