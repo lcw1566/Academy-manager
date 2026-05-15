@@ -471,6 +471,45 @@ const useAcademyStore = create(
     get().showToast('수납 정보가 업데이트되었습니다.');
   },
 
+  // ─── Data Reset ────────────────────────────────────
+  resetAllData: () => {
+    set({
+      students: [],
+      teachers: [],
+      classes: [],
+      attendanceRecords: [],
+      lessonRecords: [],
+      payments: [],
+      consultations: [],
+      payrolls: [],
+      repeatGroups: [],
+      schoolNames: [],
+      tutorProfile: defaultTutorProfile,
+      geminiApiKey: '',
+    });
+    get().showToast('모든 데이터가 초기화되었어요.');
+  },
+
+  resetDataExceptTeachers: () => {
+    const { teachers, tutorProfile, geminiApiKey, role } = get();
+    set({
+      students: [],
+      classes: [],
+      attendanceRecords: [],
+      lessonRecords: [],
+      payments: [],
+      consultations: [],
+      payrolls: [],
+      repeatGroups: [],
+      schoolNames: [],
+      teachers,
+      tutorProfile,
+      geminiApiKey,
+      role,
+    });
+    get().showToast('강사 정보를 제외한 데이터가 초기화되었어요.');
+  },
+
   // ─── Consultations ─────────────────────────────────
   addConsultation: (consultation) => {
     const newCon = { ...consultation, id: `con${Date.now()}` };

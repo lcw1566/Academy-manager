@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LogOut, Key, Eye, EyeOff, Check, MessageSquare, ChevronRight, Edit2, Wifi, WifiOff, Loader2 } from 'lucide-react';
+import { LogOut, Key, Eye, EyeOff, Check, MessageSquare, ChevronRight, Edit2, Wifi, WifiOff, Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import Modal from '../../components/Modal';
@@ -20,6 +20,7 @@ export default function MorePage() {
     role, logout, consultations, students,
     geminiApiKey, setGeminiApiKey, showToast,
     tutorProfile, setTutorProfile,
+    resetAllData, resetDataExceptTeachers,
   } = useAcademyStore();
 
   const [showProfileEdit, setShowProfileEdit] = useState(false);
@@ -28,6 +29,8 @@ export default function MorePage() {
   const [keySaved, setKeySaved] = useState(false);
   const [testState, setTestState] = useState(null); // null | 'testing' | 'success' | 'error'
   const [testMsg, setTestMsg] = useState('');
+  const [showResetSheet, setShowResetSheet] = useState(false);
+  const [confirmResetType, setConfirmResetType] = useState(null); // null | 'all' | 'exceptTeachers'
 
   const recentConsultations = consultations
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -262,6 +265,17 @@ export default function MorePage() {
             역할 변경
           </button>
         </div>
+
+        {/* Data Reset */}
+        <div className="mx-4 mt-3 mb-2">
+          <button
+            onClick={() => setShowResetSheet(true)}
+            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-red-50 text-red-500 text-sm font-semibold active:bg-red-100 transition-colors"
+          >
+            <Trash2 size={16} />
+            데이터 초기화
+          </button>
+        </div>
       </div>
 
       {showProfileEdit && (
@@ -275,6 +289,93 @@ export default function MorePage() {
           }}
         />
       )}
+
+      {/* Reset options bottom sheet */}
+      <Modal
+        isOpen={showResetSheet}
+        onClose={() => setShowResetSheet(false)}
+        title="데이터를 초기화할까요?"
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-gray-500 -mt-1 mb-1">
+            테스트 중 입력한 데이터를 삭제할 수 있어요. 삭제한 데이터는 되돌릴 수 없습니다.
+          </p>
+          <button
+            onClick={() => { setShowResetSheet(false); setConfirmResetType('all'); }}
+            className="w-full flex items-center gap-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-4 text-left active:bg-red-100 transition-colors"
+          >
+            <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+              <Trash2 size={16} className="text-red-500" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-red-600">전체 초기화</p>
+              <p className="text-xs text-red-400 mt-0.5">모든 데이터와 프로필을 초기화해요</p>
+            </div>
+          </button>
+          <button
+            onClick={() => { setShowResetSheet(false); setConfirmResetType('exceptTeachers'); }}
+            className="w-full flex items-center gap-3 bg-orange-50 border border-orange-100 rounded-2xl px-4 py-4 text-left active:bg-orange-100 transition-colors"
+          >
+            <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle size={16} className="text-orange-500" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-orange-600">강사 데이터 제외하고 초기화</p>
+              <p className="text-xs text-orange-400 mt-0.5">강사 정보는 유지하고 학생·수업·수납 데이터만 삭제해요</p>
+            </div>
+          </button>
+          <button
+            onClick={() => setShowResetSheet(false)}
+            className="w-full py-3.5 rounded-2xl bg-gray-100 text-gray-600 text-sm font-semibold mt-1"
+          >
+            취소
+          </button>
+        </div>
+      </Modal>
+
+      {/* Confirm reset modal */}
+      <Modal
+        isOpen={confirmResetType !== null}
+        onClose={() => setConfirmResetType(null)}
+        title={confirmResetType === 'all' ? '정말 전체 초기화할까요?' : '강사 데이터 제외 초기화'}
+        footer={
+          <div className="flex gap-2">
+            <button
+              onClick={() => setConfirmResetType(null)}
+              className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold"
+            >
+              취소
+            </button>
+            <button
+              onClick={() => {
+                if (confirmResetType === 'all') {
+                  resetAllData();
+                } else {
+                  resetDataExceptTeachers();
+                }
+                setConfirmResetType(null);
+              }}
+              className="flex-1 py-3.5 rounded-xl bg-red-500 text-white text-sm font-bold"
+            >
+              초기화하기
+            </button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <div className="bg-red-50 rounded-2xl px-4 py-4 flex items-start gap-3">
+            <AlertTriangle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-red-700 mb-1">이 작업은 되돌릴 수 없습니다</p>
+              {confirmResetType === 'all' ? (
+                <p className="text-xs text-red-500">학생, 수업, 수납, 상담 기록, 강사 정보, 프로필까지 모든 데이터가 삭제됩니다.</p>
+              ) : (
+                <p className="text-xs text-red-500">강사 정보와 프로필은 유지되며, 학생·수업·수납·상담 데이터가 삭제됩니다.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

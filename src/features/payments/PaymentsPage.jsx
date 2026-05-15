@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { MessageSquare, Copy } from 'lucide-react';
+import { MessageSquare, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import EmptyState from '../../components/EmptyState';
 import Modal from '../../components/Modal';
 import { formatCurrency, paymentStatusMap } from '../../utils/format';
-import { getCurrentMonth, formatMonth } from '../../utils/date';
+import { getCurrentMonth, formatMonth, prevMonth, nextMonth } from '../../utils/date';
 import { generatePaymentNotice } from '../../utils/aiNotice';
 import { formatBillingDetail } from '../../utils/billing';
 
@@ -38,14 +38,22 @@ export default function PaymentsPage() {
 
       <div className="pt-14">
         {/* Month selector */}
-        <div className="px-4 pt-4 flex items-center gap-3">
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-400 bg-white"
-          />
-          <p className="text-sm text-gray-500">{formatMonth(month)}</p>
+        <div className="pt-4 flex items-center justify-center gap-4">
+          <button
+            onClick={() => setMonth(prevMonth(month))}
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-500 active:bg-gray-100"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <span className="text-[20px] font-extrabold text-gray-900 tracking-tight">
+            {formatMonth(month)}
+          </span>
+          <button
+            onClick={() => setMonth(nextMonth(month))}
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm text-gray-500 active:bg-gray-100"
+          >
+            <ChevronRight size={20} />
+          </button>
         </div>
 
         {monthPayments.length === 0 ? (

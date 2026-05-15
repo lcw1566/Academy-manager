@@ -343,10 +343,10 @@ function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds
       {/* Time */}
       <div className="grid grid-cols-2 gap-3">
         <Field label="시작 시간">
-          <input type="time" value={form.startTime} onChange={(e) => setField('startTime', e.target.value)} className="input" />
+          <input type="time" value={form.startTime} onChange={(e) => setField('startTime', e.target.value)} className="input w-full" />
         </Field>
         <Field label="종료 시간">
-          <input type="time" value={form.endTime} onChange={(e) => setField('endTime', e.target.value)} className="input" />
+          <input type="time" value={form.endTime} onChange={(e) => setField('endTime', e.target.value)} className="input w-full" />
         </Field>
       </div>
       {durationHours > 0 && (
@@ -356,10 +356,10 @@ function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds
       {/* Dates */}
       <div className="grid grid-cols-2 gap-3">
         <Field label="시작일 *">
-          <input type="date" value={form.startDate} onChange={(e) => setField('startDate', e.target.value)} className="input" />
+          <input type="date" value={form.startDate} onChange={(e) => setField('startDate', e.target.value)} className="input w-full" />
         </Field>
         <Field label="종료일 (선택)">
-          <input type="date" value={form.endDate} onChange={(e) => setField('endDate', e.target.value)} className="input" />
+          <input type="date" value={form.endDate} onChange={(e) => setField('endDate', e.target.value)} className="input w-full" />
         </Field>
       </div>
       {!form.endDate && (
@@ -561,10 +561,10 @@ function SingleForm({ form, setField, students }) {
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="시작 시간">
-          <input type="time" value={form.startTime} onChange={(e) => setField('startTime', e.target.value)} className="input" />
+          <input type="time" value={form.startTime} onChange={(e) => setField('startTime', e.target.value)} className="input w-full" />
         </Field>
         <Field label="종료 시간">
-          <input type="time" value={form.endTime} onChange={(e) => setField('endTime', e.target.value)} className="input" />
+          <input type="time" value={form.endTime} onChange={(e) => setField('endTime', e.target.value)} className="input w-full" />
         </Field>
       </div>
 

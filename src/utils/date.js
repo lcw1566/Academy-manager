@@ -86,6 +86,18 @@ export const formatMonth = (monthStr) => {
   return `${year}년 ${parseInt(month)}월`;
 };
 
+export const prevMonth = (monthStr) => {
+  const [year, month] = monthStr.split('-').map(Number);
+  const d = new Date(year, month - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+export const nextMonth = (monthStr) => {
+  const [year, month] = monthStr.split('-').map(Number);
+  const d = new Date(year, month, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
 export const formatDate = (dateStr) => {
   if (!dateStr) return '';
   const d = parseYMD(dateStr);
