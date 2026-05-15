@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Users, Check } from 'lucide-react';
+import { Users, Check, Copy } from 'lucide-react';
 import Modal from '../../components/Modal';
 import useAcademyStore from '../../store/useAcademyStore';
 import { today } from '../../utils/date';
@@ -32,12 +32,19 @@ export default function ClassFormModal({ onClose, preselectedStudentIds = [], in
     startDate: today(),
     endDate: '',
     repeatType: '매주',
+    memo: '',
+  });
+
+  // Billing state (separate from rForm for clarity)
+  const [billingMode, setBillingMode] = useState('same'); // 'same' | 'perStudent'
+  const [defaultBillingForm, setDefaultBillingForm] = useState({
     billingType: 'monthly',
     monthlyFee: '',
     hourlyRate: '',
     paymentDay: '',
-    memo: '',
   });
+  // Per-student billing: { [studentId]: { billingType, monthlyFee, hourlyRate, paymentDay } }
+  const [studentBillings, setStudentBillings] = useState({});
 
   // ── Single class form state ───────────────────────
   const [sForm, setSForm] = useState({
@@ -88,14 +95,42 @@ export default function ClassFormModal({ onClose, preselectedStudentIds = [], in
     if (rForm.daysOfWeek.length === 0) return alert('수업 요일을 선택해주세요.');
     if (previewCount === 0) return alert('생성 가능한 수업이 없습니다. 날짜를 확인해주세요.');
 
+    const resolvedBillingMode = selectedStudentIds.length <= 1 ? 'same' : billingMode;
+
+    // Build defaultBilling
+    const defaultBilling = {
+      billingType: defaultBillingForm.billingType || 'monthly',
+      monthlyFee: Number(defaultBillingForm.monthlyFee) || 0,
+      hourlyRate: Number(defaultBillingForm.hourlyRate) || 0,
+      paymentDay: Number(defaultBillingForm.paymentDay) || 10,
+    };
+
+    // Build studentBillings (normalize each entry)
+    const normalizedStudentBillings = {};
+    if (resolvedBillingMode === 'perStudent') {
+      for (const sid of selectedStudentIds) {
+        const sb = studentBillings[sid] || {};
+        normalizedStudentBillings[sid] = {
+          billingType: sb.billingType || 'monthly',
+          monthlyFee: Number(sb.monthlyFee) || 0,
+          hourlyRate: Number(sb.hourlyRate) || 0,
+          paymentDay: Number(sb.paymentDay) || defaultBilling.paymentDay,
+        };
+      }
+    }
+
     addRepeatGroup({
       ...rForm,
       studentIds: selectedStudentIds,
       studentName: students.find((s) => s.id === selectedStudentIds[0])?.name || '',
-      billingType: rForm.billingType || 'monthly',
-      monthlyFee: Number(rForm.monthlyFee) || 0,
-      hourlyRate: Number(rForm.hourlyRate) || 0,
-      paymentDay: Number(rForm.paymentDay) || 10,
+      billingMode: resolvedBillingMode,
+      defaultBilling,
+      studentBillings: normalizedStudentBillings,
+      // Legacy top-level for compat
+      billingType: defaultBilling.billingType,
+      monthlyFee: defaultBilling.monthlyFee,
+      hourlyRate: defaultBilling.hourlyRate,
+      paymentDay: defaultBilling.paymentDay,
     });
     onClose();
   };
@@ -165,6 +200,12 @@ export default function ClassFormModal({ onClose, preselectedStudentIds = [], in
           selectedStudentIds={selectedStudentIds}
           toggleStudent={toggleStudent}
           previewCount={previewCount}
+          billingMode={billingMode}
+          setBillingMode={setBillingMode}
+          defaultBillingForm={defaultBillingForm}
+          setDefaultBillingForm={setDefaultBillingForm}
+          studentBillings={studentBillings}
+          setStudentBillings={setStudentBillings}
         />
       ) : (
         <SingleForm form={sForm} setField={setS} students={students} />
@@ -175,7 +216,11 @@ export default function ClassFormModal({ onClose, preselectedStudentIds = [], in
 
 // ── Recurring form ─────────────────────────────────────────────────────────────
 
-function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds, toggleStudent, previewCount }) {
+function RecurringForm({
+  form, setField, toggleDay, students, selectedStudentIds, toggleStudent, previewCount,
+  billingMode, setBillingMode, defaultBillingForm, setDefaultBillingForm,
+  studentBillings, setStudentBillings,
+}) {
   const PRESET_SUBJECTS = ['수학', '영어', '국어', '과학', '물리'];
   const [showCustomSubject, setShowCustomSubject] = useState(
     !!form.subject && !PRESET_SUBJECTS.includes(form.subject)
@@ -191,15 +236,15 @@ function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds
     }
   };
 
-  // ── Billing preview calculations ─────────────────
-  const startMonth = form.startDate?.slice(0, 7) || '';
-  const monthStart = startMonth ? `${startMonth}-01` : '';
-  const isStartMidMonth = form.startDate > monthStart;
+  const isMultiStudent = selectedStudentIds.length >= 2;
 
+  // Duration for billing preview
   const durationHours = useMemo(
     () => calculateDurationHours(form.startTime, form.endTime),
     [form.startTime, form.endTime]
   );
+
+  const startMonth = form.startDate?.slice(0, 7) || '';
 
   const actualSessions = useMemo(() => {
     if (!startMonth || form.daysOfWeek.length === 0) return 0;
@@ -222,22 +267,36 @@ function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds
     });
   }, [startMonth, form.daysOfWeek, form.endDate, form.repeatType]);
 
+  const monthStart = startMonth ? `${startMonth}-01` : '';
+  const isStartMidMonth = form.startDate > monthStart;
   const isProrated = isStartMidMonth && actualSessions < fullMonthSessions && fullMonthSessions > 0;
 
-  const estimatedFirstMonth = useMemo(() => {
-    if (form.billingType === 'hourly') {
-      const rate = Number(form.hourlyRate) || 0;
-      if (!rate) return 0;
-      return calculateHourlyFee({ hourlyRate: rate, durationHours, sessionCount: actualSessions });
-    }
-    const fee = Number(form.monthlyFee) || 0;
-    if (!fee) return 0;
-    return isProrated
-      ? calculateMonthlyProratedFee({ monthlyFee: fee, fullMonthSessionCount: fullMonthSessions, actualSessionCount: actualSessions })
-      : fee;
-  }, [form.billingType, form.monthlyFee, form.hourlyRate, durationHours, actualSessions, fullMonthSessions, isProrated]);
+  // Handler for per-student billing changes
+  const setStudentBilling = (studentId, key, val) => {
+    setStudentBillings((prev) => ({
+      ...prev,
+      [studentId]: { ...(prev[studentId] || {}), [key]: val },
+    }));
+  };
 
-  const hasPaymentInput = form.billingType === 'hourly' ? !!form.hourlyRate : !!form.monthlyFee;
+  const getStudentBilling = (studentId) => ({
+    billingType: 'monthly',
+    monthlyFee: '',
+    hourlyRate: '',
+    paymentDay: '',
+    ...studentBillings[studentId],
+  });
+
+  // Copy first student's billing to all others
+  const copyFirstToAll = () => {
+    if (selectedStudentIds.length < 2) return;
+    const first = getStudentBilling(selectedStudentIds[0]);
+    const updated = {};
+    for (const sid of selectedStudentIds) {
+      updated[sid] = { ...first };
+    }
+    setStudentBillings(updated);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -412,85 +471,92 @@ function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds
       <div className="border-t border-gray-100 pt-4">
         <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">과외비 설정</p>
 
-        {/* Billing type toggle */}
-        <div className="flex gap-0 bg-gray-100 rounded-xl p-1 mb-4">
-          <button
-            type="button"
-            onClick={() => setField('billingType', 'monthly')}
-            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
-              form.billingType === 'monthly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-            }`}
-          >
-            월 수업료
-          </button>
-          <button
-            type="button"
-            onClick={() => setField('billingType', 'hourly')}
-            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
-              form.billingType === 'hourly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-            }`}
-          >
-            시급 계산
-          </button>
-        </div>
+        {/* Multi-student billing mode toggle */}
+        {isMultiStudent && (
+          <div className="flex gap-0 bg-gray-100 rounded-xl p-1 mb-4">
+            <button
+              type="button"
+              onClick={() => setBillingMode('same')}
+              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                billingMode === 'same' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              전체 동일하게 적용
+            </button>
+            <button
+              type="button"
+              onClick={() => setBillingMode('perStudent')}
+              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                billingMode === 'perStudent' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              학생별로 다르게
+            </button>
+          </div>
+        )}
 
-        <div className="grid grid-cols-2 gap-3">
-          {form.billingType === 'monthly' ? (
-            <Field label="월 수업료 (원)">
-              <input
-                type="number"
-                value={form.monthlyFee}
-                onChange={(e) => setField('monthlyFee', e.target.value)}
-                placeholder="400000"
-                className="input"
-              />
-            </Field>
-          ) : (
-            <Field label="시급 (원)">
-              <input
-                type="number"
-                value={form.hourlyRate}
-                onChange={(e) => setField('hourlyRate', e.target.value)}
-                placeholder="30000"
-                className="input"
-              />
-            </Field>
-          )}
-          <Field label="결제일 (매월)">
-            <input
-              type="number"
-              value={form.paymentDay}
-              onChange={(e) => setField('paymentDay', e.target.value)}
-              placeholder="10"
-              min="1" max="31"
-              className="input"
-            />
-          </Field>
-        </div>
+        {/* Single or "same" mode — single billing form */}
+        {(!isMultiStudent || billingMode === 'same') && (
+          <SingleBillingForm
+            billing={defaultBillingForm}
+            onChange={(key, val) => setDefaultBillingForm((f) => ({ ...f, [key]: val }))}
+            startMonth={startMonth}
+            actualSessions={actualSessions}
+            fullMonthSessions={fullMonthSessions}
+            isProrated={isProrated}
+            durationHours={durationHours}
+          />
+        )}
 
-        {/* Billing preview card */}
-        {hasPaymentInput && actualSessions > 0 && estimatedFirstMonth > 0 && (
-          <div className="mt-3 bg-white border border-gray-200 rounded-xl p-4">
-            <p className="text-xs text-gray-500 mb-1">
-              {startMonth.replace('-', '년 ')}월 예상 과외비
-            </p>
-            <p className="text-xl font-bold text-gray-900">
-              {formatCurrency(estimatedFirstMonth)}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              {form.billingType === 'hourly' ? (
-                `${Number(form.hourlyRate).toLocaleString('ko-KR')}원 × ${durationHours}시간 × ${actualSessions}회`
-              ) : isProrated ? (
-                `월 중간 시작으로 ${actualSessions}/${fullMonthSessions}회 기준으로 계산됐어요`
-              ) : (
-                `${actualSessions}회 수업 기준`
-              )}
-            </p>
-            {isProrated && (
-              <p className="text-xs text-blue-500 mt-1">
-                월 중간에 시작해서 첫 달 금액이 자동 조정됐어요
-              </p>
+        {/* Per-student billing */}
+        {isMultiStudent && billingMode === 'perStudent' && (
+          <div className="flex flex-col gap-3">
+            {selectedStudentIds.length > 1 && (
+              <button
+                type="button"
+                onClick={copyFirstToAll}
+                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-blue-200 text-blue-600 text-xs font-semibold bg-blue-50"
+              >
+                <Copy size={12} />
+                첫 번째 학생 설정을 모두에게 적용
+              </button>
             )}
+            {selectedStudentIds.map((sid, idx) => {
+              const student = students.find((s) => s.id === sid);
+              const sb = getStudentBilling(sid);
+              return (
+                <div key={sid} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-sm font-bold flex-shrink-0">
+                      {student?.name?.[0] || '?'}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-gray-900">{student?.name}</p>
+                      {[student?.schoolName || student?.school, student?.grade].filter(Boolean).join(' ') && (
+                        <p className="text-xs text-gray-400">
+                          {[student?.schoolName || student?.school, student?.grade].filter(Boolean).join(' ')}
+                        </p>
+                      )}
+                    </div>
+                    {idx === 0 && (
+                      <span className="ml-auto text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-medium">
+                        기준
+                      </span>
+                    )}
+                  </div>
+                  <SingleBillingForm
+                    billing={sb}
+                    onChange={(key, val) => setStudentBilling(sid, key, val)}
+                    startMonth={startMonth}
+                    actualSessions={actualSessions}
+                    fullMonthSessions={fullMonthSessions}
+                    isProrated={isProrated}
+                    durationHours={durationHours}
+                    compact
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -505,6 +571,113 @@ function RecurringForm({ form, setField, toggleDay, students, selectedStudentIds
           className="input"
         />
       </Field>
+    </div>
+  );
+}
+
+// ── Single billing form (reused for same/per-student) ─────────────────────────
+
+function SingleBillingForm({
+  billing, onChange, startMonth, actualSessions, fullMonthSessions, isProrated, durationHours, compact = false,
+}) {
+  const hasPaymentInput = billing.billingType === 'hourly' ? !!billing.hourlyRate : !!billing.monthlyFee;
+
+  const estimatedFirstMonth = useMemo(() => {
+    if (billing.billingType === 'hourly') {
+      const rate = Number(billing.hourlyRate) || 0;
+      if (!rate) return 0;
+      return calculateHourlyFee({ hourlyRate: rate, durationHours, sessionCount: actualSessions });
+    }
+    const fee = Number(billing.monthlyFee) || 0;
+    if (!fee) return 0;
+    return isProrated
+      ? calculateMonthlyProratedFee({ monthlyFee: fee, fullMonthSessionCount: fullMonthSessions, actualSessionCount: actualSessions })
+      : fee;
+  }, [billing.billingType, billing.monthlyFee, billing.hourlyRate, durationHours, actualSessions, fullMonthSessions, isProrated]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Billing type toggle */}
+      <div className={`flex gap-0 bg-gray-100 rounded-xl p-1 ${compact ? '' : 'mb-1'}`}>
+        <button
+          type="button"
+          onClick={() => onChange('billingType', 'monthly')}
+          className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            billing.billingType !== 'hourly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+          }`}
+        >
+          월 수업료
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange('billingType', 'hourly')}
+          className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            billing.billingType === 'hourly' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+          }`}
+        >
+          시급 계산
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {billing.billingType === 'monthly' ? (
+          <Field label="월 수업료 (원)">
+            <input
+              type="number"
+              value={billing.monthlyFee}
+              onChange={(e) => onChange('monthlyFee', e.target.value)}
+              placeholder="400000"
+              className="input"
+            />
+          </Field>
+        ) : (
+          <Field label="시급 (원)">
+            <input
+              type="number"
+              value={billing.hourlyRate}
+              onChange={(e) => onChange('hourlyRate', e.target.value)}
+              placeholder="30000"
+              className="input"
+            />
+          </Field>
+        )}
+        <Field label="결제일 (매월)">
+          <input
+            type="number"
+            value={billing.paymentDay}
+            onChange={(e) => onChange('paymentDay', e.target.value)}
+            placeholder="10"
+            min="1" max="31"
+            className="input"
+          />
+        </Field>
+      </div>
+
+      {/* Billing preview card */}
+      {hasPaymentInput && actualSessions > 0 && estimatedFirstMonth > 0 && (
+        <div className="bg-gray-50 border border-gray-100 rounded-xl p-3">
+          <p className="text-xs text-gray-400 mb-0.5">
+            {startMonth.replace('-', '년 ')}월 예상 과외비
+          </p>
+          <p className="text-lg font-bold text-gray-900">
+            {formatCurrency(estimatedFirstMonth)}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {billing.billingType === 'hourly' ? (
+              `${Number(billing.hourlyRate).toLocaleString('ko-KR')}원 × ${durationHours}시간 × ${actualSessions}회`
+            ) : isProrated ? (
+              `월 중간 시작 · ${actualSessions}/${fullMonthSessions}회 기준`
+            ) : (
+              `${actualSessions}회 수업 기준`
+            )}
+          </p>
+          {isProrated && (
+            <p className="text-xs text-blue-500 mt-0.5">
+              월 중간에 시작해서 첫 달 금액이 자동 조정됐어요
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

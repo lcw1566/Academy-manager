@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { LogOut, Key, Eye, EyeOff, Check, MessageSquare, ChevronRight, Edit2, Wifi, WifiOff, Loader2, Trash2, AlertTriangle } from 'lucide-react';
+import { LogOut, Key, Eye, EyeOff, Check, MessageSquare, ChevronRight, Edit2, Wifi, WifiOff, Loader2, Trash2, AlertTriangle, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import Modal from '../../components/Modal';
 import { roleMap, formatPhoneNumber } from '../../utils/format';
 import { testGeminiConnection } from '../../utils/aiNotice';
+import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../../constants/aiPrompts';
 
 const NOTICE_TONES = [
   { id: 'friendly',    label: '친절한' },
@@ -27,10 +28,10 @@ export default function MorePage() {
   const [keyInput, setKeyInput] = useState(geminiApiKey);
   const [showKey, setShowKey] = useState(false);
   const [keySaved, setKeySaved] = useState(false);
-  const [testState, setTestState] = useState(null); // null | 'testing' | 'success' | 'error'
+  const [testState, setTestState] = useState(null);
   const [testMsg, setTestMsg] = useState('');
   const [showResetSheet, setShowResetSheet] = useState(false);
-  const [confirmResetType, setConfirmResetType] = useState(null); // null | 'all' | 'exceptTeachers'
+  const [confirmResetType, setConfirmResetType] = useState(null);
 
   const recentConsultations = consultations
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -383,7 +384,13 @@ export default function MorePage() {
 // ── Profile edit modal ─────────────────────────────────────────────────────────
 
 function ProfileEditModal({ profile, onClose, onSave }) {
-  const [form, setForm] = useState({ ...profile });
+  const [form, setForm] = useState({
+    parentNoticePrompt: DEFAULT_PARENT_NOTICE_PROMPT,
+    studentHomeworkPrompt: DEFAULT_STUDENT_HOMEWORK_PROMPT,
+    ...profile,
+  });
+  const [showPromptSection, setShowPromptSection] = useState(false);
+
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const toggleSubject = (sub) =>
@@ -393,6 +400,9 @@ function ProfileEditModal({ profile, onClose, onSave }) {
         ? f.subjects.filter((s) => s !== sub)
         : [...(f.subjects || []), sub],
     }));
+
+  const resetParentPrompt = () => setField('parentNoticePrompt', DEFAULT_PARENT_NOTICE_PROMPT);
+  const resetStudentPrompt = () => setField('studentHomeworkPrompt', DEFAULT_STUDENT_HOMEWORK_PROMPT);
 
   return (
     <Modal
@@ -516,6 +526,72 @@ function ProfileEditModal({ profile, onClose, onSave }) {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* AI prompt settings */}
+        <div className="border-t border-gray-100 pt-4">
+          <button
+            type="button"
+            onClick={() => setShowPromptSection((v) => !v)}
+            className="w-full flex items-center justify-between"
+          >
+            <div>
+              <p className="text-xs font-bold text-gray-500 text-left">AI 작성 설정</p>
+              <p className="text-xs text-gray-400 mt-0.5 text-left">알림장과 숙제 알림의 기본 작성 방식을 설정해요</p>
+            </div>
+            {showPromptSection
+              ? <ChevronUp size={16} className="text-gray-400 flex-shrink-0" />
+              : <ChevronDown size={16} className="text-gray-400 flex-shrink-0" />
+            }
+          </button>
+
+          {showPromptSection && (
+            <div className="mt-4 flex flex-col gap-4">
+              {/* Parent notice prompt */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-blue-700">학부모용 작성 방식</label>
+                  <button
+                    type="button"
+                    onClick={resetParentPrompt}
+                    className="flex items-center gap-1 text-xs text-gray-400 font-medium"
+                  >
+                    <RotateCcw size={11} />
+                    기본 문구로
+                  </button>
+                </div>
+                <textarea
+                  value={form.parentNoticePrompt || DEFAULT_PARENT_NOTICE_PROMPT}
+                  onChange={(e) => setField('parentNoticePrompt', e.target.value)}
+                  rows={6}
+                  style={{ maxHeight: '200px' }}
+                  className="w-full border border-blue-200 rounded-xl px-3 py-2.5 text-xs leading-relaxed focus:outline-none focus:border-blue-400 bg-blue-50 resize-none overflow-y-auto"
+                />
+              </div>
+
+              {/* Student homework prompt */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-green-700">학생용 숙제 알림 작성 방식</label>
+                  <button
+                    type="button"
+                    onClick={resetStudentPrompt}
+                    className="flex items-center gap-1 text-xs text-gray-400 font-medium"
+                  >
+                    <RotateCcw size={11} />
+                    기본 문구로
+                  </button>
+                </div>
+                <textarea
+                  value={form.studentHomeworkPrompt || DEFAULT_STUDENT_HOMEWORK_PROMPT}
+                  onChange={(e) => setField('studentHomeworkPrompt', e.target.value)}
+                  rows={6}
+                  style={{ maxHeight: '200px' }}
+                  className="w-full border border-green-200 rounded-xl px-3 py-2.5 text-xs leading-relaxed focus:outline-none focus:border-green-400 bg-green-50 resize-none overflow-y-auto"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </Modal>

@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { generateClassDates } from '../utils/recurringClass';
 import { getCurrentMonth, getMonthsBetween } from '../utils/date';
-import { generatePaymentForMonth } from '../utils/billing';
+import { generatePaymentForMonth, groupHasPayment, resolveStudentBilling } from '../utils/billing';
+import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../constants/aiPrompts';
 
 const defaultTutorProfile = {
   name: '과외 선생님',
@@ -14,6 +15,8 @@ const defaultTutorProfile = {
   bankAccount: '',
   accountHolder: '',
   defaultNoticeTone: 'friendly',
+  parentNoticePrompt: DEFAULT_PARENT_NOTICE_PROMPT,
+  studentHomeworkPrompt: DEFAULT_STUDENT_HOMEWORK_PROMPT,
 };
 
 const useAcademyStore = create(
@@ -106,7 +109,6 @@ const useAcademyStore = create(
     set((s) => ({ classes: s.classes.map((c) => (c.id === id ? { ...c, ...data } : c)) }));
     get().showToast('수업이 수정되었습니다.');
   },
-  // Patch a single class instance without triggering the generic toast
   updateClassInstance: (id, data) => {
     set((s) => ({ classes: s.classes.map((c) => (c.id === id ? { ...c, ...data } : c)) }));
   },
@@ -118,7 +120,29 @@ const useAcademyStore = create(
   // ─── Recurring class (정기 과외) ───────────────────
   addRepeatGroup: (groupData) => {
     const groupId = `rg${Date.now()}`;
-    const newGroup = { ...groupData, id: groupId };
+
+    // Normalize billing structure
+    const billingMode = groupData.billingMode || 'same';
+    const defaultBilling = groupData.defaultBilling || {
+      billingType: groupData.billingType || 'monthly',
+      monthlyFee: Number(groupData.monthlyFee) || 0,
+      hourlyRate: Number(groupData.hourlyRate) || 0,
+      paymentDay: Number(groupData.paymentDay) || 10,
+    };
+    const studentBillings = groupData.studentBillings || {};
+
+    const newGroup = {
+      ...groupData,
+      id: groupId,
+      billingMode,
+      defaultBilling,
+      studentBillings,
+      // Keep legacy top-level fields for backward compat
+      billingType: defaultBilling.billingType,
+      monthlyFee: defaultBilling.monthlyFee,
+      hourlyRate: defaultBilling.hourlyRate,
+      paymentDay: defaultBilling.paymentDay,
+    };
 
     const dates = generateClassDates({
       daysOfWeek: groupData.daysOfWeek,
@@ -156,21 +180,14 @@ const useAcademyStore = create(
 
     const startMonth = groupData.startDate?.slice(0, 7) || getCurrentMonth();
     const currentMonth = getCurrentMonth();
-    const billingType = groupData.billingType || 'monthly';
-    const hasPayment =
-      billingType === 'hourly' ? (groupData.hourlyRate || 0) > 0 : (groupData.monthlyFee || 0) > 0;
 
-    // Payment range: startMonth ~ min(endMonth, currentMonth)
     const endMonthRaw = groupData.endDate ? groupData.endDate.slice(0, 7) : currentMonth;
     const paymentEndMonth = endMonthRaw < currentMonth ? endMonthRaw : currentMonth;
     const monthsToCreate = getMonthsBetween(startMonth, paymentEndMonth);
 
     const newPayments = [];
-    if (hasPayment) {
-      const day = String(groupData.paymentDay || 10).padStart(2, '0');
-
+    if (groupHasPayment(newGroup)) {
       for (const month of monthsToCreate) {
-        // Skip months with no generated class sessions
         const monthHasClasses = newClasses.some((c) => c.date.startsWith(month));
         if (!monthHasClasses) continue;
 
@@ -183,10 +200,14 @@ const useAcademyStore = create(
           if (existing) continue;
 
           const student = allStudents.find((s) => s.id === studentId);
+          const studentBilling = resolveStudentBilling(newGroup, studentId);
+          const payDay = String(studentBilling.paymentDay || defaultBilling.paymentDay || 10).padStart(2, '0');
+
           const paymentInfo = generatePaymentForMonth({
             group: newGroup,
             classes: newClasses,
             month,
+            studentId,
           });
 
           if (paymentInfo.amount <= 0 && paymentInfo.calculatedSessionCount === 0) continue;
@@ -202,7 +223,7 @@ const useAcademyStore = create(
             repeatGroupId: groupId,
             month,
             ...paymentInfo,
-            dueDate: `${yr}-${mo}-${day}`,
+            dueDate: `${yr}-${mo}-${payDay}`,
             status: 'pending',
             paidDate: null,
             paidAmount: null,
@@ -246,8 +267,30 @@ const useAcademyStore = create(
     const classType = studentCount <= 1 ? '정기 과외' : '그룹 과외';
     const className = `${namePrefix} ${data.subject} ${classLabel}`;
 
+    // Normalize billing
+    const billingMode = data.billingMode || 'same';
+    const defaultBilling = data.defaultBilling || {
+      billingType: data.billingType || 'monthly',
+      monthlyFee: Number(data.monthlyFee) || 0,
+      hourlyRate: Number(data.hourlyRate) || 0,
+      paymentDay: Number(data.paymentDay) || 10,
+    };
+
     set((s) => ({
-      repeatGroups: s.repeatGroups.map((g) => (g.id === groupId ? { ...g, ...data } : g)),
+      repeatGroups: s.repeatGroups.map((g) =>
+        g.id === groupId
+          ? {
+              ...g, ...data,
+              billingMode,
+              defaultBilling,
+              studentBillings: data.studentBillings || g.studentBillings || {},
+              billingType: defaultBilling.billingType,
+              monthlyFee: defaultBilling.monthlyFee,
+              hourlyRate: defaultBilling.hourlyRate,
+              paymentDay: defaultBilling.paymentDay,
+            }
+          : g
+      ),
       classes: s.classes.map((c) => {
         if (c.repeatGroupId !== groupId) return c;
         return {
@@ -281,7 +324,28 @@ const useAcademyStore = create(
     const classType = studentCount <= 1 ? '정기 과외' : '그룹 과외';
     const className = `${namePrefix} ${data.subject} ${classLabel}`;
 
-    // Keep future classes that have records; update remaining
+    // Normalize billing
+    const billingMode = data.billingMode || 'same';
+    const defaultBilling = data.defaultBilling || {
+      billingType: data.billingType || 'monthly',
+      monthlyFee: Number(data.monthlyFee) || 0,
+      hourlyRate: Number(data.hourlyRate) || 0,
+      paymentDay: Number(data.paymentDay) || 10,
+    };
+    const studentBillings = data.studentBillings || {};
+
+    const updatedGroup = {
+      ...data,
+      id: groupId,
+      billingMode,
+      defaultBilling,
+      studentBillings,
+      billingType: defaultBilling.billingType,
+      monthlyFee: defaultBilling.monthlyFee,
+      hourlyRate: defaultBilling.hourlyRate,
+      paymentDay: defaultBilling.paymentDay,
+    };
+
     const futureGroupClasses = classes.filter(
       (c) => c.repeatGroupId === groupId && c.date >= fromDate
     );
@@ -340,11 +404,7 @@ const useAcademyStore = create(
 
     // ── Payment recalculation ──────────────────────────────────────
     const fromMonth = fromDate.slice(0, 7);
-    const billingType = data.billingType || 'monthly';
-    const hasPayment =
-      billingType === 'hourly' ? (data.hourlyRate || 0) > 0 : (data.monthlyFee || 0) > 0;
 
-    // Remove pending/unpaid future payments for this group
     const keptPayments = payments.filter(
       (p) =>
         !(p.repeatGroupId === groupId &&
@@ -354,7 +414,7 @@ const useAcademyStore = create(
     );
 
     const newPayments = [];
-    if (hasPayment) {
+    if (groupHasPayment(updatedGroup)) {
       const affectedMonths = [
         ...new Set(
           allNewGroupClasses
@@ -362,9 +422,6 @@ const useAcademyStore = create(
             .map((c) => c.date.slice(0, 7))
         ),
       ].sort();
-
-      const updatedGroup = { ...data, id: groupId };
-      const payDay = String(data.paymentDay || 10).padStart(2, '0');
 
       for (const month of affectedMonths) {
         for (const studentId of studentIds) {
@@ -375,10 +432,14 @@ const useAcademyStore = create(
 
           const student = allStudents.find((s) => s.id === studentId);
           const [yr, mo] = month.split('-');
+          const studentBilling = resolveStudentBilling(updatedGroup, studentId);
+          const payDay = String(studentBilling.paymentDay || defaultBilling.paymentDay || 10).padStart(2, '0');
+
           const paymentInfo = generatePaymentForMonth({
             group: updatedGroup,
             classes: allNewGroupClasses,
             month,
+            studentId,
           });
 
           if (paymentInfo.amount <= 0 && paymentInfo.calculatedSessionCount === 0) continue;
@@ -406,7 +467,7 @@ const useAcademyStore = create(
     }
 
     set((s) => ({
-      repeatGroups: s.repeatGroups.map((g) => (g.id === groupId ? { ...g, ...data } : g)),
+      repeatGroups: s.repeatGroups.map((g) => (g.id === groupId ? { ...g, ...updatedGroup } : g)),
       classes: [...remainingClasses, ...newClasses],
       payments: [...keptPayments, ...newPayments],
     }));
@@ -494,10 +555,7 @@ const useAcademyStore = create(
     const newPayments = [];
 
     for (const group of repeatGroups) {
-      const billingType = group.billingType || 'monthly';
-      const hasPayment =
-        billingType === 'hourly' ? (group.hourlyRate || 0) > 0 : (group.monthlyFee || 0) > 0;
-      if (!hasPayment) continue;
+      if (!groupHasPayment(group)) continue;
 
       const startMonth = group.startDate?.slice(0, 7);
       if (!startMonth) continue;
@@ -508,7 +566,6 @@ const useAcademyStore = create(
       const monthsNeeded = getMonthsBetween(startMonth, paymentEndMonth);
       const studentIds = group.studentIds || (group.studentId ? [group.studentId] : []);
       const groupClasses = classes.filter((c) => c.repeatGroupId === group.id);
-      const day = String(group.paymentDay || 10).padStart(2, '0');
 
       for (const month of monthsNeeded) {
         const monthHasClasses = groupClasses.some((c) => c.date.startsWith(month));
@@ -523,7 +580,10 @@ const useAcademyStore = create(
           if (alreadyExists) continue;
 
           const student = allStudents.find((s) => s.id === studentId);
-          const paymentInfo = generatePaymentForMonth({ group, classes: groupClasses, month });
+          const studentBilling = resolveStudentBilling(group, studentId);
+          const payDay = String(studentBilling.paymentDay || group.paymentDay || 10).padStart(2, '0');
+
+          const paymentInfo = generatePaymentForMonth({ group, classes: groupClasses, month, studentId });
 
           if (paymentInfo.amount <= 0 && paymentInfo.calculatedSessionCount === 0) continue;
 
@@ -538,7 +598,7 @@ const useAcademyStore = create(
             repeatGroupId: group.id,
             month,
             ...paymentInfo,
-            dueDate: `${yr}-${mo}-${day}`,
+            dueDate: `${yr}-${mo}-${payDay}`,
             status: 'pending',
             paidDate: null,
             paidAmount: null,
@@ -622,6 +682,17 @@ const useAcademyStore = create(
         payrolls: s.payrolls,
         repeatGroups: s.repeatGroups,
       }),
+      // Migrate persisted profile to add prompt fields if missing
+      onRehydrateStorage: () => (state) => {
+        if (state?.tutorProfile) {
+          if (!state.tutorProfile.parentNoticePrompt) {
+            state.tutorProfile.parentNoticePrompt = DEFAULT_PARENT_NOTICE_PROMPT;
+          }
+          if (!state.tutorProfile.studentHomeworkPrompt) {
+            state.tutorProfile.studentHomeworkPrompt = DEFAULT_STUDENT_HOMEWORK_PROMPT;
+          }
+        }
+      },
     }
   )
 );

@@ -1,4 +1,5 @@
 import { extractGeminiText, getFinishReasonMessage } from './extractGeminiText';
+import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../constants/aiPrompts';
 
 if (import.meta.env.DEV && !import.meta.env.VITE_GEMINI_API_KEY) {
   console.warn('[Gemini] Missing VITE_GEMINI_API_KEY — API key must be set in the UI or .env.local');
@@ -37,17 +38,20 @@ const evalSentences = {
   },
 };
 
-const toneDescriptions = {
+export const toneDescriptions = {
   friendly:    '친절하고 따뜻한 톤',
   plain:       '간결하고 담백한 톤',
   praise:      '칭찬과 격려 중심 톤',
   improvement: '보완할 점과 개선 방향 중심 톤',
 };
 
-// 시도할 모델 순서 (VITE_GEMINI_MODEL이 설정된 경우 앞에 추가)
+export const TONE_LABELS = {
+  friendly: '친절한', plain: '담백한', praise: '칭찬 중심', improvement: '개선 중심',
+};
+
+// 시도할 모델 순서
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
 
-// SAFETY/RECITATION은 다른 모델로 재시도해도 의미 없음
 const FATAL_FINISH_REASONS = ['SAFETY', 'RECITATION'];
 
 function getModels() {
@@ -58,7 +62,6 @@ function getModels() {
   return GEMINI_MODELS;
 }
 
-// HTTP 상태 코드 → 사용자 메시지
 function getHttpErrorMessage(status) {
   const messages = {
     401: 'API 키가 올바르지 않은 것 같아요. 키를 다시 확인해주세요.',
@@ -69,11 +72,6 @@ function getHttpErrorMessage(status) {
   return messages[status] || `API 오류 (${status})`;
 }
 
-/**
- * 단일 Gemini 모델 호출
- * @param {Object} extraConfig - generationConfig에 병합할 추가 설정
- * @returns {{ text: string, finishReason: string }}
- */
 async function callGeminiModel(apiKey, model, prompt, extraConfig = {}) {
   let res;
   try {
@@ -173,17 +171,24 @@ export function parseAiNoticeResponse(text) {
   return { parentNotice: text, studentHomework: '' };
 }
 
-// ─── Gemini API 호출 (모델 순차 fallback) ────────────────────────────────────
-
 /**
- * @returns {{ parentNotice: string, studentHomework: string }}
+ * Build the full prompt sent to Gemini.
+ * Priority for prompts: custom (per-session) → profile defaults → built-in defaults
  */
-export const generateNoticeWithAI = async ({
-  studentName, content, materials, homework, nextPlan,
-  evaluation, memo, tone = 'friendly', apiKey,
-}) => {
-  const resolvedKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY;
-  if (!resolvedKey) throw new Error('API 키가 없습니다.');
+export function buildGeminiPrompt({
+  studentName,
+  content,
+  materials,
+  homework,
+  nextPlan,
+  evaluation,
+  memo,
+  tone = 'friendly',
+  parentNoticePrompt,
+  studentHomeworkPrompt,
+}) {
+  const resolvedParentPrompt = (parentNoticePrompt || '').trim() || DEFAULT_PARENT_NOTICE_PROMPT;
+  const resolvedStudentPrompt = (studentHomeworkPrompt || '').trim() || DEFAULT_STUDENT_HOMEWORK_PROMPT;
 
   const evalLabels = {
     focus: '집중도', attitude: '수업태도', understanding: '이해도',
@@ -198,26 +203,13 @@ export const generateNoticeWithAI = async ({
 
   const toneDesc = toneDescriptions[tone] || '친절하고 따뜻한 톤';
 
-  const prompt = `너는 과외 선생님이 학부모와 학생에게 수업 알림을 작성하는 도우미다.
+  return `[학부모용 알림장 작성 방식]
+${resolvedParentPrompt}
 
-아래 수업 정보를 바탕으로 두 가지를 작성해라.
+[학생용 숙제 알림 작성 방식]
+${resolvedStudentPrompt}
 
-[공통 작성 조건]
-- 작성 톤: ${toneDesc}
-- 마지막 문장이 중간에 끊기지 않게 반드시 완성된 문장으로 마무리
-- 제목, 마크다운 기호, 불릿(·/-/*) 사용 금지
-- 전화번호, 주소, 계좌번호 같은 개인정보 포함 금지
-
-[학부모용 알림장 조건]
-- 정중하고 자연스러운 구어체 존댓말
-- 4~6문장으로 완성
-- 마지막 문장은 반드시 "감사합니다."로 끝낼 것
-
-[학생용 숙제 알림 조건]
-- 학생에게 직접 말하는 구어체 (반말 가능)
-- 첫 줄: "${studentName}, 오늘 숙제 정리해줄게."
-- 숙제/복습 항목을 1. 2. 3. 형식 번호 목록으로 3~6개 작성
-- 마지막 줄: "다음 수업 때 확인할게!"
+작성 톤: ${toneDesc}
 
 수업 정보:
 학생: ${studentName}
@@ -228,8 +220,31 @@ export const generateNoticeWithAI = async ({
 평가: ${evalText || '미입력'}
 특이사항: ${memo || '없음'}
 
+개인정보 보호:
+전화번호, 주소, 계좌번호, 결제 정보는 절대 포함하지 마라.
+
 반드시 다음 JSON 형식으로만 응답하라. JSON 외 텍스트 없음:
 {"parentNotice":"학부모용 알림장 텍스트","studentHomework":"학생용 숙제 알림 텍스트"}`.trim();
+}
+
+// ─── Gemini API 호출 (모델 순차 fallback) ────────────────────────────────────
+
+/**
+ * @returns {{ parentNotice: string, studentHomework: string }}
+ */
+export const generateNoticeWithAI = async ({
+  studentName, content, materials, homework, nextPlan,
+  evaluation, memo, tone = 'friendly', apiKey,
+  parentNoticePrompt, studentHomeworkPrompt,
+}) => {
+  const resolvedKey = apiKey || import.meta.env.VITE_GEMINI_API_KEY;
+  if (!resolvedKey) throw new Error('API 키가 없습니다.');
+
+  const prompt = buildGeminiPrompt({
+    studentName, content, materials, homework, nextPlan,
+    evaluation, memo, tone,
+    parentNoticePrompt, studentHomeworkPrompt,
+  });
 
   let lastError;
   const models = getModels();
@@ -292,7 +307,6 @@ export const testGeminiConnection = async (apiKey) => {
       const { text } = await callGeminiModel(resolvedKey, model, testPrompt);
       return { model, text };
     } catch (err) {
-      // 키/권한/한도/CORS — 재시도 의미 없음
       if (err.status === 401 || err.status === 403 || err.status === 429 || err.isCors) throw err;
       lastError = err;
       if (err.status !== 404) break;

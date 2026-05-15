@@ -78,10 +78,47 @@ export function calculateFullMonthSessionCount({ yearMonth, daysOfWeek, endDate,
 }
 
 /**
- * Generate payment amount & metadata for a given group + month.
- * Handles both monthly and hourly billing, and first-month proration.
+ * Resolve billing config for a specific student in a group.
+ * Priority: studentBillings[studentId] → defaultBilling → legacy top-level fields
  */
-export function generatePaymentForMonth({ group, classes, month }) {
+export function resolveStudentBilling(group, studentId) {
+  if (group.billingMode === 'perStudent' && studentId && group.studentBillings?.[studentId]) {
+    return group.studentBillings[studentId];
+  }
+  if (group.defaultBilling) {
+    return group.defaultBilling;
+  }
+  // Legacy fallback — group itself has billing fields at top level
+  return {
+    billingType: group.billingType || 'monthly',
+    monthlyFee: group.monthlyFee || 0,
+    hourlyRate: group.hourlyRate || 0,
+    paymentDay: group.paymentDay || 10,
+  };
+}
+
+/**
+ * Check whether any student in this group has a non-zero fee configured.
+ */
+export function groupHasPayment(group) {
+  if (group.billingMode === 'perStudent' && group.studentBillings) {
+    return Object.values(group.studentBillings).some((b) =>
+      b.billingType === 'hourly' ? (b.hourlyRate || 0) > 0 : (b.monthlyFee || 0) > 0
+    );
+  }
+  const billing = group.defaultBilling || group;
+  const billingType = billing.billingType || 'monthly';
+  return billingType === 'hourly' ? (billing.hourlyRate || 0) > 0 : (billing.monthlyFee || 0) > 0;
+}
+
+/**
+ * Generate payment amount & metadata for a given group + month + student.
+ * Handles both monthly and hourly billing, and first-month proration.
+ * Now supports per-student billing via resolveStudentBilling.
+ */
+export function generatePaymentForMonth({ group, classes, month, studentId }) {
+  const billing = resolveStudentBilling(group, studentId);
+
   const monthClasses = (classes || []).filter(
     (c) => c.repeatGroupId === group.id && c.date.startsWith(month)
   );
@@ -92,9 +129,9 @@ export function generatePaymentForMonth({ group, classes, month }) {
   const monthStart = `${month}-01`;
   const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
 
-  if (group.billingType === 'hourly') {
+  if (billing.billingType === 'hourly') {
     const durationHours = calculateDurationHours(group.startTime, group.endTime);
-    const hourlyRate = group.hourlyRate || 0;
+    const hourlyRate = billing.hourlyRate || 0;
     const amount = calculateHourlyFee({ hourlyRate, durationHours, sessionCount });
     return {
       billingType: 'hourly',
@@ -108,7 +145,7 @@ export function generatePaymentForMonth({ group, classes, month }) {
   }
 
   // Monthly billing
-  const monthlyFee = group.monthlyFee || 0;
+  const monthlyFee = billing.monthlyFee || 0;
   const fullMonthSessionCount = calculateFullMonthSessionCount({
     yearMonth: month,
     daysOfWeek: group.daysOfWeek,
