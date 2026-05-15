@@ -71,9 +71,10 @@ function getHttpErrorMessage(status) {
 
 /**
  * 단일 Gemini 모델 호출
+ * @param {Object} extraConfig - generationConfig에 병합할 추가 설정
  * @returns {{ text: string, finishReason: string }}
  */
-async function callGeminiModel(apiKey, model, prompt) {
+async function callGeminiModel(apiKey, model, prompt, extraConfig = {}) {
   let res;
   try {
     res = await fetch(
@@ -86,7 +87,8 @@ async function callGeminiModel(apiKey, model, prompt) {
           generationConfig: {
             temperature: 0.7,
             topP: 0.9,
-            maxOutputTokens: 1024,
+            maxOutputTokens: 1500,
+            ...extraConfig,
           },
         }),
       }
@@ -134,8 +136,48 @@ async function callGeminiModel(apiKey, model, prompt) {
   return { text, finishReason };
 }
 
+// ─── JSON 응답 파싱 ───────────────────────────────────────────────────────────
+
+export function parseAiNoticeResponse(text) {
+  if (!text) return { parentNotice: '', studentHomework: '' };
+
+  // 1. Direct JSON parse
+  try {
+    const obj = JSON.parse(text.trim());
+    if (obj.parentNotice !== undefined) {
+      return { parentNotice: obj.parentNotice || '', studentHomework: obj.studentHomework || '' };
+    }
+  } catch {}
+
+  // 2. Strip markdown code blocks then retry
+  const stripped = text.replace(/```(?:json)?\s*/gi, '').replace(/```\s*/g, '').trim();
+  try {
+    const obj = JSON.parse(stripped);
+    if (obj.parentNotice !== undefined) {
+      return { parentNotice: obj.parentNotice || '', studentHomework: obj.studentHomework || '' };
+    }
+  } catch {}
+
+  // 3. Extract first {...} block
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    try {
+      const obj = JSON.parse(match[0]);
+      if (obj.parentNotice !== undefined) {
+        return { parentNotice: obj.parentNotice || '', studentHomework: obj.studentHomework || '' };
+      }
+    } catch {}
+  }
+
+  // 4. Fallback — treat entire text as parentNotice
+  return { parentNotice: text, studentHomework: '' };
+}
+
 // ─── Gemini API 호출 (모델 순차 fallback) ────────────────────────────────────
 
+/**
+ * @returns {{ parentNotice: string, studentHomework: string }}
+ */
 export const generateNoticeWithAI = async ({
   studentName, content, materials, homework, nextPlan,
   evaluation, memo, tone = 'friendly', apiKey,
@@ -154,22 +196,31 @@ export const generateNoticeWithAI = async ({
     .map(([k, v]) => `${evalLabels[k]}: ${levelLabels[v]}`)
     .join(', ');
 
-  const prompt = `너는 과외 선생님이 학부모에게 보내는 수업 알림장을 작성하는 도우미다.
+  const toneDesc = toneDescriptions[tone] || '친절하고 따뜻한 톤';
 
-아래 정보를 바탕으로 학부모에게 바로 보낼 수 있는 자연스러운 한국어 알림장을 작성해라.
+  const prompt = `너는 과외 선생님이 학부모와 학생에게 수업 알림을 작성하는 도우미다.
 
-작성 조건:
-- ${toneDescriptions[tone] || '친절하고 따뜻한 톤'}으로 작성
-- 4~6문장으로 완성
-- 문장이 중간에 끊기지 않게 반드시 완성된 문장으로 마무리
-- 마지막 문장은 반드시 "감사합니다."로 끝낼 것
-- 제목, 마크다운 기호, 불릿(·/-/*), 따옴표 사용 금지
-- 자연스러운 구어체 존댓말 사용
+아래 수업 정보를 바탕으로 두 가지를 작성해라.
+
+[공통 작성 조건]
+- 작성 톤: ${toneDesc}
+- 마지막 문장이 중간에 끊기지 않게 반드시 완성된 문장으로 마무리
+- 제목, 마크다운 기호, 불릿(·/-/*) 사용 금지
 - 전화번호, 주소, 계좌번호 같은 개인정보 포함 금지
+
+[학부모용 알림장 조건]
+- 정중하고 자연스러운 구어체 존댓말
+- 4~6문장으로 완성
+- 마지막 문장은 반드시 "감사합니다."로 끝낼 것
+
+[학생용 숙제 알림 조건]
+- 학생에게 직접 말하는 구어체 (반말 가능)
+- 첫 줄: "${studentName}, 오늘 숙제 정리해줄게."
+- 숙제/복습 항목을 1. 2. 3. 형식 번호 목록으로 3~6개 작성
+- 마지막 줄: "다음 수업 때 확인할게!"
 
 수업 정보:
 학생: ${studentName}
-과목: ${content ? '' : '미입력'}
 오늘 배운 내용: ${content || '미입력'}
 교재/페이지: ${materials || '미입력'}
 숙제: ${homework || '없음'}
@@ -177,14 +228,18 @@ export const generateNoticeWithAI = async ({
 평가: ${evalText || '미입력'}
 특이사항: ${memo || '없음'}
 
-알림장 본문만 출력하라. 설명, 제목, 라벨 없이 바로 본문으로 시작하라.`.trim();
+반드시 다음 JSON 형식으로만 응답하라. JSON 외 텍스트 없음:
+{"parentNotice":"학부모용 알림장 텍스트","studentHomework":"학생용 숙제 알림 텍스트"}`.trim();
 
   let lastError;
   const models = getModels();
 
   for (const model of models) {
     try {
-      const { text, finishReason } = await callGeminiModel(resolvedKey, model, prompt);
+      const { text, finishReason } = await callGeminiModel(
+        resolvedKey, model, prompt,
+        { responseMimeType: 'application/json' }
+      );
 
       if (FATAL_FINISH_REASONS.includes(finishReason)) {
         throw new Error(getFinishReasonMessage(finishReason) || '알림장 생성에 실패했습니다.');
@@ -205,30 +260,16 @@ export const generateNoticeWithAI = async ({
         continue;
       }
 
-      return text;
+      return parseAiNoticeResponse(text);
     } catch (err) {
-      // 콘텐츠 정책 위반 — 재시도해도 달라지지 않음
-      if (FATAL_FINISH_REASONS.some((r) => err.message === getFinishReasonMessage(r))) {
-        throw err;
-      }
-
-      // 키/권한/한도 오류 — 다른 모델로 재시도해도 의미 없음
-      if (err.status === 401 || err.status === 403 || err.status === 429 || err.isCors) {
-        throw err;
-      }
-
-      // 404 모델 없음 — 다음 모델로 시도
+      if (FATAL_FINISH_REASONS.some((r) => err.message === getFinishReasonMessage(r))) throw err;
+      if (err.status === 401 || err.status === 403 || err.status === 429 || err.isCors) throw err;
       if (err.status === 404) {
-        if (import.meta.env.DEV) {
-          console.warn(`[Gemini] ${model} not found (404), trying next model...`);
-        }
+        if (import.meta.env.DEV) console.warn(`[Gemini] ${model} not found (404), trying next model...`);
         lastError = err;
         continue;
       }
-
-      if (import.meta.env.DEV) {
-        console.error(`[Gemini] ${model} 실패:`, err.message);
-      }
+      if (import.meta.env.DEV) console.error(`[Gemini] ${model} 실패:`, err.message);
       lastError = err;
     }
   }
@@ -261,8 +302,11 @@ export const testGeminiConnection = async (apiKey) => {
   throw lastError || new Error('연결 테스트에 실패했습니다.');
 };
 
-// ─── Mock fallback ────────────────────────────────────────────────────────────
+// ─── Fallback (API 미연결 또는 오류 시) ─────────────────────────────────────
 
+/**
+ * @returns {{ parentNotice: string, studentHomework: string }}
+ */
 export const generateNotice = ({
   studentName = '학생',
   content = '',
@@ -271,12 +315,12 @@ export const generateNotice = ({
   memo = '',
   tone = 'friendly',
 }) => {
-  const lines = [];
-
-  lines.push(tone === 'plain' ? '안녕하세요.' : '안녕하세요, 학부모님.');
+  // ── 학부모용 알림장 ──────────────────────────────────
+  const parentLines = [];
+  parentLines.push(tone === 'plain' ? '안녕하세요.' : '안녕하세요, 학부모님.');
 
   if (content) {
-    lines.push(`오늘은 ${content}을(를) 중심으로 수업을 진행했습니다.`);
+    parentLines.push(`오늘은 ${content}을(를) 중심으로 수업을 진행했습니다.`);
   }
 
   const keys = ['focus', 'attitude', 'understanding', 'homework', 'achievement'];
@@ -286,17 +330,17 @@ export const generateNotice = ({
       .filter((k) => evaluation[k] === 'good' || evaluation[k] === 'great')
       .map((k) => evalSentences[k][evaluation[k]]);
     if (praise.length > 0) {
-      lines.push(`${studentName} 학생은 ${praise.slice(0, 2).join(' ')}`);
+      parentLines.push(`${studentName} 학생은 ${praise.slice(0, 2).join(' ')}`);
     } else {
-      lines.push(`${studentName} 학생이 오늘도 열심히 수업에 임해주었습니다.`);
+      parentLines.push(`${studentName} 학생이 오늘도 열심히 수업에 임해주었습니다.`);
     }
   } else if (tone === 'improvement') {
     const improve = keys
       .filter((k) => evaluation[k] === 'poor' || evaluation[k] === 'fair')
       .map((k) => evalSentences[k][evaluation[k]]);
     if (improve.length > 0) {
-      lines.push(`${studentName} 학생은 ${improve.slice(0, 2).join(' ')}`);
-      lines.push('가정에서 꾸준한 복습을 부탁드립니다.');
+      parentLines.push(`${studentName} 학생은 ${improve.slice(0, 2).join(' ')}`);
+      parentLines.push('가정에서 꾸준한 복습을 부탁드립니다.');
     }
   } else {
     const evalParts = keys
@@ -304,21 +348,39 @@ export const generateNotice = ({
       .slice(0, 3)
       .map((k) => evalSentences[k][evaluation[k]]);
     if (evalParts.length > 0) {
-      lines.push(`${studentName} 학생은 ${evalParts.join(' ')}`);
+      parentLines.push(`${studentName} 학생은 ${evalParts.join(' ')}`);
     }
   }
 
-  if (memo) lines.push(memo);
+  if (memo) parentLines.push(memo);
 
   if (homework) {
-    lines.push(`오늘 숙제는 ${homework}입니다. 가정에서 확인 부탁드립니다.`);
+    parentLines.push(`오늘 숙제는 ${homework}입니다. 가정에서 확인 부탁드립니다.`);
   } else {
-    lines.push('다음 수업도 잘 부탁드립니다.');
+    parentLines.push('다음 수업도 잘 부탁드립니다.');
   }
+  parentLines.push('감사합니다.');
 
-  lines.push('감사합니다.');
+  const parentNotice = parentLines.filter(Boolean).join('\n');
 
-  return lines.filter(Boolean).join('\n');
+  // ── 학생용 숙제 알림 (번호 목록) ─────────────────────
+  const hwItems = [];
+  if (homework) hwItems.push(homework);
+  if (content) hwItems.push(`오늘 배운 ${content} 복습하기`);
+  if (evaluation.homework === 'poor' || evaluation.homework === 'fair') {
+    hwItems.push('숙제는 다음 수업 전까지 반드시 완성하기');
+  }
+  if (hwItems.length === 0) hwItems.push('오늘 수업 내용 한 번 더 정리하기');
+
+  const studentHomework = [
+    `${studentName}, 오늘 숙제 정리해줄게.`,
+    '',
+    ...hwItems.map((item, i) => `${i + 1}. ${item}`),
+    '',
+    '다음 수업 때 확인할게!',
+  ].join('\n');
+
+  return { parentNotice, studentHomework };
 };
 
 export const generatePaymentNotice = ({

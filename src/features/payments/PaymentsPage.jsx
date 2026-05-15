@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MessageSquare, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
@@ -12,9 +12,15 @@ import { formatBillingDetail } from '../../utils/billing';
 const STATUS_ORDER = { unpaid: 0, partial: 1, pending: 2, paid: 3, exempt: 4 };
 
 export default function PaymentsPage() {
-  const { students, payments, updatePayment, showToast, tutorProfile } = useAcademyStore();
+  const { students, payments, updatePayment, showToast, tutorProfile, ensurePaymentsForRecurringLessons } = useAcademyStore();
   const [month, setMonth] = useState(getCurrentMonth());
   const [actionPayment, setActionPayment] = useState(null);
+
+  useEffect(() => {
+    ensurePaymentsForRecurringLessons();
+  // 탭 진입 시 1회 실행 — 함수는 멱등성 보장
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const monthPayments = payments
     .filter((p) => p.month === month)

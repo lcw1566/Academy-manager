@@ -98,6 +98,25 @@ export const nextMonth = (monthStr) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
+// "YYYY-MM-DD" → "YYYY-MM"
+export const getYearMonthFromYMD = (ymd) => {
+  if (!ymd) return '';
+  return ymd.slice(0, 7);
+};
+
+// Returns all YYYY-MM strings from startMonth to endMonth (inclusive)
+export const getMonthsBetween = (startMonth, endMonth) => {
+  const result = [];
+  let [y, m] = startMonth.split('-').map(Number);
+  const [ey, em] = endMonth.split('-').map(Number);
+  while (y < ey || (y === ey && m <= em)) {
+    result.push(`${y}-${String(m).padStart(2, '0')}`);
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return result;
+};
+
 export const formatDate = (dateStr) => {
   if (!dateStr) return '';
   const d = parseYMD(dateStr);

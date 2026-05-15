@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { generateClassDates } from '../utils/recurringClass';
-import { getCurrentMonth } from '../utils/date';
+import { getCurrentMonth, getMonthsBetween } from '../utils/date';
 import { generatePaymentForMonth } from '../utils/billing';
 
 const defaultTutorProfile = {
@@ -155,46 +155,61 @@ const useAcademyStore = create(
     }));
 
     const startMonth = groupData.startDate?.slice(0, 7) || getCurrentMonth();
+    const currentMonth = getCurrentMonth();
     const billingType = groupData.billingType || 'monthly';
     const hasPayment =
       billingType === 'hourly' ? (groupData.hourlyRate || 0) > 0 : (groupData.monthlyFee || 0) > 0;
 
+    // Payment range: startMonth ~ min(endMonth, currentMonth)
+    const endMonthRaw = groupData.endDate ? groupData.endDate.slice(0, 7) : currentMonth;
+    const paymentEndMonth = endMonthRaw < currentMonth ? endMonthRaw : currentMonth;
+    const monthsToCreate = getMonthsBetween(startMonth, paymentEndMonth);
+
     const newPayments = [];
     if (hasPayment) {
-      const [yr, mo] = startMonth.split('-');
       const day = String(groupData.paymentDay || 10).padStart(2, '0');
 
-      for (const studentId of studentIds) {
-        const existing = get().payments.find(
-          (p) => p.studentId === studentId && p.month === startMonth && p.repeatGroupId === groupId
-        );
-        if (existing) continue;
+      for (const month of monthsToCreate) {
+        // Skip months with no generated class sessions
+        const monthHasClasses = newClasses.some((c) => c.date.startsWith(month));
+        if (!monthHasClasses) continue;
 
-        const student = allStudents.find((s) => s.id === studentId);
-        const paymentInfo = generatePaymentForMonth({
-          group: newGroup,
-          classes: newClasses,
-          month: startMonth,
-        });
+        const [yr, mo] = month.split('-');
 
-        let memo = '';
-        if (paymentInfo.isProrated) {
-          memo = `${startMonth.replace('-', '년 ')}월은 ${paymentInfo.calculatedSessionCount}회 기준으로 계산됐어요`;
+        for (const studentId of studentIds) {
+          const existing = get().payments.find(
+            (p) => p.studentId === studentId && p.month === month && p.repeatGroupId === groupId
+          );
+          if (existing) continue;
+
+          const student = allStudents.find((s) => s.id === studentId);
+          const paymentInfo = generatePaymentForMonth({
+            group: newGroup,
+            classes: newClasses,
+            month,
+          });
+
+          if (paymentInfo.amount <= 0 && paymentInfo.calculatedSessionCount === 0) continue;
+
+          let memo = '';
+          if (paymentInfo.isProrated) {
+            memo = `${month.replace('-', '년 ')}월은 ${paymentInfo.calculatedSessionCount}회 기준으로 계산됐어요`;
+          }
+
+          newPayments.push({
+            id: `p${ts}_${month}_${studentId}`,
+            studentId,
+            repeatGroupId: groupId,
+            month,
+            ...paymentInfo,
+            dueDate: `${yr}-${mo}-${day}`,
+            status: 'pending',
+            paidDate: null,
+            paidAmount: null,
+            depositorName: student?.depositorName || '',
+            memo,
+          });
         }
-
-        newPayments.push({
-          id: `p${ts}_${studentId}`,
-          studentId,
-          repeatGroupId: groupId,
-          month: startMonth,
-          ...paymentInfo,
-          dueDate: `${yr}-${mo}-${day}`,
-          status: 'pending',
-          paidDate: null,
-          paidAmount: null,
-          depositorName: student?.depositorName || '',
-          memo,
-        });
       }
     }
 
@@ -469,6 +484,74 @@ const useAcademyStore = create(
       payments: s.payments.map((p) => (p.id === id ? { ...p, ...data } : p)),
     }));
     get().showToast('수납 정보가 업데이트되었습니다.');
+  },
+
+  // ─── Payment 보정 (누락 월 자동 생성) ─────────────────
+  ensurePaymentsForRecurringLessons: () => {
+    const { repeatGroups, classes, payments, students: allStudents } = get();
+    const currentMonth = getCurrentMonth();
+    const ts = Date.now();
+    const newPayments = [];
+
+    for (const group of repeatGroups) {
+      const billingType = group.billingType || 'monthly';
+      const hasPayment =
+        billingType === 'hourly' ? (group.hourlyRate || 0) > 0 : (group.monthlyFee || 0) > 0;
+      if (!hasPayment) continue;
+
+      const startMonth = group.startDate?.slice(0, 7);
+      if (!startMonth) continue;
+
+      const endMonthRaw = group.endDate ? group.endDate.slice(0, 7) : currentMonth;
+      const paymentEndMonth = endMonthRaw < currentMonth ? endMonthRaw : currentMonth;
+
+      const monthsNeeded = getMonthsBetween(startMonth, paymentEndMonth);
+      const studentIds = group.studentIds || (group.studentId ? [group.studentId] : []);
+      const groupClasses = classes.filter((c) => c.repeatGroupId === group.id);
+      const day = String(group.paymentDay || 10).padStart(2, '0');
+
+      for (const month of monthsNeeded) {
+        const monthHasClasses = groupClasses.some((c) => c.date.startsWith(month));
+        if (!monthHasClasses) continue;
+
+        const [yr, mo] = month.split('-');
+
+        for (const studentId of studentIds) {
+          const alreadyExists = payments.some(
+            (p) => p.repeatGroupId === group.id && p.studentId === studentId && p.month === month
+          );
+          if (alreadyExists) continue;
+
+          const student = allStudents.find((s) => s.id === studentId);
+          const paymentInfo = generatePaymentForMonth({ group, classes: groupClasses, month });
+
+          if (paymentInfo.amount <= 0 && paymentInfo.calculatedSessionCount === 0) continue;
+
+          let memo = '';
+          if (paymentInfo.isProrated) {
+            memo = `${month.replace('-', '년 ')}월은 ${paymentInfo.calculatedSessionCount}회 기준으로 계산됐어요`;
+          }
+
+          newPayments.push({
+            id: `p${ts}_ensure_${group.id}_${studentId}_${month}`,
+            studentId,
+            repeatGroupId: group.id,
+            month,
+            ...paymentInfo,
+            dueDate: `${yr}-${mo}-${day}`,
+            status: 'pending',
+            paidDate: null,
+            paidAmount: null,
+            depositorName: student?.depositorName || '',
+            memo,
+          });
+        }
+      }
+    }
+
+    if (newPayments.length > 0) {
+      set((s) => ({ payments: [...s.payments, ...newPayments] }));
+    }
   },
 
   // ─── Data Reset ────────────────────────────────────

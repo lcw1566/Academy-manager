@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, Key, AlertTriangle } from 'lucide-react';
+import { Loader2, Key, AlertTriangle, Copy } from 'lucide-react';
 import Modal from '../../components/Modal';
 import useAcademyStore from '../../store/useAcademyStore';
 import { generateNoticeWithAI, generateNotice } from '../../utils/aiNotice';
@@ -11,14 +11,20 @@ const TONES = [
   { id: 'improvement', label: '개선 중심', desc: '보완할 점 위주로' },
 ];
 
+const TONE_LABELS = {
+  friendly: '친절한', plain: '담백한', praise: '칭찬 중심', improvement: '개선 중심',
+};
+
 export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClose }) {
-  const { students, geminiApiKey, showToast } = useAcademyStore();
+  const { students, geminiApiKey, showToast, tutorProfile } = useAcademyStore();
   const student = students.find((s) => s.id === studentId);
 
   const resolvedKey = geminiApiKey || import.meta.env.VITE_GEMINI_API_KEY || '';
+  const defaultTone = tutorProfile?.defaultNoticeTone || 'friendly';
 
-  const [tone, setTone] = useState('friendly');
-  const [edited, setEdited] = useState('');
+  const [tone, setTone] = useState(defaultTone);
+  const [editedParent, setEditedParent] = useState('');
+  const [editedStudent, setEditedStudent] = useState('');
   const [step, setStep] = useState('config'); // 'config' | 'loading' | 'edit'
   const [errorMsg, setErrorMsg] = useState('');
   const [usedFallback, setUsedFallback] = useState(false);
@@ -28,11 +34,11 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
     setErrorMsg('');
     setUsedFallback(false);
 
-    let text = '';
+    let result;
 
     if (resolvedKey) {
       try {
-        text = await generateNoticeWithAI({
+        result = await generateNoticeWithAI({
           studentName: student?.name || '학생',
           content: form.content,
           materials: form.materials,
@@ -45,8 +51,7 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
         });
       } catch (aiErr) {
         setErrorMsg(aiErr.message);
-
-        text = generateNotice({
+        result = generateNotice({
           studentName: student?.name || '학생',
           content: form.content,
           homework: form.homework,
@@ -57,7 +62,7 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
         setUsedFallback(true);
       }
     } else {
-      text = generateNotice({
+      result = generateNotice({
         studentName: student?.name || '학생',
         content: form.content,
         homework: form.homework,
@@ -67,21 +72,25 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
       });
     }
 
-    setEdited(text);
+    setEditedParent(result.parentNotice || '');
+    setEditedStudent(result.studentHomework || '');
     setStep('edit');
   };
 
   const handleConfirm = () => {
-    onGenerated(edited);
+    onGenerated({ parentNotice: editedParent, studentHomework: editedStudent });
     showToast('알림장이 저장되었습니다.');
     onClose();
   };
 
-  const handleCopy = () => {
-    if (!edited) return;
-    navigator.clipboard.writeText(edited).then(() => {
-      showToast('알림장이 복사되었습니다.');
-    });
+  const handleCopyParent = () => {
+    if (!editedParent) return;
+    navigator.clipboard.writeText(editedParent).then(() => showToast('학부모용 알림장을 복사했어요.'));
+  };
+
+  const handleCopyStudent = () => {
+    if (!editedStudent) return;
+    navigator.clipboard.writeText(editedStudent).then(() => showToast('학생용 숙제 알림을 복사했어요.'));
   };
 
   return (
@@ -103,20 +112,9 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
             <span className="text-sm">AI가 알림장을 작성하고 있어요...</span>
           </div>
         ) : (
-          <div className="flex gap-2">
-            <button
-              onClick={handleCopy}
-              className="flex-1 bg-gray-100 text-gray-700 font-bold py-3.5 rounded-xl text-sm"
-            >
-              복사하기
-            </button>
-            <button
-              onClick={handleConfirm}
-              className="flex-1 bg-blue-600 text-white font-bold py-3.5 rounded-xl text-sm"
-            >
-              저장하기
-            </button>
-          </div>
+          <button onClick={handleConfirm} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl text-base">
+            저장하기
+          </button>
         )
       }
     >
@@ -156,7 +154,16 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
 
           {/* Tone selection */}
           <div>
-            <p className="text-sm font-bold text-gray-800 mb-3">알림장 톤</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-bold text-gray-800">알림장 톤</p>
+              {defaultTone !== tone ? (
+                <p className="text-xs text-gray-400">
+                  프로필 기본: <span className="font-medium text-gray-600">{TONE_LABELS[defaultTone]}</span>
+                </p>
+              ) : (
+                <p className="text-xs text-blue-500 font-medium">프로필 기본 톤 적용 중</p>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-2">
               {TONES.map(({ id, label, desc }) => (
                 <button
@@ -168,7 +175,10 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
                       : 'bg-white text-gray-700 border-gray-200'
                   }`}
                 >
-                  <p className="text-sm font-semibold">{label}</p>
+                  <p className="text-sm font-semibold">
+                    {label}
+                    {id === defaultTone && tone !== id && <span className="text-xs ml-1 opacity-60">(기본)</span>}
+                  </p>
                   <p className={`text-xs mt-0.5 ${tone === id ? 'text-blue-100' : 'text-gray-400'}`}>{desc}</p>
                 </button>
               ))}
@@ -187,41 +197,71 @@ export default function AiNoticeModal({ cls, studentId, form, onGenerated, onClo
       )}
 
       {step === 'edit' && (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           <div className="flex items-center justify-between">
             <p className="text-sm font-bold text-gray-800">생성된 알림장</p>
-            <button onClick={() => { setStep('config'); setErrorMsg(''); }} className="text-xs text-blue-600 font-medium">
+            <button
+              onClick={() => { setStep('config'); setErrorMsg(''); }}
+              className="text-xs text-blue-600 font-medium"
+            >
               다시 생성
             </button>
           </div>
 
-          {/* finishReason 경고 (MAX_TOKENS 등) */}
           {errorMsg && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 flex items-start gap-2">
               <AlertTriangle size={14} className="text-amber-500 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-amber-700">{errorMsg}</p>
             </div>
           )}
-
-          {/* fallback 안내 */}
           {usedFallback && !errorMsg && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-              <p className="text-xs text-amber-700 font-medium">
-                AI 연결이 원활하지 않아 기본 알림장으로 생성했어요.
-              </p>
+              <p className="text-xs text-amber-700 font-medium">AI 연결이 원활하지 않아 기본 알림장으로 생성했어요.</p>
               <p className="text-xs text-amber-500 mt-0.5">직접 수정 후 사용하세요.</p>
             </div>
           )}
 
-          {/* 알림장 textarea — 전체 텍스트 표시, 잘림 없음 */}
-          <textarea
-            value={edited}
-            onChange={(e) => setEdited(e.target.value)}
-            style={{ minHeight: '200px' }}
-            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm leading-relaxed focus:outline-none focus:border-blue-400 resize-y overflow-y-auto"
-          />
+          {/* 학부모용 알림장 */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-bold text-blue-700">📩 학부모용 알림장</p>
+              <button
+                onClick={handleCopyParent}
+                className="flex items-center gap-1 text-xs text-blue-600 font-medium"
+              >
+                <Copy size={11} />
+                복사
+              </button>
+            </div>
+            <textarea
+              value={editedParent}
+              onChange={(e) => setEditedParent(e.target.value)}
+              style={{ minHeight: '150px' }}
+              className="w-full border border-blue-200 rounded-xl px-4 py-3 text-sm leading-relaxed focus:outline-none focus:border-blue-400 resize-y bg-blue-50"
+            />
+          </div>
 
-          <p className="text-xs text-gray-400 text-center">직접 수정 후 저장하세요</p>
+          {/* 학생용 숙제 알림 */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-xs font-bold text-green-700">📝 학생용 숙제 알림</p>
+              <button
+                onClick={handleCopyStudent}
+                className="flex items-center gap-1 text-xs text-green-600 font-medium"
+              >
+                <Copy size={11} />
+                복사
+              </button>
+            </div>
+            <textarea
+              value={editedStudent}
+              onChange={(e) => setEditedStudent(e.target.value)}
+              style={{ minHeight: '150px' }}
+              className="w-full border border-green-200 rounded-xl px-4 py-3 text-sm leading-relaxed focus:outline-none focus:border-green-400 resize-y bg-green-50"
+            />
+          </div>
+
+          <p className="text-xs text-gray-400 text-center">각각 직접 수정 후 저장하세요</p>
         </div>
       )}
     </Modal>

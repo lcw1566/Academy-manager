@@ -1,9 +1,32 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import useAcademyStore from '../../store/useAcademyStore';
 import AiNoticeModal from './AiNoticeModal';
 import { evaluationLabels, evaluationLevels, evaluationLevelColors } from '../../utils/format';
 
 const SHARED_ID = '_shared_';
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+
+function buildForm(existing) {
+  return {
+    content:              existing?.content              || '',
+    materials:            existing?.materials            || '',
+    homework:             existing?.homework             || '',
+    nextPlan:             existing?.nextPlan             || '',
+    memo:                 existing?.memo                 || '',
+    evaluation:           existing?.evaluation           || {},
+    parentNoticeText:     existing?.parentNoticeText     || existing?.noticeText || '',
+    studentHomeworkText:  existing?.studentHomeworkText  || '',
+    parentNoticeStatus:   existing?.parentNoticeStatus   || existing?.noticeStatus || 'unsent',
+    studentHomeworkStatus: existing?.studentHomeworkStatus || 'unsent',
+  };
+}
+
+const DIRTY_KEYS = ['content', 'materials', 'homework', 'nextPlan', 'memo', 'evaluation'];
+
+function isFormDirty(a, b) {
+  return DIRTY_KEYS.some((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+}
 
 // ── Shared note section (group classes only) ───────────────────────────────────
 
@@ -14,31 +37,35 @@ export function SharedNoteSection({ cls }) {
     (lr) => lr.classId === cls.id && lr.studentId === SHARED_ID && lr.date === cls.date
   );
 
-  const [form, setForm] = useState({
-    content: '',
-    materials: '',
-    homework: '',
-    nextPlan: '',
+  const initShared = () => ({
+    content:  existing?.content  || '',
+    materials: existing?.materials || '',
+    homework: existing?.homework || '',
+    nextPlan: existing?.nextPlan || '',
   });
-  const [saved, setSaved] = useState(false);
+
+  const [form, setForm]       = useState(initShared);
+  const [savedForm, setSaved] = useState(initShared);
 
   useEffect(() => {
-    if (existing) {
-      setForm({
-        content: existing.content || '',
-        materials: existing.materials || '',
-        homework: existing.homework || '',
-        nextPlan: existing.nextPlan || '',
-      });
-    }
+    const initial = initShared();
+    setForm(initial);
+    setSaved(initial);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cls.id, cls.date]);
+
+  const isDirty = useMemo(
+    () => ['content', 'materials', 'homework', 'nextPlan'].some(
+      (k) => form[k] !== savedForm[k]
+    ),
+    [form, savedForm]
+  );
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const handleSave = () => {
     saveLessonRecord({ classId: cls.id, studentId: SHARED_ID, date: cls.date, ...form });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaved({ ...form });
   };
 
   return (
@@ -80,11 +107,14 @@ export function SharedNoteSection({ cls }) {
         </Section>
         <button
           onClick={handleSave}
+          disabled={!isDirty}
           className={`w-full py-3 rounded-xl font-bold text-sm transition-colors ${
-            saved ? 'bg-green-500 text-white' : 'bg-blue-600 text-white'
+            isDirty
+              ? 'bg-blue-600 text-white'
+              : 'bg-green-50 text-green-600'
           }`}
         >
-          {saved ? '✓ 저장됨' : '공통 내용 저장'}
+          {isDirty ? '공통 내용 저장' : '✓ 저장됨'}
         </button>
       </div>
     </div>
@@ -101,73 +131,70 @@ export default function LessonNotePanel({ cls, studentId, groupMode = false }) {
     (lr) => lr.classId === cls.id && lr.studentId === studentId && lr.date === cls.date
   );
 
-  const [form, setForm] = useState({
-    content: '',
-    materials: '',
-    homework: '',
-    nextPlan: '',
-    memo: '',
-    evaluation: {},
-    noticeText: '',
-    noticeStatus: 'unsent',
-  });
-
+  const [form, setFormState]   = useState(() => buildForm(existing));
+  const [savedForm, setSaved]  = useState(() => buildForm(existing));
+  const [isSaving, setIsSaving] = useState(false);
   const [showNotice, setShowNotice] = useState(false);
-  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (existing) {
-      setForm({
-        content: existing.content || '',
-        materials: existing.materials || '',
-        homework: existing.homework || '',
-        nextPlan: existing.nextPlan || '',
-        memo: existing.memo || '',
-        evaluation: existing.evaluation || {},
-        noticeText: existing.noticeText || '',
-        noticeStatus: existing.noticeStatus || 'unsent',
-      });
-    } else {
-      setForm({
-        content: '',
-        materials: '',
-        homework: '',
-        nextPlan: '',
-        memo: '',
-        evaluation: {},
-        noticeText: '',
-        noticeStatus: 'unsent',
-      });
-    }
+    const initial = buildForm(existing);
+    setFormState(initial);
+    setSaved(initial);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId, cls.id]);
 
-  const setField = (key, val) => setForm((f) => ({ ...f, [key]: val }));
-  const setEval = (key, val) => setForm((f) => ({ ...f, evaluation: { ...f.evaluation, [key]: val } }));
+  const isDirty = useMemo(() => isFormDirty(form, savedForm), [form, savedForm]);
+
+  const setField = (key, val) => setFormState((f) => ({ ...f, [key]: val }));
+  const setEval  = (key, val) => setFormState((f) => ({ ...f, evaluation: { ...f.evaluation, [key]: val } }));
 
   const handleSave = () => {
+    if (!isDirty) return;
+    setIsSaving(true);
     saveLessonRecord({ classId: cls.id, studentId, date: cls.date, ...form });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaved({ ...form, evaluation: { ...form.evaluation } });
+    showToast('수업 기록이 저장되었어요.');
+    setIsSaving(false);
   };
 
-  const handleNoticeGenerated = (text) => {
-    setField('noticeText', text);
-    saveLessonRecord({ classId: cls.id, studentId, date: cls.date, ...form, noticeText: text });
-  };
-
-  const handleNoticeSent = () => {
-    const updated = { ...form, noticeStatus: 'sent' };
-    setForm(updated);
+  const handleNoticeGenerated = ({ parentNotice, studentHomework }) => {
+    const updated = { ...form, parentNoticeText: parentNotice, studentHomeworkText: studentHomework };
+    setFormState(updated);
+    setSaved({ ...updated, evaluation: { ...updated.evaluation } });
     saveLessonRecord({ classId: cls.id, studentId, date: cls.date, ...updated });
-    showToast('알림장이 전송 완료 처리되었습니다.');
   };
 
-  const handleCopyNotice = () => {
-    if (!form.noticeText) return;
-    navigator.clipboard.writeText(form.noticeText).then(() => {
-      showToast('알림장이 복사되었습니다.');
-    });
+  const handleCopyParent = () => {
+    if (!form.parentNoticeText) return;
+    navigator.clipboard.writeText(form.parentNoticeText).then(() =>
+      showToast('학부모용 알림장을 복사했어요.')
+    );
   };
+
+  const handleCopyStudent = () => {
+    if (!form.studentHomeworkText) return;
+    navigator.clipboard.writeText(form.studentHomeworkText).then(() =>
+      showToast('학생용 숙제 알림을 복사했어요.')
+    );
+  };
+
+  const handleParentSent = () => {
+    const updated = { ...form, parentNoticeStatus: 'sent' };
+    setFormState(updated);
+    setSaved((s) => ({ ...s, parentNoticeStatus: 'sent' }));
+    saveLessonRecord({ classId: cls.id, studentId, date: cls.date, ...updated });
+    showToast('학부모 알림장이 전송 완료 처리되었습니다.');
+  };
+
+  const handleStudentSent = () => {
+    const updated = { ...form, studentHomeworkStatus: 'sent' };
+    setFormState(updated);
+    setSaved((s) => ({ ...s, studentHomeworkStatus: 'sent' }));
+    saveLessonRecord({ classId: cls.id, studentId, date: cls.date, ...updated });
+    showToast('학생 숙제 알림이 전달 완료 처리되었습니다.');
+  };
+
+  const hasNotice = !!(form.parentNoticeText || form.studentHomeworkText);
 
   return (
     <div className="flex flex-col gap-4">
@@ -223,7 +250,7 @@ export default function LessonNotePanel({ cls, studentId, groupMode = false }) {
         </>
       )}
 
-      {/* Memo (always shown, group mode = student-specific) */}
+      {/* Memo */}
       <Section label={groupMode ? '학생별 특이사항' : '특이사항'}>
         <textarea
           value={form.memo}
@@ -236,7 +263,9 @@ export default function LessonNotePanel({ cls, studentId, groupMode = false }) {
 
       {/* Evaluation */}
       <div>
-        <p className="text-xs font-bold text-gray-700 mb-3">{groupMode ? `${student?.name || '학생'} 평가` : '학생 평가'}</p>
+        <p className="text-xs font-bold text-gray-700 mb-3">
+          {groupMode ? `${student?.name || '학생'} 평가` : '학생 평가'}
+        </p>
         <div className="flex flex-col gap-3">
           {Object.entries(evaluationLabels).map(([key, label]) => (
             <div key={key}>
@@ -263,66 +292,123 @@ export default function LessonNotePanel({ cls, studentId, groupMode = false }) {
         </div>
       </div>
 
-      {/* Save button */}
+      {/* Save button — dirty state */}
       <button
         onClick={handleSave}
+        disabled={isSaving || !isDirty}
         className={`w-full py-3.5 rounded-xl font-bold text-base transition-colors ${
-          saved ? 'bg-green-500 text-white' : 'bg-blue-600 text-white'
+          isSaving
+            ? 'bg-gray-100 text-gray-400'
+            : isDirty
+              ? 'bg-blue-600 text-white'
+              : 'bg-green-50 text-green-600'
         }`}
       >
-        {saved ? '✓ 저장됨' : '수업 기록 저장'}
+        {isSaving ? '저장 중...' : isDirty ? '수업 기록 저장' : '✓ 저장됨'}
       </button>
 
       {/* AI Notice section */}
-      <div className="bg-blue-50 rounded-2xl p-4 mt-1">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <p className="text-sm font-bold text-blue-900">
-              {groupMode ? `${student?.name || '학생'} 알림장` : 'AI 알림장'}
-            </p>
-            {form.noticeStatus === 'sent' && (
-              <span className="text-xs text-green-600 font-medium">✓ 전송 완료</span>
-            )}
-          </div>
+      <div className="mt-1 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-bold text-gray-800">
+            {groupMode ? `${student?.name || '학생'} 알림장` : 'AI 알림장'}
+          </p>
           <button
             onClick={() => setShowNotice(true)}
             className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl"
           >
-            {form.noticeText ? '다시 생성' : 'AI 초안 생성'}
+            {hasNotice ? '다시 생성' : 'AI 초안 생성'}
           </button>
         </div>
 
-        {form.noticeText ? (
+        {hasNotice ? (
           <>
-            {/* 전체 알림장 텍스트 표시 — truncate/line-clamp 사용 금지, 스크롤 허용 */}
-            <div
-              className="text-sm text-gray-700 whitespace-pre-line bg-white rounded-xl p-3 border border-blue-100 mb-3 overflow-y-auto"
-              style={{ minHeight: '80px', maxHeight: '240px' }}
-            >
-              {form.noticeText}
+            {/* 학부모용 알림장 카드 */}
+            <div className="bg-blue-50 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-bold text-blue-900">📩 학부모용 알림장</p>
+                {form.parentNoticeStatus === 'sent' && (
+                  <span className="text-xs text-green-600 font-medium">✓ 전송 완료</span>
+                )}
+              </div>
+              {form.parentNoticeText ? (
+                <>
+                  <div
+                    className="text-sm text-gray-700 whitespace-pre-line bg-white rounded-xl p-3 border border-blue-100 mb-3 overflow-y-auto"
+                    style={{ minHeight: '72px', maxHeight: '200px' }}
+                  >
+                    {form.parentNoticeText}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCopyParent}
+                      className="flex-1 bg-white text-blue-600 font-bold text-sm py-2.5 rounded-xl border border-blue-200"
+                    >
+                      복사하기
+                    </button>
+                    <button
+                      onClick={handleParentSent}
+                      disabled={form.parentNoticeStatus === 'sent'}
+                      className={`flex-1 font-bold text-sm py-2.5 rounded-xl ${
+                        form.parentNoticeStatus === 'sent'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-blue-600 text-white'
+                      }`}
+                    >
+                      {form.parentNoticeStatus === 'sent' ? '전송 완료' : '전송 완료 처리'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-blue-400">학부모용 알림장이 없어요. 다시 생성해보세요.</p>
+              )}
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleCopyNotice}
-                className="flex-1 bg-white text-blue-600 font-bold text-sm py-2.5 rounded-xl border border-blue-200"
-              >
-                복사하기
-              </button>
-              <button
-                onClick={handleNoticeSent}
-                disabled={form.noticeStatus === 'sent'}
-                className={`flex-1 font-bold text-sm py-2.5 rounded-xl ${
-                  form.noticeStatus === 'sent'
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-blue-600 text-white'
-                }`}
-              >
-                {form.noticeStatus === 'sent' ? '전송 완료' : '전송 완료 처리'}
-              </button>
+
+            {/* 학생용 숙제 알림 카드 */}
+            <div className="bg-green-50 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-bold text-green-900">📝 학생용 숙제 알림</p>
+                {form.studentHomeworkStatus === 'sent' && (
+                  <span className="text-xs text-green-600 font-medium">✓ 전달 완료</span>
+                )}
+              </div>
+              {form.studentHomeworkText ? (
+                <>
+                  <div
+                    className="text-sm text-gray-700 whitespace-pre-line bg-white rounded-xl p-3 border border-green-100 mb-3 overflow-y-auto"
+                    style={{ minHeight: '72px', maxHeight: '200px' }}
+                  >
+                    {form.studentHomeworkText}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCopyStudent}
+                      className="flex-1 bg-white text-green-600 font-bold text-sm py-2.5 rounded-xl border border-green-200"
+                    >
+                      복사하기
+                    </button>
+                    <button
+                      onClick={handleStudentSent}
+                      disabled={form.studentHomeworkStatus === 'sent'}
+                      className={`flex-1 font-bold text-sm py-2.5 rounded-xl ${
+                        form.studentHomeworkStatus === 'sent'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-green-600 text-white'
+                      }`}
+                    >
+                      {form.studentHomeworkStatus === 'sent' ? '전달 완료' : '전달 완료 처리'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-green-400">학생용 숙제 알림이 없어요. 다시 생성해보세요.</p>
+              )}
             </div>
           </>
         ) : (
-          <p className="text-xs text-blue-500">수업 기록을 입력 후 AI 알림장을 생성하세요</p>
+          <div className="bg-gray-50 rounded-xl px-4 py-3">
+            <p className="text-xs text-gray-400">수업 기록을 입력 후 AI 알림장을 생성하세요</p>
+          </div>
         )}
       </div>
 
