@@ -2,31 +2,49 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
-import { STUDENT_EVENT_TYPES, IMPORTANCE_LABELS } from '../../constants/studentSchedule';
+import { STUDENT_EVENT_TYPES, IMPORTANCE_LABELS, SUBJECT_OPTIONS } from '../../constants/studentSchedule';
 import { getTodayYMD } from '../../utils/date';
+
+const FI = 'w-full h-11 px-4 rounded-2xl border border-gray-200 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-300 appearance-none';
+
+function Field({ label, hint, children }) {
+  return (
+    <div>
+      <div className="flex items-baseline gap-1.5 mb-1.5">
+        <label className="text-xs font-semibold text-gray-600">{label}</label>
+        {hint && <span className="text-[11px] text-gray-400">{hint}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 export default function StudentEventModal({ studentId, event = null, onClose }) {
   const { addStudentEvent, updateStudentEvent } = useAcademyStore();
   const isEdit = !!event;
 
   const [form, setForm] = useState({
-    eventType: event?.eventType || 'midterm',
-    title: event?.title || '',
-    date: event?.date || getTodayYMD(),
-    endDate: event?.endDate || '',
-    subject: event?.subject || '',
+    eventType:  event?.eventType  || 'midterm',
+    title:      event?.title      || '',
+    date:       event?.date       || getTodayYMD(),
+    endDate:    event?.endDate    || '',
+    subject:    event?.subject    || '',
     importance: event?.importance || 'medium',
-    memo: event?.memo || '',
+    memo:       event?.memo       || '',
   });
+  const [showEndDate, setShowEndDate] = useState(!!event?.endDate);
 
-  const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+  const upd = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
   const handleSubmit = () => {
     if (!form.date) return;
-    const eventTypeInfo = STUDENT_EVENT_TYPES[form.eventType];
-    const title = form.title.trim() || eventTypeInfo.label;
-    const data = { ...form, studentId, title };
-
+    const title = form.title.trim() || STUDENT_EVENT_TYPES[form.eventType]?.label;
+    const data = {
+      ...form,
+      title,
+      endDate: showEndDate ? form.endDate : '',
+      studentId,
+    };
     if (isEdit) {
       updateStudentEvent(event.id, data);
     } else {
@@ -45,131 +63,153 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
       >
         <div className="absolute inset-0 bg-black/40" onClick={onClose} />
         <motion.div
-          className="relative w-full max-w-md bg-white rounded-t-3xl px-5 pt-5 pb-10 max-h-[90vh] overflow-y-auto"
+          className="relative w-full max-w-md bg-white rounded-t-3xl px-5 pt-5 pb-10 max-h-[92vh] overflow-y-auto"
           initial={{ y: '100%' }}
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
           transition={{ type: 'spring', damping: 28, stiffness: 300 }}
         >
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-lg font-bold text-gray-900">{isEdit ? '일정 수정' : '일정 추가'}</h2>
-            <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-100">
+          {/* 헤더 */}
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">{isEdit ? '일정 수정' : '시험 / 일정 추가'}</h2>
+              <p className="text-xs text-gray-400 mt-0.5">시험 일정, 수행평가, 학교 행사 등을 기록해요</p>
+            </div>
+            <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 flex-shrink-0">
               <X size={20} className="text-gray-500" />
             </button>
           </div>
 
-          {/* 이벤트 종류 */}
-          <div className="mb-4">
-            <label className="block text-xs font-semibold text-gray-500 mb-2">종류</label>
-            <div className="grid grid-cols-3 gap-2">
-              {Object.entries(STUDENT_EVENT_TYPES).map(([key, info]) => (
+          <div className="flex flex-col gap-5">
+            {/* 기본 정보 섹션 */}
+            <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
+              <p className="text-xs font-bold text-gray-400 -mb-1">기본 정보</p>
+
+              {/* 일정 종류 */}
+              <Field label="종류">
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(STUDENT_EVENT_TYPES).map(([key, info]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => upd('eventType', key)}
+                      className={`flex flex-col items-center gap-1 py-2.5 rounded-2xl border text-xs font-medium transition-all ${
+                        form.eventType === key
+                          ? 'bg-blue-50 border-blue-400 text-blue-700'
+                          : 'bg-white border-gray-200 text-gray-600'
+                      }`}
+                    >
+                      <span className="text-base">{info.icon}</span>
+                      {info.label}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+
+              {/* 제목 */}
+              <Field label="제목" hint="(선택 · 비우면 종류명 사용)">
+                <input
+                  value={form.title}
+                  onChange={(e) => upd('title', e.target.value)}
+                  placeholder={STUDENT_EVENT_TYPES[form.eventType]?.label}
+                  className={FI}
+                />
+              </Field>
+            </div>
+
+            {/* 날짜 섹션 */}
+            <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
+              <p className="text-xs font-bold text-gray-400 -mb-1">날짜</p>
+
+              <Field label="시작 날짜">
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) => upd('date', e.target.value)}
+                  className={FI}
+                />
+              </Field>
+
+              {/* 종료일 토글 */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-600">종료일 있음</span>
                 <button
-                  key={key}
-                  onClick={() => set('eventType', key)}
-                  className={`flex flex-col items-center gap-1 py-2.5 rounded-2xl border text-xs font-medium transition-all ${
-                    form.eventType === key
-                      ? 'bg-blue-50 border-blue-400 text-blue-700'
-                      : 'bg-gray-50 border-gray-200 text-gray-600'
-                  }`}
+                  type="button"
+                  onClick={() => { setShowEndDate((v) => !v); if (showEndDate) upd('endDate', ''); }}
+                  className={`relative w-10 h-5.5 rounded-full transition-colors flex-shrink-0 ${showEndDate ? 'bg-blue-500' : 'bg-gray-300'}`}
+                  style={{ height: 22, width: 40 }}
                 >
-                  <span className="text-base">{info.icon}</span>
-                  {info.label}
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${showEndDate ? 'translate-x-5' : 'translate-x-0.5'}`} />
                 </button>
-              ))}
+              </div>
+
+              {showEndDate && (
+                <Field label="종료 날짜">
+                  <input
+                    type="date"
+                    value={form.endDate}
+                    min={form.date}
+                    onChange={(e) => upd('endDate', e.target.value)}
+                    className={FI}
+                  />
+                </Field>
+              )}
             </div>
-          </div>
 
-          {/* 제목 */}
-          <div className="mb-4">
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5">
-              제목 <span className="font-normal text-gray-400">(선택, 비우면 종류명 사용)</span>
-            </label>
-            <input
-              value={form.title}
-              onChange={(e) => set('title', e.target.value)}
-              placeholder={STUDENT_EVENT_TYPES[form.eventType]?.label}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
-          </div>
+            {/* 과목 및 중요도 */}
+            <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
+              <p className="text-xs font-bold text-gray-400 -mb-1">과목 및 중요도</p>
 
-          {/* 날짜 */}
-          <div className="mb-4 grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5">날짜</label>
-              <input
-                type="date"
-                value={form.date}
-                onChange={(e) => set('date', e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
+              <Field label="관련 과목" hint="(선택)">
+                <input
+                  list="event-subject-list"
+                  value={form.subject}
+                  onChange={(e) => upd('subject', e.target.value)}
+                  placeholder="예: 수학, 영어"
+                  className={FI}
+                />
+                <datalist id="event-subject-list">
+                  {SUBJECT_OPTIONS.map((s) => <option key={s} value={s} />)}
+                </datalist>
+              </Field>
+
+              <Field label="중요도">
+                <div className="flex gap-2">
+                  {Object.entries(IMPORTANCE_LABELS).map(([key, info]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => upd('importance', key)}
+                      className={`flex-1 h-10 rounded-xl border text-xs font-bold transition-all ${
+                        form.importance === key
+                          ? `${info.bg} ${info.border} ${info.color} border-2`
+                          : 'bg-white border-gray-200 text-gray-500'
+                      }`}
+                    >
+                      {info.label}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+
+              <Field label="메모" hint="(선택)">
+                <textarea
+                  value={form.memo}
+                  onChange={(e) => upd('memo', e.target.value)}
+                  rows={2}
+                  placeholder="준비 범위, 참고 사항 등"
+                  className="w-full px-4 py-3 rounded-2xl border border-gray-200 bg-white text-sm text-gray-900 resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
+                />
+              </Field>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1.5">
-                종료일 <span className="font-normal text-gray-400">(선택)</span>
-              </label>
-              <input
-                type="date"
-                value={form.endDate}
-                min={form.date}
-                onChange={(e) => set('endDate', e.target.value)}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
-            </div>
-          </div>
-
-          {/* 과목 */}
-          <div className="mb-4">
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5">
-              과목 <span className="font-normal text-gray-400">(선택)</span>
-            </label>
-            <input
-              value={form.subject}
-              onChange={(e) => set('subject', e.target.value)}
-              placeholder="예: 수학, 영어"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
-          </div>
-
-          {/* 중요도 */}
-          <div className="mb-4">
-            <label className="block text-xs font-semibold text-gray-500 mb-2">중요도</label>
-            <div className="flex gap-2">
-              {Object.entries(IMPORTANCE_LABELS).map(([key, info]) => (
-                <button
-                  key={key}
-                  onClick={() => set('importance', key)}
-                  className={`flex-1 py-2 rounded-xl border text-xs font-semibold transition-all ${
-                    form.importance === key
-                      ? `${info.bg} ${info.border} ${info.color} border`
-                      : 'bg-gray-50 border-gray-200 text-gray-500'
-                  }`}
-                >
-                  {info.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 메모 */}
-          <div className="mb-6">
-            <label className="block text-xs font-semibold text-gray-500 mb-1.5">
-              메모 <span className="font-normal text-gray-400">(선택)</span>
-            </label>
-            <textarea
-              value={form.memo}
-              onChange={(e) => set('memo', e.target.value)}
-              rows={2}
-              placeholder="준비물, 범위 등 메모"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
           </div>
 
           <button
             onClick={handleSubmit}
             disabled={!form.date}
-            className="w-full py-3.5 bg-blue-600 text-white font-bold rounded-2xl text-sm disabled:opacity-40"
+            className="w-full h-12 mt-6 bg-blue-600 text-white font-bold rounded-2xl text-sm disabled:opacity-40 active:bg-blue-700"
           >
-            {isEdit ? '수정하기' : '추가하기'}
+            {isEdit ? '수정 완료' : '추가하기'}
           </button>
         </motion.div>
       </motion.div>
