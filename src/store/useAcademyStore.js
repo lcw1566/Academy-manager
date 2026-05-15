@@ -59,6 +59,8 @@ const useAcademyStore = create(
   consultations: [],
   payrolls: [],
   repeatGroups: [],
+  studentEvents: [],
+  examResults: [],
 
   // === Toast ===
   toast: null,
@@ -96,6 +98,41 @@ const useAcademyStore = create(
   deleteStudent: (id) => {
     set((s) => ({ students: s.students.filter((st) => st.id !== id) }));
     get().showToast('학생이 삭제되었습니다.');
+  },
+
+  // ─── Student Events ────────────────────────────────
+  addStudentEvent: (eventData) => {
+    const newEvent = { ...eventData, id: `ev${Date.now()}` };
+    set((s) => ({ studentEvents: [...s.studentEvents, newEvent] }));
+    get().showToast('일정이 추가되었습니다.');
+    return newEvent;
+  },
+  updateStudentEvent: (id, data) => {
+    set((s) => ({ studentEvents: s.studentEvents.map((e) => (e.id === id ? { ...e, ...data } : e)) }));
+    get().showToast('일정이 수정되었습니다.');
+  },
+  deleteStudentEvent: (id) => {
+    set((s) => ({
+      studentEvents: s.studentEvents.filter((e) => e.id !== id),
+      examResults: s.examResults.filter((r) => r.eventId !== id),
+    }));
+    get().showToast('일정이 삭제되었습니다.');
+  },
+
+  // ─── Exam Results ──────────────────────────────────
+  addExamResult: (resultData) => {
+    const newResult = { ...resultData, id: `er${Date.now()}` };
+    set((s) => ({ examResults: [...s.examResults, newResult] }));
+    get().showToast('성적이 기록되었습니다.');
+    return newResult;
+  },
+  updateExamResult: (id, data) => {
+    set((s) => ({ examResults: s.examResults.map((r) => (r.id === id ? { ...r, ...data } : r)) }));
+    get().showToast('성적이 수정되었습니다.');
+  },
+  deleteExamResult: (id) => {
+    set((s) => ({ examResults: s.examResults.filter((r) => r.id !== id) }));
+    get().showToast('성적 기록이 삭제되었습니다.');
   },
 
   // ─── Single class ──────────────────────────────────

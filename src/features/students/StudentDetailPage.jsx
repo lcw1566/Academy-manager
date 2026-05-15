@@ -1,13 +1,16 @@
 import { useState } from 'react';
-import { Edit2, Phone, Trash2 } from 'lucide-react';
+import { Edit2, Phone, Trash2, Plus, Calendar, Trophy } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import EmptyState from '../../components/EmptyState';
 import StudentFormModal from './StudentFormModal';
 import ClassFormModal from '../classes/ClassFormModal';
+import StudentEventModal from './StudentEventModal';
+import ExamResultModal from './ExamResultModal';
 import { formatCurrency, attendanceStatusMap, paymentStatusMap } from '../../utils/format';
-import { formatDateShort, getCurrentMonth, today } from '../../utils/date';
+import { formatDateShort, getCurrentMonth, today, getDDayLabel, getDDay, isPastDate } from '../../utils/date';
 import { formatDays } from '../../utils/recurringClass';
+import { STUDENT_EVENT_TYPES, IMPORTANCE_LABELS, EXAM_TYPES, GRADE_LABELS } from '../../constants/studentSchedule';
 
 const TABS = [
   { id: 'info',       label: '기본' },
@@ -15,13 +18,17 @@ const TABS = [
   { id: 'records',    label: '수업기록' },
   { id: 'attendance', label: '출결' },
   { id: 'payments',   label: '수납' },
+  { id: 'events',     label: '일정' },
+  { id: 'exams',      label: '성적' },
 ];
 
 export default function StudentDetailPage() {
   const {
     selectedStudentId, students, classes,
     lessonRecords, attendanceRecords, payments, repeatGroups,
+    studentEvents, examResults,
     deleteRepeatGroupFuture,
+    deleteStudentEvent, deleteExamResult,
     goBackFromStudent, navigateToClass, deleteStudent,
   } = useAcademyStore();
 
@@ -29,6 +36,10 @@ export default function StudentDetailPage() {
   const [tab, setTab] = useState('info');
   const [showEdit, setShowEdit] = useState(false);
   const [showClassForm, setShowClassForm] = useState(false);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [showExamModal, setShowExamModal] = useState(false);
+  const [editingExam, setEditingExam] = useState(null);
 
   if (!student) return null;
 
@@ -64,6 +75,17 @@ export default function StudentDetailPage() {
     .sort((a, b) => b.month.localeCompare(a.month));
 
   const thisMonthPayment = studentPayments.find((p) => p.month === currentMonth);
+
+  const studentEventsFiltered = (studentEvents || [])
+    .filter((e) => e.studentId === student.id)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const upcomingEvents = studentEventsFiltered.filter((e) => !isPastDate(e.date));
+  const pastEvents = studentEventsFiltered.filter((e) => isPastDate(e.date));
+
+  const studentExamResults = (examResults || [])
+    .filter((r) => r.studentId === student.id)
+    .sort((a, b) => b.date.localeCompare(a.date));
 
   const schoolLabel = [student.schoolName || student.school, student.grade].filter(Boolean).join(' ');
 
@@ -151,6 +173,46 @@ export default function StudentDetailPage() {
                   </div>
                 </InfoCard>
               )}
+              {/* Upcoming events summary */}
+              {upcomingEvents.length > 0 && (
+                <InfoCard label="다가오는 일정">
+                  <div className="flex flex-col gap-2">
+                    {upcomingEvents.slice(0, 3).map((ev) => {
+                      const typeInfo = STUDENT_EVENT_TYPES[ev.eventType];
+                      const dday = getDDay(ev.date);
+                      return (
+                        <button
+                          key={ev.id}
+                          onClick={() => { setEditingEvent(ev); setShowEventModal(true); setTab('events'); }}
+                          className="flex items-center gap-2 text-left"
+                        >
+                          <span className="text-base">{typeInfo?.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-800 truncate">
+                              {ev.title || typeInfo?.label}
+                              {ev.subject ? ` · ${ev.subject}` : ''}
+                            </p>
+                            <p className="text-xs text-gray-400">{ev.date}</p>
+                          </div>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                            dday === 0 ? 'bg-red-100 text-red-600' :
+                            dday <= 7 ? 'bg-orange-100 text-orange-600' :
+                            'bg-blue-50 text-blue-600'
+                          }`}>
+                            {getDDayLabel(ev.date)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {upcomingEvents.length > 3 && (
+                      <button onClick={() => setTab('events')} className="text-xs text-blue-500 text-center">
+                        +{upcomingEvents.length - 3}개 더 보기
+                      </button>
+                    )}
+                  </div>
+                </InfoCard>
+              )}
+
               <button
                 onClick={handleDelete}
                 className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-red-50 text-red-500 text-sm font-semibold mt-2"
@@ -337,6 +399,115 @@ export default function StudentDetailPage() {
               )}
             </div>
           )}
+
+          {/* Events tab */}
+          {tab === 'events' && (
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => { setEditingEvent(null); setShowEventModal(true); }}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold"
+              >
+                <Plus size={16} />
+                일정 추가
+              </button>
+
+              {studentEventsFiltered.length === 0 ? (
+                <EmptyState icon="📅" title="등록된 일정이 없어요" description="중간고사, 모의고사, 학교 행사 등을 등록해 보세요" />
+              ) : (
+                <>
+                  {upcomingEvents.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 mb-2">예정된 일정</p>
+                      <div className="flex flex-col gap-2">
+                        {upcomingEvents.map((ev) => <EventCard key={ev.id} event={ev} onEdit={() => { setEditingEvent(ev); setShowEventModal(true); }} onDelete={() => { if (window.confirm('일정을 삭제할까요?')) deleteStudentEvent(ev.id); }} />)}
+                      </div>
+                    </div>
+                  )}
+                  {pastEvents.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 mb-2 mt-2">지난 일정</p>
+                      <div className="flex flex-col gap-2">
+                        {pastEvents.slice().reverse().map((ev) => <EventCard key={ev.id} event={ev} past onEdit={() => { setEditingEvent(ev); setShowEventModal(true); }} onDelete={() => { if (window.confirm('일정을 삭제할까요?')) deleteStudentEvent(ev.id); }} />)}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Exams tab */}
+          {tab === 'exams' && (
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => { setEditingExam(null); setShowExamModal(true); }}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold"
+              >
+                <Plus size={16} />
+                성적 기록
+              </button>
+
+              {studentExamResults.length === 0 ? (
+                <EmptyState icon="🏆" title="기록된 성적이 없어요" description="시험 점수, 등급, 백분위 등을 기록해 보세요" />
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {studentExamResults.map((result) => (
+                    <div key={result.id} className="bg-white rounded-2xl p-4 shadow-sm">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">
+                            {result.subject} · {EXAM_TYPES[result.examType] || result.examType}
+                          </p>
+                          <p className="text-xs text-gray-400">{result.date}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setEditingExam(result); setShowExamModal(true); }} className="text-xs text-blue-500 font-medium">수정</button>
+                          <button onClick={() => { if (window.confirm('성적을 삭제할까요?')) deleteExamResult(result.id); }} className="text-xs text-red-400 font-medium">삭제</button>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {result.score !== null && result.score !== undefined && (
+                          <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-lg font-bold">
+                            {result.score}/{result.maxScore}점
+                          </span>
+                        )}
+                        {result.grade && (
+                          <span className="text-xs bg-purple-50 text-purple-700 px-2 py-1 rounded-lg font-bold">
+                            {GRADE_LABELS[result.grade] || `${result.grade}등급`}
+                          </span>
+                        )}
+                        {result.percentile !== null && result.percentile !== undefined && (
+                          <span className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-lg font-bold">
+                            상위 {result.percentile}%
+                          </span>
+                        )}
+                        {result.classRank && (
+                          <span className="text-xs bg-orange-50 text-orange-700 px-2 py-1 rounded-lg font-medium">
+                            반 {result.classRank}등
+                          </span>
+                        )}
+                        {result.schoolRank && (
+                          <span className="text-xs bg-gray-50 text-gray-600 px-2 py-1 rounded-lg font-medium">
+                            학교 {result.schoolRank}등
+                          </span>
+                        )}
+                      </div>
+                      {result.weakUnits?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {result.weakUnits.map((unit) => (
+                            <span key={unit} className="text-xs bg-red-50 text-red-600 px-2 py-0.5 rounded-full">
+                              취약: {unit}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {result.memo && <p className="text-xs text-gray-500">{result.memo}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -347,6 +518,63 @@ export default function StudentDetailPage() {
           preselectedStudentIds={[student.id]}
         />
       )}
+      {showEventModal && (
+        <StudentEventModal
+          studentId={student.id}
+          event={editingEvent}
+          onClose={() => { setShowEventModal(false); setEditingEvent(null); }}
+        />
+      )}
+      {showExamModal && (
+        <ExamResultModal
+          studentId={student.id}
+          result={editingExam}
+          events={studentEventsFiltered}
+          onClose={() => { setShowExamModal(false); setEditingExam(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function EventCard({ event, past = false, onEdit, onDelete }) {
+  const typeInfo = STUDENT_EVENT_TYPES[event.eventType];
+  const importanceInfo = IMPORTANCE_LABELS[event.importance] || IMPORTANCE_LABELS.medium;
+  const dday = getDDay(event.date);
+
+  return (
+    <div className={`bg-white rounded-2xl p-4 shadow-sm flex items-start gap-3 ${past ? 'opacity-60' : ''}`}>
+      <span className="text-xl mt-0.5">{typeInfo?.icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <p className="text-sm font-bold text-gray-900 truncate">
+            {event.title || typeInfo?.label}
+            {event.subject ? ` · ${event.subject}` : ''}
+          </p>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${importanceInfo.bg} ${importanceInfo.color}`}>
+            {importanceInfo.label}
+          </span>
+        </div>
+        <p className="text-xs text-gray-400">
+          {event.date}{event.endDate && event.endDate !== event.date ? ` ~ ${event.endDate}` : ''}
+        </p>
+        {event.memo && <p className="text-xs text-gray-500 mt-1">{event.memo}</p>}
+      </div>
+      <div className="flex flex-col items-end gap-2 flex-shrink-0">
+        {!past && (
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+            dday === 0 ? 'bg-red-100 text-red-600' :
+            dday <= 7 ? 'bg-orange-100 text-orange-600' :
+            'bg-blue-50 text-blue-600'
+          }`}>
+            {getDDayLabel(event.date)}
+          </span>
+        )}
+        <div className="flex gap-2">
+          <button onClick={onEdit} className="text-xs text-blue-500 font-medium">수정</button>
+          <button onClick={onDelete} className="text-xs text-red-400 font-medium">삭제</button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -10,11 +10,14 @@ import {
   formatDateToYMD,
 } from '../../utils/date';
 
-// schedules: [{ date: 'YYYY-MM-DD', type: 'class'|'consultation'|'payment' }]
+// schedules: [{ date: 'YYYY-MM-DD', type: 'class'|'consultation'|'payment'|'exam'|'performance'|'school' }]
 const DOT_COLORS = {
   class:        'bg-blue-500',
   consultation: 'bg-purple-500',
   payment:      'bg-orange-400',
+  exam:         'bg-amber-500',
+  performance:  'bg-green-500',
+  school:       'bg-gray-400',
 };
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];

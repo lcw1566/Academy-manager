@@ -5,14 +5,16 @@ import StatCard from '../../components/StatCard';
 import ClassFormModal from '../classes/ClassFormModal';
 import StudentFormModal from '../students/StudentFormModal';
 import WeeklyExpandableCalendar from '../../components/calendar/WeeklyExpandableCalendar';
-import { today, formatDateShort, formatDateKo, greetingByTime, getCurrentMonth } from '../../utils/date';
+import { today, formatDateShort, formatDateKo, greetingByTime, getCurrentMonth, getDDay, getDDayLabel } from '../../utils/date';
 import { formatCurrency, roleMap } from '../../utils/format';
+import { STUDENT_EVENT_TYPES } from '../../constants/studentSchedule';
 
 export default function DashboardPage() {
   const {
     role, students, classes, attendanceRecords,
     lessonRecords, payments, consultations,
-    navigateToClass, setActiveTab,
+    studentEvents,
+    navigateToClass, navigateToStudent, setActiveTab,
   } = useAcademyStore();
 
   const [showClassForm, setShowClassForm] = useState(false);
@@ -22,11 +24,20 @@ export default function DashboardPage() {
   const todayStr = today();
   const currentMonth = getCurrentMonth();
 
+  // 다가오는 학생 일정 (오늘 이후 30일 이내)
+  const upcomingStudentEvents = (studentEvents || [])
+    .filter((e) => {
+      const diff = getDDay(e.date);
+      return diff !== null && diff >= 0 && diff <= 30;
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   // 캘린더 dot 데이터
   const schedules = [
     ...classes.map((c) => ({ date: c.date, type: 'class' })),
     ...consultations.map((c) => ({ date: c.date, type: 'consultation' })),
     ...payments.filter((p) => p.dueDate && p.status !== 'paid').map((p) => ({ date: p.dueDate, type: 'payment' })),
+    ...(studentEvents || []).map((e) => ({ date: e.date, type: STUDENT_EVENT_TYPES[e.eventType]?.dot || 'school' })),
   ];
 
   // 선택 날짜의 일정
@@ -208,6 +219,44 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* 다가오는 시험과 일정 */}
+          {upcomingStudentEvents.length > 0 && (
+            <div className="px-4 mt-5">
+              <p className="text-sm font-bold text-gray-700 mb-3">다가오는 시험과 일정</p>
+              <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+                {upcomingStudentEvents.slice(0, 5).map((ev) => {
+                  const student = students.find((s) => s.id === ev.studentId);
+                  const typeInfo = STUDENT_EVENT_TYPES[ev.eventType];
+                  const dday = getDDay(ev.date);
+                  return (
+                    <motion.button
+                      key={ev.id}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => navigateToStudent(ev.studentId)}
+                      className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-gray-50 border-b border-gray-50 last:border-0"
+                    >
+                      <span className="text-lg flex-shrink-0">{typeInfo?.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">
+                          {student?.name} · {ev.title || typeInfo?.label}
+                          {ev.subject ? ` (${ev.subject})` : ''}
+                        </p>
+                        <p className="text-xs text-gray-400">{ev.date}</p>
+                      </div>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                        dday === 0 ? 'bg-red-100 text-red-600' :
+                        dday <= 7 ? 'bg-orange-100 text-orange-600' :
+                        'bg-amber-50 text-amber-600'
+                      }`}>
+                        {getDDayLabel(ev.date)}
+                      </span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </>
       )}
 

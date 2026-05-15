@@ -143,3 +143,26 @@ export const greetingByTime = () => {
   if (hour < 18) return '안녕하세요';
   return '수고하셨어요';
 };
+
+// Returns diff in days: negative = past, 0 = today, positive = future
+export const getDDay = (ymd) => {
+  if (!ymd) return null;
+  const [ty, tm, td] = getTodayYMD().split('-').map(Number);
+  const [ey, em, ed] = ymd.split('-').map(Number);
+  const todayMs = new Date(ty, tm - 1, td).getTime();
+  const eventMs = new Date(ey, em - 1, ed).getTime();
+  return Math.round((eventMs - todayMs) / 86400000);
+};
+
+export const getDDayLabel = (ymd) => {
+  const diff = getDDay(ymd);
+  if (diff === null) return '';
+  if (diff === 0) return 'D-Day';
+  if (diff > 0) return `D-${diff}`;
+  return `D+${Math.abs(diff)}`;
+};
+
+export const isPastDate = (ymd) => {
+  if (!ymd) return false;
+  return getDDay(ymd) < 0;
+};
