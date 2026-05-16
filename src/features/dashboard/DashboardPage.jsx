@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../store/useAcademyStore';
 import StatCard from '../../components/StatCard';
 import ClassFormModal from '../classes/ClassFormModal';
 import StudentFormModal from '../students/StudentFormModal';
 import WeeklyExpandableCalendar from '../../components/calendar/WeeklyExpandableCalendar';
-import { today, formatDateShort, formatDateKo, greetingByTime, getCurrentMonth, getDDay, getDDayLabel } from '../../utils/date';
+import { today, formatDateShort, greetingByTime, getCurrentMonth, getDDay, getDDayLabel } from '../../utils/date';
 import { formatCurrency, roleMap } from '../../utils/format';
 import { STUDENT_EVENT_TYPES } from '../../constants/studentSchedule';
 
@@ -25,63 +25,91 @@ export default function DashboardPage() {
   const currentMonth = getCurrentMonth();
 
   // 다가오는 학생 일정 (오늘 이후 30일 이내)
-  const upcomingStudentEvents = (studentEvents || [])
-    .filter((e) => {
-      const diff = getDDay(e.date);
-      return diff !== null && diff >= 0 && diff <= 30;
-    })
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const upcomingStudentEvents = useMemo(() =>
+    (studentEvents || [])
+      .filter((e) => { const diff = getDDay(e.date); return diff !== null && diff >= 0 && diff <= 30; })
+      .sort((a, b) => a.date.localeCompare(b.date)),
+    [studentEvents]
+  );
 
   // 캘린더 dot 데이터
-  const schedules = [
+  const schedules = useMemo(() => [
     ...classes.map((c) => ({ date: c.date, type: 'class' })),
     ...consultations.map((c) => ({ date: c.date, type: 'consultation' })),
     ...payments.filter((p) => p.dueDate && p.status !== 'paid').map((p) => ({ date: p.dueDate, type: 'payment' })),
     ...(studentEvents || []).map((e) => ({ date: e.date, type: STUDENT_EVENT_TYPES[e.eventType]?.dot || 'school' })),
-  ];
+  ], [classes, consultations, payments, studentEvents]);
 
   // 선택 날짜의 일정
-  const dayClasses = classes
-    .filter((c) => c.date === selectedDate)
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
-  const dayConsultations = consultations.filter((c) => c.date === selectedDate);
-  const dayPayments = payments.filter((p) => p.dueDate === selectedDate && p.status !== 'paid');
+  const dayClasses = useMemo(() =>
+    classes.filter((c) => c.date === selectedDate).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    [classes, selectedDate]
+  );
+  const dayConsultations = useMemo(() =>
+    consultations.filter((c) => c.date === selectedDate),
+    [consultations, selectedDate]
+  );
+  const dayPayments = useMemo(() =>
+    payments.filter((p) => p.dueDate === selectedDate && p.status !== 'paid'),
+    [payments, selectedDate]
+  );
 
   // 오늘 기준 요약 카드 데이터
-  const todayClasses = classes.filter((c) => c.date === todayStr);
-  const todayStudentIds = [...new Set(todayClasses.flatMap((c) => c.studentIds))];
-  const checkedTodayIds = new Set(
-    attendanceRecords.filter((a) => a.date === todayStr).map((a) => a.studentId)
+  const todayClasses = useMemo(() =>
+    classes.filter((c) => c.date === todayStr),
+    [classes, todayStr]
   );
-  const uncheckedCount = todayStudentIds.filter((id) => !checkedTodayIds.has(id)).length;
-  const notesWrittenToday = new Set(
-    lessonRecords
-      .filter((lr) => todayClasses.some((c) => c.id === lr.classId) && lr.date === todayStr)
-      .map((lr) => lr.studentId)
-  );
-  const notesUnwrittenCount = todayStudentIds.filter((id) => !notesWrittenToday.has(id)).length;
-  const unpaidPayments = payments.filter((p) => p.month === currentMonth && p.status === 'unpaid');
-  const unpaidAmount = unpaidPayments.reduce((sum, p) => sum + p.amount, 0);
+
+  const { uncheckedCount, notesUnwrittenCount, unpaidPayments, unpaidAmount } = useMemo(() => {
+    const todayStudentIds = [...new Set(todayClasses.flatMap((c) => c.studentIds))];
+    const checkedTodayIds = new Set(
+      attendanceRecords.filter((a) => a.date === todayStr).map((a) => a.studentId)
+    );
+    const notesWrittenToday = new Set(
+      lessonRecords
+        .filter((lr) => todayClasses.some((c) => c.id === lr.classId) && lr.date === todayStr)
+        .map((lr) => lr.studentId)
+    );
+    const unpaidPayments = payments.filter((p) => p.month === currentMonth && p.status === 'unpaid');
+    return {
+      uncheckedCount: todayStudentIds.filter((id) => !checkedTodayIds.has(id)).length,
+      notesUnwrittenCount: todayStudentIds.filter((id) => !notesWrittenToday.has(id)).length,
+      unpaidPayments,
+      unpaidAmount: unpaidPayments.reduce((sum, p) => sum + p.amount, 0),
+      checkedTodayIds,
+      notesWrittenToday,
+    };
+  }, [todayClasses, attendanceRecords, lessonRecords, payments, todayStr, currentMonth]);
 
   // 할 일 목록
-  const todos = [];
-  todayClasses.forEach((cls) => {
-    cls.studentIds.forEach((sid) => {
-      const student = students.find((s) => s.id === sid);
-      if (!student) return;
-      if (!checkedTodayIds.has(sid)) {
-        todos.push({ label: `${cls.startTime} ${student.name} 출결 체크 필요`, color: 'text-orange-600', dot: 'bg-orange-400', action: () => navigateToClass(cls.id) });
-      }
-      if (!notesWrittenToday.has(sid)) {
-        todos.push({ label: `${student.name} 수업 기록 미작성`, color: 'text-blue-600', dot: 'bg-blue-400', action: () => navigateToClass(cls.id) });
-      }
+  const todos = useMemo(() => {
+    const todayStudentIds = [...new Set(todayClasses.flatMap((c) => c.studentIds))];
+    const checkedTodayIds = new Set(
+      attendanceRecords.filter((a) => a.date === todayStr).map((a) => a.studentId)
+    );
+    const notesWrittenToday = new Set(
+      lessonRecords
+        .filter((lr) => todayClasses.some((c) => c.id === lr.classId) && lr.date === todayStr)
+        .map((lr) => lr.studentId)
+    );
+    const result = [];
+    todayClasses.forEach((cls) => {
+      cls.studentIds.forEach((sid) => {
+        const student = students.find((s) => s.id === sid);
+        if (!student) return;
+        if (!checkedTodayIds.has(sid))
+          result.push({ label: `${cls.startTime} ${student.name} 출결 체크 필요`, color: 'text-orange-600', dot: 'bg-orange-400', action: () => navigateToClass(cls.id) });
+        if (!notesWrittenToday.has(sid))
+          result.push({ label: `${student.name} 수업 기록 미작성`, color: 'text-blue-600', dot: 'bg-blue-400', action: () => navigateToClass(cls.id) });
+      });
     });
-  });
-  unpaidPayments.forEach((p) => {
-    const student = students.find((s) => s.id === p.studentId);
-    if (!student) return;
-    todos.push({ label: `${student.name} ${formatCurrency(p.amount)} 미납`, color: 'text-red-600', dot: 'bg-red-400', action: () => setActiveTab('payments') });
-  });
+    unpaidPayments.forEach((p) => {
+      const student = students.find((s) => s.id === p.studentId);
+      if (!student) return;
+      result.push({ label: `${student.name} ${formatCurrency(p.amount)} 미납`, color: 'text-red-600', dot: 'bg-red-400', action: () => setActiveTab('payments') });
+    });
+    return result;
+  }, [todayClasses, attendanceRecords, lessonRecords, students, unpaidPayments, todayStr, navigateToClass, setActiveTab]);
 
   const isEmpty = students.length === 0;
   const isToday = selectedDate === todayStr;

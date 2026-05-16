@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../store/useAcademyStore';
@@ -15,34 +15,44 @@ export default function StudentLessonsTab({ student, onAddClass }) {
 
   const todayStr = today();
 
-  const studentGroups = repeatGroups.filter(
-    (g) => g.studentIds?.includes(student.id) || g.studentId === student.id
+  const studentGroups = useMemo(
+    () => repeatGroups.filter((g) => g.studentIds?.includes(student.id) || g.studentId === student.id),
+    [repeatGroups, student.id]
   );
 
-  const standaloneClasses = classes
-    .filter((c) => !c.repeatGroupId && c.studentIds?.includes(student.id))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  const standaloneClasses = useMemo(
+    () => classes
+      .filter((c) => !c.repeatGroupId && c.studentIds?.includes(student.id))
+      .sort((a, b) => b.date.localeCompare(a.date)),
+    [classes, student.id]
+  );
 
-  const getGroupSummary = (group) => {
-    const groupClasses = classes
-      .filter((c) => c.repeatGroupId === group.id)
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const pastClasses = groupClasses.filter((c) => c.date <= todayStr);
-    const futureClasses = groupClasses.filter((c) => c.date > todayStr);
-    const lastClass = pastClasses[pastClasses.length - 1];
-    const nextClass = futureClasses[0];
-
-    const classIds = new Set(groupClasses.map((c) => c.id));
-    const attList = attendanceRecords.filter(
-      (a) => a.studentId === student.id && classIds.has(a.classId)
-    );
-    const present = attList.filter((a) => a.status === 'present').length;
-    const late = attList.filter((a) => a.status === 'late').length;
-    const absent = attList.filter((a) => a.status === 'absent').length;
-    const makeup = attList.filter((a) => a.status === 'makeup').length;
-
-    return { groupClasses, lastClass, nextClass, present, late, absent, makeup };
-  };
+  const summaryMap = useMemo(() => {
+    const map = new Map();
+    for (const group of studentGroups) {
+      const groupClasses = classes
+        .filter((c) => c.repeatGroupId === group.id)
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const pastClasses = groupClasses.filter((c) => c.date <= todayStr);
+      const futureClasses = groupClasses.filter((c) => c.date > todayStr);
+      const lastClass = pastClasses[pastClasses.length - 1];
+      const nextClass = futureClasses[0];
+      const classIds = new Set(groupClasses.map((c) => c.id));
+      const attList = attendanceRecords.filter(
+        (a) => a.studentId === student.id && classIds.has(a.classId)
+      );
+      map.set(group.id, {
+        groupClasses,
+        lastClass,
+        nextClass,
+        present: attList.filter((a) => a.status === 'present').length,
+        late:    attList.filter((a) => a.status === 'late').length,
+        absent:  attList.filter((a) => a.status === 'absent').length,
+        makeup:  attList.filter((a) => a.status === 'makeup').length,
+      });
+    }
+    return map;
+  }, [studentGroups, classes, attendanceRecords, student.id, todayStr]);
 
   if (selectedGroupId) {
     const group = repeatGroups.find((g) => g.id === selectedGroupId);
@@ -87,7 +97,7 @@ export default function StudentLessonsTab({ student, onAddClass }) {
       ) : (
         <>
           {studentGroups.map((group) => {
-            const { groupClasses, lastClass, nextClass, present, late, absent, makeup } = getGroupSummary(group);
+            const { groupClasses, lastClass, nextClass, present, late, absent, makeup } = summaryMap.get(group.id);
             const isGroup = group.studentIds?.length > 1;
             return (
               <motion.button

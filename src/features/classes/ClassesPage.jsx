@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Plus, ChevronRight, ChevronDown, MoreHorizontal,
   RefreshCw, CalendarDays, Trash2, Pencil,
@@ -107,7 +107,7 @@ export default function ClassesPage() {
   };
 
   // ── Build unified items ────────────────────────────────────────────────────
-  const groupItems = repeatGroups.map((group) => {
+  const groupItems = useMemo(() => repeatGroups.map((group) => {
     const groupClasses = classes.filter((c) => c.repeatGroupId === group.id);
     const groupStudents = students.filter((s) => group.studentIds.includes(s.id));
     const firstStudent = groupStudents[0];
@@ -155,9 +155,9 @@ export default function ClassesPage() {
       completedCount: groupClasses.filter((c) => c.date < todayStr).length,
       createdId: group.id,
     };
-  });
+  }), [repeatGroups, classes, students, attendanceRecords, lessonRecords, todayStr]);
 
-  const singleItems = classes
+  const singleItems = useMemo(() => classes
     .filter((c) => !c.repeatGroupId)
     .map((cls) => {
       const clsStudents = students.filter((s) => cls.studentIds.includes(s.id));
@@ -176,46 +176,43 @@ export default function ClassesPage() {
         unwrittenNotes,
         createdId: cls.id,
       };
+    }), [classes, students, lessonRecords, todayStr]);
+
+  // ── Filter + Sort ──────────────────────────────────────────────────────────
+  const sortedItems = useMemo(() => {
+    const filteredGroups = groupItems.filter((item) => {
+      if (viewFilter === 'all') return true;
+      if (viewFilter === 'regular') return item.groupType === '정기 과외';
+      if (viewFilter === 'group') return item.groupType === '그룹 과외';
+      return false;
     });
-
-  // ── Filter ─────────────────────────────────────────────────────────────────
-  const filteredGroups = groupItems.filter((item) => {
-    if (viewFilter === 'all') return true;
-    if (viewFilter === 'regular') return item.groupType === '정기 과외';
-    if (viewFilter === 'group') return item.groupType === '그룹 과외';
-    return false;
-  });
-
-  const filteredSingles = singleItems.filter((item) => {
-    if (viewFilter === 'all') return true;
-    if (viewFilter === 'regular' || viewFilter === 'group') return false;
-    if (viewFilter === 'oneoff') return ['단발 수업', '보강'].includes(item.cls.type);
-    return true;
-  });
-
-  const allItems = [...filteredGroups, ...filteredSingles];
-
-  // ── Sort ───────────────────────────────────────────────────────────────────
-  const sortedItems = [...allItems].sort((a, b) => {
-    if (sortBy === 'nextClass') {
-      const aDate = a.nextClass?.date || '9999-99-99';
-      const bDate = b.nextClass?.date || '9999-99-99';
-      return aDate.localeCompare(bDate);
-    }
-    if (sortBy === 'recent') return b.createdId.localeCompare(a.createdId);
-    if (sortBy === 'studentName') {
-      const aName = a.kind === 'group' ? (a.groupStudents[0]?.name || '') : (a.clsStudents[0]?.name || '');
-      const bName = b.kind === 'group' ? (b.groupStudents[0]?.name || '') : (b.clsStudents[0]?.name || '');
-      return aName.localeCompare(bName, 'ko');
-    }
-    if (sortBy === 'subject') {
-      const aSubj = a.kind === 'group' ? a.group.subject : a.cls.subject;
-      const bSubj = b.kind === 'group' ? b.group.subject : b.cls.subject;
-      return (aSubj || '').localeCompare(bSubj || '', 'ko');
-    }
-    if (sortBy === 'incomplete') return b.unwrittenNotes - a.unwrittenNotes;
-    return 0;
-  });
+    const filteredSingles = singleItems.filter((item) => {
+      if (viewFilter === 'all') return true;
+      if (viewFilter === 'regular' || viewFilter === 'group') return false;
+      if (viewFilter === 'oneoff') return ['단발 수업', '보강'].includes(item.cls.type);
+      return true;
+    });
+    return [...filteredGroups, ...filteredSingles].sort((a, b) => {
+      if (sortBy === 'nextClass') {
+        const aDate = a.nextClass?.date || '9999-99-99';
+        const bDate = b.nextClass?.date || '9999-99-99';
+        return aDate.localeCompare(bDate);
+      }
+      if (sortBy === 'recent') return b.createdId.localeCompare(a.createdId);
+      if (sortBy === 'studentName') {
+        const aName = a.kind === 'group' ? (a.groupStudents[0]?.name || '') : (a.clsStudents[0]?.name || '');
+        const bName = b.kind === 'group' ? (b.groupStudents[0]?.name || '') : (b.clsStudents[0]?.name || '');
+        return aName.localeCompare(bName, 'ko');
+      }
+      if (sortBy === 'subject') {
+        const aSubj = a.kind === 'group' ? a.group.subject : a.cls.subject;
+        const bSubj = b.kind === 'group' ? b.group.subject : b.cls.subject;
+        return (aSubj || '').localeCompare(bSubj || '', 'ko');
+      }
+      if (sortBy === 'incomplete') return b.unwrittenNotes - a.unwrittenNotes;
+      return 0;
+    });
+  }, [groupItems, singleItems, viewFilter, sortBy]);
 
   const isEmpty =
     repeatGroups.length === 0 && classes.filter((c) => !c.repeatGroupId).length === 0;
