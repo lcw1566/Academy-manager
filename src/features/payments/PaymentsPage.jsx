@@ -5,7 +5,7 @@ import Header from '../../components/Header';
 import EmptyState from '../../components/EmptyState';
 import Modal from '../../components/Modal';
 import { formatCurrency, paymentStatusMap } from '../../utils/format';
-import { getCurrentMonth, formatMonth, prevMonth, nextMonth } from '../../utils/date';
+import { getCurrentMonth, formatMonth, prevMonth, nextMonth, getTodayYMD } from '../../utils/date';
 import { generatePaymentNotice } from '../../utils/aiNotice';
 import { formatBillingDetail } from '../../utils/billing';
 
@@ -104,6 +104,7 @@ export default function PaymentsPage() {
 
                 const effectiveDepositorName = payment.depositorName || student.depositorName || '';
 
+                const billingDetail = formatBillingDetail(payment);
                 return (
                   <div key={payment.id} className="bg-white rounded-2xl p-4 shadow-sm">
                     <div className="flex items-start justify-between mb-2">
@@ -115,8 +116,8 @@ export default function PaymentsPage() {
                         {effectiveDepositorName && (
                           <p className="text-xs text-gray-500 mt-0.5">입금자명: {effectiveDepositorName}</p>
                         )}
-                        {formatBillingDetail(payment) && (
-                          <p className="text-xs text-blue-500 mt-0.5">{formatBillingDetail(payment)}</p>
+                        {billingDetail && (
+                          <p className="text-xs text-blue-500 mt-0.5">{billingDetail}</p>
                         )}
                       </div>
                       <div className="text-right">
@@ -206,17 +207,17 @@ function PaymentActionModal({ payment, student, onClose, onUpdate }) {
   const [memo, setMemo] = useState(payment.memo || '');
 
   const handleConfirm = () => {
-    const today = new Date().toISOString().split('T')[0];
+    const todayYMD = getTodayYMD();
     if (status === 'paid') {
-      onUpdate({ status: 'paid', paidDate: today, paidAmount: payment.amount, memo });
+      onUpdate({ status: 'paid', paidDate: todayYMD, paidAmount: payment.amount, memo });
     } else if (status === 'partial') {
       const amt = Number(paidAmount);
       if (!amt || amt <= 0) return alert('납부 금액을 입력해주세요.');
-      onUpdate({ status: 'partial', paidDate: today, paidAmount: amt, memo });
+      onUpdate({ status: 'partial', paidDate: todayYMD, paidAmount: amt, memo });
     } else if (status === 'unpaid') {
       onUpdate({ status: 'unpaid', paidDate: null, paidAmount: null, memo });
     } else if (status === 'exempt') {
-      onUpdate({ status: 'exempt', paidDate: today, memo });
+      onUpdate({ status: 'exempt', paidDate: todayYMD, memo });
     }
   };
 

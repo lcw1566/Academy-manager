@@ -2,7 +2,7 @@ export default function StatCard({ label, value, unit = '', sub, color = 'text-g
   return (
     <button
       onClick={onClick}
-      className={`${bg} rounded-2xl p-4 shadow-sm text-left w-full active:scale-95 transition-transform`}
+      className={`${bg} rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-transform`}
     >
       <p className="text-xs text-gray-500 mb-1 font-medium">{label}</p>
       <div className="flex items-end gap-1">

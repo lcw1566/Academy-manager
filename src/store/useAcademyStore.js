@@ -664,6 +664,8 @@ const useAcademyStore = create(
       payrolls: [],
       repeatGroups: [],
       schoolNames: [],
+      studentEvents: [],
+      examResults: [],
       tutorProfile: defaultTutorProfile,
       geminiApiKey: '',
     });
@@ -682,6 +684,8 @@ const useAcademyStore = create(
       payrolls: [],
       repeatGroups: [],
       schoolNames: [],
+      studentEvents: [],
+      examResults: [],
       teachers,
       tutorProfile,
       geminiApiKey,

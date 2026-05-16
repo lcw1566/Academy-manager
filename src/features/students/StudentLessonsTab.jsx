@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
+import { motion } from 'framer-motion';
 import useAcademyStore from '../../store/useAcademyStore';
 import EmptyState from '../../components/EmptyState';
 import StudentLessonDetail from './StudentLessonDetail';
@@ -89,10 +90,11 @@ export default function StudentLessonsTab({ student, onAddClass }) {
             const { groupClasses, lastClass, nextClass, present, late, absent, makeup } = getGroupSummary(group);
             const isGroup = group.studentIds?.length > 1;
             return (
-              <button
+              <motion.button
                 key={group.id}
                 onClick={() => setSelectedGroupId(group.id)}
-                className="bg-white rounded-2xl p-4 shadow-sm text-left active:scale-95 transition-transform w-full"
+                whileTap={{ scale: 0.97 }}
+                className="bg-white rounded-2xl p-4 shadow-sm text-left w-full"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1 min-w-0">
@@ -133,7 +135,7 @@ export default function StudentLessonsTab({ student, onAddClass }) {
                     )}
                   </div>
                 </div>
-              </button>
+              </motion.button>
             );
           })}
 
@@ -146,10 +148,11 @@ export default function StudentLessonsTab({ student, onAddClass }) {
                 );
                 const attMeta = att ? attendanceStatusMap[att.status] : null;
                 return (
-                  <button
+                  <motion.button
                     key={cls.id}
                     onClick={() => setSelectedStandaloneId(cls.id)}
-                    className="bg-white rounded-2xl p-4 shadow-sm text-left active:scale-95 transition-transform w-full mb-2"
+                    whileTap={{ scale: 0.97 }}
+                    className="bg-white rounded-2xl p-4 shadow-sm text-left w-full mb-2"
                   >
                     <div className="flex items-center justify-between">
                       <div>
@@ -168,7 +171,7 @@ export default function StudentLessonsTab({ student, onAddClass }) {
                         <ChevronRight size={18} className="text-gray-300" />
                       </div>
                     </div>
-                  </button>
+                  </motion.button>
                 );
               })}
             </div>

@@ -278,7 +278,7 @@ export default function LessonNotePanel({ cls, studentId, groupMode = false }) {
                     <button
                       key={lk}
                       onClick={() => setEval(key, lk)}
-                      className={`py-2 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                      className={`py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97] ${
                         isActive ? colors.active : colors.inactive
                       }`}
                     >

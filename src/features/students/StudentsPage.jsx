@@ -108,10 +108,9 @@ export default function StudentsPage() {
                     onClick={() => setSelectedSchool(isSelected ? '' : name)}
                     className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                       isSelected
-                        ? colorClass.replace('50', '200').replace('700', '800')
+                        ? colorClass
                         : `bg-white text-gray-500 border-gray-200`
                     }`}
-                    style={isSelected ? {} : {}}
                   >
                     {name}
                   </button>
@@ -157,7 +156,7 @@ export default function StudentsPage() {
                 <button
                   key={student.id}
                   onClick={() => navigateToStudent(student.id)}
-                  className="bg-white rounded-2xl p-4 shadow-sm text-left active:scale-95 transition-transform"
+                  className="bg-white rounded-2xl p-4 shadow-sm text-left active:scale-[0.97] transition-transform"
                 >
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2 flex-wrap">

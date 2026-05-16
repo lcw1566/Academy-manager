@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Loader2, Key, AlertTriangle, Copy, Settings2, ChevronDown, ChevronUp, RotateCcw, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '../../components/Modal';
+import { sheetTransition, fadeTransition } from '../../utils/motion';
 import useAcademyStore from '../../store/useAcademyStore';
 import { generateNoticeWithAI, generateNotice, buildGeminiPrompt, TONE_LABELS } from '../../utils/aiNotice';
 import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../../constants/aiPrompts';
@@ -364,6 +365,7 @@ function StyleSheet({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        transition={fadeTransition}
         className="fixed inset-0 bg-black/50 z-[60]"
         onClick={onClose}
       />
@@ -372,7 +374,7 @@ function StyleSheet({
         initial={{ y: '100%' }}
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
-        transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+        transition={sheetTransition}
         className="fixed bottom-0 left-0 right-0 z-[70] bg-white rounded-t-3xl px-4 pt-5 pb-10 overflow-y-auto"
         style={{ maxHeight: '90vh' }}
       >

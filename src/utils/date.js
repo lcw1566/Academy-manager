@@ -166,3 +166,16 @@ export const isPastDate = (ymd) => {
   if (!ymd) return false;
   return getDDay(ymd) < 0;
 };
+
+// Compare two YMD strings: -1 if a < b, 0 if equal, 1 if a > b
+export const compareYMD = (a, b) => {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+};
+
+export const sortByDateAsc  = (items, key = 'date') => [...items].sort((a, b) => compareYMD(a[key], b[key]));
+export const sortByDateDesc = (items, key = 'date') => [...items].sort((a, b) => compareYMD(b[key], a[key]));
+
+// Alias — same as getCurrentMonth, for spec consistency
+export const getCurrentYearMonth = getCurrentMonth;

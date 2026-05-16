@@ -29,7 +29,7 @@ export default function MorePage() {
   const [showResetSheet, setShowResetSheet] = useState(false);
   const [confirmResetType, setConfirmResetType] = useState(null);
 
-  const recentConsultations = consultations
+  const recentConsultations = [...consultations]
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5);
 

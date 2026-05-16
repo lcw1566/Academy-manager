@@ -34,7 +34,7 @@ export default function AttendancePanel({ cls }) {
                   <button
                     key={id}
                     onClick={() => updateAttendance(cls.id, student.id, cls.date, id)}
-                    className={`py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 ${
+                    className={`py-2.5 rounded-xl text-xs font-bold transition-all active:scale-[0.97] ${
                       isActive
                         ? `${meta.activeBg} ${meta.activeText} shadow-sm`
                         : `${meta.bg} ${meta.color} border border-transparent`

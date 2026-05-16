@@ -40,7 +40,7 @@ export default function RoleSelectPage() {
             <button
               key={id}
               onClick={() => setRole(id)}
-              className="flex items-center gap-4 bg-white rounded-2xl px-5 py-4 shadow-sm text-left active:scale-95 transition-transform border border-gray-100"
+              className="flex items-center gap-4 bg-white rounded-2xl px-5 py-4 shadow-sm text-left active:scale-[0.97] transition-transform border border-gray-100"
             >
               <span className="text-3xl">{emoji}</span>
               <div>
