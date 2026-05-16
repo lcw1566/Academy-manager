@@ -159,15 +159,15 @@ export default function ClassGroupDetailPage() {
         )}
       </div>
 
-      {/* 클리닉 요청 플로팅 버튼 (강사) */}
-      {role === 'teacher' && (
+      {/* 클리닉 추가 플로팅 버튼 (원장/강사) */}
+      {(role === 'teacher' || role === 'owner') && (
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={() => setShowClinicForm(true)}
           className="fixed bottom-24 right-4 z-20 flex items-center gap-2 bg-blue-600 text-white font-bold px-4 py-3 rounded-2xl shadow-lg"
         >
           <Plus size={16} />
-          클리닉 요청
+          클리닉 추가
         </motion.button>
       )}
 

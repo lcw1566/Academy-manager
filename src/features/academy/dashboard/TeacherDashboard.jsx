@@ -120,27 +120,24 @@ export default function TeacherDashboard() {
           color={todayStudentIds.some((id) => !notesWrittenToday.has(id)) ? 'text-blue-600' : 'text-gray-900'}
         />
         <SummaryCard
-          label="클리닉 요청"
+          label="클리닉"
           value={`${myClinics.length}건`}
           color={myClinics.length > 0 ? 'text-purple-600' : 'text-gray-900'}
-          onClick={() => setActiveTab('clinic')}
         />
       </div>
 
       {/* 클리닉 현황 */}
       {myClinics.length > 0 && (
         <div className="px-4">
-          <p className="text-sm font-bold text-gray-700 mb-3">클리닉 요청 현황</p>
+          <p className="text-sm font-bold text-gray-700 mb-3">클리닉 현황</p>
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
             {myClinics.slice(0, 4).map((task) => {
               const student = academyStudents.find((s) => s.id === task.studentId);
               const statusColor = task.status === 'in_progress' ? 'text-blue-600' : 'text-orange-500';
               const statusLabel = task.status === 'in_progress' ? '진행 중' : '대기';
               return (
-                <motion.button
+                <div
                   key={task.id}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => setActiveTab('clinic')}
                   className="w-full flex items-center gap-3 px-4 py-3.5 text-left border-b border-gray-50 last:border-0"
                 >
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${task.priority === 'urgent' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'}`}>
@@ -150,7 +147,7 @@ export default function TeacherDashboard() {
                     <p className="text-sm font-medium text-gray-800 truncate">{student?.name} · {task.title}</p>
                   </div>
                   <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}</span>
-                </motion.button>
+                </div>
               );
             })}
           </div>

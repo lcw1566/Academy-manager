@@ -30,35 +30,46 @@ const PRIORITY_CONFIG = {
 const STATUS_FILTERS = ['all', 'pending', 'in_progress', 'completed', 'hold'];
 const STATUS_FILTER_LABELS = { all: '전체', pending: '대기', in_progress: '진행 중', completed: '완료', hold: '보류' };
 
-export default function ClinicPage({ checkMode }) {
+const TYPE_FILTERS = [
+  { id: 'all', label: '전체' },
+  { id: 'homework', label: '숙제' },
+  { id: 'wrong_answer', label: '오답' },
+  { id: 'vocabulary', label: '단어' },
+  { id: 'reading', label: '본문' },
+  { id: 'grammar', label: '문법' },
+  { id: 'test_retry', label: '재시험' },
+  { id: 'absence_makeup', label: '보강' },
+  { id: 'other', label: '기타' },
+];
+
+export default function ClinicPage() {
   const {
     role, clinicTasks, academyStudents, classGroups, academyAssistants,
     updateClinicTask, deleteClinicTask, completeClinicTask,
   } = useAcademyStore();
 
   const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const [activeTaskId, setActiveTaskId] = useState(null);
-  const [showCompleteSheet, setShowCompleteSheet] = useState(null); // taskId
+  const [showCompleteSheet, setShowCompleteSheet] = useState(null);
   const [resultMemo, setResultMemo] = useState('');
 
   const todayStr = today();
-  const canCreate = role === 'owner' || role === 'teacher';
+  const canCreate = role === 'owner' || role === 'teacher' || role === 'assistant';
 
-  // 체크 탭: 숙제/오답/단어 타입만 필터
   const baseFiltered = useMemo(() => {
-    let tasks = checkMode
-      ? clinicTasks.filter((t) => ['homework', 'wrong_answer', 'vocabulary', 'test_retry'].includes(t.type))
-      : clinicTasks;
+    let tasks = clinicTasks;
     if (statusFilter !== 'all') tasks = tasks.filter((t) => t.status === statusFilter);
+    if (typeFilter !== 'all') tasks = tasks.filter((t) => t.type === typeFilter);
     return tasks.sort((a, b) => {
       const pri = { urgent: 0, high: 1, normal: 2, low: 3 };
       if (a.status === 'completed' && b.status !== 'completed') return 1;
       if (b.status === 'completed' && a.status !== 'completed') return -1;
       return (pri[a.priority] ?? 2) - (pri[b.priority] ?? 2);
     });
-  }, [clinicTasks, statusFilter, checkMode]);
+  }, [clinicTasks, statusFilter, typeFilter]);
 
   const counts = useMemo(() => ({
     pending:     clinicTasks.filter((t) => t.status === 'pending').length,
@@ -84,7 +95,7 @@ export default function ClinicPage({ checkMode }) {
   return (
     <div>
       <Header
-        title={checkMode ? '체크 업무' : '클리닉'}
+        title="클리닉"
         right={
           canCreate ? (
             <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowForm(true)}
@@ -112,7 +123,7 @@ export default function ClinicPage({ checkMode }) {
         </div>
 
         {/* 상태 필터 */}
-        <div className="px-4 mb-4">
+        <div className="px-4 mb-2">
           <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {STATUS_FILTERS.map((f) => (
               <motion.button key={f} whileTap={{ scale: 0.97 }} onClick={() => setStatusFilter(f)}
@@ -125,9 +136,23 @@ export default function ClinicPage({ checkMode }) {
           </div>
         </div>
 
+        {/* 유형 필터 */}
+        <div className="px-4 mb-4">
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+            {TYPE_FILTERS.map(({ id, label }) => (
+              <motion.button key={id} whileTap={{ scale: 0.97 }} onClick={() => setTypeFilter(id)}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                  typeFilter === id ? 'bg-orange-500 text-white' : 'bg-white text-gray-500 border border-gray-200'
+                }`}>
+                {label}
+              </motion.button>
+            ))}
+          </div>
+        </div>
+
         {/* 클리닉 목록 */}
         {baseFiltered.length === 0 ? (
-          <EmptyState icon="✅" title="클리닉이 없어요" description="수업 중 클리닉을 요청하거나 직접 추가해보세요." />
+          <EmptyState icon="✅" title="클리닉이 없어요" description="수업 기록에서 보완 항목을 체크하거나 직접 추가해보세요." />
         ) : (
           <div className="px-4 flex flex-col gap-2">
             {baseFiltered.map((task) => {

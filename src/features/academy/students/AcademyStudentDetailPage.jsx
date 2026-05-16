@@ -13,8 +13,8 @@ const CLINIC_TYPE_LABELS = {
 };
 
 const TABS_BY_ROLE = {
-  owner:     ['요약', '수업', '클리닉', '수납'],
-  teacher:   ['요약', '클리닉'],
+  owner:     ['요약', '수업', '클리닉', '정산'],
+  teacher:   ['요약', '수업', '클리닉'],
   assistant: ['요약', '클리닉'],
 };
 
@@ -184,34 +184,34 @@ export default function AcademyStudentDetailPage() {
     </div>
   );
 
-  const renderPayments = () => (
-    <div className="flex flex-col gap-2">
-      {role !== 'owner' ? (
-        <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
-          <p className="text-sm text-gray-400">수납 정보는 원장만 확인할 수 있어요.</p>
-        </div>
-      ) : academyPayments.filter((p) => p.studentId === student.id).length === 0 ? (
-        <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
-          <p className="text-sm text-gray-400">수납 기록이 없어요</p>
-        </div>
-      ) : (
-        academyPayments.filter((p) => p.studentId === student.id).map((p) => (
-          <div key={p.id} className="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="font-semibold text-gray-900">{p.month}</p>
-              <p className="text-xs text-gray-400">수강료</p>
-            </div>
-            <div className="text-right">
-              <p className="font-bold text-gray-900">{p.amount?.toLocaleString()}원</p>
-              <span className={`text-xs font-medium ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>
-                {p.status === 'paid' ? '완료' : '미납'}
-              </span>
-            </div>
+  const renderSettlement = () => {
+    const studentPayments = academyPayments.filter((p) => p.studentId === student.id)
+      .sort((a, b) => b.month?.localeCompare(a.month || '') || 0);
+    return (
+      <div className="flex flex-col gap-2">
+        {studentPayments.length === 0 ? (
+          <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
+            <p className="text-sm text-gray-400">수납 기록이 없어요</p>
           </div>
-        ))
-      )}
-    </div>
-  );
+        ) : (
+          studentPayments.map((p) => (
+            <div key={p.id} className="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-gray-900">{p.month}</p>
+                <p className="text-xs text-gray-400">수강료 · {classGroups.find((g) => g.id === p.classGroupId)?.name || ''}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-bold text-gray-900">{p.amount?.toLocaleString()}원</p>
+                <span className={`text-xs font-medium ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>
+                  {p.status === 'paid' ? '수납 완료' : '미납'}
+                </span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -264,15 +264,15 @@ export default function AcademyStudentDetailPage() {
           {activeTab === '요약' && renderSummary()}
           {activeTab === '수업' && renderLessons()}
           {activeTab === '클리닉' && renderClinic()}
-          {activeTab === '수납' && renderPayments()}
+          {activeTab === '정산' && renderSettlement()}
         </div>
 
-        {/* 클리닉 요청 버튼 */}
-        {(role === 'owner' || role === 'teacher') && (
+        {/* 클리닉 추가 버튼 */}
+        {activeTab === '클리닉' && (role === 'owner' || role === 'teacher') && (
           <div className="px-4 mt-4">
             <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowClinicForm(true)}
               className="w-full py-3 rounded-2xl border-2 border-dashed border-blue-200 text-blue-600 text-sm font-semibold">
-              + 클리닉 요청
+              + 클리닉 추가
             </motion.button>
           </div>
         )}

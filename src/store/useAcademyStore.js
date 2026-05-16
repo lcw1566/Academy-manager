@@ -22,8 +22,9 @@ const defaultTutorProfile = {
 const useAcademyStore = create(
   persist(
     (set, get) => ({
-  // === Auth ===
+  // === Auth / Mode ===
   role: null,
+  currentMode: 'private', // 'private' | 'academy'
 
   // === Tutor Profile ===
   tutorProfile: defaultTutorProfile,
@@ -80,22 +81,27 @@ const useAcademyStore = create(
   academyStudentEvents: [],
   academyExamResults: [],
   academyConsultations: [],
+  academyPayrolls: [],
 
   // === Toast ===
   toast: null,
 
   // ─── Auth ──────────────────────────────────────────
-  setRole: (role) => set({
-    role,
-    activeTab: 'home',
-    selectedClassId: null,
-    selectedStudentId: null,
-    selectedRepeatGroupId: null,
-    selectedClassGroupId: null,
-    selectedClassSessionId: null,
-    selectedAcademyStudentId: null,
-  }),
-  logout: () => set({ role: null }),
+  setRole: (role) => {
+    const ACADEMY_ROLES = ['owner', 'teacher', 'assistant'];
+    set({
+      role,
+      currentMode: ACADEMY_ROLES.includes(role) ? 'academy' : 'private',
+      activeTab: 'home',
+      selectedClassId: null,
+      selectedStudentId: null,
+      selectedRepeatGroupId: null,
+      selectedClassGroupId: null,
+      selectedClassSessionId: null,
+      selectedAcademyStudentId: null,
+    });
+  },
+  logout: () => set({ role: null, currentMode: 'private' }),
 
   // ─── Navigation (Private) ──────────────────────────
   setActiveTab: (tab) => set({
@@ -725,6 +731,7 @@ const useAcademyStore = create(
       academyStudentEvents: [],
       academyExamResults: [],
       academyConsultations: [],
+      academyPayrolls: [],
     });
     get().showToast('모든 데이터가 초기화되었어요.');
   },
@@ -882,7 +889,7 @@ const useAcademyStore = create(
   addClinicTask: (task) => {
     const newTask = { ...task, id: `clinic${Date.now()}`, status: task.status || 'pending', createdAt: new Date().toISOString() };
     set((s) => ({ clinicTasks: [...s.clinicTasks, newTask] }));
-    get().showToast('클리닉 요청이 생성되었습니다.');
+    get().showToast('클리닉 업무가 추가되었습니다.');
     return newTask;
   },
   updateClinicTask: (taskId, updates) => {
@@ -990,6 +997,77 @@ const useAcademyStore = create(
     get().showToast('성적 기록이 삭제되었습니다.');
   },
 
+  // ─── Academy Payrolls ─────────────────────────────
+  generatePayrollsForMonth: (month) => {
+    const { academyTeachers, academyAssistants, classSessions, clinicTasks } = get();
+    const ts = Date.now();
+    const payrolls = [];
+
+    academyTeachers.forEach((teacher, i) => {
+      const sessions = classSessions.filter(
+        (s) => s.teacherId === teacher.id && s.date?.startsWith(month) && s.status === 'completed'
+      );
+      const totalHours = sessions.reduce((sum, s) => {
+        if (s.startTime && s.endTime) {
+          const [sh, sm] = s.startTime.split(':').map(Number);
+          const [eh, em] = s.endTime.split(':').map(Number);
+          return sum + (eh * 60 + em - sh * 60 - sm) / 60;
+        }
+        return sum;
+      }, 0);
+      const amount = teacher.wageType === 'hourly'
+        ? Math.round((teacher.hourlyWage || 0) * totalHours)
+        : (teacher.monthlySalary || 0);
+      payrolls.push({
+        id: `pr${ts}t${i}`, staffType: 'teacher', staffId: teacher.id, month,
+        wageType: teacher.wageType || 'monthly', hourlyWage: teacher.hourlyWage || 0,
+        monthlySalary: teacher.monthlySalary || 0, totalHours,
+        completedSessionCount: sessions.length, completedClinicCount: 0,
+        amount, status: 'scheduled', paidDate: '', memo: '',
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    academyAssistants.forEach((assistant, i) => {
+      const completed = clinicTasks.filter(
+        (t) => t.assignedToId === assistant.id && t.status === 'completed' && t.completedAt?.startsWith(month)
+      );
+      const amount = assistant.wageType === 'hourly'
+        ? 0 // 시급은 근무시간 입력 필요 — 월급제만 자동계산
+        : (assistant.monthlySalary || 0);
+      payrolls.push({
+        id: `pr${ts}a${i}`, staffType: 'assistant', staffId: assistant.id, month,
+        wageType: assistant.wageType || 'monthly', hourlyWage: assistant.hourlyWage || 0,
+        monthlySalary: assistant.monthlySalary || 0, totalHours: 0,
+        completedSessionCount: 0, completedClinicCount: completed.length,
+        amount, status: 'scheduled', paidDate: '', memo: '',
+        createdAt: new Date().toISOString(),
+      });
+    });
+
+    set((s) => ({
+      academyPayrolls: [
+        ...s.academyPayrolls.filter((p) => p.month !== month),
+        ...payrolls,
+      ],
+    }));
+    get().showToast(`${month} 급여 명세가 생성되었습니다.`);
+  },
+  updatePayroll: (payrollId, updates) => {
+    set((s) => ({
+      academyPayrolls: s.academyPayrolls.map((p) => (p.id === payrollId ? { ...p, ...updates } : p)),
+    }));
+    get().showToast('급여 정보가 수정되었습니다.');
+  },
+  markPayrollPaid: (payrollId) => {
+    set((s) => ({
+      academyPayrolls: s.academyPayrolls.map((p) =>
+        p.id === payrollId ? { ...p, status: 'completed', paidDate: new Date().toISOString().slice(0, 10) } : p
+      ),
+    }));
+    get().showToast('급여 지급 완료 처리되었습니다.');
+  },
+
   // ─── Academy Reset ────────────────────────────────
   resetAcademyData: () => {
     set({
@@ -1005,6 +1083,7 @@ const useAcademyStore = create(
       academyStudentEvents: [],
       academyExamResults: [],
       academyConsultations: [],
+      academyPayrolls: [],
     });
     get().showToast('학원 데이터가 초기화되었어요.');
   },
@@ -1072,8 +1151,8 @@ const useAcademyStore = create(
         studentId: sampleStudents[0].id,
         classGroupId: sampleGroup.id,
         classSessionId: nextSession?.id || '',
-        requestedByRole: 'teacher',
-        requestedById: sampleTeacher.id,
+        createdByRole: 'teacher',
+        createdById: sampleTeacher.id,
         assignedToId: sampleAssistant.id,
         type: 'wrong_answer',
         title: '문법 오답 클리닉',
@@ -1091,8 +1170,8 @@ const useAcademyStore = create(
         studentId: sampleStudents[1].id,
         classGroupId: sampleGroup.id,
         classSessionId: nextSession?.id || '',
-        requestedByRole: 'teacher',
-        requestedById: sampleTeacher.id,
+        createdByRole: 'teacher',
+        createdById: sampleTeacher.id,
         assignedToId: sampleAssistant.id,
         type: 'vocabulary',
         title: '단어 재시험',
@@ -1134,6 +1213,8 @@ const useAcademyStore = create(
     {
       name: 'academy-store',
       partialize: (s) => ({
+        // Auth
+        currentMode: s.currentMode,
         // Private workspace
         tutorProfile: s.tutorProfile,
         geminiApiKey: s.geminiApiKey,
@@ -1163,6 +1244,7 @@ const useAcademyStore = create(
         academyStudentEvents: s.academyStudentEvents,
         academyExamResults: s.academyExamResults,
         academyConsultations: s.academyConsultations,
+        academyPayrolls: s.academyPayrolls,
       }),
       // Migrate persisted profile to add prompt fields if missing
       onRehydrateStorage: () => (state) => {

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Home, BookOpen, Users, Stethoscope, MoreHorizontal, CheckSquare } from 'lucide-react';
+import { Home, BookOpen, Users, MoreHorizontal, Stethoscope, CreditCard, BarChart2 } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import OwnerDashboard from './dashboard/OwnerDashboard';
 import TeacherDashboard from './dashboard/TeacherDashboard';
@@ -11,6 +11,8 @@ import ClinicPage from './clinic/ClinicPage';
 import AcademyStudentsPage from './students/AcademyStudentsPage';
 import AcademyStudentDetailPage from './students/AcademyStudentDetailPage';
 import AcademyMorePage from './more/AcademyMorePage';
+import SettlementPage from './settlement/SettlementPage';
+import PayrollPage from './payroll/PayrollPage';
 
 const pageVariants = {
   initial: { opacity: 0, y: 8 },
@@ -20,24 +22,24 @@ const pageVariants = {
 
 const TAB_CONFIG = {
   owner: [
-    { id: 'home',     label: '홈',    Icon: Home },
-    { id: 'classes',  label: '수업',  Icon: BookOpen },
-    { id: 'students', label: '학생',  Icon: Users },
-    { id: 'clinic',   label: '클리닉', Icon: Stethoscope },
-    { id: 'more',     label: '더보기', Icon: MoreHorizontal },
+    { id: 'home',       label: '홈',    Icon: Home },
+    { id: 'classes',    label: '수업',  Icon: BookOpen },
+    { id: 'students',   label: '학생',  Icon: Users },
+    { id: 'settlement', label: '정산',  Icon: BarChart2 },
+    { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
   teacher: [
-    { id: 'home',     label: '홈',    Icon: Home },
-    { id: 'classes',  label: '수업',  Icon: BookOpen },
-    { id: 'students', label: '학생',  Icon: Users },
-    { id: 'clinic',   label: '클리닉', Icon: Stethoscope },
+    { id: 'home',     label: '홈',   Icon: Home },
+    { id: 'classes',  label: '수업', Icon: BookOpen },
+    { id: 'students', label: '학생', Icon: Users },
+    { id: 'payroll',  label: '급여', Icon: CreditCard },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
   assistant: [
     { id: 'home',     label: '홈',    Icon: Home },
     { id: 'clinic',   label: '클리닉', Icon: Stethoscope },
     { id: 'students', label: '학생',  Icon: Users },
-    { id: 'check',    label: '체크',  Icon: CheckSquare },
+    { id: 'payroll',  label: '급여',  Icon: CreditCard },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
 };
@@ -69,20 +71,15 @@ export default function AcademyAppLayout() {
     return <OwnerDashboard />;
   };
 
-  const renderClasses = () => {
-    if (selectedClassSessionId) return <ClassSessionPage />;
-    if (selectedClassGroupId)   return <ClassGroupDetailPage />;
-    return <ClassGroupsPage />;
-  };
-
   const renderContent = () => {
     if (selectedClassSessionId) return <ClassSessionPage />;
-    if (activeTab === 'home')     return renderDashboard();
-    if (activeTab === 'classes')  return selectedClassGroupId ? <ClassGroupDetailPage /> : <ClassGroupsPage />;
-    if (activeTab === 'students') return selectedAcademyStudentId ? <AcademyStudentDetailPage /> : <AcademyStudentsPage />;
-    if (activeTab === 'clinic')   return <ClinicPage />;
-    if (activeTab === 'check')    return <ClinicPage checkMode />;
-    if (activeTab === 'more')     return <AcademyMorePage />;
+    if (activeTab === 'home')       return renderDashboard();
+    if (activeTab === 'classes')    return selectedClassGroupId ? <ClassGroupDetailPage /> : <ClassGroupsPage />;
+    if (activeTab === 'students')   return selectedAcademyStudentId ? <AcademyStudentDetailPage /> : <AcademyStudentsPage />;
+    if (activeTab === 'clinic')     return <ClinicPage />;
+    if (activeTab === 'settlement') return <SettlementPage />;
+    if (activeTab === 'payroll')    return <PayrollPage />;
+    if (activeTab === 'more')       return <AcademyMorePage />;
     return renderDashboard();
   };
 

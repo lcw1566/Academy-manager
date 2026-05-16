@@ -1,20 +1,30 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, Plus, Check } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { ChevronLeft, Plus, Check, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
-import { formatDateShort } from '../../../utils/date';
+import { formatDateShort, today } from '../../../utils/date';
 import { attendanceStatusMap } from '../../../utils/format';
 import ClinicFormModal from '../clinic/ClinicFormModal';
 
 const ATT_OPTIONS = ['present', 'late', 'absent', 'makeup'];
 
+const QUICK_CLINIC_TYPES = [
+  { type: 'homework',       label: '숙제 미완료' },
+  { type: 'wrong_answer',   label: '오답 풀이' },
+  { type: 'vocabulary',     label: '단어 재시험' },
+  { type: 'grammar',        label: '문법 보충' },
+  { type: 'test_retry',     label: '재시험' },
+  { type: 'absence_makeup', label: '결석 보강' },
+];
+
 export default function ClassSessionPage() {
   const {
     role,
-    selectedClassSessionId, selectedClassGroupId,
-    classSessions, classGroups, academyStudents,
+    selectedClassSessionId,
+    classSessions, classGroups, academyStudents, clinicTasks,
     academyAttendanceRecords, academyLessonRecords,
     updateAcademyAttendance, saveAcademyLessonRecord,
+    addClinicTask,
     goBackFromClassSession,
   } = useAcademyStore();
 
@@ -36,7 +46,33 @@ export default function ClassSessionPage() {
   const getLessonRecord = (studentId) =>
     academyLessonRecords.find((lr) => lr.sessionId === selectedClassSessionId && lr.studentId === studentId);
 
+  const getExistingClinicTypes = (studentId) =>
+    new Set(
+      clinicTasks
+        .filter((t) => t.classSessionId === selectedClassSessionId && t.studentId === studentId)
+        .map((t) => t.type)
+    );
+
   const canEdit = role === 'owner' || role === 'teacher';
+
+  const handleQuickClinic = (studentId, type, label) => {
+    const existing = clinicTasks.find(
+      (t) => t.classSessionId === selectedClassSessionId && t.studentId === studentId && t.type === type
+    );
+    if (existing) return;
+    addClinicTask({
+      studentId,
+      classGroupId: session.classGroupId,
+      classSessionId: selectedClassSessionId,
+      createdByRole: role,
+      type,
+      title: label,
+      description: '',
+      dueDate: today(),
+      priority: 'normal',
+      assignedToId: '',
+    });
+  };
 
   if (!session || !group) return null;
 
@@ -71,10 +107,10 @@ export default function ClassSessionPage() {
             </div>
             <div className="w-px h-10 bg-gray-100" />
             <div className="text-center flex-1">
-              <p className="text-2xl font-bold text-blue-600">
-                {academyLessonRecords.filter((lr) => lr.sessionId === selectedClassSessionId && lr.content?.trim()).length}
+              <p className="text-2xl font-bold text-orange-500">
+                {clinicTasks.filter((t) => t.classSessionId === selectedClassSessionId).length}
               </p>
-              <p className="text-xs text-gray-400 mt-0.5">기록 완료</p>
+              <p className="text-xs text-gray-400 mt-0.5">클리닉</p>
             </div>
           </div>
         </div>
@@ -85,6 +121,8 @@ export default function ClassSessionPage() {
             const att = getAttendance(student.id);
             const lr = getLessonRecord(student.id);
             const isExpanded = activeStudentId === student.id;
+            const existingClinicTypes = getExistingClinicTypes(student.id);
+            const clinicCount = existingClinicTypes.size;
 
             return (
               <div key={student.id} className="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -100,13 +138,22 @@ export default function ClassSessionPage() {
                     <p className="font-semibold text-gray-900">{student.name}</p>
                     {student.grade && <p className="text-xs text-gray-400">{student.grade}</p>}
                   </div>
-                  {att && (
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${attendanceStatusMap[att.status]?.bg} ${attendanceStatusMap[att.status]?.color}`}>
-                      {attendanceStatusMap[att.status]?.label}
-                    </span>
-                  )}
-                  {!att && <span className="text-xs text-gray-300 font-medium">미체크</span>}
-                  {lr?.content && <Check size={14} className="text-green-500 ml-1" />}
+                  <div className="flex items-center gap-2">
+                    {clinicCount > 0 && (
+                      <span className="text-xs bg-orange-50 text-orange-500 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <AlertCircle size={10} />
+                        {clinicCount}
+                      </span>
+                    )}
+                    {att ? (
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${attendanceStatusMap[att.status]?.bg} ${attendanceStatusMap[att.status]?.color}`}>
+                        {attendanceStatusMap[att.status]?.label}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-300 font-medium">미체크</span>
+                    )}
+                    {lr?.content && <Check size={14} className="text-green-500" />}
+                  </div>
                 </button>
 
                 {/* 확장 영역 */}
@@ -168,15 +215,41 @@ export default function ClassSessionPage() {
                       )}
                     </div>
 
-                    {/* 클리닉 요청 버튼 */}
-                    {(role === 'owner' || role === 'teacher') && (
+                    {/* 학습 보완 항목 (빠른 클리닉 체크) */}
+                    {canEdit && (
+                      <div className="mb-3">
+                        <p className="text-xs font-semibold text-gray-500 mb-2">학습 보완 항목</p>
+                        <div className="flex flex-wrap gap-2">
+                          {QUICK_CLINIC_TYPES.map(({ type, label }) => {
+                            const checked = existingClinicTypes.has(type);
+                            return (
+                              <motion.button
+                                key={type}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => handleQuickClinic(student.id, type, label)}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition-colors ${
+                                  checked
+                                    ? 'border-orange-400 bg-orange-50 text-orange-600'
+                                    : 'border-gray-200 bg-white text-gray-500'
+                                }`}
+                              >
+                                {checked && '✓ '}{label}
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 상세 클리닉 추가 버튼 */}
+                    {canEdit && (
                       <motion.button
                         whileTap={{ scale: 0.97 }}
                         onClick={() => { setClinicStudentId(student.id); setShowClinicForm(true); }}
                         className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-orange-200 text-orange-500 text-xs font-semibold"
                       >
                         <Plus size={14} />
-                        클리닉 요청
+                        클리닉 상세 추가
                       </motion.button>
                     )}
                   </div>

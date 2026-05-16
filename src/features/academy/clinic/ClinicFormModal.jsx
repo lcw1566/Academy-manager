@@ -53,7 +53,7 @@ export default function ClinicFormModal({ classGroupId, classSessionId, presetSt
     if (editTask) {
       updateClinicTask(editTask.id, form);
     } else {
-      addClinicTask({ ...form, requestedByRole: role, requestedById: role });
+      addClinicTask({ ...form, createdByRole: role, createdById: role });
     }
     onClose();
   };
@@ -62,10 +62,10 @@ export default function ClinicFormModal({ classGroupId, classSessionId, presetSt
     <Modal
       isOpen
       onClose={onClose}
-      title={editTask ? '클리닉 수정' : '클리닉 요청'}
+      title={editTask ? '클리닉 수정' : '클리닉 추가'}
       footer={
         <button onClick={handleSave} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">
-          {editTask ? '저장' : '클리닉 요청'}
+          {editTask ? '저장' : '추가'}
         </button>
       }
     >
@@ -102,7 +102,7 @@ export default function ClinicFormModal({ classGroupId, classSessionId, presetSt
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">설명</label>
           <textarea value={form.description} onChange={(e) => set('description', e.target.value)}
-            rows={3} placeholder="구체적인 내용이나 요청사항을 입력하세요" className="input resize-none" />
+            rows={3} placeholder="구체적인 내용이나 보완 항목을 입력하세요" className="input resize-none" />
         </div>
 
         <div>
