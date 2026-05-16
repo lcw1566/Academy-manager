@@ -718,6 +718,8 @@ const useAcademyStore = create(
         consultations: s.consultations,
         payrolls: s.payrolls,
         repeatGroups: s.repeatGroups,
+        studentEvents: s.studentEvents,
+        examResults: s.examResults,
       }),
       // Migrate persisted profile to add prompt fields if missing
       onRehydrateStorage: () => (state) => {

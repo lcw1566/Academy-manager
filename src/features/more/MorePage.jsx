@@ -1,18 +1,14 @@
 import { useState } from 'react';
-import { LogOut, Key, Eye, EyeOff, Check, MessageSquare, ChevronRight, Edit2, Wifi, WifiOff, Loader2, Trash2, AlertTriangle, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import {
+  LogOut, Key, Eye, EyeOff, Check, MessageSquare, ChevronRight, Edit2,
+  Wifi, WifiOff, Loader2, Trash2, AlertTriangle, ChevronDown, RotateCcw,
+} from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import Modal from '../../components/Modal';
 import { roleMap, formatPhoneNumber } from '../../utils/format';
 import { testGeminiConnection } from '../../utils/aiNotice';
 import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../../constants/aiPrompts';
-
-const NOTICE_TONES = [
-  { id: 'friendly',    label: '친절한' },
-  { id: 'plain',       label: '담백한' },
-  { id: 'praise',      label: '칭찬 중심' },
-  { id: 'improvement', label: '개선 중심' },
-];
 
 const SUBJECTS = ['수학', '영어', '국어', '과학', '물리', '화학', '사회', '역사', '기타'];
 
@@ -70,7 +66,7 @@ export default function MorePage() {
       <Header title="더보기" />
 
       <div className="pt-14 pb-6">
-        {/* Profile card */}
+        {/* 프로필 카드 */}
         <button
           onClick={() => setShowProfileEdit(true)}
           className="mx-4 mt-4 w-[calc(100%-2rem)] bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 text-left active:scale-98 transition-transform"
@@ -94,7 +90,7 @@ export default function MorePage() {
           </div>
         </button>
 
-        {/* Bank account quick view */}
+        {/* 계좌 정보 */}
         {tutorProfile.bankAccount ? (
           <div className="mx-4 mt-2 bg-blue-50 rounded-xl px-4 py-2.5 flex items-center justify-between">
             <div>
@@ -148,11 +144,16 @@ export default function MorePage() {
                   placeholder="AIzaSy..."
                   className="flex-1 py-3 text-sm focus:outline-none text-gray-700 bg-transparent"
                 />
-                <button onClick={() => setShowKey((v) => !v)} className="text-gray-400 p-1">
+                <button
+                  type="button"
+                  onClick={() => setShowKey((v) => !v)}
+                  className="text-gray-400 p-1"
+                >
                   {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
               <button
+                type="button"
                 onClick={handleSaveKey}
                 className={`px-4 rounded-xl text-sm font-bold transition-colors ${
                   keySaved ? 'bg-green-500 text-white' : 'bg-blue-600 text-white'
@@ -164,12 +165,17 @@ export default function MorePage() {
 
             <div className="flex items-center justify-between">
               {geminiApiKey && (
-                <button onClick={handleDeleteKey} className="text-xs text-red-400 font-medium">
+                <button
+                  type="button"
+                  onClick={handleDeleteKey}
+                  className="text-xs text-red-400 font-medium"
+                >
                   API 키 삭제
                 </button>
               )}
               {(keyInput.trim() || geminiApiKey) && (
                 <button
+                  type="button"
                   onClick={handleTestConnection}
                   disabled={testState === 'testing'}
                   className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-blue-600 disabled:opacity-50"
@@ -190,9 +196,7 @@ export default function MorePage() {
 
             {testMsg && (
               <div className={`mt-2 rounded-xl px-3 py-2 text-xs font-medium ${
-                testState === 'success'
-                  ? 'bg-green-50 text-green-700'
-                  : 'bg-red-50 text-red-600'
+                testState === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
               }`}>
                 {testState === 'success' ? '✓ ' : '✗ '}{testMsg}
               </div>
@@ -211,7 +215,7 @@ export default function MorePage() {
           </div>
         </div>
 
-        {/* Consultations */}
+        {/* 최근 상담 기록 */}
         <div className="mx-4 mt-5">
           <p className="text-sm font-bold text-gray-700 mb-3">최근 상담 기록</p>
           {recentConsultations.length === 0 ? (
@@ -243,7 +247,7 @@ export default function MorePage() {
           )}
         </div>
 
-        {/* Coming soon */}
+        {/* 예정 기능 */}
         <div className="mx-4 mt-5">
           <p className="text-sm font-bold text-gray-700 mb-3">예정 기능</p>
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -256,9 +260,10 @@ export default function MorePage() {
           </div>
         </div>
 
-        {/* Logout */}
+        {/* 역할 변경 */}
         <div className="mx-4 mt-5">
           <button
+            type="button"
             onClick={logout}
             className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white shadow-sm text-gray-600 text-sm font-medium"
           >
@@ -267,9 +272,10 @@ export default function MorePage() {
           </button>
         </div>
 
-        {/* Data Reset */}
+        {/* 데이터 초기화 */}
         <div className="mx-4 mt-3 mb-2">
           <button
+            type="button"
             onClick={() => setShowResetSheet(true)}
             className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-red-50 text-red-500 text-sm font-semibold active:bg-red-100 transition-colors"
           >
@@ -291,7 +297,7 @@ export default function MorePage() {
         />
       )}
 
-      {/* Reset options bottom sheet */}
+      {/* 초기화 선택 bottom sheet */}
       <Modal
         isOpen={showResetSheet}
         onClose={() => setShowResetSheet(false)}
@@ -302,6 +308,7 @@ export default function MorePage() {
             테스트 중 입력한 데이터를 삭제할 수 있어요. 삭제한 데이터는 되돌릴 수 없습니다.
           </p>
           <button
+            type="button"
             onClick={() => { setShowResetSheet(false); setConfirmResetType('all'); }}
             className="w-full flex items-center gap-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-4 text-left active:bg-red-100 transition-colors"
           >
@@ -314,6 +321,7 @@ export default function MorePage() {
             </div>
           </button>
           <button
+            type="button"
             onClick={() => { setShowResetSheet(false); setConfirmResetType('exceptTeachers'); }}
             className="w-full flex items-center gap-3 bg-orange-50 border border-orange-100 rounded-2xl px-4 py-4 text-left active:bg-orange-100 transition-colors"
           >
@@ -326,6 +334,7 @@ export default function MorePage() {
             </div>
           </button>
           <button
+            type="button"
             onClick={() => setShowResetSheet(false)}
             className="w-full py-3.5 rounded-2xl bg-gray-100 text-gray-600 text-sm font-semibold mt-1"
           >
@@ -334,7 +343,7 @@ export default function MorePage() {
         </div>
       </Modal>
 
-      {/* Confirm reset modal */}
+      {/* 초기화 확인 모달 */}
       <Modal
         isOpen={confirmResetType !== null}
         onClose={() => setConfirmResetType(null)}
@@ -342,12 +351,14 @@ export default function MorePage() {
         footer={
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => setConfirmResetType(null)}
               className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold"
             >
               취소
             </button>
             <button
+              type="button"
               onClick={() => {
                 if (confirmResetType === 'all') {
                   resetAllData();
@@ -381,7 +392,7 @@ export default function MorePage() {
   );
 }
 
-// ── Profile edit modal ─────────────────────────────────────────────────────────
+// ── 프로필 수정 모달 ──────────────────────────────────────────────────────────
 
 function ProfileEditModal({ profile, onClose, onSave }) {
   const [form, setForm] = useState({
@@ -389,7 +400,7 @@ function ProfileEditModal({ profile, onClose, onSave }) {
     studentHomeworkPrompt: DEFAULT_STUDENT_HOMEWORK_PROMPT,
     ...profile,
   });
-  const [showPromptSection, setShowPromptSection] = useState(false);
+  const [showAiSection, setShowAiSection] = useState(false);
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -401,7 +412,7 @@ function ProfileEditModal({ profile, onClose, onSave }) {
         : [...(f.subjects || []), sub],
     }));
 
-  const resetParentPrompt = () => setField('parentNoticePrompt', DEFAULT_PARENT_NOTICE_PROMPT);
+  const resetParentPrompt  = () => setField('parentNoticePrompt', DEFAULT_PARENT_NOTICE_PROMPT);
   const resetStudentPrompt = () => setField('studentHomeworkPrompt', DEFAULT_STUDENT_HOMEWORK_PROMPT);
 
   return (
@@ -411,6 +422,7 @@ function ProfileEditModal({ profile, onClose, onSave }) {
       title="프로필 수정"
       footer={
         <button
+          type="button"
           onClick={() => onSave(form)}
           className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl text-base"
         >
@@ -419,6 +431,7 @@ function ProfileEditModal({ profile, onClose, onSave }) {
       }
     >
       <div className="flex flex-col gap-4">
+        {/* 선생님 이름 */}
         <Field label="선생님 이름">
           <input
             value={form.name || ''}
@@ -428,6 +441,7 @@ function ProfileEditModal({ profile, onClose, onSave }) {
           />
         </Field>
 
+        {/* 전화번호 */}
         <Field label="전화번호">
           <input
             inputMode="tel"
@@ -438,6 +452,7 @@ function ProfileEditModal({ profile, onClose, onSave }) {
           />
         </Field>
 
+        {/* 이메일 */}
         <Field label="이메일">
           <input
             type="email"
@@ -448,6 +463,7 @@ function ProfileEditModal({ profile, onClose, onSave }) {
           />
         </Field>
 
+        {/* 기본 과목 */}
         <Field label="기본 과목">
           <div className="flex flex-wrap gap-2">
             {SUBJECTS.map((sub) => (
@@ -467,6 +483,7 @@ function ProfileEditModal({ profile, onClose, onSave }) {
           </div>
         </Field>
 
+        {/* 기본 수업 장소 */}
         <Field label="기본 수업 장소">
           <input
             value={form.defaultLocation || ''}
@@ -476,7 +493,7 @@ function ProfileEditModal({ profile, onClose, onSave }) {
           />
         </Field>
 
-        {/* Bank account */}
+        {/* 계좌 정보 */}
         <div className="border-t border-gray-100 pt-4">
           <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">계좌 정보</p>
           <div className="flex flex-col gap-3">
@@ -507,50 +524,29 @@ function ProfileEditModal({ profile, onClose, onSave }) {
           </div>
         </div>
 
-        {/* Notice tone */}
-        <div className="border-t border-gray-100 pt-4">
-          <p className="text-xs font-bold text-gray-500 mb-3">알림장 기본 톤</p>
-          <div className="grid grid-cols-2 gap-2">
-            {NOTICE_TONES.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setField('defaultNoticeTone', id)}
-                className={`py-2.5 rounded-xl text-xs font-semibold border transition-colors ${
-                  form.defaultNoticeTone === id
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-600 border-gray-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* AI prompt settings */}
+        {/* AI 작성 설정 */}
         <div className="border-t border-gray-100 pt-4">
           <button
             type="button"
-            onClick={() => setShowPromptSection((v) => !v)}
-            className="w-full flex items-center justify-between"
+            onClick={() => setShowAiSection((v) => !v)}
+            className="w-full flex items-center justify-between bg-gray-50 rounded-2xl px-4 py-3.5"
           >
-            <div>
-              <p className="text-xs font-bold text-gray-500 text-left">AI 작성 설정</p>
-              <p className="text-xs text-gray-400 mt-0.5 text-left">알림장과 숙제 알림의 기본 작성 방식을 설정해요</p>
+            <div className="text-left">
+              <p className="text-sm font-bold text-gray-800">AI 작성 설정</p>
+              <p className="text-xs text-gray-400 mt-0.5">알림장과 숙제 알림의 기본 작성 방식을 설정해요</p>
             </div>
-            {showPromptSection
-              ? <ChevronUp size={16} className="text-gray-400 flex-shrink-0" />
-              : <ChevronDown size={16} className="text-gray-400 flex-shrink-0" />
-            }
+            <ChevronDown
+              size={18}
+              className={`text-gray-400 flex-shrink-0 ml-3 transition-transform duration-200 ${showAiSection ? 'rotate-180' : ''}`}
+            />
           </button>
 
-          {showPromptSection && (
-            <div className="mt-4 flex flex-col gap-4">
-              {/* Parent notice prompt */}
+          {showAiSection && (
+            <div className="mt-3 flex flex-col gap-4">
+              {/* 학부모용 작성 방식 */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-blue-700">학부모용 작성 방식</label>
+                  <label className="text-xs font-bold text-blue-700">학부모용 작성 방식</label>
                   <button
                     type="button"
                     onClick={resetParentPrompt}
@@ -564,15 +560,14 @@ function ProfileEditModal({ profile, onClose, onSave }) {
                   value={form.parentNoticePrompt || DEFAULT_PARENT_NOTICE_PROMPT}
                   onChange={(e) => setField('parentNoticePrompt', e.target.value)}
                   rows={6}
-                  style={{ maxHeight: '200px' }}
-                  className="w-full border border-blue-200 rounded-xl px-3 py-2.5 text-xs leading-relaxed focus:outline-none focus:border-blue-400 bg-blue-50 resize-none overflow-y-auto"
+                  className="w-full border border-blue-200 rounded-xl px-3 py-2.5 text-xs leading-relaxed focus:outline-none focus:border-blue-400 bg-blue-50 resize-none"
                 />
               </div>
 
-              {/* Student homework prompt */}
+              {/* 학생용 숙제 알림 */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-green-700">학생용 숙제 알림 작성 방식</label>
+                  <label className="text-xs font-bold text-green-700">학생용 숙제 알림 작성 방식</label>
                   <button
                     type="button"
                     onClick={resetStudentPrompt}
@@ -586,8 +581,7 @@ function ProfileEditModal({ profile, onClose, onSave }) {
                   value={form.studentHomeworkPrompt || DEFAULT_STUDENT_HOMEWORK_PROMPT}
                   onChange={(e) => setField('studentHomeworkPrompt', e.target.value)}
                   rows={6}
-                  style={{ maxHeight: '200px' }}
-                  className="w-full border border-green-200 rounded-xl px-3 py-2.5 text-xs leading-relaxed focus:outline-none focus:border-green-400 bg-green-50 resize-none overflow-y-auto"
+                  className="w-full border border-green-200 rounded-xl px-3 py-2.5 text-xs leading-relaxed focus:outline-none focus:border-green-400 bg-green-50 resize-none"
                 />
               </div>
             </div>

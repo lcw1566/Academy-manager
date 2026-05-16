@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   Plus, ChevronRight, ChevronDown, MoreHorizontal,
-  RefreshCw, CalendarDays, MessageCircle, Trash2, Pencil,
+  RefreshCw, CalendarDays, Trash2, Pencil,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../store/useAcademyStore';
@@ -25,7 +25,6 @@ const VIEW_FILTERS = [
   { id: 'regular', label: '정기' },
   { id: 'group',   label: '그룹' },
   { id: 'oneoff',  label: '단발' },
-  { id: 'consult', label: '상담' },
 ];
 
 const SORT_OPTIONS = [
@@ -51,14 +50,6 @@ const ADD_ACTIONS = [
     desc: '보강, 시험 직전 특강처럼 한 번만 진행하는 수업이에요.',
     mode: 'single',
     type: '단발 수업',
-  },
-  {
-    id: 'consult',
-    icon: <MessageCircle size={20} className="text-green-600" />,
-    title: '상담 일정 추가',
-    desc: '학생 또는 학부모 상담 일정을 등록해요.',
-    mode: 'single',
-    type: '상담',
   },
 ];
 
@@ -198,7 +189,6 @@ export default function ClassesPage() {
     if (viewFilter === 'all') return true;
     if (viewFilter === 'regular' || viewFilter === 'group') return false;
     if (viewFilter === 'oneoff') return ['단발 수업', '보강'].includes(item.cls.type);
-    if (viewFilter === 'consult') return item.cls.type === '상담';
     return true;
   });
 
