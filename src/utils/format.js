@@ -43,7 +43,9 @@ export const evaluationLevelColors = {
 export const roleMap = {
   tutor: '과외 선생님',
   director: '원장',
-  teacher: '강사',
+  owner: '학원 원장',
+  teacher: '학원 강사',
+  assistant: '보조강사',
 };
 
 export const classTypeColors = {
