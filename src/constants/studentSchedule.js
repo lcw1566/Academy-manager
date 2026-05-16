@@ -4,13 +4,18 @@ export const STUDENT_EVENT_TYPES = {
   mock:        { label: '모의고사',   icon: '📄', dot: 'exam' },
   csat:        { label: '수능',       icon: '🎓', dot: 'exam' },
   performance: { label: '수행평가',   icon: '✏️', dot: 'performance' },
-  school:      { label: '학교 행사',  icon: '🏫', dot: 'school' },
-  consultation:{ label: '상담',       icon: '💬', dot: 'school' },
-  makeup:      { label: '보충 수업',  icon: '📚', dot: 'school' },
+  unit:        { label: '단원평가',   icon: '📋', dot: 'exam' },
+  school:      { label: '학교 일정',  icon: '🏫', dot: 'school' },
   other:       { label: '기타',       icon: '📌', dot: 'school' },
 };
 
-export const EXAM_EVENT_TYPES = ['midterm', 'final', 'mock', 'csat', 'performance'];
+// Legacy types kept for data compatibility (not shown in UI)
+export const LEGACY_EVENT_TYPES = {
+  consultation: { label: '상담', icon: '💬', dot: 'school' },
+  makeup:       { label: '보충 수업', icon: '📚', dot: 'school' },
+};
+
+export const EXAM_EVENT_TYPES = ['midterm', 'final', 'mock', 'csat', 'performance', 'unit'];
 
 export const EXAM_TYPES = {
   midterm:     '중간고사',
@@ -18,6 +23,9 @@ export const EXAM_TYPES = {
   mock:        '모의고사',
   csat:        '수능',
   performance: '수행평가',
+  unit:        '단원평가',
+  school:      '학교 일정',
+  other:       '기타',
 };
 
 export const SUBJECT_OPTIONS = [

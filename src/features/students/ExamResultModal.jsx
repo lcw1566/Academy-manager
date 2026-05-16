@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, ChevronDown } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import { EXAM_TYPES, SUBJECT_OPTIONS, GRADE_LABELS } from '../../constants/studentSchedule';
 import { getTodayYMD } from '../../utils/date';
@@ -22,9 +22,10 @@ function Field({ label, hint, children }) {
 export default function ExamResultModal({ studentId, result = null, events = [], onClose }) {
   const { addExamResult, updateExamResult } = useAcademyStore();
   const isEdit = !!result;
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const examEvents = events.filter((e) =>
-    ['midterm', 'final', 'mock', 'csat', 'performance'].includes(e.eventType)
+    ['midterm', 'final', 'mock', 'csat', 'performance', 'unit'].includes(e.eventType)
   );
 
   const [form, setForm] = useState({
@@ -35,12 +36,12 @@ export default function ExamResultModal({ studentId, result = null, events = [],
     date:       result?.date       || getTodayYMD(),
     score:      result?.score      ?? '',
     maxScore:   result?.maxScore   ?? 100,
-    percentile: result?.percentile ?? '',
     grade:      result?.grade      || '',
-    classRank:  result?.classRank  ?? '',
-    schoolRank: result?.schoolRank ?? '',
     weakUnits:  result?.weakUnits  || [],
     memo:       result?.memo       || '',
+    percentile: result?.percentile ?? '',
+    classRank:  result?.classRank  ?? '',
+    schoolRank: result?.schoolRank ?? '',
   });
   const [weakInput, setWeakInput] = useState('');
 
@@ -107,7 +108,6 @@ export default function ExamResultModal({ studentId, result = null, events = [],
           exit={{ y: '100%' }}
           transition={{ type: 'spring', damping: 28, stiffness: 300 }}
         >
-          {/* 헤더 */}
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-lg font-bold text-gray-900">{isEdit ? '성적 수정' : '성적 기록'}</h2>
@@ -123,7 +123,6 @@ export default function ExamResultModal({ studentId, result = null, events = [],
             <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
               <p className="text-xs font-bold text-gray-400 -mb-1">시험 정보</p>
 
-              {/* 연결 일정 */}
               {examEvents.length > 0 && (
                 <Field label="일정과 연결" hint="(선택)">
                   <select
@@ -142,15 +141,14 @@ export default function ExamResultModal({ studentId, result = null, events = [],
                 </Field>
               )}
 
-              {/* 시험 종류 */}
               <Field label="시험 종류">
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   {Object.entries(EXAM_TYPES).map(([key, label]) => (
                     <button
                       key={key}
                       type="button"
                       onClick={() => upd('examType', key)}
-                      className={`h-10 rounded-xl border text-xs font-bold transition-all ${
+                      className={`h-10 rounded-xl border text-[11px] font-bold transition-all ${
                         form.examType === key
                           ? 'bg-blue-50 border-blue-400 text-blue-700'
                           : 'bg-white border-gray-200 text-gray-600'
@@ -162,7 +160,6 @@ export default function ExamResultModal({ studentId, result = null, events = [],
                 </div>
               </Field>
 
-              {/* 시험명 */}
               <Field label="시험명" hint="(선택 · 예: 1학기 중간고사)">
                 <input
                   value={form.title}
@@ -172,7 +169,6 @@ export default function ExamResultModal({ studentId, result = null, events = [],
                 />
               </Field>
 
-              {/* 과목 + 날짜 */}
               <div className="grid grid-cols-2 gap-3">
                 <Field label="과목">
                   <input
@@ -201,7 +197,6 @@ export default function ExamResultModal({ studentId, result = null, events = [],
             <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
               <p className="text-xs font-bold text-gray-400 -mb-1">성적</p>
 
-              {/* 점수 */}
               <Field label="점수">
                 <div className="flex items-center gap-2">
                   <input
@@ -225,47 +220,20 @@ export default function ExamResultModal({ studentId, result = null, events = [],
                 </div>
               </Field>
 
-              {/* 등급 + 백분위 */}
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="등급">
-                  <select value={form.grade} onChange={(e) => upd('grade', e.target.value)} className={FI}>
-                    <option value="">선택</option>
-                    {Object.entries(GRADE_LABELS).map(([key, label]) => (
-                      <option key={key} value={key}>{label}</option>
-                    ))}
-                    {Array.from({ length: 9 }, (_, i) => i + 1).map((n) => (
-                      <option key={`num-${n}`} value={String(n)}>{n}등급</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="백분위">
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      value={form.percentile}
-                      onChange={(e) => upd('percentile', e.target.value)}
-                      placeholder="예: 87"
-                      min={0}
-                      max={100}
-                      className="flex-1 h-11 px-4 rounded-2xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    />
-                    <span className="text-gray-500 text-sm flex-shrink-0">%</span>
-                  </div>
-                </Field>
-              </div>
-
-              {/* 석차 */}
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="반 석차">
-                  <input type="number" value={form.classRank} onChange={(e) => upd('classRank', e.target.value)} placeholder="예: 3" min={1} className={FI} />
-                </Field>
-                <Field label="학교 석차">
-                  <input type="number" value={form.schoolRank} onChange={(e) => upd('schoolRank', e.target.value)} placeholder="예: 42" min={1} className={FI} />
-                </Field>
-              </div>
+              <Field label="등급" hint="(선택)">
+                <select value={form.grade} onChange={(e) => upd('grade', e.target.value)} className={FI}>
+                  <option value="">선택 안 함</option>
+                  {Object.entries(GRADE_LABELS).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                  {Array.from({ length: 9 }, (_, i) => i + 1).map((n) => (
+                    <option key={`num-${n}`} value={String(n)}>{n}등급</option>
+                  ))}
+                </select>
+              </Field>
             </div>
 
-            {/* 분석 */}
+            {/* 취약 단원 + 메모 */}
             <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
               <p className="text-xs font-bold text-gray-400 -mb-1">분석</p>
 
@@ -313,6 +281,70 @@ export default function ExamResultModal({ studentId, result = null, events = [],
                 />
               </Field>
             </div>
+
+            {/* 자세한 정보 (접힘) */}
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="flex items-center justify-center gap-2 py-3 text-sm text-gray-500 font-semibold rounded-2xl bg-gray-50 border border-gray-200"
+            >
+              <ChevronDown
+                size={16}
+                className={`transition-transform ${showAdvanced ? 'rotate-180' : ''}`}
+              />
+              자세한 정보 {showAdvanced ? '접기' : '추가'}
+            </button>
+
+            <AnimatePresence>
+              {showAdvanced && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
+                    <p className="text-xs font-bold text-gray-400 -mb-1">상세 정보</p>
+                    <Field label="백분위">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          value={form.percentile}
+                          onChange={(e) => upd('percentile', e.target.value)}
+                          placeholder="예: 87"
+                          min={0}
+                          max={100}
+                          className="flex-1 h-11 px-4 rounded-2xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                        />
+                        <span className="text-gray-500 text-sm flex-shrink-0">%</span>
+                      </div>
+                    </Field>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="반 석차">
+                        <input
+                          type="number"
+                          value={form.classRank}
+                          onChange={(e) => upd('classRank', e.target.value)}
+                          placeholder="예: 3"
+                          min={1}
+                          className={FI}
+                        />
+                      </Field>
+                      <Field label="학교 석차">
+                        <input
+                          type="number"
+                          value={form.schoolRank}
+                          onChange={(e) => upd('schoolRank', e.target.value)}
+                          placeholder="예: 42"
+                          min={1}
+                          className={FI}
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           <button

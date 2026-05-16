@@ -24,27 +24,20 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
   const isEdit = !!event;
 
   const [form, setForm] = useState({
-    eventType:  event?.eventType  || 'midterm',
+    eventType:  event?.eventType && STUDENT_EVENT_TYPES[event.eventType] ? event.eventType : 'midterm',
     title:      event?.title      || '',
     date:       event?.date       || getTodayYMD(),
-    endDate:    event?.endDate    || '',
     subject:    event?.subject    || '',
     importance: event?.importance || 'medium',
     memo:       event?.memo       || '',
   });
-  const [showEndDate, setShowEndDate] = useState(!!event?.endDate);
 
   const upd = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
   const handleSubmit = () => {
     if (!form.date) return;
     const title = form.title.trim() || STUDENT_EVENT_TYPES[form.eventType]?.label;
-    const data = {
-      ...form,
-      title,
-      endDate: showEndDate ? form.endDate : '',
-      studentId,
-    };
+    const data = { ...form, title, studentId };
     if (isEdit) {
       updateStudentEvent(event.id, data);
     } else {
@@ -69,11 +62,10 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
           exit={{ y: '100%' }}
           transition={{ type: 'spring', damping: 28, stiffness: 300 }}
         >
-          {/* 헤더 */}
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-lg font-bold text-gray-900">{isEdit ? '일정 수정' : '시험 / 일정 추가'}</h2>
-              <p className="text-xs text-gray-400 mt-0.5">시험 일정, 수행평가, 학교 행사 등을 기록해요</p>
+              <h2 className="text-lg font-bold text-gray-900">{isEdit ? '일정 수정' : '시험 일정 추가'}</h2>
+              <p className="text-xs text-gray-400 mt-0.5">시험, 수행평가, 학교 일정을 기록해요</p>
             </div>
             <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 flex-shrink-0">
               <X size={20} className="text-gray-500" />
@@ -81,19 +73,18 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
           </div>
 
           <div className="flex flex-col gap-5">
-            {/* 기본 정보 섹션 */}
+            {/* 기본 정보 */}
             <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
               <p className="text-xs font-bold text-gray-400 -mb-1">기본 정보</p>
 
-              {/* 일정 종류 */}
-              <Field label="종류">
-                <div className="grid grid-cols-3 gap-2">
+              <Field label="시험 종류">
+                <div className="grid grid-cols-4 gap-2">
                   {Object.entries(STUDENT_EVENT_TYPES).map(([key, info]) => (
                     <button
                       key={key}
                       type="button"
                       onClick={() => upd('eventType', key)}
-                      className={`flex flex-col items-center gap-1 py-2.5 rounded-2xl border text-xs font-medium transition-all ${
+                      className={`flex flex-col items-center gap-1 py-2.5 rounded-2xl border text-[11px] font-medium transition-all ${
                         form.eventType === key
                           ? 'bg-blue-50 border-blue-400 text-blue-700'
                           : 'bg-white border-gray-200 text-gray-600'
@@ -106,8 +97,7 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
                 </div>
               </Field>
 
-              {/* 제목 */}
-              <Field label="제목" hint="(선택 · 비우면 종류명 사용)">
+              <Field label="시험명" hint="(선택 · 비우면 종류명 사용)">
                 <input
                   value={form.title}
                   onChange={(e) => upd('title', e.target.value)}
@@ -117,11 +107,10 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
               </Field>
             </div>
 
-            {/* 날짜 섹션 */}
+            {/* 날짜 */}
             <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
               <p className="text-xs font-bold text-gray-400 -mb-1">날짜</p>
-
-              <Field label="시작 날짜">
+              <Field label="날짜">
                 <input
                   type="date"
                   value={form.date}
@@ -129,31 +118,6 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
                   className={FI}
                 />
               </Field>
-
-              {/* 종료일 토글 */}
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-gray-600">종료일 있음</span>
-                <button
-                  type="button"
-                  onClick={() => { setShowEndDate((v) => !v); if (showEndDate) upd('endDate', ''); }}
-                  className={`relative w-10 h-5.5 rounded-full transition-colors flex-shrink-0 ${showEndDate ? 'bg-blue-500' : 'bg-gray-300'}`}
-                  style={{ height: 22, width: 40 }}
-                >
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${showEndDate ? 'translate-x-5' : 'translate-x-0.5'}`} />
-                </button>
-              </div>
-
-              {showEndDate && (
-                <Field label="종료 날짜">
-                  <input
-                    type="date"
-                    value={form.endDate}
-                    min={form.date}
-                    onChange={(e) => upd('endDate', e.target.value)}
-                    className={FI}
-                  />
-                </Field>
-              )}
             </div>
 
             {/* 과목 및 중요도 */}

@@ -8,22 +8,20 @@ import StudentFormModal from './StudentFormModal';
 import ClassFormModal from '../classes/ClassFormModal';
 import StudentEventModal from './StudentEventModal';
 import ExamResultModal from './ExamResultModal';
-import { formatCurrency, attendanceStatusMap, paymentStatusMap } from '../../utils/format';
+import StudentLessonsTab from './StudentLessonsTab';
+import { formatCurrency, paymentStatusMap } from '../../utils/format';
 import { formatDateShort, getCurrentMonth, today, getDDayLabel, getDDay, isPastDate } from '../../utils/date';
-import { formatDays } from '../../utils/recurringClass';
 import { STUDENT_EVENT_TYPES, IMPORTANCE_LABELS, EXAM_TYPES, GRADE_LABELS } from '../../constants/studentSchedule';
 
 const TABS = [
-  { id: 'info',       label: '기본' },
-  { id: 'schedule',   label: '정기 과외' },
-  { id: 'records',    label: '수업기록' },
-  { id: 'attendance', label: '출결' },
-  { id: 'payments',   label: '수납' },
-  { id: 'learning',   label: '학습 관리' },
+  { id: 'info',     label: '요약' },
+  { id: 'lessons',  label: '수업' },
+  { id: 'exams',    label: '시험/성적' },
+  { id: 'payments', label: '수납' },
 ];
 
-// ── 공통 인풋 스타일 ────────────────────────────────────
-const FI = 'w-full h-11 px-4 rounded-2xl border border-gray-200 bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-300';
+// Exclude legacy types from exam tab display
+const EXAM_TAB_TYPES = ['midterm', 'final', 'mock', 'csat', 'performance', 'unit', 'school', 'other'];
 
 function getScoreChange(result, allResults) {
   if (result.score === null || result.score === undefined) return null;
@@ -70,27 +68,15 @@ export default function StudentDetailPage() {
   const openAddExam  = () => { setEditingExam(null);  setShowAddSheet(false); setShowExamModal(true); };
 
   const currentMonth = getCurrentMonth();
-  const todayStr = today();
 
-  const studentGroups = repeatGroups.filter((g) =>
-    g.studentIds?.includes(student.id) || g.studentId === student.id
-  );
-  const studentClasses = classes
-    .filter((c) => c.studentIds.includes(student.id))
-    .sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime));
-  const studentRecords = lessonRecords
-    .filter((lr) => lr.studentId === student.id)
-    .sort((a, b) => b.date.localeCompare(a.date));
-  const studentAttendance = attendanceRecords
-    .filter((a) => a.studentId === student.id)
-    .sort((a, b) => b.date.localeCompare(a.date));
   const studentPayments = payments
     .filter((p) => p.studentId === student.id)
     .sort((a, b) => b.month.localeCompare(a.month));
   const thisMonthPayment = studentPayments.find((p) => p.month === currentMonth);
 
+  // Only show exam-type events in the exams tab (exclude consultation/makeup)
   const studentEventsFiltered = (studentEvents || [])
-    .filter((e) => e.studentId === student.id)
+    .filter((e) => e.studentId === student.id && EXAM_TAB_TYPES.includes(e.eventType))
     .sort((a, b) => a.date.localeCompare(b.date));
   const upcomingEvents = studentEventsFiltered.filter((e) => !isPastDate(e.date));
   const pastEvents    = studentEventsFiltered.filter((e) => isPastDate(e.date));
@@ -101,17 +87,22 @@ export default function StudentDetailPage() {
 
   const schoolLabel = [student.schoolName || student.school, student.grade].filter(Boolean).join(' ');
 
-  // 학습 관리 요약 데이터
   const nearestEvent = upcomingEvents[0] || null;
   const latestResult = studentExamResults[0] || null;
   const latestScoreChange = latestResult ? getScoreChange(latestResult, studentExamResults) : null;
-  const hasLearningData = studentEventsFiltered.length > 0 || studentExamResults.length > 0;
+  const hasExamData = studentEventsFiltered.length > 0 || studentExamResults.length > 0;
 
-  // 전체 기록 타임라인 (일정 + 성적 합산, 날짜 최신순)
   const timeline = [
     ...studentEventsFiltered.map((e) => ({ ...e, _kind: 'event' })),
     ...studentExamResults.map((r) => ({ ...r, _kind: 'result' })),
   ].sort((a, b) => b.date.localeCompare(a.date));
+
+  // School type color
+  const schoolTypeColor = {
+    elementary: 'bg-green-50 text-green-700',
+    middle:     'bg-blue-50 text-blue-700',
+    high:       'bg-purple-50 text-purple-700',
+  }[student.schoolType] || 'bg-gray-100 text-gray-600';
 
   return (
     <div>
@@ -119,7 +110,7 @@ export default function StudentDetailPage() {
         title={student.name}
         onBack={goBackFromStudent}
         right={
-          tab === 'learning' ? (
+          tab === 'exams' ? (
             <button
               onClick={() => setShowAddSheet(true)}
               className="flex items-center gap-1 text-blue-600 font-semibold text-sm"
@@ -150,7 +141,16 @@ export default function StudentDetailPage() {
                   </span>
                 )}
               </div>
-              {schoolLabel && <p className="text-sm text-gray-500 mt-0.5">{schoolLabel}</p>}
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                {(student.schoolName || student.school) && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${schoolTypeColor}`}>
+                    {student.schoolName || student.school}
+                  </span>
+                )}
+                {student.grade && (
+                  <span className="text-xs text-gray-500">{student.grade}</span>
+                )}
+              </div>
               <div className="flex gap-1 mt-1.5 flex-wrap">
                 {student.subjects?.map((sub) => (
                   <span key={sub} className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
@@ -163,12 +163,12 @@ export default function StudentDetailPage() {
         </div>
 
         {/* 탭 */}
-        <div className="mx-4 mt-4 flex bg-gray-100 rounded-xl p-1 overflow-x-auto gap-0.5 scrollbar-hide">
+        <div className="mx-4 mt-4 flex bg-gray-100 rounded-xl p-1 gap-0.5">
           {TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex-1 min-w-fit py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap px-2 ${
+              className={`flex-1 py-2 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap px-1 ${
                 tab === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
               }`}
             >
@@ -179,7 +179,7 @@ export default function StudentDetailPage() {
 
         <div className="mx-4 mt-4 pb-24">
 
-          {/* ── 기본 탭 ── */}
+          {/* ── 요약 탭 ── */}
           {tab === 'info' && (
             <div className="flex flex-col gap-3">
               <InfoCard label="연락처">
@@ -208,17 +208,17 @@ export default function StudentDetailPage() {
                 </InfoCard>
               )}
 
-              {/* 학습 관리 요약 카드 */}
+              {/* 시험/성적 요약 카드 */}
               <button
-                onClick={() => setTab('learning')}
+                onClick={() => setTab('exams')}
                 className="bg-white rounded-2xl p-4 shadow-sm text-left w-full"
               >
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">학습 관리</p>
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">시험/성적</p>
                   <span className="text-xs text-blue-500 font-medium">자세히 보기 →</span>
                 </div>
-                {!hasLearningData ? (
-                  <p className="text-sm text-gray-400">아직 학습 기록이 없어요</p>
+                {!hasExamData ? (
+                  <p className="text-sm text-gray-400">아직 시험이나 성적 기록이 없어요</p>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {nearestEvent && (
@@ -260,151 +260,12 @@ export default function StudentDetailPage() {
             </div>
           )}
 
-          {/* ── 정기 과외 탭 ── */}
-          {tab === 'schedule' && (
-            <div className="flex flex-col gap-3">
-              {studentGroups.length === 0 ? (
-                <EmptyState
-                  icon="📅"
-                  title="등록된 정기 과외가 없어요"
-                  description="정기 과외를 등록하면 수업 일정이 자동 생성돼요"
-                  action={
-                    <button
-                      onClick={() => setShowClassForm(true)}
-                      className="bg-blue-600 text-white text-sm font-semibold px-6 py-2.5 rounded-xl"
-                    >
-                      정기 과외 등록하기
-                    </button>
-                  }
-                />
-              ) : (
-                studentGroups.map((group) => {
-                  const groupClasses = classes.filter((c) => c.repeatGroupId === group.id);
-                  const futureClasses = groupClasses.filter((c) => c.date >= todayStr);
-                  const nextClass = futureClasses.sort((a, b) => a.date.localeCompare(b.date))[0];
-                  return (
-                    <div key={group.id} className="bg-white rounded-2xl p-4 shadow-sm">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <p className="font-bold text-gray-900">{group.subject} 과외</p>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {formatDays(group.daysOfWeek)}요일 · {group.repeatType}
-                          </p>
-                        </div>
-                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-medium">
-                          총 {groupClasses.length}회
-                        </span>
-                      </div>
-                      <div className="flex flex-col gap-1.5 mb-3">
-                        <p className="text-xs text-gray-600">
-                          {group.startTime} – {group.endTime}
-                          {group.location ? ` · ${group.location}` : ''}
-                        </p>
-                        {group.monthlyFee > 0 && (
-                          <p className="text-xs text-gray-600">
-                            {formatCurrency(group.monthlyFee)} / 월 · 매월 {group.paymentDay}일
-                          </p>
-                        )}
-                        {nextClass && (
-                          <p className="text-xs text-blue-600 font-medium">
-                            다음 수업: {formatDateShort(nextClass.date)} {nextClass.startTime}
-                          </p>
-                        )}
-                        <p className="text-xs text-gray-400">
-                          {group.startDate} ~ {group.endDate || '(3개월)'}
-                        </p>
-                      </div>
-                      {futureClasses.length > 0 && (
-                        <button
-                          onClick={() => {
-                            if (window.confirm(`앞으로의 ${futureClasses.length}개 수업을 삭제할까요?\n이미 완료된 수업은 유지됩니다.`)) {
-                              deleteRepeatGroupFuture(group.id, todayStr);
-                            }
-                          }}
-                          className="w-full py-2.5 rounded-xl text-xs font-semibold bg-red-50 text-red-500"
-                        >
-                          앞으로의 수업 삭제 ({futureClasses.length}개)
-                        </button>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-              <button
-                onClick={() => setShowClassForm(true)}
-                className="w-full py-3 rounded-xl border-2 border-dashed border-blue-200 text-blue-600 text-sm font-semibold"
-              >
-                + 정기 과외 추가하기
-              </button>
-            </div>
-          )}
-
-          {/* ── 수업기록 탭 ── */}
-          {tab === 'records' && (
-            <div className="flex flex-col gap-3">
-              {studentRecords.length === 0 ? (
-                <EmptyState icon="📓" title="수업 기록이 없어요" />
-              ) : (
-                studentRecords.map((rec) => {
-                  const cls = classes.find((c) => c.id === rec.classId);
-                  return (
-                    <button
-                      key={rec.id}
-                      onClick={() => cls && navigateToClass(cls.id)}
-                      className="bg-white rounded-2xl p-4 shadow-sm text-left"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-xs text-gray-400">{formatDateShort(rec.date)}</p>
-                        {rec.noticeStatus === 'sent' && (
-                          <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-medium">알림장 전송</span>
-                        )}
-                      </div>
-                      {rec.content && <p className="text-sm font-semibold text-gray-800 mb-1">{rec.content}</p>}
-                      {rec.homework && <p className="text-xs text-gray-500">숙제: {rec.homework}</p>}
-                      {rec.memo && <p className="text-xs text-gray-400 mt-1">{rec.memo}</p>}
-                      {rec.evaluation && Object.keys(rec.evaluation).length > 0 && (
-                        <div className="mt-2 flex gap-1 flex-wrap">
-                          {Object.entries(rec.evaluation).map(([key, val]) => {
-                            const colors = { poor: 'bg-red-50 text-red-600', fair: 'bg-orange-50 text-orange-600', good: 'bg-blue-50 text-blue-600', great: 'bg-green-50 text-green-600' };
-                            const labels = { focus: '집중', attitude: '태도', understanding: '이해', homework: '숙제', achievement: '성취' };
-                            return (
-                              <span key={key} className={`text-xs px-2 py-0.5 rounded-full ${colors[val]}`}>
-                                {labels[key]}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {/* ── 출결 탭 ── */}
-          {tab === 'attendance' && (
-            <div className="flex flex-col gap-2">
-              {studentAttendance.length === 0 ? (
-                <EmptyState icon="📋" title="출결 기록이 없어요" />
-              ) : (
-                studentAttendance.map((rec) => {
-                  const cls = classes.find((c) => c.id === rec.classId);
-                  const meta = attendanceStatusMap[rec.status];
-                  return (
-                    <div key={rec.id} className="bg-white rounded-xl px-4 py-3 shadow-sm flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">{formatDateShort(rec.date)}</p>
-                        <p className="text-xs text-gray-400">{cls?.name || '수업'}</p>
-                      </div>
-                      <span className={`text-xs font-bold px-3 py-1 rounded-full ${meta?.bg} ${meta?.color}`}>
-                        {meta?.label}
-                      </span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+          {/* ── 수업 탭 ── */}
+          {tab === 'lessons' && (
+            <StudentLessonsTab
+              student={student}
+              onAddClass={() => setShowClassForm(true)}
+            />
           )}
 
           {/* ── 수납 탭 ── */}
@@ -434,30 +295,28 @@ export default function StudentDetailPage() {
             </div>
           )}
 
-          {/* ── 학습 관리 탭 ── */}
-          {tab === 'learning' && (
+          {/* ── 시험/성적 탭 ── */}
+          {tab === 'exams' && (
             <div className="flex flex-col gap-5">
-
-              {/* 전체 없을 때 Empty State */}
-              {!hasLearningData ? (
+              {!hasExamData ? (
                 <EmptyState
-                  icon="📚"
-                  title="아직 학습 기록이 없어요"
+                  icon="📊"
+                  title="아직 시험이나 성적 기록이 없어요"
                   description={`시험 일정과 성적을 기록하면\n${student.name} 학생의 변화가 한눈에 보여요`}
                   action={
                     <button
                       onClick={() => setShowAddSheet(true)}
                       className="bg-blue-600 text-white text-sm font-semibold px-6 py-3 rounded-2xl"
                     >
-                      학습 기록 추가하기
+                      기록 추가하기
                     </button>
                   }
                 />
               ) : (
                 <>
-                  {/* 학습 요약 카드 */}
+                  {/* 요약 카드 */}
                   <div className="bg-gradient-to-br from-blue-600 to-blue-500 rounded-2xl p-4 text-white">
-                    <p className="text-xs font-semibold text-blue-100 mb-3">학습 요약</p>
+                    <p className="text-xs font-semibold text-blue-100 mb-3">시험/성적 요약</p>
                     <div className="flex flex-col gap-2.5">
                       {upcomingEvents.length > 0 ? (
                         <div className="flex items-center justify-between">
@@ -478,7 +337,6 @@ export default function StudentDetailPage() {
                       ) : (
                         <p className="text-sm text-blue-200">다가오는 시험 일정이 없어요</p>
                       )}
-
                       {latestResult && (
                         <div className="flex items-center justify-between pt-2.5 border-t border-white/20">
                           <div className="flex items-center gap-2">
@@ -505,17 +363,17 @@ export default function StudentDetailPage() {
                     </div>
                   </div>
 
-                  {/* 다가오는 시험과 일정 */}
+                  {/* 다가오는 시험 */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-bold text-gray-800">다가오는 시험과 일정</p>
+                      <p className="text-sm font-bold text-gray-800">다가오는 시험 일정</p>
                       <button onClick={openAddEvent} className="text-xs text-blue-500 font-semibold flex items-center gap-0.5">
                         <Plus size={13} />일정 추가
                       </button>
                     </div>
                     {upcomingEvents.length === 0 ? (
                       <div className="bg-white rounded-2xl p-5 text-center shadow-sm">
-                        <p className="text-sm text-gray-400">다가오는 일정이 없어요</p>
+                        <p className="text-sm text-gray-400">다가오는 시험 일정이 없어요</p>
                       </div>
                     ) : (
                       <div className="flex flex-col gap-2">
@@ -529,8 +387,6 @@ export default function StudentDetailPage() {
                         ))}
                       </div>
                     )}
-
-                    {/* 지난 일정 (접힌 형태) */}
                     {pastEvents.length > 0 && (
                       <div className="mt-2">
                         <p className="text-xs font-semibold text-gray-400 mb-2">지난 일정 ({pastEvents.length}개)</p>
@@ -587,7 +443,7 @@ export default function StudentDetailPage() {
                     )}
                   </div>
 
-                  {/* 전체 기록 타임라인 */}
+                  {/* 전체 타임라인 */}
                   {timeline.length > 0 && (
                     <div>
                       <button
@@ -648,7 +504,7 @@ export default function StudentDetailPage() {
         />
       )}
 
-      {/* 학습 기록 추가 bottom sheet */}
+      {/* 시험/성적 추가 bottom sheet */}
       <AnimatePresence>
         {showAddSheet && (
           <motion.div
@@ -666,7 +522,7 @@ export default function StudentDetailPage() {
               transition={{ type: 'spring', damping: 28, stiffness: 300 }}
             >
               <div className="flex items-center justify-between mb-5">
-                <h2 className="text-base font-bold text-gray-900">학습 기록 추가</h2>
+                <h2 className="text-base font-bold text-gray-900">시험/성적 추가</h2>
                 <button onClick={() => setShowAddSheet(false)} className="p-1 rounded-full hover:bg-gray-100">
                   <X size={20} className="text-gray-500" />
                 </button>
@@ -680,8 +536,8 @@ export default function StudentDetailPage() {
                     📅
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-gray-900">시험 / 일정 추가</p>
-                    <p className="text-xs text-gray-400 mt-0.5">중간고사, 기말고사, 모의고사, 수행평가 등을 등록해요</p>
+                    <p className="text-sm font-bold text-gray-900">시험 일정 추가</p>
+                    <p className="text-xs text-gray-400 mt-0.5">중간고사, 기말고사, 모의고사, 수행평가 일정을 등록해요</p>
                   </div>
                 </button>
                 <button
@@ -722,8 +578,8 @@ function DDayBadge({ date }) {
 }
 
 function EventCard({ event, past = false, onEdit, onDelete }) {
-  const typeInfo     = STUDENT_EVENT_TYPES[event.eventType];
-  const importInfo   = IMPORTANCE_LABELS[event.importance] || IMPORTANCE_LABELS.medium;
+  const typeInfo   = STUDENT_EVENT_TYPES[event.eventType] || { icon: '📌', label: event.eventType };
+  const importInfo = IMPORTANCE_LABELS[event.importance] || IMPORTANCE_LABELS.medium;
 
   return (
     <div className={`bg-white rounded-2xl p-4 shadow-sm ${past ? 'opacity-55' : ''}`}>
@@ -760,7 +616,6 @@ function EventCard({ event, past = false, onEdit, onDelete }) {
 
 function ResultCard({ result, scoreChange, onEdit, onDelete }) {
   const examLabel = EXAM_TYPES[result.examType] || result.examType;
-
   return (
     <div className="bg-white rounded-2xl p-4 shadow-sm">
       <div className="flex items-start justify-between mb-2">
@@ -780,15 +635,14 @@ function ResultCard({ result, scoreChange, onEdit, onDelete }) {
         </div>
         <div className="text-right">
           {result.score !== null && result.score !== undefined && (
-            <p className="text-xl font-black text-gray-900 leading-tight">{result.score}<span className="text-sm font-normal text-gray-400">/{result.maxScore}</span></p>
+            <p className="text-xl font-black text-gray-900 leading-tight">
+              {result.score}<span className="text-sm font-normal text-gray-400">/{result.maxScore}</span>
+            </p>
           )}
           {scoreChange !== null && scoreChange !== undefined && (
             <p className={`text-xs font-bold ${scoreChange >= 0 ? 'text-green-600' : 'text-red-500'}`}>
               {scoreChange >= 0 ? `▲ +${scoreChange}%` : `▼ ${scoreChange}%`}
             </p>
-          )}
-          {result.percentile !== null && result.percentile !== undefined && (
-            <p className="text-xs text-gray-400">상위 {result.percentile}%</p>
           )}
         </div>
       </div>
@@ -812,7 +666,7 @@ function ResultCard({ result, scoreChange, onEdit, onDelete }) {
 
 function TimelineItem({ item, isLast }) {
   const isEvent = item._kind === 'event';
-  const typeInfo = isEvent ? STUDENT_EVENT_TYPES[item.eventType] : null;
+  const typeInfo = isEvent ? (STUDENT_EVENT_TYPES[item.eventType] || { icon: '📌', label: item.eventType }) : null;
   const examLabel = !isEvent ? (EXAM_TYPES[item.examType] || item.examType) : null;
 
   return (

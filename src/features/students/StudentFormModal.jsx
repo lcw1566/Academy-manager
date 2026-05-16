@@ -24,6 +24,12 @@ const GRADE_OPTIONS = {
   other:      [],
 };
 
+const SCHOOL_TYPE_COLORS = {
+  elementary: 'bg-green-50 text-green-700 border-green-200',
+  middle:     'bg-blue-50 text-blue-700 border-blue-200',
+  high:       'bg-purple-50 text-purple-700 border-purple-200',
+};
+
 function generateDepositorName({ schoolType, schoolName, grade, name }) {
   if (!name?.trim()) return '';
   const gradePart = schoolType === 'adult' ? '성인' : grade ? grade : '';
@@ -49,7 +55,6 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
   const [addedStudentName, setAddedStudentName] = useState('');
   const schoolInputRef = useRef(null);
 
-  // Auto-update depositorName when fields change (only if not manually edited)
   useEffect(() => {
     if (depositorEdited) return;
     const auto = generateDepositorName({ schoolType, schoolName, grade, name });
@@ -66,14 +71,20 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
     setGrade('');
   };
 
+  // Suggestions: includes schoolNames from store + unique names from students
   const filteredSuggestions = schoolName.trim()
     ? schoolNames.filter((s) => s.includes(schoolName) && s !== schoolName)
-    : [];
+    : schoolNames.filter(Boolean).slice(0, 5);
 
   const toggleSubject = (sub) =>
     setSubjects((prev) =>
       prev.includes(sub) ? prev.filter((s) => s !== sub) : [...prev, sub]
     );
+
+  const handleSelectSuggestion = (suggestion) => {
+    setSchoolName(suggestion);
+    setShowSuggestions(false);
+  };
 
   const buildFormData = () => ({
     name: name.trim(),
@@ -108,7 +119,6 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
     setDepositorName(auto);
   };
 
-  // ── Success phase ─────────────────────────────────
   if (phase === 'success') {
     return (
       <Modal
@@ -145,7 +155,6 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
     );
   }
 
-  // ── Form phase ────────────────────────────────────
   return (
     <Modal
       isOpen
@@ -161,7 +170,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
       }
     >
       <div className="flex flex-col gap-4">
-        {/* Name */}
+        {/* 이름 */}
         <Field label="이름 *">
           <input
             value={name}
@@ -171,7 +180,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
           />
         </Field>
 
-        {/* School type */}
+        {/* 학교급 */}
         <Field label="학교급">
           <div className="flex gap-2 flex-wrap">
             {SCHOOL_TYPES.map(({ id, label }) => (
@@ -191,7 +200,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
           </div>
         </Field>
 
-        {/* School name with autocomplete */}
+        {/* 학교명 + 자동완성 */}
         {showSchoolName && (
           <Field label="학교명">
             <div className="relative">
@@ -201,7 +210,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
                 onChange={(e) => { setSchoolName(e.target.value); setShowSuggestions(true); }}
                 onFocus={() => setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                placeholder="예: 서울중학교"
+                placeholder="예: 공릉중"
                 className="input"
               />
               {showSuggestions && filteredSuggestions.length > 0 && (
@@ -210,7 +219,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
                     <button
                       key={s}
                       type="button"
-                      onMouseDown={() => { setSchoolName(s); setShowSuggestions(false); }}
+                      onMouseDown={() => handleSelectSuggestion(s)}
                       className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 border-b border-gray-50 last:border-0"
                     >
                       {s}
@@ -219,10 +228,35 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
                 </div>
               )}
             </div>
+
+            {/* 추천 학교 pill tags */}
+            {schoolNames.length > 0 && (
+              <div className="mt-2">
+                <p className="text-[11px] text-gray-400 mb-1.5">최근 등록한 학교</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {schoolNames
+                    .filter((s) => s !== schoolName)
+                    .slice(0, 6)
+                    .map((s) => {
+                      // Try to find matching student's schoolType for color
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setSchoolName(s)}
+                          className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors border border-gray-200"
+                        >
+                          {s}
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
           </Field>
         )}
 
-        {/* Grade - button selector */}
+        {/* 학년 - 버튼 */}
         {showGradeButtons && (
           <Field label="학년">
             <div className="flex gap-2 flex-wrap">
@@ -244,7 +278,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
           </Field>
         )}
 
-        {/* Grade - text input for 기타 */}
+        {/* 학년 - 텍스트 입력 (기타) */}
         {showGradeInput && (
           <Field label="학년 / 상태">
             <input
@@ -256,7 +290,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
           </Field>
         )}
 
-        {/* Phone */}
+        {/* 연락처 */}
         <Field label="학생 연락처">
           <input
             inputMode="tel"
@@ -267,7 +301,6 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
           />
         </Field>
 
-        {/* Parent phone */}
         <Field label="학부모 연락처">
           <input
             inputMode="tel"
@@ -278,7 +311,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
           />
         </Field>
 
-        {/* Subjects */}
+        {/* 과목 */}
         <Field label="수강 과목">
           <div className="flex flex-wrap gap-2">
             {SUBJECTS.map((sub) => (
@@ -298,7 +331,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
           </div>
         </Field>
 
-        {/* Depositor name */}
+        {/* 입금자명 */}
         <Field label={`입금자명${!depositorEdited ? ' (자동 생성)' : ''}`}>
           <input
             value={depositorName}
@@ -317,7 +350,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
           )}
         </Field>
 
-        {/* Memo */}
+        {/* 메모 */}
         <Field label="메모">
           <textarea
             value={memo}
