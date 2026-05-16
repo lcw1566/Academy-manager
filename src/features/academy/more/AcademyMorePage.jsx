@@ -73,7 +73,13 @@ export default function AcademyMorePage() {
                     </div>
                     <div className="flex-1">
                       <p className="font-semibold text-gray-900 text-sm">{teacher.name}</p>
-                      <p className="text-xs text-gray-400">{teacher.subjects?.join(', ')} · {teacher.status === 'active' ? '재직 중' : '퇴직'}</p>
+                      <p className="text-xs text-gray-400">
+                        {teacher.subjects?.join(', ')}
+                        {teacher.subjects?.length > 0 && ' · '}
+                        {{ active: '재직 중', leave: '휴직', inactive: '퇴직' }[teacher.status || 'active']}
+                        {teacher.wageType === 'hourly' && teacher.hourlyWage ? ` · 시급 ${teacher.hourlyWage.toLocaleString()}원` : ''}
+                        {teacher.wageType === 'monthly' && teacher.monthlyWage ? ` · 월급 ${teacher.monthlyWage.toLocaleString()}원` : ''}
+                      </p>
                     </div>
                     <div className="flex items-center gap-1">
                       <button onClick={() => { setEditTeacher(teacher); setShowTeacherForm(true); }}
@@ -108,27 +114,42 @@ export default function AcademyMorePage() {
               </div>
             ) : (
               <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                {academyAssistants.map((assistant) => (
-                  <div key={assistant.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0">
-                    <div className="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center text-sm font-bold text-purple-600 flex-shrink-0">
-                      {assistant.name[0]}
+                {academyAssistants.map((assistant) => {
+                  const statusLabel = { active: '재직 중', leave: '휴직', inactive: '퇴사' }[assistant.status || 'active'];
+                  const statusColor = STATUS_COLORS[assistant.status || 'active'];
+                  const wageInfo = assistant.wageType === 'monthly'
+                    ? `월급 ${(assistant.monthlySalary || 0).toLocaleString()}원`
+                    : `시급 ${(assistant.hourlyWage || 0).toLocaleString()}원`;
+                  return (
+                    <div key={assistant.id} className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0">
+                      <div className="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center text-sm font-bold text-purple-600 flex-shrink-0">
+                        {assistant.name[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-gray-900 text-sm">{assistant.name}</p>
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${statusColor}`}>{statusLabel}</span>
+                        </div>
+                        {(assistant.subjects?.length > 0 || assistant.taskTypes?.length > 0) && (
+                          <p className="text-xs text-gray-500 mt-0.5 truncate">
+                            {[...(assistant.subjects || []), ...(assistant.taskTypes || [])].join(' · ')}
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-0.5">{wageInfo} · {assistant.phone || '연락처 없음'}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => { setEditAssistant(assistant); setShowAssistantForm(true); }}
+                          className="w-7 h-7 flex items-center justify-center rounded-full active:bg-gray-100">
+                          <Pencil size={13} className="text-gray-400" />
+                        </button>
+                        <button onClick={() => { if (window.confirm('보조강사를 삭제할까요?')) deleteAssistant(assistant.id); }}
+                          className="w-7 h-7 flex items-center justify-center rounded-full active:bg-gray-100">
+                          <Trash2 size={13} className="text-red-400" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-900 text-sm">{assistant.name}</p>
-                      <p className="text-xs text-gray-400">{assistant.phone || '연락처 없음'}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => { setEditAssistant(assistant); setShowAssistantForm(true); }}
-                        className="w-7 h-7 flex items-center justify-center rounded-full active:bg-gray-100">
-                        <Pencil size={13} className="text-gray-400" />
-                      </button>
-                      <button onClick={() => { if (window.confirm('보조강사를 삭제할까요?')) deleteAssistant(assistant.id); }}
-                        className="w-7 h-7 flex items-center justify-center rounded-full active:bg-gray-100">
-                        <Trash2 size={13} className="text-red-400" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -305,34 +326,99 @@ function TeacherFormModal({ editTeacher, onClose, onSave }) {
   );
 }
 
-const TASK_TYPES = ['숙제 검사', '오답 확인', '단어 테스트', '본문 암기', '재시험', '개념 보충'];
+const TASK_TYPES = ['숙제 검사', '오답 풀이', '단어 테스트', '본문 암기', '문법 보충', '개념 보충', '재시험', '기타'];
+
+const STATUS_OPTIONS = [
+  { id: 'active',   label: '재직 중' },
+  { id: 'leave',    label: '휴직' },
+  { id: 'inactive', label: '퇴사' },
+];
+const STATUS_COLORS = { active: 'text-green-600 bg-green-50', leave: 'text-orange-500 bg-orange-50', inactive: 'text-gray-500 bg-gray-100' };
 
 function AssistantFormModal({ editAssistant, onClose, onSave }) {
   const [form, setForm] = useState({
     name: editAssistant?.name || '',
     phone: editAssistant?.phone || '',
+    subjects: editAssistant?.subjects || [],
     taskTypes: editAssistant?.taskTypes || [],
+    wageType: editAssistant?.wageType || 'hourly',
+    hourlyWage: editAssistant?.hourlyWage ? String(editAssistant.hourlyWage) : '',
+    monthlySalary: editAssistant?.monthlySalary ? String(editAssistant.monthlySalary) : '',
     status: editAssistant?.status || 'active',
+    memo: editAssistant?.memo || '',
   });
-  const toggleTask = (t) => setForm((f) => ({ ...f, taskTypes: f.taskTypes.includes(t) ? f.taskTypes.filter((x) => x !== t) : [...f.taskTypes, t] }));
+  const toggle = (key, val) => setForm((f) => ({ ...f, [key]: f[key].includes(val) ? f[key].filter((x) => x !== val) : [...f[key], val] }));
 
   return (
     <Modal isOpen onClose={onClose} title={editAssistant ? '보조강사 수정' : '보조강사 추가'}
-      footer={<button onClick={() => { if (!form.name.trim()) return alert('이름을 입력해주세요.'); onSave(form); }} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">저장</button>}>
+      footer={
+        <button onClick={() => {
+          if (!form.name.trim()) return alert('이름을 입력해주세요.');
+          onSave({ ...form, hourlyWage: Number(form.hourlyWage) || 0, monthlySalary: Number(form.monthlySalary) || 0 });
+        }} className="w-full bg-purple-600 text-white font-bold py-3.5 rounded-xl">저장</button>
+      }>
       <div className="flex flex-col gap-4">
+        {/* 기본 정보 */}
         <div><label className="text-xs font-semibold text-gray-600 mb-1.5 block">이름 *</label>
           <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="홍보조" className="input" /></div>
         <div><label className="text-xs font-semibold text-gray-600 mb-1.5 block">연락처</label>
           <input inputMode="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: formatPhoneNumber(e.target.value) }))} placeholder="010-0000-0000" className="input" /></div>
+
+        {/* 재직 상태 */}
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">재직 상태</label>
+          <div className="grid grid-cols-3 gap-2">
+            {STATUS_OPTIONS.map((s) => (
+              <button key={s.id} type="button" onClick={() => setForm((f) => ({ ...f, status: s.id }))}
+                className={`py-2.5 rounded-xl text-xs font-bold border-2 transition-colors ${form.status === s.id ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 bg-white text-gray-500'}`}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 담당 과목 */}
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">담당 과목</label>
+          <div className="flex flex-wrap gap-2">
+            {SUBJECTS.map((s) => (
+              <button key={s} type="button" onClick={() => toggle('subjects', s)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${form.subjects.includes(s) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200'}`}>{s}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* 담당 업무 */}
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">담당 업무</label>
           <div className="flex flex-wrap gap-2">
             {TASK_TYPES.map((t) => (
-              <button key={t} type="button" onClick={() => toggleTask(t)}
+              <button key={t} type="button" onClick={() => toggle('taskTypes', t)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${form.taskTypes.includes(t) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200'}`}>{t}</button>
             ))}
           </div>
         </div>
+
+        {/* 급여 */}
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">급여 방식</label>
+          <div className="grid grid-cols-2 gap-2">
+            {WAGE_TYPES.map((w) => (
+              <button key={w.id} type="button" onClick={() => setForm((f) => ({ ...f, wageType: w.id }))}
+                className={`py-2.5 rounded-xl text-sm font-bold border-2 ${form.wageType === w.id ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-gray-200 bg-white text-gray-500'}`}>{w.label}</button>
+            ))}
+          </div>
+          {form.wageType === 'hourly' && (
+            <input type="number" value={form.hourlyWage} onChange={(e) => setForm((f) => ({ ...f, hourlyWage: e.target.value }))} placeholder="시급 (원)" className="input mt-2" />
+          )}
+          {form.wageType === 'monthly' && (
+            <input type="number" value={form.monthlySalary} onChange={(e) => setForm((f) => ({ ...f, monthlySalary: e.target.value }))} placeholder="월급 (원)" className="input mt-2" />
+          )}
+        </div>
+
+        {/* 메모 */}
+        <div><label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
+          <textarea value={form.memo} onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))} rows={2} placeholder="특이사항 등" className="input resize-none" /></div>
       </div>
     </Modal>
   );
