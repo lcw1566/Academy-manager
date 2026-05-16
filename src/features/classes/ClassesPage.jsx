@@ -4,6 +4,7 @@ import {
   RefreshCw, CalendarDays, Trash2, Pencil,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { sheetTransition, fadeTransition } from '../../utils/motion';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import ClassFormModal from './ClassFormModal';
@@ -226,7 +227,7 @@ export default function ClassesPage() {
         title="수업"
         right={
           <motion.button
-            whileTap={{ scale: 0.88 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => setShowActionSheet(true)}
             className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white"
           >
@@ -246,7 +247,7 @@ export default function ClassesPage() {
             {VIEW_FILTERS.map((f) => (
               <motion.button
                 key={f.id}
-                whileTap={{ scale: 0.93 }}
+                whileTap={{ scale: 0.97 }}
                 onClick={() => setViewFilter(f.id)}
                 className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${
                   viewFilter === f.id
@@ -327,13 +328,14 @@ export default function ClassesPage() {
             <motion.div
               key="add-dim"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              transition={fadeTransition}
               className="fixed inset-0 bg-black/40 z-40"
               onClick={() => setShowActionSheet(false)}
             />
             <motion.div
               key="add-sheet"
               initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              transition={sheetTransition}
               className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
@@ -375,13 +377,14 @@ export default function ClassesPage() {
             <motion.div
               key="menu-dim"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              transition={fadeTransition}
               className="fixed inset-0 bg-black/40 z-40"
               onClick={() => setMenuState(null)}
             />
             <motion.div
               key="menu-sheet"
               initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              transition={sheetTransition}
               className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
@@ -431,13 +434,14 @@ export default function ClassesPage() {
             <motion.div
               key="sort-dim"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              transition={fadeTransition}
               className="fixed inset-0 bg-black/40 z-40"
               onClick={() => setShowSortSheet(false)}
             />
             <motion.div
               key="sort-sheet"
               initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+              transition={sheetTransition}
               className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />

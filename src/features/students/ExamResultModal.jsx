@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Plus, ChevronDown } from 'lucide-react';
+import { sheetTransition, fadeTransition, collapseMotion } from '../../utils/motion';
 import useAcademyStore from '../../store/useAcademyStore';
 import { EXAM_TYPES, SUBJECT_OPTIONS, GRADE_LABELS } from '../../constants/studentSchedule';
 import { getTodayYMD } from '../../utils/date';
@@ -99,6 +100,7 @@ export default function ExamResultModal({ studentId, result = null, events = [],
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        transition={fadeTransition}
       >
         <div className="absolute inset-0 bg-black/40" onClick={onClose} />
         <motion.div
@@ -106,7 +108,7 @@ export default function ExamResultModal({ studentId, result = null, events = [],
           initial={{ y: '100%' }}
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
-          transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+          transition={sheetTransition}
         >
           <div className="flex items-center justify-between mb-6">
             <div>
@@ -298,10 +300,7 @@ export default function ExamResultModal({ studentId, result = null, events = [],
             <AnimatePresence>
               {showAdvanced && (
                 <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden"
+                  {...collapseMotion}
                 >
                   <div className="bg-gray-50 rounded-2xl p-4 flex flex-col gap-4">
                     <p className="text-xs font-bold text-gray-400 -mb-1">상세 정보</p>

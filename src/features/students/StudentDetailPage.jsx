@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Edit2, Phone, Trash2, Plus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { sheetTransition, fadeTransition, collapseMotion } from '../../utils/motion';
 import useAcademyStore from '../../store/useAcademyStore';
 import Header from '../../components/Header';
 import EmptyState from '../../components/EmptyState';
@@ -458,10 +459,7 @@ export default function StudentDetailPage() {
                       <AnimatePresence>
                         {showAllTimeline && (
                           <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="overflow-hidden"
+                            {...collapseMotion}
                           >
                             <div className="flex flex-col gap-0">
                               {timeline.map((item, i) => (
@@ -512,6 +510,7 @@ export default function StudentDetailPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={fadeTransition}
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => setShowAddSheet(false)} />
             <motion.div
@@ -519,7 +518,7 @@ export default function StudentDetailPage() {
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+              transition={sheetTransition}
             >
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-base font-bold text-gray-900">시험/성적 추가</h2>

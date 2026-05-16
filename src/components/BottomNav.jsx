@@ -18,7 +18,7 @@ export default function BottomNav() {
     : tabs;
 
   return (
-    <nav className="bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-sm border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
+    <nav className="bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
       <div className="max-w-md mx-auto flex pt-2">
         {visibleTabs.map(({ id, label, icon: Icon }) => {
           const active = activeTab === id;
@@ -26,7 +26,7 @@ export default function BottomNav() {
             <motion.button
               key={id}
               onClick={() => setActiveTab(id)}
-              whileTap={{ scale: 0.88 }}
+              whileTap={{ scale: 0.97 }}
               className="flex-1 flex flex-col items-center gap-1 pb-1"
             >
               <div className={`flex items-center justify-center w-10 h-7 rounded-2xl transition-colors ${

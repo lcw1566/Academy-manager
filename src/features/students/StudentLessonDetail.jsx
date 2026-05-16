@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { collapseMotion } from '../../utils/motion';
 import useAcademyStore from '../../store/useAcademyStore';
 import { formatDateShort, today } from '../../utils/date';
 import { formatDays } from '../../utils/recurringClass';
@@ -153,10 +154,7 @@ export default function StudentLessonDetail({ student, group, standaloneClass, o
           <AnimatePresence>
             {showFar && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
+                {...collapseMotion}
               >
                 <div className="flex flex-col gap-2 mt-2">
                   {farSessions.map((cls) => (
@@ -186,10 +184,7 @@ export default function StudentLessonDetail({ student, group, standaloneClass, o
           <AnimatePresence>
             {showOlder && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
+                {...collapseMotion}
               >
                 <div className="flex flex-col gap-2 mt-2">
                   {olderSessions.map((cls) => (

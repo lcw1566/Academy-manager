@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
+import { sheetTransition, fadeTransition } from '../../utils/motion';
 import useAcademyStore from '../../store/useAcademyStore';
 import { STUDENT_EVENT_TYPES, IMPORTANCE_LABELS, SUBJECT_OPTIONS } from '../../constants/studentSchedule';
 import { getTodayYMD } from '../../utils/date';
@@ -53,6 +54,7 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        transition={fadeTransition}
       >
         <div className="absolute inset-0 bg-black/40" onClick={onClose} />
         <motion.div
@@ -60,7 +62,7 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
           initial={{ y: '100%' }}
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
-          transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+          transition={sheetTransition}
         >
           <div className="flex items-center justify-between mb-6">
             <div>
