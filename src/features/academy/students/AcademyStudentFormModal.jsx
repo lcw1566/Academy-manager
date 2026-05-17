@@ -3,6 +3,7 @@ import { Check } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import useAcademyStore from '../../../store/useAcademyStore';
 import { formatPhoneNumber } from '../../../utils/format';
+import { getTodayYMD } from '../../../utils/date';
 
 const SCHOOL_TYPES = [
   { id: 'elementary', label: '초등' },
@@ -28,6 +29,36 @@ const STATUS_OPTIONS = [
   { value: 'inactive', label: '퇴원' },
 ];
 
+// 학부모 호칭 옵션 — parentTitle 값 + label
+const PARENT_TITLE_OPTIONS = [
+  { value: 'mother',   label: '어머님' },
+  { value: 'father',   label: '아버님' },
+  { value: 'guardian', label: '보호자님' },
+  { value: 'parent',   label: '학부모님' },
+];
+
+const PARENT_TITLE_LABEL = {
+  mother:   '어머님',
+  father:   '아버님',
+  guardian: '보호자님',
+  parent:   '학부모님',
+};
+
+// 기존 parentName(자유 입력)에서 호칭만 역추출 — 마이그레이션용
+function inferParentTitle(parentName, studentName) {
+  if (!parentName) return 'mother';
+  if (parentName.includes('아버님') || parentName.includes('아버지')) return 'father';
+  if (parentName.includes('보호자')) return 'guardian';
+  if (parentName.includes('학부모')) return 'parent';
+  return 'mother';
+}
+
+export function buildParentDisplayName(studentName, parentTitle) {
+  const title = PARENT_TITLE_LABEL[parentTitle] || PARENT_TITLE_LABEL.mother;
+  const trimmed = (studentName || '').trim();
+  return trimmed ? `${trimmed} ${title}` : title;
+}
+
 export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const { addAcademyStudent, updateAcademyStudent, schoolNames, addSchoolName } = useAcademyStore();
   const isEdit = !!editStudent;
@@ -38,9 +69,9 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     school: editStudent?.school || editStudent?.schoolName || '',
     grade: editStudent?.grade || '',
     phone: editStudent?.phone || '',
-    parentName: editStudent?.parentName || '',
+    parentTitle: editStudent?.parentTitle || inferParentTitle(editStudent?.parentName, editStudent?.name),
     parentPhone: editStudent?.parentPhone || '',
-    enrollmentDate: editStudent?.enrollmentDate || '',
+    enrollmentDate: editStudent?.enrollmentDate || (isEdit ? '' : getTodayYMD()),
     status: editStudent?.status || 'active',
     memo: editStudent?.memo || '',
   });
@@ -66,7 +97,15 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
 
   const handleSubmit = () => {
     if (!form.name.trim()) return alert('이름을 입력해주세요.');
-    const data = { ...form, name: form.name.trim() };
+    const trimmedName = form.name.trim();
+    const parentDisplayName = buildParentDisplayName(trimmedName, form.parentTitle);
+    const data = {
+      ...form,
+      name: trimmedName,
+      // 기존 호환: parentName 필드를 자동 생성된 표시명으로 저장
+      parentName: parentDisplayName,
+      parentDisplayName,
+    };
     if (form.school.trim()) addSchoolName(form.school.trim());
 
     if (isEdit) {
@@ -197,8 +236,22 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
           <input inputMode="tel" value={form.phone} onChange={(e) => set('phone', formatPhoneNumber(e.target.value))} placeholder="010-0000-0000" className="input" />
         </Field>
 
-        <Field label="학부모 이름">
-          <input value={form.parentName} onChange={(e) => set('parentName', e.target.value)} placeholder="홍부모" className="input" />
+        <Field label="학부모 호칭">
+          <div className="flex gap-2 flex-wrap">
+            {PARENT_TITLE_OPTIONS.map(({ value, label }) => (
+              <button key={value} type="button" onClick={() => set('parentTitle', value)}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${
+                  form.parentTitle === value ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            {form.name.trim()
+              ? <>표시 이름: <span className="font-semibold text-gray-800">{buildParentDisplayName(form.name, form.parentTitle)}</span></>
+              : '학생 이름 입력 후 자동으로 표시돼요.'}
+          </p>
         </Field>
 
         <Field label="학부모 연락처">

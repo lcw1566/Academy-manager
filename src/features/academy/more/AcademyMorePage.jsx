@@ -4,7 +4,7 @@ import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
 import { roleMap, formatPhoneNumber } from '../../../utils/format';
-import { TASK_TYPE_LABELS, WAGE_TYPE_LABELS } from '../../../constants/labels';
+import { WAGE_TYPE_LABELS } from '../../../constants/labels';
 
 // ─── Constants ──────────────────────────────────────────────────
 const WAGE_TYPES = [
@@ -13,17 +13,6 @@ const WAGE_TYPES = [
 ];
 
 const SUBJECTS = ['수학', '영어', '국어', '과학', '사회', '물리', '화학', '역사', '기타'];
-
-const TASK_TYPES = [
-  { key: 'homework',     label: '숙제 검사' },
-  { key: 'wrong_answer', label: '오답 풀이' },
-  { key: 'vocabulary',   label: '단어 테스트' },
-  { key: 'reading',      label: '본문 암기' },
-  { key: 'grammar',      label: '문법 보충' },
-  { key: 'concept',      label: '개념 보충' },
-  { key: 'test_retry',   label: '재시험' },
-  { key: 'other',        label: '기타' },
-];
 
 // ─── Normalize (null/undefined guard) ───────────────────────────
 function normalizeTeacher(t) {
@@ -45,12 +34,10 @@ function normalizeAssistant(a) {
     ...a,
     name: a.name || '(이름 없음)',
     subjects: Array.isArray(a.subjects) ? a.subjects : [],
-    taskTypes: Array.isArray(a.taskTypes) ? a.taskTypes : [],
   };
 }
 
 function wageLabel(w) { return WAGE_TYPE_LABELS[w] || w || '–'; }
-function taskLabel(t)  { return TASK_TYPE_LABELS[t] || t; }
 
 // ─── 강사 상세 페이지 ────────────────────────────────────────────
 // ClassGroupDetailPage와 동일한 패턴: fixed top-0 z-20 헤더 + 본문
@@ -179,8 +166,6 @@ function AssistantDetailPage({ assistant, onBack, onEdit, onDelete }) {
     ? `월급 ${(assistant.monthlySalary || 0).toLocaleString()}원`
     : `시급 ${(assistant.hourlyWage || 0).toLocaleString()}원`;
 
-  const translatedTasks = assistant.taskTypes.map(taskLabel);
-
   return (
     <div>
       {/* 헤더 */}
@@ -226,29 +211,15 @@ function AssistantDetailPage({ assistant, onBack, onEdit, onDelete }) {
           ) : null}
         </div>
 
-        {/* 담당 정보 */}
-        {(assistant.subjects.length > 0 || translatedTasks.length > 0) && (
+        {/* 담당 과목 */}
+        {assistant.subjects.length > 0 && (
           <div className="bg-white rounded-2xl p-5 shadow-sm">
-            {assistant.subjects.length > 0 && (
-              <>
-                <p className="text-xs font-bold text-gray-400 mb-2">담당 과목</p>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {assistant.subjects.map((s) => (
-                    <span key={s} className="text-xs font-semibold bg-purple-50 text-purple-600 px-3 py-1.5 rounded-full">{s}</span>
-                  ))}
-                </div>
-              </>
-            )}
-            {translatedTasks.length > 0 && (
-              <>
-                <p className="text-xs font-bold text-gray-400 mb-2">담당 업무</p>
-                <div className="flex flex-wrap gap-2">
-                  {translatedTasks.map((t, i) => (
-                    <span key={i} className="text-xs font-semibold bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full">{t}</span>
-                  ))}
-                </div>
-              </>
-            )}
+            <p className="text-xs font-bold text-gray-400 mb-2">담당 과목</p>
+            <div className="flex flex-wrap gap-2">
+              {assistant.subjects.map((s) => (
+                <span key={s} className="text-xs font-semibold bg-purple-50 text-purple-600 px-3 py-1.5 rounded-full">{s}</span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -521,7 +492,7 @@ export default function AcademyMorePage() {
               <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                 {academyAssistants.map((raw) => {
                   const a = normalizeAssistant(raw);
-                  const tasks = a.taskTypes.map(taskLabel).join(' · ');
+                  const subjects = a.subjects.join(' · ');
                   const wage = a.wageType === 'monthly'
                     ? `월급 ${(a.monthlySalary || 0).toLocaleString()}원`
                     : `시급 ${(a.hourlyWage || 0).toLocaleString()}원`;
@@ -533,7 +504,7 @@ export default function AcademyMorePage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-gray-900 text-sm">{a.name}</p>
-                        {tasks && <p className="text-xs text-gray-500 mt-0.5 truncate">{tasks}</p>}
+                        {subjects && <p className="text-xs text-gray-500 mt-0.5 truncate">{subjects}</p>}
                         <p className="text-xs text-gray-400 mt-0.5">{wage}</p>
                       </div>
                       <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
@@ -636,7 +607,12 @@ function StaffNotFound({ label, onBack }) {
 
 // ─── 학원 프로필 수정 ────────────────────────────────────────────
 function AcademyProfileModal({ profile, onClose, onSave }) {
-  const [form, setForm] = useState({ name: profile?.name || '', address: profile?.address || '', phone: profile?.phone || '' });
+  const [form, setForm] = useState({
+    name:      profile?.name      || '',
+    ownerName: profile?.ownerName || '',
+    address:   profile?.address   || '',
+    phone:     profile?.phone     || '',
+  });
   return (
     <Modal isOpen onClose={onClose} title="학원 정보 수정"
       footer={<button type="button" onClick={() => onSave(form)} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">저장</button>}>
@@ -644,6 +620,11 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">학원 이름</label>
           <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="우리 학원" className="input" />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">원장 이름</label>
+          <input value={form.ownerName} onChange={(e) => setForm((f) => ({ ...f, ownerName: e.target.value }))} placeholder="예: 김원장" className="input" />
+          <p className="text-xs text-gray-400 mt-1.5">반의 담당 강사 선택 시 원장 본인을 배정할 수 있어요.</p>
         </div>
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">주소</label>
@@ -736,7 +717,6 @@ function AssistantFormModal({ initialData, onClose, onSave }) {
     name:          initialData?.name || '',
     phone:         initialData?.phone || '',
     subjects:      Array.isArray(initialData?.subjects)  ? initialData.subjects  : [],
-    taskTypes:     Array.isArray(initialData?.taskTypes) ? initialData.taskTypes : [],
     wageType:      initialData?.wageType || 'hourly',
     hourlyWage:    initialData?.hourlyWage    ? String(initialData.hourlyWage)    : '',
     monthlySalary: initialData?.monthlySalary ? String(initialData.monthlySalary) : '',
@@ -773,17 +753,6 @@ function AssistantFormModal({ initialData, onClose, onSave }) {
               <button key={s} type="button" onClick={() => toggle('subjects', s)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${form.subjects.includes(s) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200'}`}>
                 {s}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">담당 업무</label>
-          <div className="flex flex-wrap gap-2">
-            {TASK_TYPES.map(({ key, label }) => (
-              <button key={key} type="button" onClick={() => toggle('taskTypes', key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${form.taskTypes.includes(key) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200'}`}>
-                {label}
               </button>
             ))}
           </div>

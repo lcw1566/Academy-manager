@@ -389,22 +389,21 @@ export default function AcademyStudentDetailPage() {
         ))
       )}
 
-      {/* 클리닉 추가 */}
-      {(role === 'owner' || role === 'teacher' || role === 'assistant') && (
-        <motion.button type="button" whileTap={{ scale: 0.97 }} onClick={() => setShowClinicForm(true)}
-          className="w-full py-3 rounded-2xl border-2 border-dashed border-blue-200 text-blue-600 text-sm font-semibold">
-          + 클리닉 기록 추가
-        </motion.button>
-      )}
+      {/* 수업 기록 탭에서는 클리닉 추가 버튼을 제공하지 않음.
+          원장/강사는 ClassSessionPage의 학습 보완 항목으로만 남기고,
+          클리닉 기록 생성은 보조강사 클리닉 탭에서 진행. */}
     </div>
   );
 
   const renderClinic = () => (
     <div className="flex flex-col gap-3">
-      <motion.button type="button" whileTap={{ scale: 0.97 }} onClick={() => setShowClinicForm(true)}
-        className="w-full py-3 rounded-2xl border-2 border-dashed border-blue-200 text-blue-600 text-sm font-semibold">
-        + 클리닉 기록 추가
-      </motion.button>
+      {/* 클리닉 탭은 assistant 전용. 보조강사만 직접 클리닉 기록을 생성. */}
+      {role === 'assistant' && (
+        <motion.button type="button" whileTap={{ scale: 0.97 }} onClick={() => setShowClinicForm(true)}
+          className="w-full py-3 rounded-2xl border-2 border-dashed border-blue-200 text-blue-600 text-sm font-semibold">
+          + 클리닉 기록 추가
+        </motion.button>
+      )}
       {studentClinicRecords.length === 0 ? (
         <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
           <p className="text-sm text-gray-400">클리닉 기록이 없어요</p>

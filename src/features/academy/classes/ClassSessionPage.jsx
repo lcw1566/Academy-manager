@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import EmptyState from '../../../components/EmptyState';
 import { formatDateShort } from '../../../utils/date';
-import { attendanceStatusMap } from '../../../utils/format';
+import { attendanceStatusMap, getTeacherDisplayName } from '../../../utils/format';
 
 // ─── 평가 옵션 ──────────────────────────────────────────────────────────────
 const ATTITUDE_OPTIONS = [
@@ -283,7 +283,7 @@ export default function ClassSessionPage() {
   const {
     role,
     selectedClassSessionId,
-    classSessions, classGroups, academyStudents, academyTeachers,
+    classSessions, classGroups, academyStudents, academyTeachers, academyProfile,
     academyAttendanceRecords, academyLessonRecords,
     updateAcademyAttendance, batchSaveSessionRecords, updateClassSession,
     goBackFromClassSession,
@@ -298,9 +298,11 @@ export default function ClassSessionPage() {
     () => (session ? classGroups.find((g) => g.id === session.classGroupId) : null) ?? null,
     [classGroups, session]
   );
-  const teacher = useMemo(
-    () => (group ? academyTeachers.find((t) => t.id === group.teacherId) : null) ?? null,
-    [academyTeachers, group]
+  const teacherName = useMemo(
+    () => (group && group.teacherId)
+      ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile)
+      : null,
+    [academyTeachers, academyProfile, group]
   );
   const students = useMemo(
     () => session ? academyStudents.filter((s) => (session.studentIds || []).includes(s.id)) : [],
@@ -424,7 +426,7 @@ export default function ClassSessionPage() {
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
               {session.room && <InfoChip label="강의실" value={session.room} />}
-              {teacher && <InfoChip label="강사" value={teacher.name} />}
+              {teacherName && <InfoChip label="강사" value={teacherName} />}
               <InfoChip label="시간" value={`${session.startTime}–${session.endTime}`} />
               <InfoChip label="상태" value={session.status === 'completed' ? '완료' : session.status === 'canceled' ? '취소' : '예정'} />
             </div>

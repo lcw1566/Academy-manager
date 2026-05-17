@@ -6,6 +6,7 @@ import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import ClassGroupFormModal from './ClassGroupFormModal';
 import { today, formatDateShort } from '../../../utils/date';
+import { getTeacherDisplayName, OWNER_TEACHER_ID } from '../../../utils/format';
 import { useState } from 'react';
 
 const STATUS_MAP = {
@@ -16,7 +17,7 @@ const STATUS_MAP = {
 
 export default function ClassGroupsPage() {
   const {
-    role, classGroups, classSessions, academyStudents, academyTeachers,
+    role, classGroups, classSessions, academyStudents, academyTeachers, academyProfile,
     navigateToClassGroup,
   } = useAcademyStore();
 
@@ -30,14 +31,16 @@ export default function ClassGroupsPage() {
       const nextSession = sessions.filter((s) => s.date >= todayStr && s.status !== 'canceled')
         .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
       const studentCount = (group.studentIds || []).length;
-      const teacher = academyTeachers.find((t) => t.id === group.teacherId);
-      return { ...group, sessions, nextSession, studentCount, teacher };
+      const teacherName = group.teacherId
+        ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile)
+        : null;
+      return { ...group, sessions, nextSession, studentCount, teacherName };
     }).sort((a, b) => {
       const ad = a.nextSession?.date || '9999';
       const bd = b.nextSession?.date || '9999';
       return ad.localeCompare(bd);
     }),
-    [classGroups, classSessions, academyTeachers, todayStr]
+    [classGroups, classSessions, academyTeachers, academyProfile, todayStr]
   );
 
   return (
@@ -113,8 +116,8 @@ export default function ClassGroupsPage() {
                       </span>
                       {group.room && <span>{group.room}</span>}
                     </div>
-                    {group.teacher && (
-                      <p className="text-xs text-gray-400">담당: {group.teacher.name}</p>
+                    {group.teacherName && (
+                      <p className="text-xs text-gray-400">담당: {group.teacherName}</p>
                     )}
                   </div>
 

@@ -1,18 +1,36 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { Clock } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import { today, formatDateShort, greetingByTime } from '../../../utils/date';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
+
+// "HH:mm" 문자열을 분 단위로 변환 (00:00 기준)
+function parseHHmmToMinutes(hhmm) {
+  if (!hhmm || typeof hhmm !== 'string') return null;
+  const [h, m] = hhmm.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+const SOON_WINDOW_MIN = 10;
 
 export default function TeacherDashboard() {
   const {
     academyStudents, classGroups, classSessions, clinicTasks,
     academyLessonRecords, academyAttendanceRecords,
-    academyTeachers, navigateToClassGroup, setActiveTab,
+    academyTeachers, navigateToClassGroup, navigateToClassSession, setActiveTab,
   } = useAcademyStore();
 
   const [selectedDate, setSelectedDate] = useState(today());
   const todayStr = today();
+
+  // 1분마다 갱신 — "곧 시작" 카드 표시/숨김 자동 업데이트
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   // MVP: 모든 세션을 본인 담당으로 취급 (실제 teacher ID 매핑은 추후 계정 연동 시)
   const mySessions = useMemo(
@@ -55,6 +73,20 @@ export default function TeacherDashboard() {
   const isToday = selectedDate === todayStr;
   const dateLabel = isToday ? '오늘 내 수업' : formatDateShort(selectedDate);
 
+  // 곧 시작하는 수업: 오늘 + 시작 10분 이내 (가장 가까운 1개)
+  const upcomingSoon = useMemo(() => {
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const candidates = todaySessions
+      .map((s) => ({ session: s, startMin: parseHHmmToMinutes(s.startTime) }))
+      .filter(({ startMin }) => {
+        if (startMin === null) return false;
+        const diff = startMin - nowMin;
+        return diff >= 0 && diff <= SOON_WINDOW_MIN;
+      })
+      .sort((a, b) => a.startMin - b.startMin);
+    return candidates[0] || null;
+  }, [todaySessions, now]);
+
   return (
     <div className="pt-6 pb-4">
       <div className="px-5 mb-5">
@@ -66,6 +98,17 @@ export default function TeacherDashboard() {
       <div className="mb-5">
         <WeeklyExpandableCalendar selectedDate={selectedDate} onSelectDate={setSelectedDate} schedules={schedules} />
       </div>
+
+      {/* 곧 수업이 시작해요! — 시작 10분 전 */}
+      {upcomingSoon && (
+        <UpcomingSoonCard
+          session={upcomingSoon.session}
+          startMin={upcomingSoon.startMin}
+          nowMinutes={now.getHours() * 60 + now.getMinutes()}
+          classGroups={classGroups}
+          onClick={() => navigateToClassSession(upcomingSoon.session.id)}
+        />
+      )}
 
       {/* 선택 날짜 수업 */}
       <div className="px-4 mb-5">
@@ -163,6 +206,35 @@ export default function TeacherDashboard() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function UpcomingSoonCard({ session, startMin, nowMinutes, classGroups, onClick }) {
+  const group = classGroups.find((g) => g.id === session.classGroupId);
+  const remainMin = Math.max(0, startMin - nowMinutes);
+  const remainLabel = remainMin === 0 ? '지금 시작' : `${remainMin}분 후 시작`;
+  return (
+    <div className="px-4 mb-5">
+      <motion.button
+        type="button"
+        onClick={onClick}
+        whileTap={{ scale: 0.97 }}
+        className="w-full text-left bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-2xl p-4 shadow-md active:shadow-sm"
+      >
+        <div className="flex items-center gap-2 mb-2">
+          <Clock size={14} className="text-blue-100" />
+          <p className="text-xs font-bold text-blue-50">곧 수업이 시작해요!</p>
+          <span className="ml-auto text-[11px] font-bold bg-white/20 px-2 py-0.5 rounded-full">{remainLabel}</span>
+        </div>
+        <p className="text-base font-bold leading-tight">{group?.name || '수업'}</p>
+        <p className="text-xs text-blue-50 mt-1">
+          {session.startTime}–{session.endTime}
+          {session.room ? ` · ${session.room}` : ''}
+          {` · ${session.studentIds?.length || 0}명`}
+        </p>
+        <p className="text-xs font-semibold text-white mt-2">수업 보기 →</p>
+      </motion.button>
     </div>
   );
 }

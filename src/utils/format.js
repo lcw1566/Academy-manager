@@ -75,3 +75,15 @@ export function formatPhoneNumber(value) {
 export function normalizePhoneNumber(value) {
   return value.replace(/\D/g, '');
 }
+
+// 원장도 담당 강사로 배정 가능. teacherId === 'owner'면 원장 이름 사용.
+export const OWNER_TEACHER_ID = 'owner';
+
+export function getTeacherDisplayName(teacherId, teachers, academyProfile) {
+  if (!teacherId) return '담당 강사 없음';
+  if (teacherId === OWNER_TEACHER_ID) {
+    return academyProfile?.ownerName?.trim() || '원장';
+  }
+  const teacher = teachers?.find((t) => t.id === teacherId);
+  return teacher?.name || '담당 강사 없음';
+}

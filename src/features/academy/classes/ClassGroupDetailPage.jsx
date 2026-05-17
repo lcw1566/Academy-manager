@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react';
+import { ChevronLeft, Pencil, Trash2, CalendarDays } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import EmptyState from '../../../components/EmptyState';
-import { today, formatDateShort } from '../../../utils/date';
-import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
+import Modal from '../../../components/Modal';
+import { today, formatDateShort, compareYMD } from '../../../utils/date';
+import { getTeacherDisplayName } from '../../../utils/format';
 import ClassGroupFormModal from './ClassGroupFormModal';
 
 const SESSION_STATUS = {
@@ -14,27 +15,52 @@ const SESSION_STATUS = {
   rescheduled: { label: '변경',  color: 'bg-yellow-50 text-yellow-600' },
 };
 
+// 오늘/지난/다음 수업을 3개씩 미리보기로 나누어 반환.
+// 원본 sessions 배열을 mutate하지 않음.
+export function getSessionPreviewGroups({ sessions, todayYMD, limit = 3 }) {
+  const safe = Array.isArray(sessions) ? sessions : [];
+  const todaySessions = safe
+    .filter((s) => s?.date === todayYMD)
+    .slice()
+    .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+  const pastSessions = safe
+    .filter((s) => s?.date && compareYMD(s.date, todayYMD) < 0)
+    .slice()
+    .sort((a, b) => compareYMD(b.date, a.date) || (b.startTime || '').localeCompare(a.startTime || ''));
+  const nextSessions = safe
+    .filter((s) => s?.date && compareYMD(s.date, todayYMD) > 0)
+    .slice()
+    .sort((a, b) => compareYMD(a.date, b.date) || (a.startTime || '').localeCompare(b.startTime || ''));
+  return {
+    todaySessions: todaySessions.slice(0, limit),
+    pastSessions: pastSessions.slice(0, limit),
+    nextSessions: nextSessions.slice(0, limit),
+    todayTotal: todaySessions.length,
+    pastTotal: pastSessions.length,
+    nextTotal: nextSessions.length,
+  };
+}
+
 export default function ClassGroupDetailPage() {
   const {
     role, selectedClassGroupId, classGroups, classSessions,
-    academyStudents, academyTeachers, academyAttendanceRecords,
+    academyStudents, academyTeachers, academyProfile, academyAttendanceRecords,
     clinicRecords = [], navigateToClassSession, goBackFromClassGroup, setActiveTab,
     deleteClassGroup,
   } = useAcademyStore();
 
-  const [showClinicForm, setShowClinicForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
+  const [showAllSessions, setShowAllSessions] = useState(false);
   const todayStr = today();
 
-  // group may be null during back-navigation exit animation — compute before early return
   const group = classGroups.find((g) => g.id === selectedClassGroupId) ?? null;
 
-  // ALL hooks must be called before any early return (Rules of Hooks)
   const sessions = useMemo(
     () => group
       ? classSessions
           .filter((s) => s.classGroupId === selectedClassGroupId)
-          .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+          .slice()
+          .sort((a, b) => compareYMD(a.date || '', b.date || '') || (a.startTime || '').localeCompare(b.startTime || ''))
       : [],
     [classSessions, selectedClassGroupId, group]
   );
@@ -47,6 +73,11 @@ export default function ClassGroupDetailPage() {
   const groupClinicRecords = useMemo(
     () => (clinicRecords || []).filter((r) => r.classGroupId === selectedClassGroupId),
     [clinicRecords, selectedClassGroupId]
+  );
+
+  const preview = useMemo(
+    () => getSessionPreviewGroups({ sessions, todayYMD: todayStr, limit: 3 }),
+    [sessions, todayStr]
   );
 
   if (!group) {
@@ -69,9 +100,9 @@ export default function ClassGroupDetailPage() {
     );
   }
 
-  const upcomingSessions = sessions.filter((s) => s.date >= todayStr);
-  const pastSessions = sessions.filter((s) => s.date < todayStr);
-  const teacher = academyTeachers.find((t) => t.id === group.teacherId);
+  const teacherName = group.teacherId
+    ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile)
+    : null;
 
   return (
     <div>
@@ -121,7 +152,7 @@ export default function ClassGroupDetailPage() {
               <InfoRow label="요일" value={`${group.weekdays?.join('·')}요일`} />
               <InfoRow label="시간" value={`${group.startTime}–${group.endTime}`} />
               {group.room && <InfoRow label="강의실" value={group.room} />}
-              {teacher && <InfoRow label="담당강사" value={teacher.name} />}
+              {teacherName && <InfoRow label="담당강사" value={teacherName} />}
               <InfoRow label="학생" value={`${students.length}명`} />
               {group.monthlyFee > 0 && <InfoRow label="월 수강료" value={`${group.monthlyFee.toLocaleString()}원`} />}
             </div>
@@ -142,7 +173,7 @@ export default function ClassGroupDetailPage() {
           </div>
         )}
 
-        {/* 클리닉 기록 현황 */}
+        {/* 최근 클리닉 기록 */}
         {groupClinicRecords.length > 0 && (
           <div className="px-4 mb-5">
             <div className="flex items-center justify-between mb-2">
@@ -163,68 +194,56 @@ export default function ClassGroupDetailPage() {
           </div>
         )}
 
-        {/* 다가오는 수업 */}
-        <div className="px-4 mb-5">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-bold text-gray-700">다가오는 수업</p>
-            <span className="text-xs text-gray-400">{upcomingSessions.length}회</span>
-          </div>
-          {upcomingSessions.length === 0 ? (
-            <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
-              <p className="text-sm text-gray-400">예정된 수업이 없어요</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {upcomingSessions.slice(0, 5).map((session) => (
-                <SessionCard key={session.id} session={session} students={students}
-                  attendanceRecords={academyAttendanceRecords}
-                  onClick={() => navigateToClassSession(session.id)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        {/* 오늘 수업 */}
+        {preview.todaySessions.length > 0 && (
+          <SessionSection
+            title="오늘 수업"
+            count={preview.todayTotal}
+            sessions={preview.todaySessions}
+            students={students}
+            attendanceRecords={academyAttendanceRecords}
+            onSessionClick={(id) => navigateToClassSession(id)}
+            highlightToday
+          />
+        )}
+
+        {/* 다음 수업 */}
+        <SessionSection
+          title="다음 수업"
+          count={preview.nextTotal}
+          sessions={preview.nextSessions}
+          students={students}
+          attendanceRecords={academyAttendanceRecords}
+          onSessionClick={(id) => navigateToClassSession(id)}
+          emptyText="예정된 수업이 없어요"
+        />
 
         {/* 지난 수업 */}
-        {pastSessions.length > 0 && (
-          <div className="px-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-bold text-gray-700">지난 수업</p>
-              <span className="text-xs text-gray-400">{pastSessions.length}회</span>
-            </div>
-            <div className="flex flex-col gap-2">
-              {[...pastSessions].reverse().slice(0, 6).map((session) => (
-                <SessionCard key={session.id} session={session} students={students}
-                  attendanceRecords={academyAttendanceRecords}
-                  onClick={() => navigateToClassSession(session.id)}
-                  isPast
-                />
-              ))}
-            </div>
+        <SessionSection
+          title="지난 수업"
+          count={preview.pastTotal}
+          sessions={preview.pastSessions}
+          students={students}
+          attendanceRecords={academyAttendanceRecords}
+          onSessionClick={(id) => navigateToClassSession(id)}
+          isPast
+        />
+
+        {/* 전체 수업일 보기 */}
+        {sessions.length > 0 && (
+          <div className="px-4 mt-4">
+            <button
+              type="button"
+              onClick={() => setShowAllSessions(true)}
+              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white border border-gray-200 text-sm font-bold text-gray-700 active:bg-gray-50"
+            >
+              <CalendarDays size={16} className="text-gray-500" />
+              전체 수업일 보기
+              <span className="text-xs text-gray-400 font-medium">({sessions.length}회)</span>
+            </button>
           </div>
         )}
       </div>
-
-      {/* 클리닉 추가 플로팅 버튼 (원장/강사) */}
-      {(role === 'teacher' || role === 'owner') && (
-        <motion.button
-          type="button"
-          whileTap={{ scale: 0.97 }}
-          onClick={() => setShowClinicForm(true)}
-          className="fixed bottom-24 right-4 z-20 flex items-center gap-2 bg-blue-600 text-white font-bold px-4 py-3 rounded-2xl shadow-lg"
-        >
-          <Plus size={16} />
-          클리닉 추가
-        </motion.button>
-      )}
-
-      {showClinicForm && (
-        <ClinicRecordFormModal
-          presetClassGroupId={selectedClassGroupId}
-          presetSubject={group.subject || ''}
-          onClose={() => setShowClinicForm(false)}
-        />
-      )}
 
       {showEditForm && (
         <ClassGroupFormModal
@@ -232,7 +251,119 @@ export default function ClassGroupDetailPage() {
           onClose={() => setShowEditForm(false)}
         />
       )}
+
+      {showAllSessions && (
+        <AllSessionsModal
+          sessions={sessions}
+          students={students}
+          attendanceRecords={academyAttendanceRecords}
+          todayYMD={todayStr}
+          onSessionClick={(id) => { setShowAllSessions(false); navigateToClassSession(id); }}
+          onClose={() => setShowAllSessions(false)}
+        />
+      )}
     </div>
+  );
+}
+
+function SessionSection({ title, count, sessions, students, attendanceRecords, onSessionClick, isPast, highlightToday, emptyText }) {
+  return (
+    <div className="px-4 mb-5">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-sm font-bold text-gray-700">
+          {title}
+          {highlightToday && <span className="ml-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full align-middle">오늘</span>}
+        </p>
+        <span className="text-xs text-gray-400">{count}회</span>
+      </div>
+      {sessions.length === 0 ? (
+        emptyText ? (
+          <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
+            <p className="text-sm text-gray-400">{emptyText}</p>
+          </div>
+        ) : null
+      ) : (
+        <div className="flex flex-col gap-2">
+          {sessions.map((session) => (
+            <SessionCard key={session.id} session={session} students={students}
+              attendanceRecords={attendanceRecords}
+              onClick={() => onSessionClick(session.id)}
+              isPast={isPast}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AllSessionsModal({ sessions, students, attendanceRecords, todayYMD, onSessionClick, onClose }) {
+  const [filter, setFilter] = useState('all'); // all | upcoming | past
+
+  const filtered = useMemo(() => {
+    if (filter === 'upcoming') {
+      return sessions
+        .filter((s) => compareYMD(s.date || '', todayYMD) >= 0)
+        .slice()
+        .sort((a, b) => compareYMD(a.date || '', b.date || ''));
+    }
+    if (filter === 'past') {
+      return sessions
+        .filter((s) => compareYMD(s.date || '', todayYMD) < 0)
+        .slice()
+        .sort((a, b) => compareYMD(b.date || '', a.date || ''));
+    }
+    // all: 오늘부터 미래는 가까운 순, 과거는 최신순으로 뒤에 붙임
+    const upcoming = sessions
+      .filter((s) => compareYMD(s.date || '', todayYMD) >= 0)
+      .slice()
+      .sort((a, b) => compareYMD(a.date || '', b.date || ''));
+    const past = sessions
+      .filter((s) => compareYMD(s.date || '', todayYMD) < 0)
+      .slice()
+      .sort((a, b) => compareYMD(b.date || '', a.date || ''));
+    return [...upcoming, ...past];
+  }, [sessions, todayYMD, filter]);
+
+  const FILTERS = [
+    { id: 'all', label: '전체' },
+    { id: 'upcoming', label: '예정' },
+    { id: 'past', label: '지난 수업' },
+  ];
+
+  return (
+    <Modal isOpen onClose={onClose} title="전체 수업일">
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-2">
+          {FILTERS.map((f) => (
+            <button key={f.id} type="button" onClick={() => setFilter(f.id)}
+              className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors ${
+                filter === f.id ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-500'
+              }`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        {filtered.length === 0 ? (
+          <div className="bg-white rounded-2xl p-6 text-center">
+            <p className="text-sm text-gray-400">해당 수업일이 없어요</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {filtered.map((session) => {
+              const isPast = compareYMD(session.date || '', todayYMD) < 0;
+              return (
+                <SessionCard key={session.id} session={session} students={students}
+                  attendanceRecords={attendanceRecords}
+                  onClick={() => onSessionClick(session.id)}
+                  isPast={isPast}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 

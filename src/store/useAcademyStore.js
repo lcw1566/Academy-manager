@@ -68,7 +68,7 @@ const useAcademyStore = create(
   examResults: [],
 
   // === Academy Workspace (원장/강사/보조강사 공유) ===
-  academyProfile: { name: '우리 학원', address: '', phone: '' },
+  academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '' },
   academyStudents: [],
   classGroups: [],
   classSessions: [],
@@ -723,7 +723,7 @@ const useAcademyStore = create(
       tutorProfile: defaultTutorProfile,
       geminiApiKey: '',
       // Academy workspace also reset
-      academyProfile: { name: '우리 학원', address: '', phone: '' },
+      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '' },
       academyStudents: [],
       classGroups: [],
       classSessions: [],
@@ -1157,7 +1157,7 @@ const useAcademyStore = create(
   // ─── Academy Reset ────────────────────────────────
   resetAcademyData: () => {
     set({
-      academyProfile: { name: '우리 학원', address: '', phone: '' },
+      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '' },
       academyStudents: [],
       classGroups: [],
       classSessions: [],

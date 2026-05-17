@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import Modal from '../../../components/Modal';
 import useAcademyStore from '../../../store/useAcademyStore';
+import { OWNER_TEACHER_ID } from '../../../utils/format';
 
 const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const SUBJECTS = ['수학', '영어', '국어', '과학', '사회', '물리', '화학', '역사', '기타'];
 const LEVELS = ['초등', '초1', '초2', '초3', '초4', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3', '수능'];
 
 export default function ClassGroupFormModal({ editGroup, onClose }) {
-  const { addClassGroup, updateClassGroup, academyStudents, academyTeachers } = useAcademyStore();
+  const { addClassGroup, updateClassGroup, academyStudents, academyTeachers, academyProfile } = useAcademyStore();
+  const ownerLabel = academyProfile?.ownerName?.trim() || '원장';
 
   const [form, setForm] = useState({
     name: editGroup?.name || '',
@@ -150,16 +152,15 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           <input value={form.room} onChange={(e) => set('room', e.target.value)} placeholder="예: 1강의실" className="input" />
         </Field>
 
-        {academyTeachers.length > 0 && (
-          <Field label="담당 강사">
-            <select value={form.teacherId} onChange={(e) => set('teacherId', e.target.value)} className="input">
-              <option value="">강사 선택</option>
-              {academyTeachers.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          </Field>
-        )}
+        <Field label="담당 강사">
+          <select value={form.teacherId} onChange={(e) => set('teacherId', e.target.value)} className="input">
+            <option value="">강사 선택</option>
+            <option value={OWNER_TEACHER_ID}>{ownerLabel} (원장 본인)</option>
+            {academyTeachers.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </Field>
 
         {academyStudents.length > 0 && (
           <Field label={`학생 배정 (${form.studentIds.length}/${academyStudents.length})`}>
