@@ -32,7 +32,7 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
                 <X size={16} />
               </motion.button>
             </div>
-            <div className="overflow-y-auto flex-1 px-5 py-4">
+            <div className="overflow-y-auto overscroll-contain flex-1 px-5 py-4" style={{ WebkitOverflowScrolling: 'touch' }}>
               {children}
             </div>
             {footer && (

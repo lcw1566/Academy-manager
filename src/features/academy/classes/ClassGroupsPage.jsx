@@ -1,12 +1,12 @@
-import { useState, useMemo } from 'react';
-import { Plus, ChevronRight, Users, Clock, MoreHorizontal, Trash2, Pencil } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { sheetTransition, fadeTransition } from '../../../utils/motion';
+import { useMemo } from 'react';
+import { Plus, ChevronRight, Users, Clock } from 'lucide-react';
+import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import ClassGroupFormModal from './ClassGroupFormModal';
 import { today, formatDateShort } from '../../../utils/date';
+import { useState } from 'react';
 
 const STATUS_MAP = {
   active:   { label: '운영 중', color: 'bg-green-50 text-green-700' },
@@ -17,12 +17,10 @@ const STATUS_MAP = {
 export default function ClassGroupsPage() {
   const {
     role, classGroups, classSessions, academyStudents, academyTeachers,
-    navigateToClassGroup, deleteClassGroup,
+    navigateToClassGroup,
   } = useAcademyStore();
 
   const [showForm, setShowForm] = useState(false);
-  const [editGroup, setEditGroup] = useState(null);
-  const [menuGroupId, setMenuGroupId] = useState(null);
   const todayStr = today();
   const isOwner = role === 'owner';
 
@@ -41,13 +39,6 @@ export default function ClassGroupsPage() {
     }),
     [classGroups, classSessions, academyTeachers, todayStr]
   );
-
-  const handleDelete = (groupId) => {
-    if (window.confirm('반과 모든 수업 회차를 삭제할까요?')) {
-      deleteClassGroup(groupId);
-      setMenuGroupId(null);
-    }
-  };
 
   return (
     <div>
@@ -98,23 +89,13 @@ export default function ClassGroupsPage() {
                   onClick={() => navigateToClassGroup(group.id)}
                   className="bg-white rounded-2xl p-4 shadow-sm cursor-pointer select-none"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${statusInfo.color}`}>
-                        {statusInfo.label}
-                      </span>
-                      <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-semibold">
-                        {group.subject}
-                      </span>
-                    </div>
-                    {isOwner && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setMenuGroupId(group.id); }}
-                        className="w-7 h-7 flex items-center justify-center rounded-full active:bg-gray-100"
-                      >
-                        <MoreHorizontal size={15} className="text-gray-400" />
-                      </button>
-                    )}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${statusInfo.color}`}>
+                      {statusInfo.label}
+                    </span>
+                    <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-semibold">
+                      {group.subject}
+                    </span>
                   </div>
 
                   <p className="font-bold text-gray-900 text-base mb-0.5">{group.name}</p>
@@ -154,43 +135,8 @@ export default function ClassGroupsPage() {
         )}
       </div>
 
-      {/* 메뉴 시트 */}
-      <AnimatePresence>
-        {menuGroupId && (
-          <>
-            <motion.div key="dim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              transition={fadeTransition} className="fixed inset-0 bg-black/40 z-40" onClick={() => setMenuGroupId(null)} />
-            <motion.div key="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-              transition={sheetTransition}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
-            >
-              <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
-              <div className="flex flex-col gap-2">
-                <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setEditGroup(classGroups.find((g) => g.id === menuGroupId)); setMenuGroupId(null); }}
-                  className="flex items-center gap-3 px-4 py-4 bg-gray-50 rounded-2xl text-left">
-                  <Pencil size={18} className="text-blue-500" />
-                  <p className="text-sm font-semibold text-gray-900">반 정보 수정</p>
-                </motion.button>
-                <motion.button whileTap={{ scale: 0.97 }} onClick={() => handleDelete(menuGroupId)}
-                  className="flex items-center gap-3 px-4 py-4 bg-red-50 rounded-2xl text-left">
-                  <Trash2 size={18} className="text-red-500" />
-                  <p className="text-sm font-semibold text-red-600">반 삭제</p>
-                </motion.button>
-              </div>
-              <motion.button whileTap={{ scale: 0.97 }} onClick={() => setMenuGroupId(null)}
-                className="w-full mt-3 py-3 rounded-2xl bg-gray-100 text-sm font-semibold text-gray-600">
-                취소
-              </motion.button>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {(showForm || editGroup) && (
-        <ClassGroupFormModal
-          editGroup={editGroup}
-          onClose={() => { setShowForm(false); setEditGroup(null); }}
-        />
+      {showForm && (
+        <ClassGroupFormModal onClose={() => setShowForm(false)} />
       )}
     </div>
   );

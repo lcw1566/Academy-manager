@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, Plus, Pencil } from 'lucide-react';
+import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import EmptyState from '../../../components/EmptyState';
@@ -19,6 +19,7 @@ export default function ClassGroupDetailPage() {
     role, selectedClassGroupId, classGroups, classSessions,
     academyStudents, academyTeachers, academyAttendanceRecords,
     clinicRecords = [], navigateToClassSession, goBackFromClassGroup, setActiveTab,
+    deleteClassGroup,
   } = useAcademyStore();
 
   const [showClinicForm, setShowClinicForm] = useState(false);
@@ -85,20 +86,29 @@ export default function ClassGroupDetailPage() {
             <p className="text-xs text-gray-400">{group.subject} · {group.level}</p>
           </div>
           {role === 'owner' && (
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.97 }}
-              onClick={() => setShowEditForm(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-600 text-xs font-semibold rounded-xl"
-            >
-              <Pencil size={12} />
-              수정
-            </motion.button>
-          )}
-          {groupClinicRecords.length > 0 && (
-            <span className="bg-blue-50 text-blue-600 text-xs font-bold px-2.5 py-1 rounded-full">
-              클리닉 {groupClinicRecords.length}건
-            </span>
+            <div className="flex items-center gap-1">
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowEditForm(true)}
+                className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100"
+              >
+                <Pencil size={16} className="text-gray-500" />
+              </motion.button>
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.97 }}
+                onClick={() => {
+                  if (window.confirm(`'${group.name}' 반과 모든 수업 회차를 삭제할까요?`)) {
+                    deleteClassGroup(selectedClassGroupId);
+                    goBackFromClassGroup();
+                  }
+                }}
+                className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100"
+              >
+                <Trash2 size={16} className="text-red-400" />
+              </motion.button>
+            </div>
           )}
         </div>
       </div>
