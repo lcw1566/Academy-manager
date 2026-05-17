@@ -208,7 +208,7 @@ export default function EditGroupModal({ groupId, onClose }) {
               </div>
             ) : (
               <>
-                <div className="flex flex-col gap-2 max-h-44 overflow-y-auto rounded-xl border border-gray-200 p-2 bg-white">
+                <div className="flex flex-col gap-2 rounded-xl border border-gray-200 p-2 bg-white">
                   {students.map((s) => {
                     const selected = selectedStudentIds.includes(s.id);
                     const schoolLabel = [s.schoolName || s.school, s.grade].filter(Boolean).join(' ');

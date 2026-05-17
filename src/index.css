@@ -52,3 +52,47 @@ input[type="month"].input {
 .main-content {
   padding-bottom: calc(88px + env(safe-area-inset-bottom));
 }
+
+/* ── Bottom Sheet ─────────────────────────────────────────────
+   max-height: 92dvh (모바일 Safari URL 바 변화에 강함)
+   vh fallback은 구형 브라우저용
+*/
+.sheet-shell {
+  max-height: 92vh;
+  max-height: 92dvh;
+}
+
+.sheet-footer-pad {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+.sheet-content-pad {
+  padding-bottom: 24px;
+}
+
+/* 얇은 스크롤바 — 데스크탑/PWA에서 과한 webkit 스크롤바 억제,
+   접근성 위해 완전 숨기지는 않음 */
+.scroll-soft {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+}
+.scroll-soft::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.scroll-soft::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+}
+.scroll-soft::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 완전 숨김이 필요한 가로 칩 스크롤 등에 사용 */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

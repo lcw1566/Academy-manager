@@ -162,15 +162,16 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         )}
 
         {academyStudents.length > 0 && (
-          <Field label="학생 배정">
-            <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+          <Field label={`학생 배정 (${form.studentIds.length}/${academyStudents.length})`}>
+            {/* 중첩 스크롤 컨테이너 제거 — Modal 본문 스크롤 흐름을 이어받음 */}
+            <div className="flex flex-col gap-2">
               {academyStudents.map((s) => (
                 <button key={s.id} type="button" onClick={() => toggleStudent(s.id)}
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors ${
                     form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
                   }`}>
                   <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`} />
-                  <span className="text-sm font-medium text-gray-800">{s.name}</span>
+                  <span className="text-sm font-medium text-gray-800 flex-1">{(s.name || '?')}</span>
                   {s.grade && <span className="text-xs text-gray-400">{s.grade}</span>}
                 </button>
               ))}

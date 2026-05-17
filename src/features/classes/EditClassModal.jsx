@@ -72,7 +72,7 @@ export default function EditClassModal({ classId, onClose }) {
           {students.length === 0 ? (
             <p className="text-xs text-yellow-700 bg-yellow-50 rounded-xl px-4 py-3">먼저 학생을 등록해주세요</p>
           ) : (
-            <div className="flex flex-col gap-2 max-h-44 overflow-y-auto rounded-xl border border-gray-200 p-2 bg-white">
+            <div className="flex flex-col gap-2 rounded-xl border border-gray-200 p-2 bg-white">
               {students.map((s) => {
                 const selected = selectedStudentIds.includes(s.id);
                 return (
