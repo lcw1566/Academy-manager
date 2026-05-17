@@ -375,8 +375,8 @@ function StyleSheet({
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
         transition={sheetTransition}
-        className="fixed bottom-0 left-0 right-0 z-[70] bg-white rounded-t-3xl px-4 pt-5 pb-10 overflow-y-auto"
-        style={{ maxHeight: '90vh' }}
+        className="fixed bottom-0 left-0 right-0 z-[70] bg-white rounded-t-3xl px-4 pt-5 pb-10 overflow-y-auto overscroll-contain"
+        style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 44px) - 16px)', WebkitOverflowScrolling: 'touch' }}
       >
         <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
         <p className="text-base font-bold text-gray-900 mb-1">작성 스타일 수정</p>

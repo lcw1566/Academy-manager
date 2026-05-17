@@ -96,15 +96,16 @@ export default function ExamResultModal({ studentId, result = null, events = [],
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-50 flex items-end justify-center"
+        className="fixed inset-0 z-50"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={fadeTransition}
       >
-        <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+        <div className="absolute inset-0 bg-black/40" onClick={onClose} style={{ touchAction: 'none' }} />
         <motion.div
-          className="relative w-full max-w-md bg-white rounded-t-3xl px-5 pt-5 pb-10 max-h-[94vh] overflow-y-auto"
+          className="absolute bottom-0 left-0 right-0 max-w-md mx-auto bg-white rounded-t-3xl px-5 pt-5 pb-10 overflow-y-auto overscroll-contain"
+          style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 44px) - 16px)', WebkitOverflowScrolling: 'touch' }}
           initial={{ y: '100%' }}
           animate={{ y: 0 }}
           exit={{ y: '100%' }}
