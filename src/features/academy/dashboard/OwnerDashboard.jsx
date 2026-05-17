@@ -7,7 +7,7 @@ import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpanda
 
 export default function OwnerDashboard() {
   const {
-    academyStudents, classGroups, classSessions, clinicTasks,
+    academyStudents, classGroups, classSessions, clinicRecords = [],
     academyTeachers, academyPayments, academyProfile,
     navigateToClassGroup, navigateToClassSession, setActiveTab,
   } = useAcademyStore();
@@ -30,11 +30,10 @@ export default function OwnerDashboard() {
     [classSessions, selectedDate]
   );
 
-  const pendingClinics = useMemo(
-    () => clinicTasks.filter((t) => t.status === 'pending' || t.status === 'in_progress'),
-    [clinicTasks]
+  const todayClinicCount = useMemo(
+    () => clinicRecords.filter((r) => r.date === todayStr).length,
+    [clinicRecords, todayStr]
   );
-  const urgentClinics = useMemo(() => clinicTasks.filter((t) => t.priority === 'urgent' && t.status !== 'completed'), [clinicTasks]);
 
   const currentMonth = todayStr.slice(0, 7);
   const unpaidPayments = useMemo(
@@ -103,9 +102,9 @@ export default function OwnerDashboard() {
         <SummaryCard label="오늘 수업" value={`${todaySessions.length}개`} onClick={() => setActiveTab('classes')} />
         <SummaryCard label="출석 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('classes')} />
         <SummaryCard
-          label="클리닉 대기"
-          value={`${pendingClinics.length}건`}
-          color={pendingClinics.length > 0 ? 'text-orange-500' : 'text-gray-900'}
+          label="오늘 클리닉 기록"
+          value={`${todayClinicCount}건`}
+          color={todayClinicCount > 0 ? 'text-blue-600' : 'text-gray-900'}
           onClick={() => setActiveTab('clinic')}
         />
         <SummaryCard
@@ -114,29 +113,6 @@ export default function OwnerDashboard() {
           color={unpaidPayments.length > 0 ? 'text-red-500' : 'text-gray-900'}
         />
       </div>
-
-      {/* 긴급 클리닉 */}
-      {urgentClinics.length > 0 && (
-        <div className="px-4 mb-5">
-          <p className="text-sm font-bold text-red-600 mb-2">🚨 긴급 클리닉</p>
-          <div className="bg-red-50 rounded-2xl overflow-hidden">
-            {urgentClinics.slice(0, 3).map((task) => {
-              const student = academyStudents.find((s) => s.id === task.studentId);
-              return (
-                <motion.button
-                  key={task.id}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => setActiveTab('clinic')}
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left border-b border-red-100 last:border-0"
-                >
-                  <span className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-                  <span className="text-sm text-red-700 font-medium">{student?.name} · {task.title}</span>
-                </motion.button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* 강사별 수업 현황 */}
       {academyTeachers.length > 0 && (

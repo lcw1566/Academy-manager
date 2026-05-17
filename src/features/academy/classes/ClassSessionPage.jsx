@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import { formatDateShort, today } from '../../../utils/date';
 import { attendanceStatusMap } from '../../../utils/format';
-import ClinicFormModal from '../clinic/ClinicFormModal';
+import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 
 const ATT_OPTIONS = ['present', 'late', 'absent', 'makeup'];
 
@@ -261,10 +261,12 @@ export default function ClassSessionPage() {
       </div>
 
       {showClinicForm && (
-        <ClinicFormModal
-          classGroupId={session.classGroupId}
-          classSessionId={selectedClassSessionId}
+        <ClinicRecordFormModal
+          presetClassGroupId={session.classGroupId}
+          presetClassSessionId={selectedClassSessionId}
           presetStudentId={clinicStudentId}
+          presetDate={session.date}
+          presetSubject={group.subject || ''}
           onClose={() => { setShowClinicForm(false); setClinicStudentId(null); }}
         />
       )}

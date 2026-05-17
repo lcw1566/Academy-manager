@@ -4,6 +4,7 @@ import RoleSelectPage from './features/auth/RoleSelectPage';
 import AppLayout from './components/AppLayout';
 import AcademyAppLayout from './features/academy/AcademyAppLayout';
 import Toast from './components/Toast';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const ACADEMY_ROLES = ['owner', 'teacher', 'assistant'];
 
@@ -19,7 +20,9 @@ export default function App() {
   return (
     <MotionConfig reducedMotion="user">
       <div className="min-h-screen bg-[#F5F6F8]">
-        {renderLayout()}
+        <ErrorBoundary>
+          {renderLayout()}
+        </ErrorBoundary>
         <AnimatePresence>
           {toast && <Toast key={toast.message} message={toast.message} type={toast.type} />}
         </AnimatePresence>

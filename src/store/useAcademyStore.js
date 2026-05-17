@@ -73,6 +73,7 @@ const useAcademyStore = create(
   classGroups: [],
   classSessions: [],
   clinicTasks: [],
+  clinicRecords: [],
   academyTeachers: [],
   academyAssistants: [],
   academyPayments: [],
@@ -723,6 +724,7 @@ const useAcademyStore = create(
       classGroups: [],
       classSessions: [],
       clinicTasks: [],
+      clinicRecords: [],
       academyTeachers: [],
       academyAssistants: [],
       academyPayments: [],
@@ -918,6 +920,31 @@ const useAcademyStore = create(
     get().showToast('담당자가 배정되었습니다.');
   },
 
+  // ─── Clinic Records (기록형 클리닉) ────────────────
+  addClinicRecord: (record) => {
+    const newRecord = {
+      ...record,
+      id: `cr${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    set((s) => ({ clinicRecords: [...(s.clinicRecords || []), newRecord] }));
+    get().showToast('클리닉 기록이 저장되었어요.');
+    return newRecord;
+  },
+  updateClinicRecord: (recordId, updates) => {
+    set((s) => ({
+      clinicRecords: (s.clinicRecords || []).map((r) =>
+        r.id === recordId ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r
+      ),
+    }));
+    get().showToast('클리닉 기록이 수정되었어요.');
+  },
+  deleteClinicRecord: (recordId) => {
+    set((s) => ({ clinicRecords: (s.clinicRecords || []).filter((r) => r.id !== recordId) }));
+    get().showToast('클리닉 기록이 삭제되었어요.');
+  },
+
   // ─── Academy Teachers ─────────────────────────────
   addTeacher: (teacher) => {
     const newTeacher = { ...teacher, id: `t${Date.now()}`, status: teacher.status || 'active' };
@@ -1075,6 +1102,7 @@ const useAcademyStore = create(
       classGroups: [],
       classSessions: [],
       clinicTasks: [],
+      clinicRecords: [],
       academyTeachers: [],
       academyAssistants: [],
       academyPayments: [],
@@ -1186,6 +1214,43 @@ const useAcademyStore = create(
       },
     ];
 
+    const sampleClinicRecords = [
+      {
+        id: `cr${ts}1`,
+        academyId: 'academy_001',
+        studentId: sampleStudents[2].id,
+        classGroupId: sampleGroup.id,
+        classSessionId: nextSession?.id || '',
+        date: todayStr,
+        subject: '영어',
+        teacherId: sampleTeacher.id,
+        assistantId: sampleAssistant.id,
+        items: [
+          {
+            id: `cri${ts}1`,
+            categoryKey: 'vocabulary_test',
+            title: '단어 암기 및 시험',
+            description: 'Lesson 3 단어 30개 테스트, 24개 정답. 틀린 단어 6개는 다음 시간 재시험 예정.',
+            result: '24/30',
+            memo: '단어 뜻은 대체로 알고 있으나 철자 실수가 있음',
+          },
+          {
+            id: `cri${ts}2`,
+            categoryKey: 'sentence_structure',
+            title: '문장 구문 분석',
+            description: '본문 3번 문장의 주어, 동사, 수식어를 끊어 읽으며 직독직해 연습',
+            result: '',
+            memo: '',
+          },
+        ],
+        overallMemo: '단어와 구문 모두 보완 진행. 다음 시간에 단어 재시험 필요.',
+        createdByRole: 'assistant',
+        createdById: sampleAssistant.id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ];
+
     set((s) => ({
       academyStudents: [...s.academyStudents, ...sampleStudents],
       academyTeachers: [...s.academyTeachers, sampleTeacher],
@@ -1193,6 +1258,7 @@ const useAcademyStore = create(
       classGroups: [...s.classGroups, sampleGroup],
       classSessions: [...s.classSessions, ...sampleSessions],
       clinicTasks: [...s.clinicTasks, ...sampleClinics],
+      clinicRecords: [...(s.clinicRecords || []), ...sampleClinicRecords],
     }));
     get().showToast('샘플 데이터가 생성되었습니다.');
   },
@@ -1236,6 +1302,7 @@ const useAcademyStore = create(
         classGroups: s.classGroups,
         classSessions: s.classSessions,
         clinicTasks: s.clinicTasks,
+        clinicRecords: s.clinicRecords || [],
         academyTeachers: s.academyTeachers,
         academyAssistants: s.academyAssistants,
         academyPayments: s.academyPayments,

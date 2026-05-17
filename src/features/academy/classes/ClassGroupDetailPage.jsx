@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import { today, formatDateShort } from '../../../utils/date';
 import { attendanceStatusMap } from '../../../utils/format';
-import ClinicFormModal from '../clinic/ClinicFormModal';
+import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 
 const SESSION_STATUS = {
   scheduled:   { label: '예정',  color: 'bg-blue-50 text-blue-600' },
@@ -17,7 +17,7 @@ export default function ClassGroupDetailPage() {
   const {
     role, selectedClassGroupId, classGroups, classSessions,
     academyStudents, academyTeachers, academyAttendanceRecords,
-    clinicTasks, navigateToClassSession, goBackFromClassGroup, setActiveTab,
+    clinicRecords = [], navigateToClassSession, goBackFromClassGroup, setActiveTab,
   } = useAcademyStore();
 
   const [showClinicForm, setShowClinicForm] = useState(false);
@@ -42,9 +42,9 @@ export default function ClassGroupDetailPage() {
 
   const teacher = academyTeachers.find((t) => t.id === group.teacherId);
 
-  const pendingClinics = useMemo(
-    () => clinicTasks.filter((t) => t.classGroupId === selectedClassGroupId && t.status !== 'completed'),
-    [clinicTasks, selectedClassGroupId]
+  const groupClinicRecords = useMemo(
+    () => clinicRecords.filter((r) => r.classGroupId === selectedClassGroupId),
+    [clinicRecords, selectedClassGroupId]
   );
 
   return (
@@ -59,9 +59,9 @@ export default function ClassGroupDetailPage() {
             <p className="font-bold text-gray-900 truncate">{group.name}</p>
             <p className="text-xs text-gray-400">{group.subject} · {group.level}</p>
           </div>
-          {pendingClinics.length > 0 && (
-            <span className="bg-orange-50 text-orange-600 text-xs font-bold px-2.5 py-1 rounded-full">
-              클리닉 {pendingClinics.length}
+          {groupClinicRecords.length > 0 && (
+            <span className="bg-blue-50 text-blue-600 text-xs font-bold px-2.5 py-1 rounded-full">
+              클리닉 {groupClinicRecords.length}건
             </span>
           )}
         </div>
@@ -96,21 +96,21 @@ export default function ClassGroupDetailPage() {
           </div>
         )}
 
-        {/* 클리닉 현황 */}
-        {pendingClinics.length > 0 && (
+        {/* 클리닉 기록 현황 */}
+        {groupClinicRecords.length > 0 && (
           <div className="px-4 mb-5">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-bold text-gray-700">클리닉 현황</p>
+              <p className="text-sm font-bold text-gray-700">최근 클리닉 기록</p>
               <button onClick={() => setActiveTab('clinic')} className="text-xs text-blue-600 font-semibold">
                 전체 보기
               </button>
             </div>
-            <div className="bg-orange-50 rounded-2xl px-4 py-3">
-              <p className="text-sm font-semibold text-orange-700">대기 {pendingClinics.length}건</p>
-              <p className="text-xs text-orange-500 mt-0.5">
-                {pendingClinics.slice(0, 2).map((t) => {
-                  const stu = academyStudents.find((s) => s.id === t.studentId);
-                  return `${stu?.name || '학생'}: ${t.title}`;
+            <div className="bg-blue-50 rounded-2xl px-4 py-3">
+              <p className="text-sm font-semibold text-blue-700">총 {groupClinicRecords.length}건 기록됨</p>
+              <p className="text-xs text-blue-500 mt-0.5">
+                {groupClinicRecords.slice(0, 2).map((r) => {
+                  const stu = academyStudents.find((s) => s.id === r.studentId);
+                  return `${stu?.name || '학생'}: ${r.subject}`;
                 }).join(' / ')}
               </p>
             </div>
@@ -172,7 +172,11 @@ export default function ClassGroupDetailPage() {
       )}
 
       {showClinicForm && (
-        <ClinicFormModal classGroupId={selectedClassGroupId} onClose={() => setShowClinicForm(false)} />
+        <ClinicRecordFormModal
+          presetClassGroupId={selectedClassGroupId}
+          presetSubject={group.subject || ''}
+          onClose={() => setShowClinicForm(false)}
+        />
       )}
     </div>
   );

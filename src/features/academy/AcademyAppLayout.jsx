@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Home, BookOpen, Users, MoreHorizontal, Stethoscope, CreditCard, BarChart2 } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
@@ -44,6 +45,23 @@ const TAB_CONFIG = {
   ],
 };
 
+function FallbackScreen() {
+  const { setActiveTab } = useAcademyStore();
+  return (
+    <div className="flex flex-col items-center justify-center h-[60vh] px-6 text-center">
+      <div className="text-5xl mb-4">😅</div>
+      <p className="text-base font-bold text-gray-800 mb-2">화면을 불러오지 못했어요</p>
+      <p className="text-sm text-gray-500 mb-6">다른 탭을 선택하거나 홈으로 이동해보세요.</p>
+      <button
+        onClick={() => setActiveTab('home')}
+        className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm"
+      >
+        홈으로 이동
+      </button>
+    </div>
+  );
+}
+
 export default function AcademyAppLayout() {
   const {
     role,
@@ -55,6 +73,14 @@ export default function AcademyAppLayout() {
   } = useAcademyStore();
 
   const tabs = TAB_CONFIG[role] || TAB_CONFIG.owner;
+
+  // 역할이 바뀌어 현재 activeTab이 해당 역할 탭 목록에 없으면 첫 번째 탭으로 보정
+  useEffect(() => {
+    const validTabIds = tabs.map((t) => t.id);
+    if (!validTabIds.includes(activeTab)) {
+      setActiveTab(tabs[0]?.id || 'home');
+    }
+  }, [role, tabs, activeTab, setActiveTab]);
 
   const pageKey = selectedClassSessionId
     ? `session-${selectedClassSessionId}`
@@ -72,15 +98,25 @@ export default function AcademyAppLayout() {
   };
 
   const renderContent = () => {
-    if (selectedClassSessionId) return <ClassSessionPage />;
-    if (activeTab === 'home')       return renderDashboard();
-    if (activeTab === 'classes')    return selectedClassGroupId ? <ClassGroupDetailPage /> : <ClassGroupsPage />;
-    if (activeTab === 'students')   return selectedAcademyStudentId ? <AcademyStudentDetailPage /> : <AcademyStudentsPage />;
-    if (activeTab === 'clinic')     return <ClinicPage />;
-    if (activeTab === 'settlement') return <SettlementPage />;
-    if (activeTab === 'payroll')    return <PayrollPage />;
-    if (activeTab === 'more')       return <AcademyMorePage />;
-    return renderDashboard();
+    try {
+      if (selectedClassSessionId) return <ClassSessionPage />;
+      if (activeTab === 'home')       return renderDashboard();
+      if (activeTab === 'classes')    return selectedClassGroupId ? <ClassGroupDetailPage /> : <ClassGroupsPage />;
+      if (activeTab === 'students')   return selectedAcademyStudentId ? <AcademyStudentDetailPage /> : <AcademyStudentsPage />;
+      if (activeTab === 'clinic')     return <ClinicPage />;
+      if (activeTab === 'settlement') return <SettlementPage />;
+      if (activeTab === 'payroll')    return <PayrollPage />;
+      if (activeTab === 'more')       return <AcademyMorePage />;
+
+      // 탭이 유효하지 않을 경우 대시보드 렌더
+      const validTabIds = tabs.map((t) => t.id);
+      if (!validTabIds.includes(activeTab)) return renderDashboard();
+
+      return renderDashboard();
+    } catch (err) {
+      console.error('[AcademyAppLayout] renderContent error:', err);
+      return <FallbackScreen />;
+    }
   };
 
   return (
