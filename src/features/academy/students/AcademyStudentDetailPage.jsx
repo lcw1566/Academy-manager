@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
-import { ChevronLeft, Pencil, Trash2, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronLeft, Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
-import { formatDateShort, getKoreanWeekdayFromYMD } from '../../../utils/date';
+import { formatDateShort, getKoreanWeekdayFromYMD, today } from '../../../utils/date';
 import { attendanceStatusMap } from '../../../utils/format';
 import EmptyState from '../../../components/EmptyState';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
@@ -24,6 +24,7 @@ function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, a
       const group = classGroups.find((g) => g.id === session.classGroupId) || {};
       const attendance = academyAttendanceRecords.find((a) => a.sessionId === session.id && a.studentId === studentId);
       const lessonRecord = academyLessonRecords.find((lr) => lr.sessionId === session.id && lr.studentId === studentId);
+      const commonRecord = academyLessonRecords.find((lr) => lr.sessionId === session.id && lr.studentId === '_common_');
       const teacher = academyTeachers.find((t) => t.id === session.teacherId);
 
       // clinicRecords 연결: sessionId 일치 또는 같은 학생 + 같은 날짜
@@ -44,6 +45,7 @@ function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, a
         room: session.room || group.room || '',
         attendanceStatus: attendance?.status || null,
         lessonRecord,
+        commonRecord,
         clinics: linkedClinicRecords,
         clinicSummary: { total: linkedClinicRecords.length },
       };
@@ -57,13 +59,30 @@ function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, a
   return records;
 }
 
+const EVAL_LABEL_MAP = {
+  attitude:       '태도',
+  focus:          '집중도',
+  understanding:  '이해도',
+  homeworkStatus: '숙제',
+};
+const SUPPORT_TAG_MAP = {
+  homework: '숙제 미완료', wrong_answer: '오답 풀이', vocabulary: '단어 재시험',
+  reading: '본문 암기', grammar: '문법 보충', concept: '개념 재설명',
+  test_retry: '테스트 재응시', absence_makeup: '결석 보강', other: '기타',
+};
+
 // ── 수업 기록 카드 ─────────────────────────────────────────────────
-function LessonRecordCard({ record, assistants }) {
+function LessonRecordCard({ record }) {
   const [expanded, setExpanded] = useState(false);
-  const { date, startTime, endTime, classGroupName, subject, teacherName, attendanceStatus, lessonRecord, clinics, clinicSummary } = record;
+  const { date, startTime, endTime, classGroupName, subject, teacherName, attendanceStatus, lessonRecord, commonRecord, clinics, clinicSummary } = record;
 
   const weekday = date ? getKoreanWeekdayFromYMD(date) : '';
   const attMeta = attendanceStatus ? attendanceStatusMap[attendanceStatus] : null;
+
+  const hasEval = lessonRecord && (lessonRecord.attitude || lessonRecord.focus || lessonRecord.understanding || lessonRecord.homeworkStatus);
+  const hasSupport = lessonRecord && ((lessonRecord.supportTags?.length > 0) || lessonRecord.supportMemo?.trim());
+  const hasCommon = commonRecord && (commonRecord.commonContent || commonRecord.commonProgress || commonRecord.commonHomework);
+  const hasAnyRecord = hasEval || hasSupport || hasCommon || clinicSummary.total > 0;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -83,8 +102,8 @@ function LessonRecordCard({ record, assistants }) {
               {!attendanceStatus && <span className="text-xs text-gray-300">미기록</span>}
             </div>
             <p className="text-xs text-gray-500">{classGroupName} {subject && `· ${subject}`} · {startTime}–{endTime}</p>
-            {lessonRecord?.content && (
-              <p className="text-xs text-gray-400 mt-1.5 line-clamp-1">{lessonRecord.content}</p>
+            {commonRecord?.commonProgress && (
+              <p className="text-xs text-gray-400 mt-1.5 line-clamp-1">진도: {commonRecord.commonProgress}</p>
             )}
           </div>
           <div className="flex items-center gap-2 ml-2 flex-shrink-0">
@@ -93,6 +112,7 @@ function LessonRecordCard({ record, assistants }) {
                 클리닉 {clinicSummary.total}건
               </span>
             )}
+            {hasAnyRecord && <span className="text-[10px] font-semibold bg-green-50 text-green-600 px-1.5 py-0.5 rounded-full">기록 있음</span>}
             {expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
           </div>
         </div>
@@ -118,13 +138,61 @@ function LessonRecordCard({ record, assistants }) {
                 </div>
               </div>
 
-              {/* 수업 내용 */}
-              {lessonRecord?.content && (
+              {/* 공통 수업 기록 */}
+              {hasCommon && (
+                <div className="mb-3 bg-blue-50 rounded-xl px-3 py-3">
+                  <p className="text-xs font-semibold text-blue-700 mb-2">공통 수업 기록</p>
+                  {commonRecord.commonProgress && <InfoRow label="진도" value={commonRecord.commonProgress} />}
+                  {commonRecord.commonContent && (
+                    <div className="mt-1.5">
+                      <p className="text-xs text-blue-600 font-medium">수업 내용</p>
+                      <p className="text-xs text-blue-800 mt-0.5 whitespace-pre-wrap">{commonRecord.commonContent}</p>
+                    </div>
+                  )}
+                  {commonRecord.commonHomework && <InfoRow label="공통 숙제" value={commonRecord.commonHomework} />}
+                </div>
+              )}
+
+              {/* 학생별 평가 */}
+              {hasEval && (
                 <div className="mb-3">
-                  <p className="text-xs font-semibold text-gray-400 mb-2">수업 내용</p>
-                  <div className="bg-gray-50 rounded-xl px-3 py-2.5">
-                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{lessonRecord.content}</p>
+                  <p className="text-xs font-semibold text-gray-400 mb-2">평가</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['attitude', 'focus', 'understanding', 'homeworkStatus'].map((key) =>
+                      lessonRecord[key] ? (
+                        <span key={key} className="text-xs bg-gray-100 text-gray-700 px-2.5 py-1 rounded-full font-medium">
+                          {EVAL_LABEL_MAP[key]}: {lessonRecord[key]}
+                        </span>
+                      ) : null
+                    )}
                   </div>
+                </div>
+              )}
+
+              {/* 학생 메모 */}
+              {lessonRecord?.memo?.trim() && (
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-gray-400 mb-1">학생 메모</p>
+                  <p className="text-sm text-gray-700 bg-gray-50 rounded-xl px-3 py-2 whitespace-pre-wrap">{lessonRecord.memo}</p>
+                </div>
+              )}
+
+              {/* 학습 보완 항목 */}
+              {hasSupport && (
+                <div className="mb-3">
+                  <p className="text-xs font-semibold text-gray-400 mb-2">보완 항목</p>
+                  {lessonRecord.supportTags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                      {lessonRecord.supportTags.map((tag) => (
+                        <span key={tag} className="text-xs bg-orange-50 text-orange-600 border border-orange-200 px-2 py-0.5 rounded-full font-medium">
+                          {SUPPORT_TAG_MAP[tag] || tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {lessonRecord.supportMemo?.trim() && (
+                    <p className="text-xs text-gray-600 bg-orange-50 rounded-xl px-3 py-2">{lessonRecord.supportMemo}</p>
+                  )}
                 </div>
               )}
 
@@ -133,18 +201,18 @@ function LessonRecordCard({ record, assistants }) {
                 <div className="mb-1">
                   <p className="text-xs font-semibold text-gray-400 mb-2">클리닉 기록 {clinics.length}건</p>
                   <div className="flex flex-col gap-2">
-                    {clinics.map((record) => (
-                      <div key={record.id} className="bg-gray-50 rounded-xl px-3 py-2.5">
-                        <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{record.subject}</span>
-                        {record.items?.map((item, i) => (
+                    {clinics.map((cr) => (
+                      <div key={cr.id} className="bg-gray-50 rounded-xl px-3 py-2.5">
+                        <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{cr.subject}</span>
+                        {cr.items?.map((item, i) => (
                           <div key={item.id || i} className="mt-1.5">
                             <p className="text-xs font-semibold text-gray-700">{item.title}</p>
                             {item.description && <p className="text-xs text-gray-500">{item.description}</p>}
                             {item.result && <p className="text-xs text-blue-600">결과: {item.result}</p>}
                           </div>
                         ))}
-                        {record.overallMemo && (
-                          <p className="text-xs text-gray-400 mt-1.5 border-t border-gray-200 pt-1.5">{record.overallMemo}</p>
+                        {cr.overallMemo && (
+                          <p className="text-xs text-gray-400 mt-1.5 border-t border-gray-200 pt-1.5">{cr.overallMemo}</p>
                         )}
                       </div>
                     ))}
@@ -152,7 +220,7 @@ function LessonRecordCard({ record, assistants }) {
                 </div>
               )}
 
-              {clinics.length === 0 && !lessonRecord?.content && (
+              {!hasAnyRecord && (
                 <p className="text-xs text-gray-300 py-2">수업 기록이 없어요</p>
               )}
             </div>
@@ -179,11 +247,14 @@ export default function AcademyStudentDetailPage() {
     academyAttendanceRecords, academyLessonRecords, clinicTasks, clinicRecords = [], academyPayments,
     academyTeachers, academyAssistants,
     deleteAcademyStudent, goBackFromAcademyStudent,
+    updateAcademyPayment, addAcademyPayment, deleteAcademyPayment,
   } = useAcademyStore();
 
   const [activeTab, setActiveTab] = useState('요약');
   const [showEdit, setShowEdit] = useState(false);
   const [showClinicForm, setShowClinicForm] = useState(false);
+  const [showAddPayment, setShowAddPayment] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ classGroupId: '', amount: '', month: today().slice(0, 7) });
 
   // May be null during back-navigation exit animation — compute before all hooks
   const student = academyStudents.find((s) => s.id === selectedAcademyStudentId) ?? null;
@@ -316,7 +387,7 @@ export default function AcademyStudentDetailPage() {
         </div>
       ) : (
         dailyRecords.map((record) => (
-          <LessonRecordCard key={record.id} record={record} assistants={academyAssistants} />
+          <LessonRecordCard key={record.id} record={record} />
         ))
       )}
 
@@ -332,6 +403,10 @@ export default function AcademyStudentDetailPage() {
 
   const renderClinic = () => (
     <div className="flex flex-col gap-3">
+      <motion.button type="button" whileTap={{ scale: 0.97 }} onClick={() => setShowClinicForm(true)}
+        className="w-full py-3 rounded-2xl border-2 border-dashed border-blue-200 text-blue-600 text-sm font-semibold">
+        + 클리닉 기록 추가
+      </motion.button>
       {studentClinicRecords.length === 0 ? (
         <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
           <p className="text-sm text-gray-400">클리닉 기록이 없어요</p>
@@ -362,8 +437,62 @@ export default function AcademyStudentDetailPage() {
   const renderSettlement = () => {
     const studentPayments = academyPayments.filter((p) => p.studentId === student.id)
       .sort((a, b) => b.month?.localeCompare(a.month || '') || 0);
+    const studentGroups = classGroups.filter((g) => (g.studentIds || []).includes(student.id));
+
+    const handleAddPayment = () => {
+      if (!paymentForm.amount || !paymentForm.month) return;
+      addAcademyPayment({
+        studentId: student.id,
+        classGroupId: paymentForm.classGroupId || '',
+        month: paymentForm.month,
+        amount: Number(paymentForm.amount) || 0,
+        status: 'unpaid',
+        createdAt: new Date().toISOString(),
+      });
+      setShowAddPayment(false);
+      setPaymentForm({ classGroupId: '', amount: '', month: today().slice(0, 7) });
+    };
+
     return (
       <div className="flex flex-col gap-2">
+        <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowAddPayment(!showAddPayment)}
+          className="w-full py-2.5 border-2 border-dashed border-blue-200 rounded-2xl text-blue-600 text-sm font-semibold flex items-center justify-center gap-1">
+          <Plus size={14} /> 수납 항목 추가
+        </motion.button>
+
+        {showAddPayment && (
+          <div className="bg-white rounded-2xl p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-bold text-gray-800">수납 항목 추가</p>
+              <button onClick={() => setShowAddPayment(false)}><X size={16} className="text-gray-400" /></button>
+            </div>
+            <div className="flex flex-col gap-2">
+              <input type="month" value={paymentForm.month}
+                onChange={(e) => setPaymentForm((f) => ({ ...f, month: e.target.value }))}
+                className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              {studentGroups.length > 0 && (
+                <select value={paymentForm.classGroupId}
+                  onChange={(e) => {
+                    const g = classGroups.find((g) => g.id === e.target.value);
+                    setPaymentForm((f) => ({ ...f, classGroupId: e.target.value, amount: g?.monthlyFee ? String(g.monthlyFee) : f.amount }));
+                  }}
+                  className="border border-gray-200 rounded-xl px-3 py-2 text-sm">
+                  <option value="">반 선택 (선택사항)</option>
+                  {studentGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              )}
+              <input type="number" value={paymentForm.amount} placeholder="금액 (원)"
+                onChange={(e) => setPaymentForm((f) => ({ ...f, amount: e.target.value }))}
+                className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+              <motion.button whileTap={{ scale: 0.97 }} onClick={handleAddPayment}
+                disabled={!paymentForm.amount || !paymentForm.month}
+                className="w-full py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl disabled:opacity-40">
+                추가하기
+              </motion.button>
+            </div>
+          </div>
+        )}
+
         {studentPayments.length === 0 ? (
           <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
             <p className="text-sm text-gray-400">수납 기록이 없어요</p>
@@ -371,15 +500,27 @@ export default function AcademyStudentDetailPage() {
         ) : (
           studentPayments.map((p) => (
             <div key={p.id} className="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900">{p.month}</p>
-                <p className="text-xs text-gray-400">수강료 · {classGroups.find((g) => g.id === p.classGroupId)?.name || ''}</p>
+                <p className="text-xs text-gray-400">{classGroups.find((g) => g.id === p.classGroupId)?.name || '수강료'}</p>
               </div>
-              <div className="text-right">
-                <p className="font-bold text-gray-900">{p.amount?.toLocaleString()}원</p>
-                <span className={`text-xs font-medium ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>
-                  {p.status === 'paid' ? '수납 완료' : '미납'}
-                </span>
+              <div className="flex items-center gap-2">
+                <div className="text-right">
+                  <p className="font-bold text-gray-900 text-sm">{p.amount?.toLocaleString()}원</p>
+                  <span className={`text-xs font-medium ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>
+                    {p.status === 'paid' ? '수납 완료' : '미납'}
+                  </span>
+                </div>
+                <motion.button whileTap={{ scale: 0.95 }}
+                  onClick={() => updateAcademyPayment(p.id, { status: p.status === 'paid' ? 'unpaid' : 'paid' })}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${p.status === 'paid' ? 'bg-green-500' : 'border-2 border-gray-200'}`}>
+                  {p.status === 'paid' && <Check size={13} className="text-white" />}
+                </motion.button>
+                <motion.button whileTap={{ scale: 0.95 }}
+                  onClick={() => deleteAcademyPayment(p.id)}
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-red-300 active:bg-red-50 flex-shrink-0">
+                  <Trash2 size={13} />
+                </motion.button>
               </div>
             </div>
           ))

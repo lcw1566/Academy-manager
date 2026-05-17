@@ -1013,6 +1013,39 @@ const useAcademyStore = create(
     set((s) => ({ academyPayments: s.academyPayments.filter((p) => p.id !== id) }));
     get().showToast('수납 항목이 삭제되었습니다.');
   },
+  generateAcademyPaymentsForMonth: (month) => {
+    const { classGroups, classSessions, academyPayments } = get();
+    const newPayments = [];
+    for (const group of classGroups) {
+      if (!group.monthlyFee || group.monthlyFee <= 0) continue;
+      const monthSessions = classSessions.filter(
+        (s) => s.classGroupId === group.id && s.date?.startsWith(month) && s.status !== 'canceled'
+      );
+      if (monthSessions.length === 0) continue;
+      const studentIds = group.studentIds || [];
+      for (const studentId of studentIds) {
+        const exists = academyPayments.some(
+          (p) => p.classGroupId === group.id && p.studentId === studentId && p.month === month
+        );
+        if (exists) continue;
+        newPayments.push({
+          id: `ap${Date.now()}_${group.id}_${studentId}`,
+          studentId,
+          classGroupId: group.id,
+          month,
+          amount: group.monthlyFee,
+          status: 'unpaid',
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+    if (newPayments.length > 0) {
+      set((s) => ({ academyPayments: [...s.academyPayments, ...newPayments] }));
+      get().showToast(`수납 항목 ${newPayments.length}건이 생성되었습니다.`);
+    } else {
+      get().showToast('생성할 수납 항목이 없습니다. (이미 존재하거나 수강료 미설정)');
+    }
+  },
 
   // ─── Academy Student Events ───────────────────────
   addAcademyStudentEvent: (eventData) => {
@@ -1066,7 +1099,7 @@ const useAcademyStore = create(
       }, 0);
       const amount = teacher.wageType === 'hourly'
         ? Math.round((teacher.hourlyWage || 0) * totalHours)
-        : (teacher.monthlySalary || 0);
+        : (teacher.monthlySalary || teacher.monthlyWage || 0);
       payrolls.push({
         id: `pr${ts}t${i}`, staffType: 'teacher', staffId: teacher.id, month,
         wageType: teacher.wageType || 'monthly', hourlyWage: teacher.hourlyWage || 0,

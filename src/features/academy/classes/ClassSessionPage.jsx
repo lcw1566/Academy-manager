@@ -287,7 +287,7 @@ export default function ClassSessionPage() {
     selectedClassSessionId,
     classSessions, classGroups, academyStudents, academyTeachers,
     academyAttendanceRecords, academyLessonRecords,
-    updateAcademyAttendance, batchSaveSessionRecords,
+    updateAcademyAttendance, batchSaveSessionRecords, updateClassSession,
     goBackFromClassSession,
   } = useAcademyStore();
 
@@ -491,22 +491,41 @@ export default function ClassSessionPage() {
         </div>
       </div>
 
-      {/* ── 저장 버튼 (fixed) ──────────────────────────── */}
+      {/* ── 저장 / 완료 버튼 (fixed) ──────────────────── */}
       {canEdit && (
         <div className="fixed bottom-0 left-0 right-0 z-20 bg-white/95 border-t border-gray-100 px-4 py-3 pb-safe max-w-md mx-auto">
-          <motion.button
-            type="button"
-            whileTap={{ scale: 0.97 }}
-            onClick={handleSave}
-            disabled={isSaving}
-            className={`w-full py-3.5 rounded-2xl font-bold text-sm transition-colors ${
-              isDirty
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
-                : 'bg-green-50 text-green-600'
-            }`}
-          >
-            {isSaving ? '저장 중...' : isDirty ? '수업 기록 저장' : '✓ 저장됨'}
-          </motion.button>
+          <div className="flex gap-2">
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.97 }}
+              onClick={handleSave}
+              disabled={isSaving}
+              className={`flex-1 py-3.5 rounded-2xl font-bold text-sm transition-colors ${
+                isDirty
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
+                  : 'bg-gray-100 text-gray-500'
+              }`}
+            >
+              {isSaving ? '저장 중...' : isDirty ? '기록 저장' : '✓ 저장됨'}
+            </motion.button>
+            {session.status !== 'completed' ? (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.97 }}
+                onClick={async () => {
+                  if (isDirty) await handleSave();
+                  updateClassSession(session.id, { status: 'completed' });
+                }}
+                className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-green-600 text-white shadow-lg shadow-green-200"
+              >
+                수업 완료
+              </motion.button>
+            ) : (
+              <div className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-green-50 text-green-600 flex items-center justify-center">
+                ✓ 수업 완료됨
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

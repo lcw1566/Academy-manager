@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Check, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Check, RefreshCw, Plus, X, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
@@ -20,14 +20,17 @@ export default function SettlementPage() {
   const {
     academyStudents, classGroups, academyPayments,
     academyTeachers, academyAssistants, academyPayrolls,
-    updateAcademyPayment, addAcademyPayment,
+    updateAcademyPayment, addAcademyPayment, deleteAcademyPayment,
     generatePayrollsForMonth, markPayrollPaid,
+    generateAcademyPaymentsForMonth,
   } = useAcademyStore();
 
   const months = getRecentMonths();
   const [selectedMonth, setSelectedMonth] = useState(months[0]);
   const [segment, setSegment] = useState('payments'); // 'payments' | 'payroll'
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [showAddPayment, setShowAddPayment] = useState(false);
+  const [addForm, setAddForm] = useState({ studentId: '', classGroupId: '', amount: '' });
 
   // ─── 수납 계산 ───────────────────────────────────
   const monthPayments = useMemo(
@@ -78,6 +81,22 @@ export default function SettlementPage() {
 
   const handleAutoGeneratePayrolls = () => {
     generatePayrollsForMonth(selectedMonth);
+  };
+
+  const handleAddPayment = () => {
+    if (!addForm.studentId || !addForm.amount) return;
+    const group = classGroups.find((g) => g.id === addForm.classGroupId);
+    addAcademyPayment({
+      studentId: addForm.studentId,
+      classGroupId: addForm.classGroupId || '',
+      month: selectedMonth,
+      amount: Number(addForm.amount) || 0,
+      status: 'unpaid',
+      memo: group ? `${group.name} 수강료` : '',
+      createdAt: new Date().toISOString(),
+    });
+    setShowAddPayment(false);
+    setAddForm({ studentId: '', classGroupId: '', amount: '' });
   };
 
   return (
@@ -140,6 +159,51 @@ export default function SettlementPage() {
         {/* 수납 섹션 */}
         {segment === 'payments' && (
           <div className="px-4 flex flex-col gap-3">
+            {/* 액션 버튼 */}
+            <div className="flex gap-2">
+              <motion.button whileTap={{ scale: 0.97 }}
+                onClick={() => generateAcademyPaymentsForMonth(selectedMonth)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-50 text-blue-600 text-xs font-bold rounded-xl">
+                <RefreshCw size={13} /> 자동 생성
+              </motion.button>
+              <motion.button whileTap={{ scale: 0.97 }}
+                onClick={() => setShowAddPayment(true)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-gray-100 text-gray-700 text-xs font-bold rounded-xl">
+                <Plus size={13} /> 직접 추가
+              </motion.button>
+            </div>
+
+            {/* 수납 직접 추가 폼 */}
+            {showAddPayment && (
+              <div className="bg-white rounded-2xl p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-bold text-gray-800">수납 항목 추가</p>
+                  <button onClick={() => setShowAddPayment(false)}><X size={16} className="text-gray-400" /></button>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <select value={addForm.studentId} onChange={(e) => setAddForm((f) => ({ ...f, studentId: e.target.value }))}
+                    className="border border-gray-200 rounded-xl px-3 py-2 text-sm">
+                    <option value="">학생 선택</option>
+                    {academyStudents.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <select value={addForm.classGroupId} onChange={(e) => {
+                    const g = classGroups.find((g) => g.id === e.target.value);
+                    setAddForm((f) => ({ ...f, classGroupId: e.target.value, amount: g?.monthlyFee ? String(g.monthlyFee) : f.amount }));
+                  }} className="border border-gray-200 rounded-xl px-3 py-2 text-sm">
+                    <option value="">반 선택 (선택사항)</option>
+                    {classGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                  <input type="number" value={addForm.amount} onChange={(e) => setAddForm((f) => ({ ...f, amount: e.target.value }))}
+                    placeholder="금액 (원)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                  <motion.button whileTap={{ scale: 0.97 }} onClick={handleAddPayment}
+                    disabled={!addForm.studentId || !addForm.amount}
+                    className="w-full py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl disabled:opacity-40">
+                    추가하기
+                  </motion.button>
+                </div>
+              </div>
+            )}
+
             {unpaidStudents.length > 0 && (
               <div className="bg-red-50 rounded-2xl p-4">
                 <p className="text-xs font-semibold text-red-600 mb-2">미납 학생 {unpaidStudents.length}명</p>
@@ -157,7 +221,7 @@ export default function SettlementPage() {
             {monthPayments.length === 0 ? (
               <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
                 <p className="text-sm text-gray-400">이 달 수납 기록이 없어요</p>
-                <p className="text-xs text-gray-300 mt-1">반 수강료를 등록하면 자동으로 생성됩니다</p>
+                <p className="text-xs text-gray-300 mt-1">"자동 생성"으로 반 수강료를 일괄 생성하거나 직접 추가하세요</p>
               </div>
             ) : (
               monthPayments.map((p) => (
@@ -166,12 +230,17 @@ export default function SettlementPage() {
                     <p className="font-semibold text-gray-900 text-sm">{getStudentName(p.studentId)}</p>
                     <p className="text-xs text-gray-400">{getGroupName(p.classGroupId)} {p.month}</p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <p className="font-bold text-gray-900">{p.amount?.toLocaleString()}원</p>
                     <motion.button whileTap={{ scale: 0.95 }}
                       onClick={() => handleTogglePaid(p)}
                       className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${p.status === 'paid' ? 'bg-green-500' : 'border-2 border-gray-200'}`}>
                       {p.status === 'paid' && <Check size={14} className="text-white" />}
+                    </motion.button>
+                    <motion.button whileTap={{ scale: 0.95 }}
+                      onClick={() => deleteAcademyPayment(p.id)}
+                      className="w-7 h-7 rounded-full flex items-center justify-center text-red-300 active:bg-red-50">
+                      <Trash2 size={13} />
                     </motion.button>
                   </div>
                 </div>

@@ -58,7 +58,7 @@ function TeacherDetailPage({ teacher, onBack, onEdit, onDelete }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const wageInfo = teacher.wageType === 'monthly'
-    ? `월급 ${(teacher.monthlyWage || 0).toLocaleString()}원`
+    ? `월급 ${(teacher.monthlySalary || teacher.monthlyWage || 0).toLocaleString()}원`
     : `시급 ${(teacher.hourlyWage || 0).toLocaleString()}원`;
 
   return (
@@ -665,14 +665,14 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
 // ─── 강사 폼 ────────────────────────────────────────────────────
 function TeacherFormModal({ initialData, onClose, onSave }) {
   const [form, setForm] = useState({
-    name:        initialData?.name || '',
-    phone:       initialData?.phone || '',
-    subjects:    Array.isArray(initialData?.subjects) ? initialData.subjects : [],
-    wageType:    initialData?.wageType || 'hourly',
-    hourlyWage:  initialData?.hourlyWage ? String(initialData.hourlyWage) : '',
-    monthlyWage: initialData?.monthlyWage ? String(initialData.monthlyWage) : '',
-    memo:        initialData?.memo || '',
-    status:      'active',
+    name:          initialData?.name || '',
+    phone:         initialData?.phone || '',
+    subjects:      Array.isArray(initialData?.subjects) ? initialData.subjects : [],
+    wageType:      initialData?.wageType || 'hourly',
+    hourlyWage:    initialData?.hourlyWage ? String(initialData.hourlyWage) : '',
+    monthlySalary: initialData?.monthlySalary ? String(initialData.monthlySalary) : (initialData?.monthlyWage ? String(initialData.monthlyWage) : ''),
+    memo:          initialData?.memo || '',
+    status:        'active',
   });
 
   const toggle = (key, val) => setForm((f) => ({
@@ -682,7 +682,7 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
 
   const handleSave = () => {
     if (!form.name.trim()) return alert('이름을 입력해주세요.');
-    onSave({ ...form, hourlyWage: Number(form.hourlyWage) || 0, monthlyWage: Number(form.monthlyWage) || 0 });
+    onSave({ ...form, hourlyWage: Number(form.hourlyWage) || 0, monthlySalary: Number(form.monthlySalary) || 0 });
   };
 
   return (
@@ -722,7 +722,7 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
             <input type="number" value={form.hourlyWage} onChange={(e) => setForm((f) => ({ ...f, hourlyWage: e.target.value }))} placeholder="시급 (원)" className="input mt-2" />
           )}
           {form.wageType === 'monthly' && (
-            <input type="number" value={form.monthlyWage} onChange={(e) => setForm((f) => ({ ...f, monthlyWage: e.target.value }))} placeholder="월급 (원)" className="input mt-2" />
+            <input type="number" value={form.monthlySalary} onChange={(e) => setForm((f) => ({ ...f, monthlySalary: e.target.value }))} placeholder="월급 (원)" className="input mt-2" />
           )}
         </div>
         <div>

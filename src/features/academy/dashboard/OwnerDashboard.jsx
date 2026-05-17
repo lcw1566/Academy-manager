@@ -105,7 +105,6 @@ export default function OwnerDashboard() {
           label="오늘 클리닉 기록"
           value={`${todayClinicCount}건`}
           color={todayClinicCount > 0 ? 'text-blue-600' : 'text-gray-900'}
-          onClick={() => setActiveTab('clinic')}
         />
         <SummaryCard
           label="이달 미납"
