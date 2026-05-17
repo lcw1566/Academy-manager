@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, Plus, Users, Calendar } from 'lucide-react';
+import { ChevronLeft, Plus, Pencil } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import { today, formatDateShort } from '../../../utils/date';
-import { attendanceStatusMap } from '../../../utils/format';
 import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
+import ClassGroupFormModal from './ClassGroupFormModal';
 
 const SESSION_STATUS = {
   scheduled:   { label: '예정',  color: 'bg-blue-50 text-blue-600' },
@@ -21,6 +21,7 @@ export default function ClassGroupDetailPage() {
   } = useAcademyStore();
 
   const [showClinicForm, setShowClinicForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
   const todayStr = today();
 
   // group may be null during back-navigation exit animation — compute before early return
@@ -65,6 +66,16 @@ export default function ClassGroupDetailPage() {
             <p className="font-bold text-gray-900 truncate">{group.name}</p>
             <p className="text-xs text-gray-400">{group.subject} · {group.level}</p>
           </div>
+          {role === 'owner' && (
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setShowEditForm(true)}
+              className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-600 text-xs font-semibold rounded-xl"
+            >
+              <Pencil size={12} />
+              수정
+            </motion.button>
+          )}
           {groupClinicRecords.length > 0 && (
             <span className="bg-blue-50 text-blue-600 text-xs font-bold px-2.5 py-1 rounded-full">
               클리닉 {groupClinicRecords.length}건
@@ -182,6 +193,13 @@ export default function ClassGroupDetailPage() {
           presetClassGroupId={selectedClassGroupId}
           presetSubject={group.subject || ''}
           onClose={() => setShowClinicForm(false)}
+        />
+      )}
+
+      {showEditForm && (
+        <ClassGroupFormModal
+          editGroup={group}
+          onClose={() => setShowEditForm(false)}
         />
       )}
     </div>

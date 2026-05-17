@@ -47,9 +47,22 @@ function isInDateRange(dateStr, filter) {
   return true;
 }
 
+const SUPPORT_TAG_LABELS = {
+  homework:       '숙제 미완료',
+  wrong_answer:   '오답 풀이 필요',
+  vocabulary:     '단어 재시험',
+  reading:        '본문 암기',
+  grammar:        '문법 보충',
+  concept:        '개념 재설명',
+  test_retry:     '테스트 재응시',
+  absence_makeup: '결석 보강',
+  other:          '기타',
+};
+
 export default function ClinicPage() {
   const {
     role, clinicRecords = [], academyStudents, classGroups,
+    academyLessonRecords = [], classSessions = [],
     deleteClinicRecord,
   } = useAcademyStore();
 
@@ -61,6 +74,22 @@ export default function ClinicPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
   const todayStr = today();
+
+  // 보조강사: 강사가 수업에서 남긴 보완 항목 목록
+  const supportItems = useMemo(() => {
+    if (role !== 'assistant') return [];
+    return academyLessonRecords
+      .filter((lr) => lr.studentId !== '_common_' && (lr.supportTags?.length > 0 || lr.supportMemo?.trim()))
+      .map((lr) => {
+        const session = classSessions.find((s) => s.id === lr.sessionId);
+        const group = session ? classGroups.find((g) => g.id === session.classGroupId) : null;
+        const student = academyStudents.find((s) => s.id === lr.studentId);
+        return { ...lr, session, group, student };
+      })
+      .sort((a, b) => (b.session?.date || '').localeCompare(a.session?.date || ''));
+  }, [role, academyLessonRecords, classSessions, classGroups, academyStudents]);
+
+  const [showClinicFromSupport, setShowClinicFromSupport] = useState(null);
 
   const filtered = useMemo(() => {
     let list = clinicRecords;
@@ -113,6 +142,53 @@ export default function ClinicPage() {
             <p className="text-2xl font-bold text-gray-900">{weekCount}건</p>
           </div>
         </div>
+
+        {/* 보조강사: 수업에서 남긴 보완 항목 */}
+        {role === 'assistant' && supportItems.length > 0 && (
+          <div className="px-4 mb-5">
+            <p className="text-sm font-bold text-gray-700 mb-2">수업에서 남긴 보완 항목</p>
+            <div className="flex flex-col gap-2">
+              {supportItems.map((item) => (
+                <div key={item.id} className="bg-orange-50 rounded-2xl px-4 py-3.5 border border-orange-100">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-sm font-bold text-gray-900">{item.student?.name || '학생'}</span>
+                        {item.group && (
+                          <span className="text-xs text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full font-medium">
+                            {item.group.name}
+                          </span>
+                        )}
+                      </div>
+                      {item.session && (
+                        <p className="text-[10px] text-gray-400">{formatDateShort(item.session.date)}</p>
+                      )}
+                    </div>
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => setShowClinicFromSupport(item)}
+                      className="flex-shrink-0 text-xs font-semibold text-white bg-orange-500 px-3 py-1.5 rounded-xl"
+                    >
+                      클리닉 기록
+                    </motion.button>
+                  </div>
+                  {item.supportTags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1.5">
+                      {item.supportTags.map((tag) => (
+                        <span key={tag} className="text-xs bg-white text-orange-600 border border-orange-200 px-2 py-0.5 rounded-full font-medium">
+                          {SUPPORT_TAG_LABELS[tag] || tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {item.supportMemo?.trim() && (
+                    <p className="text-xs text-gray-600 bg-white rounded-xl px-2.5 py-1.5">{item.supportMemo}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 날짜 필터 */}
         <div className="px-4 mb-2">
@@ -188,6 +264,18 @@ export default function ClinicPage() {
         <ClinicRecordFormModal
           editRecord={editRecord}
           onClose={() => { setShowForm(false); setEditRecord(null); }}
+        />
+      )}
+
+      {/* 보완 항목에서 클리닉 기록 작성 */}
+      {showClinicFromSupport && (
+        <ClinicRecordFormModal
+          presetClassGroupId={showClinicFromSupport.group?.id}
+          presetClassSessionId={showClinicFromSupport.sessionId}
+          presetStudentId={showClinicFromSupport.studentId}
+          presetDate={showClinicFromSupport.session?.date}
+          presetSubject={showClinicFromSupport.group?.subject || ''}
+          onClose={() => setShowClinicFromSupport(null)}
         />
       )}
 

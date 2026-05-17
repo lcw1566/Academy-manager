@@ -1,10 +1,9 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ChevronLeft, Plus, ChevronDown, ChevronUp, Check } from 'lucide-react';
+import { ChevronLeft, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import { formatDateShort } from '../../../utils/date';
 import { attendanceStatusMap } from '../../../utils/format';
-import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 
 // ─── 평가 옵션 ──────────────────────────────────────────────────────────────
 const ATTITUDE_OPTIONS = [
@@ -29,14 +28,17 @@ const HOMEWORK_OPTIONS = [
 ];
 const ATT_OPTIONS = ['present', 'late', 'absent', 'makeup'];
 
-// ─── 빠른 클리닉 항목 ──────────────────────────────────────────────────────
-const QUICK_CLINIC_TYPES = [
+// ─── 학습 보완 항목 태그 ────────────────────────────────────────────────────
+const SUPPORT_TAG_TYPES = [
   { type: 'homework',       label: '숙제 미완료' },
-  { type: 'wrong_answer',   label: '오답 풀이' },
+  { type: 'wrong_answer',   label: '오답 풀이 필요' },
   { type: 'vocabulary',     label: '단어 재시험' },
+  { type: 'reading',        label: '본문 암기' },
   { type: 'grammar',        label: '문법 보충' },
-  { type: 'test_retry',     label: '재시험' },
+  { type: 'concept',        label: '개념 재설명' },
+  { type: 'test_retry',     label: '테스트 재응시' },
   { type: 'absence_makeup', label: '결석 보강' },
+  { type: 'other',          label: '기타' },
 ];
 
 // ─── 공통 수업 기록 초기값 ─────────────────────────────────────────────────
@@ -58,6 +60,8 @@ function buildStudentRecord(lr) {
     understanding:  lr?.understanding  ?? null,
     homeworkStatus: lr?.homeworkStatus  ?? null,
     memo:           lr?.memo            ?? '',
+    supportTags:    Array.isArray(lr?.supportTags) ? lr.supportTags : [],
+    supportMemo:    lr?.supportMemo     ?? '',
   };
 }
 
@@ -89,24 +93,35 @@ function EvalRow({ label, options, value, onChange }) {
 }
 
 // ─── 학생 카드 ────────────────────────────────────────────────────────────
-function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, onRecordChange, onAddClinic, onQuickClinic, existingClinicTypes }) {
+function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, onRecordChange, saveCount }) {
   const { updateAcademyAttendance } = useAcademyStore();
   const [expanded, setExpanded] = useState(false);
   const [rec, setRec] = useState(() => buildStudentRecord(initialRecord));
   const savedRef = useRef(buildStudentRecord(initialRecord));
+
+  // 저장 완료 시 savedRef를 현재 rec으로 업데이트하여 dirty 해제
+  useEffect(() => {
+    savedRef.current = { ...rec };
+  }, [saveCount]); // eslint-disable-line
 
   // 부모에게 dirty 여부 전달
   useEffect(() => {
     onRecordChange(student.id, rec, !recordsEqual(rec, savedRef.current));
   }, [rec]); // eslint-disable-line
 
-  // 저장 후 savedRef 업데이트
-  const markSaved = useCallback((newRec) => {
-    savedRef.current = { ...newRec };
-  }, []);
-
   const setField = (k, v) => setRec((r) => ({ ...r, [k]: v }));
-  const clinicCount = existingClinicTypes.size;
+
+  const toggleSupportTag = (type) => {
+    setRec((r) => {
+      const tags = r.supportTags || [];
+      return {
+        ...r,
+        supportTags: tags.includes(type) ? tags.filter((t) => t !== type) : [...tags, type],
+      };
+    });
+  };
+
+  const supportCount = (rec.supportTags?.length || 0) + (rec.supportMemo?.trim() ? 1 : 0);
   const hasEval = rec.attitude || rec.focus || rec.understanding || rec.homeworkStatus;
 
   return (
@@ -124,9 +139,9 @@ function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, o
           {student.grade && <p className="text-xs text-gray-400">{student.grade}</p>}
         </div>
         <div className="flex items-center gap-2">
-          {clinicCount > 0 && (
+          {supportCount > 0 && (
             <span className="text-xs bg-orange-50 text-orange-500 font-semibold px-2 py-0.5 rounded-full">
-              클리닉 {clinicCount}
+              보완 {supportCount}
             </span>
           )}
           {attendance ? (
@@ -189,7 +204,7 @@ function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, o
                 </div>
               )}
 
-              {/* 메모 */}
+              {/* 학생 메모 */}
               {canEdit && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 mb-1.5">학생 메모</p>
@@ -207,38 +222,33 @@ function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, o
               {canEdit && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 mb-2">학습 보완 항목</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {QUICK_CLINIC_TYPES.map(({ type, label }) => {
-                      const checked = existingClinicTypes.has(type);
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {SUPPORT_TAG_TYPES.map(({ type, label }) => {
+                      const active = (rec.supportTags || []).includes(type);
                       return (
                         <motion.button
                           key={type}
                           whileTap={{ scale: 0.95 }}
-                          onClick={() => onQuickClinic(student.id, type, label)}
+                          onClick={() => toggleSupportTag(type)}
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition-colors ${
-                            checked
+                            active
                               ? 'border-orange-400 bg-orange-50 text-orange-600'
                               : 'border-gray-200 bg-white text-gray-500'
                           }`}
                         >
-                          {checked && '✓ '}{label}
+                          {active && '✓ '}{label}
                         </motion.button>
                       );
                     })}
                   </div>
+                  <textarea
+                    value={rec.supportMemo}
+                    onChange={(e) => setField('supportMemo', e.target.value)}
+                    rows={2}
+                    placeholder="보완 항목 관련 추가 메모..."
+                    className="w-full border border-orange-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-orange-400 resize-none bg-orange-50/40"
+                  />
                 </div>
-              )}
-
-              {/* 클리닉 추가 */}
-              {canEdit && (
-                <motion.button
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => onAddClinic(student.id)}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 border-dashed border-orange-200 text-orange-500 text-xs font-semibold"
-                >
-                  <Plus size={13} />
-                  클리닉 상세 추가
-                </motion.button>
               )}
 
               {/* 읽기 전용 평가 표시 */}
@@ -273,8 +283,8 @@ export default function ClassSessionPage() {
     role,
     selectedClassSessionId,
     classSessions, classGroups, academyStudents, academyTeachers,
-    clinicTasks, academyAttendanceRecords, academyLessonRecords,
-    updateAcademyAttendance, addClinicTask, batchSaveSessionRecords,
+    academyAttendanceRecords, academyLessonRecords,
+    updateAcademyAttendance, batchSaveSessionRecords,
     goBackFromClassSession,
   } = useAcademyStore();
 
@@ -315,14 +325,13 @@ export default function ClassSessionPage() {
   // 학생별 기록 dirty state 관리
   const [studentDirtyMap, setStudentDirtyMap] = useState({});
   const studentRecDraftRef = useRef({});
+  const [saveCount, setSaveCount] = useState(0);
 
   const handleRecordChange = useCallback((studentId, rec, isDirty) => {
     studentRecDraftRef.current[studentId] = rec;
     setStudentDirtyMap((m) => ({ ...m, [studentId]: isDirty }));
   }, []);
 
-  const [showClinicForm, setShowClinicForm] = useState(false);
-  const [clinicStudentId, setClinicStudentId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const canEdit = role === 'owner' || role === 'teacher';
@@ -330,31 +339,14 @@ export default function ClassSessionPage() {
   const isAnyStudentDirty = Object.values(studentDirtyMap).some(Boolean);
   const isDirty = isCommonDirty || isAnyStudentDirty;
 
-  // 클리닉 helper
-  const getExistingClinicTypes = useCallback(
-    (studentId) =>
-      new Set(
-        clinicTasks
-          .filter((t) => t.classSessionId === selectedClassSessionId && t.studentId === studentId)
-          .map((t) => t.type)
-      ),
-    [clinicTasks, selectedClassSessionId]
-  );
-
-  const handleQuickClinic = useCallback(
-    (studentId, type, label) => {
-      if (!session) return;
-      const already = clinicTasks.find(
-        (t) => t.classSessionId === selectedClassSessionId && t.studentId === studentId && t.type === type
-      );
-      if (already) return;
-      addClinicTask({
-        studentId, classGroupId: session.classGroupId, classSessionId: selectedClassSessionId,
-        createdByRole: role, type, title: label, description: '',
-        dueDate: session.date, priority: 'normal', assignedToId: '',
-      });
-    },
-    [clinicTasks, selectedClassSessionId, session, role, addClinicTask]
+  // 이번 수업의 보완 항목 수
+  const supportCount = useMemo(
+    () => academyLessonRecords.filter(
+      (lr) => lr.sessionId === selectedClassSessionId &&
+        lr.studentId !== '_common_' &&
+        ((lr.supportTags?.length > 0) || lr.supportMemo?.trim())
+    ).length,
+    [academyLessonRecords, selectedClassSessionId]
   );
 
   const handleSave = useCallback(async () => {
@@ -368,6 +360,7 @@ export default function ClassSessionPage() {
     });
     setSavedCommon({ ...commonRec });
     setStudentDirtyMap({});
+    setSaveCount((c) => c + 1);
     setIsSaving(false);
   }, [session, isSaving, commonRec, batchSaveSessionRecords]);
 
@@ -409,11 +402,7 @@ export default function ClassSessionPage() {
             <div className="grid grid-cols-3 gap-3 mb-3">
               <SummaryCell label="수강생" value={students.length} />
               <SummaryCell label="출석" value={presentCount} color="text-green-600" />
-              <SummaryCell
-                label="클리닉"
-                value={clinicTasks.filter((t) => t.classSessionId === selectedClassSessionId).length}
-                color="text-orange-500"
-              />
+              <SummaryCell label="보완 항목" value={supportCount} color="text-orange-500" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
               {session.room && <InfoChip label="강의실" value={session.room} />}
@@ -464,7 +453,6 @@ export default function ClassSessionPage() {
                 const existingLr = academyLessonRecords.find(
                   (lr) => lr.sessionId === selectedClassSessionId && lr.studentId === student.id
                 );
-                const existingClinicTypes = getExistingClinicTypes(student.id);
                 return (
                   <StudentCard
                     key={student.id}
@@ -474,9 +462,7 @@ export default function ClassSessionPage() {
                     attendance={att}
                     initialRecord={existingLr}
                     onRecordChange={handleRecordChange}
-                    onAddClinic={(sid) => { setClinicStudentId(sid); setShowClinicForm(true); }}
-                    onQuickClinic={handleQuickClinic}
-                    existingClinicTypes={existingClinicTypes}
+                    saveCount={saveCount}
                   />
                 );
               })
@@ -501,17 +487,6 @@ export default function ClassSessionPage() {
             {isSaving ? '저장 중...' : isDirty ? '수업 기록 저장' : '✓ 저장됨'}
           </motion.button>
         </div>
-      )}
-
-      {showClinicForm && (
-        <ClinicRecordFormModal
-          presetClassGroupId={session.classGroupId}
-          presetClassSessionId={selectedClassSessionId}
-          presetStudentId={clinicStudentId}
-          presetDate={session.date}
-          presetSubject={group.subject || ''}
-          onClose={() => { setShowClinicForm(false); setClinicStudentId(null); }}
-        />
       )}
     </div>
   );

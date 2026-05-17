@@ -11,9 +11,9 @@ import PaymentsPage from '../features/payments/PaymentsPage';
 import MorePage from '../features/more/MorePage';
 
 const pageVariants = {
-  initial: { opacity: 0 },
-  animate: { opacity: 1 },
-  exit:    { opacity: 0 },
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] } },
+  exit:    { opacity: 0, y: -6, transition: { duration: 0.10, ease: 'easeIn' } },
 };
 
 export default function AppLayout() {
@@ -43,15 +43,14 @@ export default function AppLayout() {
   return (
     <div className="min-h-screen bg-[#F5F6F8]">
       <main className="main-content max-w-md mx-auto">
-        <AnimatePresence mode="sync">
+        <AnimatePresence mode="wait">
           <motion.div
             key={pageKey}
             variants={pageVariants}
             initial="initial"
             animate="animate"
             exit="exit"
-            transition={{ duration: 0.12, ease: 'easeOut' }}
-            style={{ willChange: 'opacity' }}
+            style={{ willChange: 'opacity, transform' }}
           >
             {renderContent()}
           </motion.div>

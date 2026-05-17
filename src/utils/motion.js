@@ -4,19 +4,19 @@ export const fastEase = [0.22, 1, 0.36, 1];
 // Bottom sheet slide up/down
 export const sheetTransition = {
   type: 'tween',
-  duration: 0.28,
+  duration: 0.32,
   ease: fastEase,
 };
 
 // Quick fade (backdrop, overlays)
 export const fadeTransition = {
-  duration: 0.18,
+  duration: 0.22,
   ease: 'easeOut',
 };
 
 // Inline collapse/expand (opacity + y only, no height)
 export const collapseTransition = {
-  duration: 0.2,
+  duration: 0.26,
   ease: fastEase,
 };
 
