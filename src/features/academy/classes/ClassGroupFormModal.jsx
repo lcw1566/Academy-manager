@@ -7,14 +7,13 @@ const SUBJECTS = ['수학', '영어', '국어', '과학', '사회', '물리', '�
 const LEVELS = ['초등', '초1', '초2', '초3', '초4', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3', '수능'];
 
 export default function ClassGroupFormModal({ editGroup, onClose }) {
-  const { addClassGroup, updateClassGroup, academyStudents, academyTeachers, academyAssistants } = useAcademyStore();
+  const { addClassGroup, updateClassGroup, academyStudents, academyTeachers } = useAcademyStore();
 
   const [form, setForm] = useState({
     name: editGroup?.name || '',
     subject: editGroup?.subject || '',
     level: editGroup?.level || '',
     teacherId: editGroup?.teacherId || '',
-    assistantIds: editGroup?.assistantIds || [],
     studentIds: editGroup?.studentIds || [],
     weekdays: editGroup?.weekdays || [],
     startTime: editGroup?.startTime || '16:00',
@@ -22,7 +21,9 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     room: editGroup?.room || '',
     startDate: editGroup?.startDate || new Date().toISOString().slice(0, 10),
     endDate: editGroup?.endDate || '',
+    billingMode: editGroup?.billingMode || 'same',
     monthlyFee: editGroup?.monthlyFee ? String(editGroup.monthlyFee) : '',
+    studentBillings: editGroup?.studentBillings || {},
     memo: editGroup?.memo || '',
     status: editGroup?.status || 'active',
   });
@@ -36,15 +37,18 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     }));
 
   const toggleStudent = (id) =>
-    setForm((f) => ({
-      ...f,
-      studentIds: f.studentIds.includes(id) ? f.studentIds.filter((s) => s !== id) : [...f.studentIds, id],
-    }));
+    setForm((f) => {
+      const already = f.studentIds.includes(id);
+      const studentIds = already ? f.studentIds.filter((s) => s !== id) : [...f.studentIds, id];
+      const studentBillings = { ...f.studentBillings };
+      if (already) delete studentBillings[id];
+      return { ...f, studentIds, studentBillings };
+    });
 
-  const toggleAssistant = (id) =>
+  const setStudentBilling = (id, value) =>
     setForm((f) => ({
       ...f,
-      assistantIds: f.assistantIds.includes(id) ? f.assistantIds.filter((a) => a !== id) : [...f.assistantIds, id],
+      studentBillings: { ...f.studentBillings, [id]: value },
     }));
 
   const handleSave = () => {
@@ -52,7 +56,13 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     if (form.weekdays.length === 0) return alert('수업 요일을 선택해주세요.');
     if (!form.startDate) return alert('시작일을 선택해주세요.');
 
-    const data = { ...form, monthlyFee: Number(form.monthlyFee) || 0 };
+    const data = {
+      ...form,
+      monthlyFee: Number(form.monthlyFee) || 0,
+      studentBillings: Object.fromEntries(
+        Object.entries(form.studentBillings).map(([k, v]) => [k, Number(v) || 0])
+      ),
+    };
     if (editGroup) {
       updateClassGroup(editGroup.id, data);
     } else {
@@ -60,6 +70,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     }
     onClose();
   };
+
+  const selectedStudents = academyStudents.filter((s) => form.studentIds.includes(s.id));
 
   return (
     <Modal
@@ -138,10 +150,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           <input value={form.room} onChange={(e) => set('room', e.target.value)} placeholder="예: 1강의실" className="input" />
         </Field>
 
-        <Field label="월 수강료">
-          <input type="number" value={form.monthlyFee} onChange={(e) => set('monthlyFee', e.target.value)} placeholder="예: 320000" className="input" />
-        </Field>
-
         {academyTeachers.length > 0 && (
           <Field label="담당 강사">
             <select value={form.teacherId} onChange={(e) => set('teacherId', e.target.value)} className="input">
@@ -150,21 +158,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
-          </Field>
-        )}
-
-        {academyAssistants.length > 0 && (
-          <Field label="보조강사">
-            <div className="flex flex-wrap gap-2">
-              {academyAssistants.map((a) => (
-                <button key={a.id} type="button" onClick={() => toggleAssistant(a.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
-                    form.assistantIds.includes(a.id) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200'
-                  }`}>
-                  {a.name}
-                </button>
-              ))}
-            </div>
           </Field>
         )}
 
@@ -184,6 +177,55 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             </div>
           </Field>
         )}
+
+        {/* 수강료 설정 */}
+        <Field label="수강료 설정">
+          <div className="flex gap-2 mb-3">
+            {[
+              { value: 'same', label: '동일 수강료' },
+              { value: 'perStudent', label: '학생별 수강료' },
+            ].map(({ value, label }) => (
+              <button key={value} type="button" onClick={() => set('billingMode', value)}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors ${
+                  form.billingMode === value
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-500'
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {form.billingMode === 'same' ? (
+            <input
+              type="number"
+              value={form.monthlyFee}
+              onChange={(e) => set('monthlyFee', e.target.value)}
+              placeholder="월 수강료 (원)"
+              className="input"
+            />
+          ) : (
+            <div className="flex flex-col gap-2">
+              {selectedStudents.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-2">위에서 학생을 먼저 배정해주세요</p>
+              ) : (
+                selectedStudents.map((s) => (
+                  <div key={s.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+                    <span className="text-sm font-medium text-gray-800 flex-1">{s.name}</span>
+                    <input
+                      type="number"
+                      value={form.studentBillings[s.id] ?? ''}
+                      onChange={(e) => setStudentBilling(s.id, e.target.value)}
+                      placeholder="수강료"
+                      className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:border-blue-400"
+                    />
+                    <span className="text-xs text-gray-400">원</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </Field>
 
         <Field label="메모">
           <textarea value={form.memo} onChange={(e) => set('memo', e.target.value)} rows={2} placeholder="특이사항 등" className="input resize-none" />

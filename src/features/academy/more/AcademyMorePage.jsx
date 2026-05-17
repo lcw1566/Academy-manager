@@ -300,13 +300,13 @@ export default function AcademyMorePage() {
   const handleDeleteTeacher = (id) => {
     deleteTeacher(id);
     setViewTeacher(null);
-    showToast('삭제되었어요.');
+    showToast('강사 정보가 삭제되었어요.');
   };
 
   const handleDeleteAssistant = (id) => {
     deleteAssistant(id);
     setViewAssistant(null);
-    showToast('삭제되었어요.');
+    showToast('보조강사 정보가 삭제되었어요.');
   };
 
   return (
