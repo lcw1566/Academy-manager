@@ -119,15 +119,14 @@ function LessonRecordCard({ record }) {
       </button>
 
       {/* 펼침 상세 */}
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            className="overflow-hidden"
-          >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateRows: expanded ? '1fr' : '0fr',
+          transition: 'grid-template-rows 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
+        }}
+      >
+        <div style={{ overflow: 'hidden', opacity: expanded ? 1 : 0, transition: 'opacity 0.18s ease' }}>
             <div className="px-4 pb-4 border-t border-gray-50">
               {/* 수업 정보 */}
               <div className="mt-3 mb-3">
@@ -224,9 +223,8 @@ function LessonRecordCard({ record }) {
                 <p className="text-xs text-gray-300 py-2">수업 기록이 없어요</p>
               )}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }

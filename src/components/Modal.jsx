@@ -21,6 +21,7 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={sheetTransition}
+            style={{ willChange: 'transform' }}
           >
             <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100">
               <h2 className="text-lg font-bold text-gray-900">{title}</h2>

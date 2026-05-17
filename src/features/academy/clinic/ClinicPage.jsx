@@ -354,15 +354,14 @@ function ClinicRecordCard({ record, academyStudents, classGroups, expanded, onTo
         </div>
       </button>
 
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            className="overflow-hidden"
-          >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateRows: expanded ? '1fr' : '0fr',
+          transition: 'grid-template-rows 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
+        }}
+      >
+        <div style={{ overflow: 'hidden', opacity: expanded ? 1 : 0, transition: 'opacity 0.18s ease' }}>
             <div className="px-4 pb-4 border-t border-gray-50">
               {/* 항목별 기록 */}
               {record.items?.map((item, idx) => (
@@ -404,9 +403,8 @@ function ClinicRecordCard({ record, academyStudents, classGroups, expanded, onTo
                 </button>
               </div>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }

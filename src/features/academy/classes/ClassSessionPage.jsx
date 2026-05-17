@@ -157,15 +157,14 @@ function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, o
         </div>
       </button>
 
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateRows: expanded ? '1fr' : '0fr',
+          transition: 'grid-template-rows 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
+        }}
+      >
+        <div style={{ overflow: 'hidden', opacity: expanded ? 1 : 0, transition: 'opacity 0.18s ease' }}>
             <div className="px-4 pb-4 border-t border-gray-50 flex flex-col gap-4 pt-3">
               {/* 출결 */}
               {canEdit && (
@@ -267,9 +266,8 @@ function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, o
                 <p className="text-sm text-gray-700 bg-gray-50 rounded-xl px-3 py-2">{rec.memo}</p>
               )}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }
