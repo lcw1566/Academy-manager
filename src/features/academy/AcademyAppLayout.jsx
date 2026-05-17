@@ -16,9 +16,9 @@ import SettlementPage from './settlement/SettlementPage';
 import PayrollPage from './payroll/PayrollPage';
 
 const pageVariants = {
-  initial: { opacity: 0, y: 8 },
-  animate: { opacity: 1, y: 0 },
-  exit:    { opacity: 0, y: 4 },
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit:    { opacity: 0 },
 };
 
 const TAB_CONFIG = {
@@ -122,14 +122,15 @@ export default function AcademyAppLayout() {
   return (
     <div className="min-h-screen bg-[#F5F6F8]">
       <main className="main-content max-w-md mx-auto">
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="sync">
           <motion.div
             key={pageKey}
             variants={pageVariants}
             initial="initial"
             animate="animate"
             exit="exit"
-            transition={{ duration: 0.18, ease: 'easeOut' }}
+            transition={{ duration: 0.12, ease: 'easeOut' }}
+            style={{ willChange: 'opacity' }}
           >
             {renderContent()}
           </motion.div>
