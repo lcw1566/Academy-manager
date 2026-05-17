@@ -184,25 +184,33 @@ export default function AcademyStudentDetailPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [showClinicForm, setShowClinicForm] = useState(false);
 
-  const student = academyStudents.find((s) => s.id === selectedAcademyStudentId);
-  if (!student) return null;
+  // May be null during back-navigation exit animation — compute before all hooks
+  const student = academyStudents.find((s) => s.id === selectedAcademyStudentId) ?? null;
 
-  const tabs = TABS_BY_ROLE[role] || TABS_BY_ROLE.owner;
-
+  // ALL hooks must be called before early return (Rules of Hooks)
   const studentGroups = useMemo(
-    () => classGroups.filter((g) => g.studentIds?.includes(student.id)),
-    [classGroups, student.id]
+    () => !student ? [] : classGroups.filter((g) => g.studentIds?.includes(student.id)),
+    [classGroups, student]
   );
 
-  // 날짜별 수업 기록 (수업 기록 탭용)
   const dailyRecords = useMemo(
-    () => getStudentDailyLessonRecords({
+    () => !student ? [] : getStudentDailyLessonRecords({
       studentId: student.id, classSessions, classGroups,
       academyLessonRecords, academyAttendanceRecords,
       clinicTasks, clinicRecords, academyTeachers,
     }),
-    [student.id, classSessions, classGroups, academyLessonRecords, academyAttendanceRecords, clinicTasks, clinicRecords, academyTeachers]
+    [student, classSessions, classGroups, academyLessonRecords, academyAttendanceRecords, clinicTasks, clinicRecords, academyTeachers]
   );
+
+  const studentClinicRecords = useMemo(
+    () => !student ? [] : (clinicRecords || []).filter((r) => r.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+    [clinicRecords, student]
+  );
+
+  // Guard: render nothing if student not found (deleted or navigating away)
+  if (!student) return null;
+
+  const tabs = TABS_BY_ROLE[role] || TABS_BY_ROLE.owner;
 
   // 최근 수업 (요약용)
   const latestRecord = dailyRecords[0];
@@ -296,11 +304,6 @@ export default function AcademyStudentDetailPage() {
         </motion.button>
       )}
     </div>
-  );
-
-  const studentClinicRecords = useMemo(
-    () => clinicRecords.filter((r) => r.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || '')),
-    [clinicRecords, student.id]
   );
 
   const renderClinic = () => (

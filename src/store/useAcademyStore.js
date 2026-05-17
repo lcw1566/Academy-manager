@@ -887,6 +887,28 @@ const useAcademyStore = create(
     get().showToast('수업 기록이 저장되었습니다.');
   },
 
+  // 공통 기록 + 학생별 평가를 한 번에 저장 (toast 1회)
+  batchSaveSessionRecords: ({ sessionId, date, commonRecord, studentRecords }) => {
+    const ts = new Date().toISOString();
+    const existing = get().academyLessonRecords;
+    const updated = [...existing];
+
+    const upsert = (studentId, data) => {
+      const idx = updated.findIndex((lr) => lr.sessionId === sessionId && lr.studentId === studentId);
+      if (idx >= 0) {
+        updated[idx] = { ...updated[idx], ...data, updatedAt: ts };
+      } else {
+        updated.push({ id: `alr${Date.now()}_${studentId}`, sessionId, studentId, date, ...data, createdAt: ts, updatedAt: ts });
+      }
+    };
+
+    if (commonRecord) upsert('_common_', commonRecord);
+    Object.entries(studentRecords || {}).forEach(([sid, rec]) => upsert(sid, rec));
+
+    set({ academyLessonRecords: updated });
+    get().showToast('수업 기록이 저장되었어요.');
+  },
+
   // ─── Clinic Tasks ─────────────────────────────────
   addClinicTask: (task) => {
     const newTask = { ...task, id: `clinic${Date.now()}`, status: task.status || 'pending', createdAt: new Date().toISOString() };

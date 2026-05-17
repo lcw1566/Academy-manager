@@ -63,16 +63,32 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     const store = useAcademyStore.getState();
+    const visibleGroupCount = store.role === 'teacher'
+      ? store.classGroups?.length ?? 0
+      : store.classGroups?.length ?? 0;
+
     console.error('[ErrorBoundary] 렌더링 오류 발생', {
+      '── 오류 정보 ──': '',
       message: error.message,
-      stack: error.stack,
-      componentStack: info?.componentStack,
+      stack: error.stack?.split('\n').slice(0, 8).join('\n'),
+      componentStack: info?.componentStack?.trim().split('\n').slice(0, 10).join('\n'),
+      '── 상태 정보 ──': '',
       role: store.role,
-      activeTab: store.activeTab,
       currentMode: store.currentMode,
+      activeTab: store.activeTab,
+      '── 네비게이션 ──': '',
       selectedClassGroupId: store.selectedClassGroupId,
       selectedClassSessionId: store.selectedClassSessionId,
       selectedAcademyStudentId: store.selectedAcademyStudentId,
+      selectedClassId: store.selectedClassId,
+      selectedStudentId: store.selectedStudentId,
+      '── 데이터 현황 ──': '',
+      classGroupsCount: store.classGroups?.length ?? 0,
+      classSessionsCount: store.classSessions?.length ?? 0,
+      academyStudentsCount: store.academyStudents?.length ?? 0,
+      visibleClassGroupsForRole: visibleGroupCount,
+      academyTeachersCount: store.academyTeachers?.length ?? 0,
+      academyLessonRecordsCount: store.academyLessonRecords?.length ?? 0,
     });
     this.setState({ componentStack: info?.componentStack || null });
   }

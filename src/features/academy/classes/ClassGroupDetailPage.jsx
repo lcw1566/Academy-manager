@@ -23,29 +23,35 @@ export default function ClassGroupDetailPage() {
   const [showClinicForm, setShowClinicForm] = useState(false);
   const todayStr = today();
 
-  const group = classGroups.find((g) => g.id === selectedClassGroupId);
-  if (!group) return null;
+  // group may be null during back-navigation exit animation — compute before early return
+  const group = classGroups.find((g) => g.id === selectedClassGroupId) ?? null;
 
+  // ALL hooks must be called before any early return (Rules of Hooks)
   const sessions = useMemo(
-    () => classSessions.filter((s) => s.classGroupId === selectedClassGroupId)
-      .sort((a, b) => a.date.localeCompare(b.date)),
-    [classSessions, selectedClassGroupId]
+    () => group
+      ? classSessions
+          .filter((s) => s.classGroupId === selectedClassGroupId)
+          .sort((a, b) => a.date.localeCompare(b.date))
+      : [],
+    [classSessions, selectedClassGroupId, group]
   );
+
+  const students = useMemo(
+    () => group ? academyStudents.filter((s) => (group.studentIds || []).includes(s.id)) : [],
+    [academyStudents, group]
+  );
+
+  const groupClinicRecords = useMemo(
+    () => (clinicRecords || []).filter((r) => r.classGroupId === selectedClassGroupId),
+    [clinicRecords, selectedClassGroupId]
+  );
+
+  // Guard: if group not found (deleted or navigating away), render nothing
+  if (!group) return null;
 
   const upcomingSessions = sessions.filter((s) => s.date >= todayStr);
   const pastSessions = sessions.filter((s) => s.date < todayStr);
-
-  const students = useMemo(
-    () => academyStudents.filter((s) => (group.studentIds || []).includes(s.id)),
-    [academyStudents, group.studentIds]
-  );
-
   const teacher = academyTeachers.find((t) => t.id === group.teacherId);
-
-  const groupClinicRecords = useMemo(
-    () => clinicRecords.filter((r) => r.classGroupId === selectedClassGroupId),
-    [clinicRecords, selectedClassGroupId]
-  );
 
   return (
     <div>
