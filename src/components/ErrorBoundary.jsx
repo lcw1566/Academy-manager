@@ -1,9 +1,60 @@
 import { Component } from 'react';
+import useAcademyStore from '../store/useAcademyStore';
+
+// Functional fallback so we can use hooks (store)
+function ErrorFallback({ error, componentStack, onReset }) {
+  const { setActiveTab } = useAcademyStore();
+
+  const handleGoHome = () => {
+    setActiveTab('home');
+    onReset();
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
+      <div className="text-5xl mb-4">⚠️</div>
+      <p className="text-base font-bold text-gray-800 mb-2">화면을 불러오지 못했어요.</p>
+      <p className="text-sm text-gray-500 mb-6">일시적인 오류가 발생했어요. 홈으로 이동해 다시 시도해주세요.</p>
+
+      {import.meta.env.DEV && error && (
+        <div className="w-full max-w-sm mb-4 text-left">
+          <p className="text-xs font-bold text-red-500 mb-1">오류 메시지</p>
+          <p className="text-xs text-red-400 bg-red-50 rounded-xl px-3 py-2 break-all mb-2">
+            {error.message}
+          </p>
+          {componentStack && (
+            <>
+              <p className="text-xs font-bold text-red-500 mb-1">컴포넌트 스택</p>
+              <pre className="text-[10px] text-red-400 bg-red-50 rounded-xl px-3 py-2 overflow-x-auto whitespace-pre-wrap">
+                {componentStack.trim().split('\n').slice(0, 6).join('\n')}
+              </pre>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="flex gap-3">
+        <button
+          onClick={handleGoHome}
+          className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm"
+        >
+          홈으로 이동
+        </button>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-6 py-3 bg-gray-100 text-gray-700 font-bold rounded-2xl text-sm"
+        >
+          새로고침
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, componentStack: null };
   }
 
   static getDerivedStateFromError(error) {
@@ -11,29 +62,30 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    console.error('[ErrorBoundary]', error, info);
+    const store = useAcademyStore.getState();
+    console.error('[ErrorBoundary] 렌더링 오류 발생', {
+      message: error.message,
+      stack: error.stack,
+      componentStack: info?.componentStack,
+      role: store.role,
+      activeTab: store.activeTab,
+      currentMode: store.currentMode,
+      selectedClassGroupId: store.selectedClassGroupId,
+      selectedClassSessionId: store.selectedClassSessionId,
+      selectedAcademyStudentId: store.selectedAcademyStudentId,
+    });
+    this.setState({ componentStack: info?.componentStack || null });
   }
 
   render() {
     if (!this.state.hasError) return this.props.children;
 
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
-        <div className="text-5xl mb-4">⚠️</div>
-        <p className="text-base font-bold text-gray-800 mb-2">화면을 불러오지 못했어요</p>
-        <p className="text-sm text-gray-500 mb-6">잠시 후 다시 시도하거나 다른 탭으로 이동해주세요.</p>
-        {import.meta.env.DEV && this.state.error && (
-          <p className="text-xs text-red-400 bg-red-50 rounded-xl px-3 py-2 mb-4 max-w-sm text-left break-all">
-            {this.state.error.message}
-          </p>
-        )}
-        <button
-          onClick={() => window.location.reload()}
-          className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm"
-        >
-          새로고침
-        </button>
-      </div>
+      <ErrorFallback
+        error={this.state.error}
+        componentStack={this.state.componentStack}
+        onReset={() => this.setState({ hasError: false, error: null, componentStack: null })}
+      />
     );
   }
 }
