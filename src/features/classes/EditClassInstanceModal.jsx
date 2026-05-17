@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
@@ -58,7 +59,8 @@ export default function EditClassInstanceModal({ cls, onClose }) {
       ? `원래 ${formatDateShort(cls.originalDate)} 수업`
       : null;
 
-  return (
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <AnimatePresence>
       <motion.div
         key="instance-dim"
@@ -186,7 +188,8 @@ export default function EditClassInstanceModal({ cls, onClose }) {
           </button>
         </div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }
 

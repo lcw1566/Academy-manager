@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -279,8 +280,9 @@ export default function ClinicPage() {
         />
       )}
 
-      {/* 삭제 확인 */}
-      <AnimatePresence>
+      {/* 삭제 확인 — createPortal로 transform 조상 탈출 */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
         {deleteConfirmId && (
           <>
             <motion.div
@@ -319,7 +321,9 @@ export default function ClinicPage() {
             </motion.div>
           </>
         )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }

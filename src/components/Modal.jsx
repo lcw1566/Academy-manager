@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fadeTransition } from '../utils/motion';
@@ -7,6 +8,13 @@ const SHEET_EASE = [0.22, 1, 0.36, 1];
 
 /**
  * Bottom Sheet Modal
+ *
+ * 핵심: createPortal로 document.body에 렌더한다.
+ *   AppLayout/AcademyAppLayout이 페이지 wrapper에 framer-motion `y` 애니메이션을
+ *   적용해 transform이 걸려 있는데, transform이 있는 ancestor는 position:fixed의
+ *   containing block이 되므로 portal 없이는 시트가 페이지 영역에 갇혀 viewport
+ *   기준이 무너진다 (제목 잘림 / 시트가 위로 밀려 보임 / 배경 dim이 viewport를
+ *   다 덮지 못함의 근본 원인).
  *
  * 안정성을 위해 다음 규칙을 지킴:
  * - sheet 자체는 .sheet-shell로 h+max-h 92dvh 고정 (flex 자식 계산이 안정)
@@ -26,7 +34,9 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
     return () => { document.body.style.overflow = prev; };
   }, [isOpen]);
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-50">
@@ -83,6 +93,7 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

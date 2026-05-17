@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, Key, AlertTriangle, Copy, Settings2, ChevronDown, ChevronUp, RotateCcw, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '../../components/Modal';
@@ -358,7 +359,8 @@ function StyleSheet({
     onClose();
   };
 
-  return (
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <>
       <motion.div
         key="style-dim"
@@ -522,6 +524,7 @@ function StyleSheet({
           </motion.button>
         </div>
       </motion.div>
-    </>
+    </>,
+    document.body
   );
 }

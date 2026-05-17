@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, Users, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '../../components/Modal';
@@ -565,8 +566,9 @@ export default function EditGroupModal({ groupId, onClose }) {
         </div>
       </Modal>
 
-      {/* 수정 범위 선택 bottom sheet */}
-      <AnimatePresence>
+      {/* 수정 범위 선택 bottom sheet — createPortal로 transform 조상 탈출 */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
         {showScopeSheet && (
           <>
             <motion.div
@@ -625,7 +627,9 @@ export default function EditGroupModal({ groupId, onClose }) {
             </motion.div>
           </>
         )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
     </>
   );
 }

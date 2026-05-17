@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import { sheetTransition, fadeTransition } from '../../utils/motion';
@@ -47,7 +48,8 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
     onClose();
   };
 
-  return (
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <AnimatePresence>
       <motion.div
         className="fixed inset-0 z-50"
@@ -180,6 +182,7 @@ export default function StudentEventModal({ studentId, event = null, onClose }) 
           </button>
         </motion.div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

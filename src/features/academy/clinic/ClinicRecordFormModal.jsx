@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, X, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -113,7 +114,8 @@ export default function ClinicRecordFormModal({
     onClose();
   };
 
-  return (
+  if (typeof document === 'undefined') return null;
+  return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-white">
       {/* 헤더 */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
@@ -350,7 +352,8 @@ export default function ClinicRecordFormModal({
           {editRecord ? '수정 저장' : '클리닉 기록 저장'}
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

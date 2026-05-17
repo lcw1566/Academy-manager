@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus, ChevronRight, ChevronDown, MoreHorizontal,
   RefreshCw, CalendarDays, Trash2, Pencil,
@@ -318,8 +319,9 @@ export default function ClassesPage() {
         </div>
       </div>
 
-      {/* 수업 추가 Action Sheet */}
-      <AnimatePresence>
+      {/* 수업 추가 Action Sheet — createPortal로 transform 조상 탈출 */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
         {showActionSheet && (
           <>
             <motion.div
@@ -365,10 +367,13 @@ export default function ClassesPage() {
             </motion.div>
           </>
         )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
 
-      {/* 카드 "..." 메뉴 Bottom Sheet */}
-      <AnimatePresence>
+      {/* 카드 "..." 메뉴 Bottom Sheet — createPortal */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
         {menuState && (
           <>
             <motion.div
@@ -422,10 +427,13 @@ export default function ClassesPage() {
             </motion.div>
           </>
         )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
 
-      {/* 정렬 Bottom Sheet */}
-      <AnimatePresence>
+      {/* 정렬 Bottom Sheet — createPortal */}
+      {typeof document !== 'undefined' && createPortal(
+        <AnimatePresence>
         {showSortSheet && (
           <>
             <motion.div
@@ -463,7 +471,9 @@ export default function ClassesPage() {
             </motion.div>
           </>
         )}
-      </AnimatePresence>
+        </AnimatePresence>,
+        document.body
+      )}
 
       {/* 수업 등록 폼 */}
       {formState && (
