@@ -63,9 +63,6 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     const store = useAcademyStore.getState();
-    const visibleGroupCount = store.role === 'teacher'
-      ? store.classGroups?.length ?? 0
-      : store.classGroups?.length ?? 0;
 
     console.error('[ErrorBoundary] 렌더링 오류 발생', {
       '── 오류 정보 ──': '',
@@ -86,7 +83,6 @@ export default class ErrorBoundary extends Component {
       classGroupsCount: store.classGroups?.length ?? 0,
       classSessionsCount: store.classSessions?.length ?? 0,
       academyStudentsCount: store.academyStudents?.length ?? 0,
-      visibleClassGroupsForRole: visibleGroupCount,
       academyTeachersCount: store.academyTeachers?.length ?? 0,
       academyLessonRecordsCount: store.academyLessonRecords?.length ?? 0,
     });

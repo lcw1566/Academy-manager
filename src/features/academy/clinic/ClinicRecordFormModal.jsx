@@ -86,6 +86,13 @@ export default function ClinicRecordFormModal({
     if (!subject) return alert('과목을 선택해주세요.');
     if (selectedItems.length === 0) return alert('클리닉 항목을 최소 1개 선택해주세요.');
 
+    // MVP: 첫 번째 강사/보조강사 레코드를 본인으로 간주 (계정 연동 전까지)
+    const createdById = role === 'teacher'
+      ? (academyTeachers[0]?.id || '')
+      : role === 'assistant'
+        ? (academyAssistants[0]?.id || '')
+        : '';
+
     const payload = {
       studentId,
       date,
@@ -95,7 +102,7 @@ export default function ClinicRecordFormModal({
       items: selectedItems,
       overallMemo,
       createdByRole: role,
-      createdById: role,
+      createdById,
     };
 
     if (editRecord) {

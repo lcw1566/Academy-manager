@@ -370,7 +370,7 @@ export default function AcademyStudentDetailPage() {
             총 {clinicRecords.filter((r) => r.studentId === student.id).length}건
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
-            이번 달 {clinicRecords.filter((r) => r.studentId === student.id && r.date?.slice(0, 7) === new Date().toISOString().slice(0, 7)).length}건
+            이번 달 {clinicRecords.filter((r) => r.studentId === student.id && r.date?.slice(0, 7) === today().slice(0, 7)).length}건
           </p>
         </div>
       </div>
@@ -552,7 +552,7 @@ export default function AcademyStudentDetailPage() {
         {/* 프로필 */}
         <div className="px-4 pt-4 mb-4 flex items-center gap-4">
           <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-2xl font-bold text-blue-600 flex-shrink-0">
-            {student.name[0]}
+            {(student.name || '?')[0]}
           </div>
           <div>
             <p className="text-xl font-bold text-gray-900">{student.name}</p>

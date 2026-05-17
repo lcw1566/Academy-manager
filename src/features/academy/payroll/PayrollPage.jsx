@@ -2,8 +2,16 @@ import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
+import { formatMonth } from '../../../utils/date';
 
 const MONTHS_BACK = 5;
+
+function formatHours(h) {
+  if (!h) return '0';
+  const n = Number(h);
+  if (!Number.isFinite(n)) return '0';
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
 
 function getRecentMonths() {
   const result = [];
@@ -97,7 +105,7 @@ export default function PayrollPage() {
           <button onClick={() => setMonthPickerOpen(!monthPickerOpen)}
             className="flex items-center gap-2 bg-white rounded-2xl px-4 py-2.5 shadow-sm">
             <ChevronLeft size={16} className="text-gray-400" />
-            <span className="font-bold text-gray-900">{selectedMonth.replace('-', '년 ')}월</span>
+            <span className="font-bold text-gray-900">{formatMonth(selectedMonth)}</span>
             <ChevronRight size={16} className="text-gray-400" />
           </button>
           {monthPickerOpen && (
@@ -105,7 +113,7 @@ export default function PayrollPage() {
               {months.map((m) => (
                 <button key={m} onClick={() => { setSelectedMonth(m); setMonthPickerOpen(false); }}
                   className={`w-full text-left px-4 py-3 text-sm border-b border-gray-50 last:border-0 ${m === selectedMonth ? 'font-bold text-blue-600' : 'text-gray-700'}`}>
-                  {m.replace('-', '년 ')}월
+                  {formatMonth(m)}
                 </button>
               ))}
             </div>
@@ -131,11 +139,11 @@ export default function PayrollPage() {
         <div className="px-4 mb-4">
           {myPayroll ? (
             <div className="bg-blue-600 rounded-2xl p-5 shadow-sm">
-              <p className="text-xs font-semibold text-blue-200 mb-1">{selectedMonth.replace('-', '년 ')}월 예상 급여</p>
+              <p className="text-xs font-semibold text-blue-200 mb-1">{formatMonth(selectedMonth)} 예상 급여</p>
               <p className="text-3xl font-bold text-white">{(myPayroll.amount || 0).toLocaleString()}원</p>
               <div className="flex items-center gap-3 mt-3">
                 {role === 'teacher' && (
-                  <span className="text-xs text-blue-200">수업 {myPayroll.completedSessionCount}회 · {myPayroll.totalHours}시간</span>
+                  <span className="text-xs text-blue-200">수업 {myPayroll.completedSessionCount}회 · {formatHours(myPayroll.totalHours)}시간</span>
                 )}
                 {role === 'assistant' && (
                   <span className="text-xs text-blue-200">완료 클리닉 {myPayroll.completedClinicCount}건</span>
@@ -156,7 +164,7 @@ export default function PayrollPage() {
         {/* 수업 이력 (강사) */}
         {role === 'teacher' && (
           <div className="px-4 flex flex-col gap-2">
-            <p className="text-xs font-semibold text-gray-400 px-1">{selectedMonth.replace('-', '년 ')}월 수업 이력</p>
+            <p className="text-xs font-semibold text-gray-400 px-1">{formatMonth(selectedMonth)} 수업 이력</p>
             {mySessions.length === 0 ? (
               <div className="bg-white rounded-2xl p-5 text-center shadow-sm">
                 <p className="text-sm text-gray-400">이 달 수업 기록이 없어요</p>
@@ -176,9 +184,9 @@ export default function PayrollPage() {
                       <p className="text-xs text-gray-400">{getGroupName(session.classGroupId)} · {session.startTime}~{session.endTime}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-semibold text-gray-700">{hours}시간</p>
+                      <p className="text-sm font-semibold text-gray-700">{formatHours(hours)}시간</p>
                       {staffInfo.wageType === 'hourly' && (
-                        <p className="text-xs text-blue-600">{((staffInfo.hourlyWage || 0) * hours).toLocaleString()}원</p>
+                        <p className="text-xs text-blue-600">{Math.round((staffInfo.hourlyWage || 0) * hours).toLocaleString()}원</p>
                       )}
                     </div>
                   </div>
@@ -191,7 +199,7 @@ export default function PayrollPage() {
         {/* 클리닉 이력 (보조강사) */}
         {role === 'assistant' && (
           <div className="px-4 flex flex-col gap-2">
-            <p className="text-xs font-semibold text-gray-400 px-1">{selectedMonth.replace('-', '년 ')}월 완료 클리닉</p>
+            <p className="text-xs font-semibold text-gray-400 px-1">{formatMonth(selectedMonth)} 완료 클리닉</p>
             {myClinics.length === 0 ? (
               <div className="bg-white rounded-2xl p-5 text-center shadow-sm">
                 <p className="text-sm text-gray-400">이 달 완료한 클리닉이 없어요</p>

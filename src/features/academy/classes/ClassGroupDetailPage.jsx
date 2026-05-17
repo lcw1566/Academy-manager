@@ -34,7 +34,7 @@ export default function ClassGroupDetailPage() {
     () => group
       ? classSessions
           .filter((s) => s.classGroupId === selectedClassGroupId)
-          .sort((a, b) => a.date.localeCompare(b.date))
+          .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
       : [],
     [classSessions, selectedClassGroupId, group]
   );

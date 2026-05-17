@@ -130,9 +130,12 @@ const useAcademyStore = create(
   goBackFromAcademyStudent: () => set({ selectedAcademyStudentId: null }),
 
   // ─── Toast ─────────────────────────────────────────
+  _toastTimer: null,
   showToast: (message, type = 'success') => {
-    set({ toast: { message, type } });
-    setTimeout(() => set({ toast: null }), 2500);
+    const prev = get()._toastTimer;
+    if (prev) clearTimeout(prev);
+    const timer = setTimeout(() => set({ toast: null, _toastTimer: null }), 2500);
+    set({ toast: { message, type }, _toastTimer: timer });
   },
 
   // ─── Students ──────────────────────────────────────
@@ -720,6 +723,7 @@ const useAcademyStore = create(
       tutorProfile: defaultTutorProfile,
       geminiApiKey: '',
       // Academy workspace also reset
+      academyProfile: { name: '우리 학원', address: '', phone: '' },
       academyStudents: [],
       classGroups: [],
       classSessions: [],
@@ -1153,6 +1157,7 @@ const useAcademyStore = create(
   // ─── Academy Reset ────────────────────────────────
   resetAcademyData: () => {
     set({
+      academyProfile: { name: '우리 학원', address: '', phone: '' },
       academyStudents: [],
       classGroups: [],
       classSessions: [],
@@ -1167,6 +1172,10 @@ const useAcademyStore = create(
       academyExamResults: [],
       academyConsultations: [],
       academyPayrolls: [],
+      // Clear academy-related navigation state too
+      selectedClassGroupId: null,
+      selectedClassSessionId: null,
+      selectedAcademyStudentId: null,
     });
     get().showToast('학원 데이터가 초기화되었어요.');
   },

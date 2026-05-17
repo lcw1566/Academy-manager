@@ -28,13 +28,13 @@ export default function PaymentsPage() {
 
   const totalExpected = monthPayments
     .filter((p) => p.status !== 'exempt')
-    .reduce((sum, p) => sum + p.amount, 0);
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
   const totalPaid = monthPayments
     .filter((p) => p.status === 'paid')
-    .reduce((sum, p) => sum + (p.paidAmount ?? p.amount), 0);
+    .reduce((sum, p) => sum + (p.paidAmount ?? p.amount ?? 0), 0);
   const totalUnpaid = monthPayments
     .filter((p) => p.status === 'unpaid')
-    .reduce((sum, p) => sum + p.amount, 0);
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
   const unpaidCount = monthPayments.filter((p) => p.status === 'unpaid').length;
   const paidRate = totalExpected > 0 ? Math.round((totalPaid / totalExpected) * 100) : 0;
 
@@ -245,7 +245,7 @@ function PaymentActionModal({ payment, student, onClose, onUpdate }) {
       <div className="flex flex-col gap-4">
         <div className="bg-gray-50 rounded-xl px-4 py-3">
           <p className="font-semibold text-gray-900">{student?.name}</p>
-          <p className="text-sm text-gray-500">{formatCurrency(payment.amount)} · {payment.month.replace('-', '년 ')}월</p>
+          <p className="text-sm text-gray-500">{formatCurrency(payment.amount)} · {formatMonth(payment.month)}</p>
         </div>
 
         <div>

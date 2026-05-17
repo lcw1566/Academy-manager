@@ -21,12 +21,12 @@ export default function TeacherDashboard() {
   );
 
   const todaySessions = useMemo(
-    () => mySessions.filter((s) => s.date === todayStr).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    () => mySessions.filter((s) => s.date === todayStr).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
     [mySessions, todayStr]
   );
 
   const daySessions = useMemo(
-    () => mySessions.filter((s) => s.date === selectedDate).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    () => mySessions.filter((s) => s.date === selectedDate).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
     [mySessions, selectedDate]
   );
 
@@ -38,7 +38,7 @@ export default function TeacherDashboard() {
   );
 
   const todayStudentIds = useMemo(
-    () => [...new Set(todaySessions.flatMap((s) => s.studentIds))],
+    () => [...new Set(todaySessions.flatMap((s) => s.studentIds || []))],
     [todaySessions]
   );
 

@@ -354,7 +354,6 @@ export default function AcademyMorePage() {
       addTeacher(data);
     } else if (viewTeacherId) {
       updateTeacher(viewTeacherId, data);
-      showToast('강사 정보가 수정되었어요.');
     }
     setTeacherFormOpen(false);
   };
@@ -363,7 +362,6 @@ export default function AcademyMorePage() {
     if (!viewTeacherId) return;
     deleteTeacher(viewTeacherId);
     setViewTeacherId(null);
-    showToast('강사 정보가 삭제되었어요.');
   };
 
   // ── 보조강사 핸들러 ────────────────────────────────────────────
@@ -378,7 +376,6 @@ export default function AcademyMorePage() {
       addAssistant(data);
     } else if (viewAssistantId) {
       updateAssistant(viewAssistantId, data);
-      showToast('보조강사 정보가 수정되었어요.');
     }
     setAssistantFormOpen(false);
   };
@@ -387,7 +384,6 @@ export default function AcademyMorePage() {
     if (!viewAssistantId) return;
     deleteAssistant(viewAssistantId);
     setViewAssistantId(null);
-    showToast('보조강사 정보가 삭제되었어요.');
   };
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

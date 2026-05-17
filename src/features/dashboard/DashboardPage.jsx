@@ -42,7 +42,7 @@ export default function DashboardPage() {
 
   // 선택 날짜의 일정
   const dayClasses = useMemo(() =>
-    classes.filter((c) => c.date === selectedDate).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    classes.filter((c) => c.date === selectedDate).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
     [classes, selectedDate]
   );
   const dayConsultations = useMemo(() =>
@@ -61,7 +61,7 @@ export default function DashboardPage() {
   );
 
   const { uncheckedCount, notesUnwrittenCount, unpaidPayments, unpaidAmount } = useMemo(() => {
-    const todayStudentIds = [...new Set(todayClasses.flatMap((c) => c.studentIds))];
+    const todayStudentIds = [...new Set(todayClasses.flatMap((c) => c.studentIds || []))];
     const checkedTodayIds = new Set(
       attendanceRecords.filter((a) => a.date === todayStr).map((a) => a.studentId)
     );
@@ -75,7 +75,7 @@ export default function DashboardPage() {
       uncheckedCount: todayStudentIds.filter((id) => !checkedTodayIds.has(id)).length,
       notesUnwrittenCount: todayStudentIds.filter((id) => !notesWrittenToday.has(id)).length,
       unpaidPayments,
-      unpaidAmount: unpaidPayments.reduce((sum, p) => sum + p.amount, 0),
+      unpaidAmount: unpaidPayments.reduce((sum, p) => sum + (p.amount || 0), 0),
       checkedTodayIds,
       notesWrittenToday,
     };
@@ -83,7 +83,6 @@ export default function DashboardPage() {
 
   // 할 일 목록
   const todos = useMemo(() => {
-    const todayStudentIds = [...new Set(todayClasses.flatMap((c) => c.studentIds))];
     const checkedTodayIds = new Set(
       attendanceRecords.filter((a) => a.date === todayStr).map((a) => a.studentId)
     );
@@ -94,7 +93,7 @@ export default function DashboardPage() {
     );
     const result = [];
     todayClasses.forEach((cls) => {
-      cls.studentIds.forEach((sid) => {
+      (cls.studentIds || []).forEach((sid) => {
         const student = students.find((s) => s.id === sid);
         if (!student) return;
         if (!checkedTodayIds.has(sid))
@@ -146,7 +145,7 @@ export default function DashboardPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {dayClasses.map((cls) => {
-              const clsStudents = students.filter((s) => cls.studentIds.includes(s.id));
+              const clsStudents = students.filter((s) => (cls.studentIds || []).includes(s.id));
               return (
                 <motion.button
                   key={cls.id}

@@ -109,7 +109,7 @@ export default function ClassesPage() {
   // ── Build unified items ────────────────────────────────────────────────────
   const groupItems = useMemo(() => repeatGroups.map((group) => {
     const groupClasses = classes.filter((c) => c.repeatGroupId === group.id);
-    const groupStudents = students.filter((s) => group.studentIds.includes(s.id));
+    const groupStudents = students.filter((s) => (group.studentIds || []).includes(s.id));
     const firstStudent = groupStudents[0];
     const studentCount = groupStudents.length;
     const namePrefix =
@@ -120,18 +120,18 @@ export default function ClassesPage() {
 
     const nextClass = groupClasses
       .filter((c) => c.date >= todayStr)
-      .sort((a, b) => a.date.localeCompare(b.date))[0];
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
 
     const pastClasses = groupClasses.filter((c) => c.date <= todayStr);
     const incompleteAttendance = pastClasses.filter(
       (c) =>
-        !c.studentIds.every((sid) =>
+        !(c.studentIds || []).every((sid) =>
           attendanceRecords.some((a) => a.classId === c.id && a.studentId === sid)
         )
     ).length;
 
     const unwrittenNotes = pastClasses.filter((c) =>
-      c.studentIds.some(
+      (c.studentIds || []).some(
         (sid) =>
           !lessonRecords.some(
             (lr) => lr.classId === c.id && lr.studentId === sid && lr.content?.trim()
@@ -160,7 +160,7 @@ export default function ClassesPage() {
   const singleItems = useMemo(() => classes
     .filter((c) => !c.repeatGroupId)
     .map((cls) => {
-      const clsStudents = students.filter((s) => cls.studentIds.includes(s.id));
+      const clsStudents = students.filter((s) => (cls.studentIds || []).includes(s.id));
       const unwrittenNotes = clsStudents.filter(
         (s) =>
           !lessonRecords.some(

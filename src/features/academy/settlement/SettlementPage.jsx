@@ -3,8 +3,16 @@ import { ChevronLeft, ChevronRight, Check, RefreshCw, Plus, X, Trash2 } from 'lu
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
+import { formatMonth } from '../../../utils/date';
 
 const MONTHS_BACK = 5;
+
+function formatHours(h) {
+  if (!h) return '0';
+  const n = Number(h);
+  if (!Number.isFinite(n)) return '0';
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
 
 function getRecentMonths() {
   const result = [];
@@ -111,7 +119,7 @@ export default function SettlementPage() {
             className="flex items-center gap-2 bg-white rounded-2xl px-4 py-2.5 shadow-sm"
           >
             <ChevronLeft size={16} className="text-gray-400" />
-            <span className="font-bold text-gray-900">{selectedMonth.replace('-', '년 ')}월</span>
+            <span className="font-bold text-gray-900">{formatMonth(selectedMonth)}</span>
             <ChevronRight size={16} className="text-gray-400" />
           </button>
           {monthPickerOpen && (
@@ -119,7 +127,7 @@ export default function SettlementPage() {
               {months.map((m) => (
                 <button key={m} onClick={() => { setSelectedMonth(m); setMonthPickerOpen(false); }}
                   className={`w-full text-left px-4 py-3 text-sm border-b border-gray-50 last:border-0 ${m === selectedMonth ? 'font-bold text-blue-600' : 'text-gray-700'}`}>
-                  {m.replace('-', '년 ')}월
+                  {formatMonth(m)}
                 </button>
               ))}
             </div>
@@ -291,7 +299,7 @@ export default function SettlementPage() {
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">
                         {pr.wageType === 'hourly'
-                          ? `시급 ${(pr.hourlyWage || 0).toLocaleString()}원 × ${pr.totalHours}시간`
+                          ? `시급 ${(pr.hourlyWage || 0).toLocaleString()}원 × ${formatHours(pr.totalHours)}시간`
                           : `월급제`
                         }
                         {pr.staffType === 'teacher' && ` · ${pr.completedSessionCount}회 수업`}

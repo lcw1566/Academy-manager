@@ -86,7 +86,7 @@ export default function AcademyStudentsPage() {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                      <span className="font-bold text-blue-600">{student.name[0]}</span>
+                      <span className="font-bold text-blue-600">{(student.name || '?')[0]}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">

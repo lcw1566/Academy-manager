@@ -28,7 +28,7 @@ export default function ClassGroupsPage() {
     classGroups.map((group) => {
       const sessions = classSessions.filter((s) => s.classGroupId === group.id);
       const nextSession = sessions.filter((s) => s.date >= todayStr && s.status !== 'canceled')
-        .sort((a, b) => a.date.localeCompare(b.date))[0];
+        .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
       const studentCount = (group.studentIds || []).length;
       const teacher = academyTeachers.find((t) => t.id === group.teacherId);
       return { ...group, sessions, nextSession, studentCount, teacher };

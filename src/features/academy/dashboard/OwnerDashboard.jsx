@@ -26,7 +26,7 @@ export default function OwnerDashboard() {
 
   const daySessions = useMemo(
     () => classSessions.filter((s) => s.date === selectedDate && s.status !== 'canceled')
-      .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
     [classSessions, selectedDate]
   );
 
@@ -40,10 +40,10 @@ export default function OwnerDashboard() {
     () => academyPayments.filter((p) => p.month === currentMonth && p.status === 'unpaid'),
     [academyPayments, currentMonth]
   );
-  const unpaidAmount = useMemo(() => unpaidPayments.reduce((s, p) => s + p.amount, 0), [unpaidPayments]);
+  const unpaidAmount = useMemo(() => unpaidPayments.reduce((s, p) => s + (p.amount || 0), 0), [unpaidPayments]);
 
   const todayStudentIds = useMemo(
-    () => [...new Set(todaySessions.flatMap((s) => s.studentIds))],
+    () => [...new Set(todaySessions.flatMap((s) => s.studentIds || []))],
     [todaySessions]
   );
 
