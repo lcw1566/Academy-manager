@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ChevronLeft, Plus, Pencil } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import EmptyState from '../../../components/EmptyState';
 import { today, formatDateShort } from '../../../utils/date';
 import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 import ClassGroupFormModal from './ClassGroupFormModal';
@@ -47,8 +48,25 @@ export default function ClassGroupDetailPage() {
     [clinicRecords, selectedClassGroupId]
   );
 
-  // Guard: if group not found (deleted or navigating away), render nothing
-  if (!group) return null;
+  if (!group) {
+    return (
+      <div className="min-h-[60vh] flex items-center">
+        <EmptyState
+          title="반 정보를 찾을 수 없어요"
+          description="삭제되었거나 더 이상 사용할 수 없는 반입니다."
+          action={(
+            <button
+              type="button"
+              onClick={goBackFromClassGroup}
+              className="px-5 py-3 bg-blue-600 text-white text-sm font-bold rounded-2xl"
+            >
+              수업 목록으로 돌아가기
+            </button>
+          )}
+        />
+      </div>
+    );
+  }
 
   const upcomingSessions = sessions.filter((s) => s.date >= todayStr);
   const pastSessions = sessions.filter((s) => s.date < todayStr);
@@ -59,7 +77,7 @@ export default function ClassGroupDetailPage() {
       {/* Header */}
       <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 border-b border-gray-100">
         <div className="max-w-md mx-auto flex items-center gap-3 px-4 h-14">
-          <button onClick={goBackFromClassGroup} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
+          <button type="button" onClick={goBackFromClassGroup} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
             <ChevronLeft size={20} className="text-gray-700" />
           </button>
           <div className="flex-1 min-w-0">
@@ -68,6 +86,7 @@ export default function ClassGroupDetailPage() {
           </div>
           {role === 'owner' && (
             <motion.button
+              type="button"
               whileTap={{ scale: 0.97 }}
               onClick={() => setShowEditForm(true)}
               className="flex items-center gap-1 px-3 py-1.5 bg-gray-100 text-gray-600 text-xs font-semibold rounded-xl"
@@ -118,7 +137,7 @@ export default function ClassGroupDetailPage() {
           <div className="px-4 mb-5">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-bold text-gray-700">최근 클리닉 기록</p>
-              <button onClick={() => setActiveTab('clinic')} className="text-xs text-blue-600 font-semibold">
+              <button type="button" onClick={() => setActiveTab('clinic')} className="text-xs text-blue-600 font-semibold">
                 전체 보기
               </button>
             </div>
@@ -179,6 +198,7 @@ export default function ClassGroupDetailPage() {
       {/* 클리닉 추가 플로팅 버튼 (원장/강사) */}
       {(role === 'teacher' || role === 'owner') && (
         <motion.button
+          type="button"
           whileTap={{ scale: 0.97 }}
           onClick={() => setShowClinicForm(true)}
           className="fixed bottom-24 right-4 z-20 flex items-center gap-2 bg-blue-600 text-white font-bold px-4 py-3 rounded-2xl shadow-lg"
@@ -212,6 +232,7 @@ function SessionCard({ session, students, attendanceRecords, onClick, isPast }) 
 
   return (
     <motion.button
+      type="button"
       whileTap={{ scale: 0.97 }}
       onClick={onClick}
       className={`bg-white rounded-2xl p-4 shadow-sm text-left w-full ${isPast ? 'opacity-80' : ''}`}

@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import EmptyState from '../../../components/EmptyState';
 import { formatDateShort } from '../../../utils/date';
 import { attendanceStatusMap } from '../../../utils/format';
 
@@ -177,6 +178,7 @@ function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, o
                       return (
                         <motion.button
                           key={status}
+                          type="button"
                           whileTap={{ scale: 0.95 }}
                           onClick={() => updateAcademyAttendance(sessionId, student.id, status)}
                           className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors ${
@@ -228,6 +230,7 @@ function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, o
                       return (
                         <motion.button
                           key={type}
+                          type="button"
                           whileTap={{ scale: 0.95 }}
                           onClick={() => toggleSupportTag(type)}
                           className={`px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition-colors ${
@@ -370,8 +373,25 @@ export default function ClassSessionPage() {
     (a) => a.sessionId === selectedClassSessionId && a.status === 'present'
   ).length;
 
-  // Guard: session/group이 없으면 null (early return은 훅 이후)
-  if (!session || !group) return null;
+  if (!session || !group) {
+    return (
+      <div className="min-h-[60vh] flex items-center">
+        <EmptyState
+          title="수업 정보를 찾을 수 없어요"
+          description="삭제되었거나 더 이상 사용할 수 없는 수업입니다."
+          action={(
+            <button
+              type="button"
+              onClick={goBackFromClassSession}
+              className="px-5 py-3 bg-blue-600 text-white text-sm font-bold rounded-2xl"
+            >
+              이전 화면으로 돌아가기
+            </button>
+          )}
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -475,6 +495,7 @@ export default function ClassSessionPage() {
       {canEdit && (
         <div className="fixed bottom-0 left-0 right-0 z-20 bg-white/95 border-t border-gray-100 px-4 py-3 pb-safe max-w-md mx-auto">
           <motion.button
+            type="button"
             whileTap={{ scale: 0.97 }}
             onClick={handleSave}
             disabled={isSaving}

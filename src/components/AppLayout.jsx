@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import useAcademyStore from '../store/useAcademyStore';
 import BottomNav from './BottomNav';
@@ -16,8 +17,46 @@ const pageVariants = {
   exit:    { opacity: 0, y: -6, transition: { duration: 0.10, ease: 'easeIn' } },
 };
 
+const PRIVATE_TAB_IDS = ['home', 'classes', 'students', 'payments', 'more'];
+
 export default function AppLayout() {
-  const { activeTab, selectedClassId, selectedStudentId, selectedRepeatGroupId } = useAcademyStore();
+  const {
+    activeTab,
+    setActiveTab,
+    selectedClassId,
+    selectedStudentId,
+    selectedRepeatGroupId,
+    students,
+    classes,
+    repeatGroups,
+    goBackFromClass,
+    goBackFromStudent,
+    goBackFromRepeatGroup,
+  } = useAcademyStore();
+
+  useEffect(() => {
+    if (!PRIVATE_TAB_IDS.includes(activeTab)) {
+      setActiveTab('home');
+    }
+  }, [activeTab, setActiveTab]);
+
+  useEffect(() => {
+    if (selectedClassId && !classes.some((cls) => cls.id === selectedClassId)) {
+      goBackFromClass();
+    }
+  }, [selectedClassId, classes, goBackFromClass]);
+
+  useEffect(() => {
+    if (selectedStudentId && !students.some((student) => student.id === selectedStudentId)) {
+      goBackFromStudent();
+    }
+  }, [selectedStudentId, students, goBackFromStudent]);
+
+  useEffect(() => {
+    if (selectedRepeatGroupId && !repeatGroups.some((group) => group.id === selectedRepeatGroupId)) {
+      goBackFromRepeatGroup();
+    }
+  }, [selectedRepeatGroupId, repeatGroups, goBackFromRepeatGroup]);
 
   const pageKey = selectedRepeatGroupId
     ? `repeatgroup-${selectedRepeatGroupId}`
@@ -37,7 +76,7 @@ export default function AppLayout() {
     if (activeTab === 'students') return selectedStudentId ? <StudentDetailPage /> : <StudentsPage />;
     if (activeTab === 'payments') return <PaymentsPage />;
     if (activeTab === 'more')     return <MorePage />;
-    return null;
+    return <DashboardPage />;
   };
 
   return (

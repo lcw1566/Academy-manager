@@ -53,6 +53,7 @@ function FallbackScreen() {
       <p className="text-base font-bold text-gray-800 mb-2">화면을 불러오지 못했어요</p>
       <p className="text-sm text-gray-500 mb-6">다른 탭을 선택하거나 홈으로 이동해보세요.</p>
       <button
+        type="button"
         onClick={() => setActiveTab('home')}
         className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm"
       >
@@ -70,6 +71,12 @@ export default function AcademyAppLayout() {
     selectedClassGroupId,
     selectedClassSessionId,
     selectedAcademyStudentId,
+    classGroups,
+    classSessions,
+    academyStudents,
+    goBackFromClassGroup,
+    goBackFromClassSession,
+    goBackFromAcademyStudent,
   } = useAcademyStore();
 
   const tabs = TAB_CONFIG[role] || TAB_CONFIG.owner;
@@ -81,6 +88,33 @@ export default function AcademyAppLayout() {
       setActiveTab(tabs[0]?.id || 'home');
     }
   }, [role, tabs, activeTab, setActiveTab]);
+
+  useEffect(() => {
+    if (
+      selectedClassSessionId &&
+      !classSessions.some((session) => session.id === selectedClassSessionId)
+    ) {
+      goBackFromClassSession();
+    }
+  }, [selectedClassSessionId, classSessions, goBackFromClassSession]);
+
+  useEffect(() => {
+    if (
+      selectedClassGroupId &&
+      !classGroups.some((group) => group.id === selectedClassGroupId)
+    ) {
+      goBackFromClassGroup();
+    }
+  }, [selectedClassGroupId, classGroups, goBackFromClassGroup]);
+
+  useEffect(() => {
+    if (
+      selectedAcademyStudentId &&
+      !academyStudents.some((student) => student.id === selectedAcademyStudentId)
+    ) {
+      goBackFromAcademyStudent();
+    }
+  }, [selectedAcademyStudentId, academyStudents, goBackFromAcademyStudent]);
 
   const pageKey = selectedClassSessionId
     ? `session-${selectedClassSessionId}`
@@ -144,6 +178,7 @@ export default function AcademyAppLayout() {
             return (
               <motion.button
                 key={id}
+                type="button"
                 onClick={() => setActiveTab(id)}
                 whileTap={{ scale: 0.97 }}
                 className="flex-1 flex flex-col items-center gap-1 pb-1"

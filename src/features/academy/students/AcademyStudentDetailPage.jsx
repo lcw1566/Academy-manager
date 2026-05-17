@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { ChevronLeft, Pencil, Trash2, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import { formatDateShort, getKoreanWeekdayFromYMD } from '../../../utils/date';
 import { attendanceStatusMap } from '../../../utils/format';
+import EmptyState from '../../../components/EmptyState';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
 import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 
@@ -67,7 +68,7 @@ function LessonRecordCard({ record, assistants }) {
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
       {/* 카드 헤더 */}
-      <button className="w-full px-4 py-4 text-left" onClick={() => setExpanded(!expanded)}>
+      <button type="button" className="w-full px-4 py-4 text-left" onClick={() => setExpanded(!expanded)}>
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -207,10 +208,33 @@ export default function AcademyStudentDetailPage() {
     [clinicRecords, student]
   );
 
-  // Guard: render nothing if student not found (deleted or navigating away)
-  if (!student) return null;
-
   const tabs = TABS_BY_ROLE[role] || TABS_BY_ROLE.owner;
+
+  useEffect(() => {
+    if (!tabs.includes(activeTab)) {
+      setActiveTab(tabs[0]);
+    }
+  }, [tabs, activeTab]);
+
+  if (!student) {
+    return (
+      <div className="min-h-[60vh] flex items-center">
+        <EmptyState
+          title="학생 정보를 찾을 수 없어요"
+          description="삭제되었거나 더 이상 사용할 수 없는 학생입니다."
+          action={(
+            <button
+              type="button"
+              onClick={goBackFromAcademyStudent}
+              className="px-5 py-3 bg-blue-600 text-white text-sm font-bold rounded-2xl"
+            >
+              학생 목록으로 돌아가기
+            </button>
+          )}
+        />
+      </div>
+    );
+  }
 
   // 최근 수업 (요약용)
   const latestRecord = dailyRecords[0];
@@ -298,7 +322,7 @@ export default function AcademyStudentDetailPage() {
 
       {/* 클리닉 추가 */}
       {(role === 'owner' || role === 'teacher' || role === 'assistant') && (
-        <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowClinicForm(true)}
+        <motion.button type="button" whileTap={{ scale: 0.97 }} onClick={() => setShowClinicForm(true)}
           className="w-full py-3 rounded-2xl border-2 border-dashed border-blue-200 text-blue-600 text-sm font-semibold">
           + 클리닉 기록 추가
         </motion.button>
@@ -368,16 +392,16 @@ export default function AcademyStudentDetailPage() {
     <div>
       <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 border-b border-gray-100">
         <div className="max-w-md mx-auto flex items-center gap-3 px-4 h-14">
-          <button onClick={goBackFromAcademyStudent} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
+          <button type="button" onClick={goBackFromAcademyStudent} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
             <ChevronLeft size={20} className="text-gray-700" />
           </button>
           <p className="flex-1 font-bold text-gray-900 truncate">{student.name}</p>
           {role === 'owner' && (
             <div className="flex items-center gap-1">
-              <button onClick={() => setShowEdit(true)} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
+              <button type="button" onClick={() => setShowEdit(true)} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
                 <Pencil size={16} className="text-gray-500" />
               </button>
-              <button onClick={handleDelete} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
+              <button type="button" onClick={handleDelete} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
                 <Trash2 size={16} className="text-red-400" />
               </button>
             </div>
@@ -401,7 +425,7 @@ export default function AcademyStudentDetailPage() {
         <div className="px-4 mb-4">
           <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {tabs.map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab)}
+              <button key={tab} type="button" onClick={() => setActiveTab(tab)}
                 className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${
                   activeTab === tab ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 border border-gray-200'
                 }`}>

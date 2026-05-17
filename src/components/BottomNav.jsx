@@ -25,6 +25,7 @@ export default function BottomNav() {
           return (
             <motion.button
               key={id}
+              type="button"
               onClick={() => setActiveTab(id)}
               whileTap={{ scale: 0.97 }}
               className="flex-1 flex flex-col items-center gap-1 pb-1"
