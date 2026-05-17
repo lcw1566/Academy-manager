@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { LogOut, Plus, Trash2, AlertTriangle, ChevronRight, RotateCcw, ChevronLeft, Pencil } from 'lucide-react';
-import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
@@ -16,26 +15,22 @@ const WAGE_TYPES = [
 const SUBJECTS = ['수학', '영어', '국어', '과학', '사회', '물리', '화학', '역사', '기타'];
 
 const TASK_TYPES = [
-  { key: 'homework',       label: '숙제 검사' },
-  { key: 'wrong_answer',   label: '오답 풀이' },
-  { key: 'vocabulary',     label: '단어 테스트' },
-  { key: 'reading',        label: '본문 암기' },
-  { key: 'grammar',        label: '문법 보충' },
-  { key: 'concept',        label: '개념 보충' },
-  { key: 'test_retry',     label: '재시험' },
-  { key: 'other',          label: '기타' },
+  { key: 'homework',     label: '숙제 검사' },
+  { key: 'wrong_answer', label: '오답 풀이' },
+  { key: 'vocabulary',   label: '단어 테스트' },
+  { key: 'reading',      label: '본문 암기' },
+  { key: 'grammar',      label: '문법 보충' },
+  { key: 'concept',      label: '개념 보충' },
+  { key: 'test_retry',   label: '재시험' },
+  { key: 'other',        label: '기타' },
 ];
 
-// ─── Normalize helpers (prevent undefined crashes) ──────────────
+// ─── Normalize (null/undefined guard) ───────────────────────────
 function normalizeTeacher(t) {
   if (!t) return null;
   return {
-    wageType: 'hourly',
-    hourlyWage: 0,
-    monthlyWage: 0,
-    memo: '',
-    phone: '',
-    status: 'active',
+    wageType: 'hourly', hourlyWage: 0, monthlyWage: 0,
+    memo: '', phone: '', status: 'active',
     ...t,
     name: t.name || '(이름 없음)',
     subjects: Array.isArray(t.subjects) ? t.subjects : [],
@@ -45,12 +40,8 @@ function normalizeTeacher(t) {
 function normalizeAssistant(a) {
   if (!a) return null;
   return {
-    wageType: 'hourly',
-    hourlyWage: 0,
-    monthlySalary: 0,
-    memo: '',
-    phone: '',
-    status: 'active',
+    wageType: 'hourly', hourlyWage: 0, monthlySalary: 0,
+    memo: '', phone: '', status: 'active',
     ...a,
     name: a.name || '(이름 없음)',
     subjects: Array.isArray(a.subjects) ? a.subjects : [],
@@ -58,109 +49,113 @@ function normalizeAssistant(a) {
   };
 }
 
-function wageLabel(wageType) {
-  return WAGE_TYPE_LABELS[wageType] || wageType || '–';
-}
+function wageLabel(w) { return WAGE_TYPE_LABELS[w] || w || '–'; }
+function taskLabel(t)  { return TASK_TYPE_LABELS[t] || t; }
 
-function taskTypeLabel(t) {
-  return TASK_TYPE_LABELS[t] || t;
-}
-
-// ─── Staff Detail: 강사 ──────────────────────────────────────────
+// ─── 강사 상세 페이지 ────────────────────────────────────────────
+// ClassGroupDetailPage와 동일한 패턴: fixed top-0 z-20 헤더 + 본문
 function TeacherDetailPage({ teacher, onBack, onEdit, onDelete }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const wageInfo = teacher.wageType === 'hourly'
-    ? `시급 ${(teacher.hourlyWage || 0).toLocaleString()}원`
-    : teacher.wageType === 'monthly'
+  const wageInfo = teacher.wageType === 'monthly'
     ? `월급 ${(teacher.monthlyWage || 0).toLocaleString()}원`
-    : '급여 정보 없음';
+    : `시급 ${(teacher.hourlyWage || 0).toLocaleString()}원`;
 
   return (
-    <div className="fixed inset-0 bg-[#F5F6F8] z-20 overflow-y-auto">
-      <div className="max-w-md mx-auto">
-        <div className="sticky top-0 bg-[#F5F6F8] z-10 flex items-center justify-between px-4 py-4">
-          <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full active:bg-gray-100">
-            <ChevronLeft size={22} className="text-gray-700" />
-          </button>
-          <p className="text-base font-bold text-gray-900">강사 상세</p>
-          <button onClick={onEdit} className="flex items-center gap-1 text-sm font-semibold text-blue-600 px-3 py-1.5 rounded-xl active:bg-blue-50">
-            <Pencil size={14} />
-            수정
-          </button>
-        </div>
-
-        <div className="px-4 pb-28 flex flex-col gap-4 pt-2">
-          {/* 프로필 카드 */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-xl font-bold text-blue-600 flex-shrink-0">
-                {teacher.name.charAt(0)}
-              </div>
-              <div>
-                <p className="text-lg font-bold text-gray-900">{teacher.name}</p>
-                <p className="text-sm text-blue-600 font-medium">강사</p>
-              </div>
-            </div>
-            {teacher.phone ? (
-              <div className="flex items-center justify-between py-2.5 border-t border-gray-50">
-                <span className="text-sm text-gray-500">연락처</span>
-                <span className="text-sm font-medium text-gray-800">{teacher.phone}</span>
-              </div>
-            ) : null}
-          </div>
-
-          {/* 담당 과목 */}
-          {teacher.subjects.length > 0 && (
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <p className="text-xs font-bold text-gray-400 mb-3">담당 과목</p>
-              <div className="flex flex-wrap gap-2">
-                {teacher.subjects.map((s) => (
-                  <span key={s} className="text-xs font-semibold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full">{s}</span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 급여 정보 */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <p className="text-xs font-bold text-gray-400 mb-3">급여 정보</p>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500">급여 방식</span>
-              <span className="text-sm font-medium text-gray-800">{wageLabel(teacher.wageType)}</span>
-            </div>
-            <div className="flex items-center justify-between mt-2.5">
-              <span className="text-sm text-gray-500">금액</span>
-              <span className="text-sm font-bold text-gray-900">{wageInfo}</span>
-            </div>
-          </div>
-
-          {/* 메모 */}
-          {teacher.memo ? (
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <p className="text-xs font-bold text-gray-400 mb-2">메모</p>
-              <p className="text-sm text-gray-700">{teacher.memo}</p>
-            </div>
-          ) : null}
-
-          {/* 삭제 */}
+    <div>
+      {/* 헤더 – ClassGroupDetailPage와 동일 패턴 */}
+      <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 border-b border-gray-100">
+        <div className="max-w-md mx-auto flex items-center gap-3 px-4 h-14">
           <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="w-full mt-4 py-4 rounded-2xl bg-red-50 text-red-500 font-bold text-sm border border-red-100"
+            type="button"
+            onClick={onBack}
+            className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100"
           >
-            강사 삭제
+            <ChevronLeft size={20} className="text-gray-700" />
+          </button>
+          <p className="flex-1 font-bold text-gray-900">강사 정보</p>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex items-center gap-1 text-sm font-semibold text-blue-600 px-3 py-1.5 rounded-xl active:bg-blue-50"
+          >
+            <Pencil size={14} />
+            수정하기
           </button>
         </div>
       </div>
 
+      {/* 본문 */}
+      <div className="pt-16 pb-24 px-4 flex flex-col gap-4">
+        {/* 프로필 카드 */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-xl font-bold text-blue-600 flex-shrink-0">
+              {teacher.name.charAt(0)}
+            </div>
+            <div>
+              <p className="text-lg font-bold text-gray-900">{teacher.name}</p>
+              <p className="text-sm text-blue-600 font-medium">강사</p>
+            </div>
+          </div>
+          {teacher.phone ? (
+            <div className="flex items-center justify-between py-2.5 border-t border-gray-50">
+              <span className="text-sm text-gray-500">연락처</span>
+              <span className="text-sm font-medium text-gray-800">{teacher.phone}</span>
+            </div>
+          ) : null}
+        </div>
+
+        {/* 담당 과목 */}
+        {teacher.subjects.length > 0 && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm">
+            <p className="text-xs font-bold text-gray-400 mb-3">담당 과목</p>
+            <div className="flex flex-wrap gap-2">
+              {teacher.subjects.map((s) => (
+                <span key={s} className="text-xs font-semibold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-full">{s}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 급여 정보 */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <p className="text-xs font-bold text-gray-400 mb-3">급여 정보</p>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-500">급여 방식</span>
+            <span className="text-sm font-medium text-gray-800">{wageLabel(teacher.wageType)}</span>
+          </div>
+          <div className="flex items-center justify-between mt-2.5">
+            <span className="text-sm text-gray-500">금액</span>
+            <span className="text-sm font-bold text-gray-900">{wageInfo}</span>
+          </div>
+        </div>
+
+        {/* 메모 */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <p className="text-xs font-bold text-gray-400 mb-2">메모</p>
+          <p className="text-sm text-gray-700">{teacher.memo || '메모가 없어요.'}</p>
+        </div>
+
+        {/* 삭제 버튼 */}
+        <button
+          type="button"
+          onClick={() => setShowDeleteConfirm(true)}
+          className="w-full mt-2 py-4 rounded-2xl bg-red-50 text-red-500 font-bold text-sm border border-red-100"
+        >
+          강사 삭제
+        </button>
+      </div>
+
+      {/* 삭제 확인 모달 */}
       <Modal
         isOpen={showDeleteConfirm}
         onClose={() => setShowDeleteConfirm(false)}
         title="강사 삭제"
         footer={
           <div className="flex gap-2">
-            <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">취소</button>
-            <button onClick={onDelete} className="flex-1 py-3.5 rounded-xl bg-red-500 text-white text-sm font-bold">삭제</button>
+            <button type="button" onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">취소</button>
+            <button type="button" onClick={onDelete} className="flex-1 py-3.5 rounded-xl bg-red-500 text-white text-sm font-bold">삭제</button>
           </div>
         }
       >
@@ -176,7 +171,7 @@ function TeacherDetailPage({ teacher, onBack, onEdit, onDelete }) {
   );
 }
 
-// ─── Staff Detail: 보조강사 ──────────────────────────────────────
+// ─── 보조강사 상세 페이지 ────────────────────────────────────────
 function AssistantDetailPage({ assistant, onBack, onEdit, onDelete }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -184,97 +179,106 @@ function AssistantDetailPage({ assistant, onBack, onEdit, onDelete }) {
     ? `월급 ${(assistant.monthlySalary || 0).toLocaleString()}원`
     : `시급 ${(assistant.hourlyWage || 0).toLocaleString()}원`;
 
-  const translatedTasks = assistant.taskTypes.map(taskTypeLabel);
+  const translatedTasks = assistant.taskTypes.map(taskLabel);
 
   return (
-    <div className="fixed inset-0 bg-[#F5F6F8] z-20 overflow-y-auto">
-      <div className="max-w-md mx-auto">
-        <div className="sticky top-0 bg-[#F5F6F8] z-10 flex items-center justify-between px-4 py-4">
-          <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full active:bg-gray-100">
-            <ChevronLeft size={22} className="text-gray-700" />
+    <div>
+      {/* 헤더 */}
+      <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 border-b border-gray-100">
+        <div className="max-w-md mx-auto flex items-center gap-3 px-4 h-14">
+          <button
+            type="button"
+            onClick={onBack}
+            className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100"
+          >
+            <ChevronLeft size={20} className="text-gray-700" />
           </button>
-          <p className="text-base font-bold text-gray-900">보조강사 상세</p>
-          <button onClick={onEdit} className="flex items-center gap-1 text-sm font-semibold text-purple-600 px-3 py-1.5 rounded-xl active:bg-purple-50">
+          <p className="flex-1 font-bold text-gray-900">보조강사 정보</p>
+          <button
+            type="button"
+            onClick={onEdit}
+            className="flex items-center gap-1 text-sm font-semibold text-purple-600 px-3 py-1.5 rounded-xl active:bg-purple-50"
+          >
             <Pencil size={14} />
-            수정
+            수정하기
           </button>
         </div>
+      </div>
 
-        <div className="px-4 pb-28 flex flex-col gap-4 pt-2">
-          {/* 프로필 카드 */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-14 h-14 rounded-full bg-purple-100 flex items-center justify-center text-xl font-bold text-purple-600 flex-shrink-0">
-                {assistant.name.charAt(0)}
-              </div>
-              <div>
-                <p className="text-lg font-bold text-gray-900">{assistant.name}</p>
-                <p className="text-sm text-purple-600 font-medium">보조강사</p>
-              </div>
+      {/* 본문 */}
+      <div className="pt-16 pb-24 px-4 flex flex-col gap-4">
+        {/* 프로필 카드 */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="w-14 h-14 rounded-full bg-purple-100 flex items-center justify-center text-xl font-bold text-purple-600 flex-shrink-0">
+              {assistant.name.charAt(0)}
             </div>
-            {assistant.phone ? (
-              <div className="flex items-center justify-between py-2.5 border-t border-gray-50">
-                <span className="text-sm text-gray-500">연락처</span>
-                <span className="text-sm font-medium text-gray-800">{assistant.phone}</span>
-              </div>
-            ) : null}
-          </div>
-
-          {/* 담당 정보 */}
-          {(assistant.subjects.length > 0 || translatedTasks.length > 0) && (
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              {assistant.subjects.length > 0 && (
-                <>
-                  <p className="text-xs font-bold text-gray-400 mb-2">담당 과목</p>
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {assistant.subjects.map((s) => (
-                      <span key={s} className="text-xs font-semibold bg-purple-50 text-purple-600 px-3 py-1.5 rounded-full">{s}</span>
-                    ))}
-                  </div>
-                </>
-              )}
-              {translatedTasks.length > 0 && (
-                <>
-                  <p className="text-xs font-bold text-gray-400 mb-2">담당 업무</p>
-                  <div className="flex flex-wrap gap-2">
-                    {translatedTasks.map((t, i) => (
-                      <span key={i} className="text-xs font-semibold bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full">{t}</span>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* 급여 정보 */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <p className="text-xs font-bold text-gray-400 mb-3">급여 정보</p>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500">급여 방식</span>
-              <span className="text-sm font-medium text-gray-800">{wageLabel(assistant.wageType)}</span>
-            </div>
-            <div className="flex items-center justify-between mt-2.5">
-              <span className="text-sm text-gray-500">금액</span>
-              <span className="text-sm font-bold text-gray-900">{wageInfo}</span>
+            <div>
+              <p className="text-lg font-bold text-gray-900">{assistant.name}</p>
+              <p className="text-sm text-purple-600 font-medium">보조강사</p>
             </div>
           </div>
-
-          {/* 메모 */}
-          {assistant.memo ? (
-            <div className="bg-white rounded-2xl p-5 shadow-sm">
-              <p className="text-xs font-bold text-gray-400 mb-2">메모</p>
-              <p className="text-sm text-gray-700">{assistant.memo}</p>
+          {assistant.phone ? (
+            <div className="flex items-center justify-between py-2.5 border-t border-gray-50">
+              <span className="text-sm text-gray-500">연락처</span>
+              <span className="text-sm font-medium text-gray-800">{assistant.phone}</span>
             </div>
           ) : null}
-
-          {/* 삭제 */}
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="w-full mt-4 py-4 rounded-2xl bg-red-50 text-red-500 font-bold text-sm border border-red-100"
-          >
-            보조강사 삭제
-          </button>
         </div>
+
+        {/* 담당 정보 */}
+        {(assistant.subjects.length > 0 || translatedTasks.length > 0) && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm">
+            {assistant.subjects.length > 0 && (
+              <>
+                <p className="text-xs font-bold text-gray-400 mb-2">담당 과목</p>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {assistant.subjects.map((s) => (
+                    <span key={s} className="text-xs font-semibold bg-purple-50 text-purple-600 px-3 py-1.5 rounded-full">{s}</span>
+                  ))}
+                </div>
+              </>
+            )}
+            {translatedTasks.length > 0 && (
+              <>
+                <p className="text-xs font-bold text-gray-400 mb-2">담당 업무</p>
+                <div className="flex flex-wrap gap-2">
+                  {translatedTasks.map((t, i) => (
+                    <span key={i} className="text-xs font-semibold bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full">{t}</span>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* 급여 정보 */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <p className="text-xs font-bold text-gray-400 mb-3">급여 정보</p>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-500">급여 방식</span>
+            <span className="text-sm font-medium text-gray-800">{wageLabel(assistant.wageType)}</span>
+          </div>
+          <div className="flex items-center justify-between mt-2.5">
+            <span className="text-sm text-gray-500">금액</span>
+            <span className="text-sm font-bold text-gray-900">{wageInfo}</span>
+          </div>
+        </div>
+
+        {/* 메모 */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <p className="text-xs font-bold text-gray-400 mb-2">메모</p>
+          <p className="text-sm text-gray-700">{assistant.memo || '메모가 없어요.'}</p>
+        </div>
+
+        {/* 삭제 버튼 */}
+        <button
+          type="button"
+          onClick={() => setShowDeleteConfirm(true)}
+          className="w-full mt-2 py-4 rounded-2xl bg-red-50 text-red-500 font-bold text-sm border border-red-100"
+        >
+          보조강사 삭제
+        </button>
       </div>
 
       <Modal
@@ -283,8 +287,8 @@ function AssistantDetailPage({ assistant, onBack, onEdit, onDelete }) {
         title="보조강사 삭제"
         footer={
           <div className="flex gap-2">
-            <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">취소</button>
-            <button onClick={onDelete} className="flex-1 py-3.5 rounded-xl bg-red-500 text-white text-sm font-bold">삭제</button>
+            <button type="button" onClick={() => setShowDeleteConfirm(false)} className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">취소</button>
+            <button type="button" onClick={onDelete} className="flex-1 py-3.5 rounded-xl bg-red-500 text-white text-sm font-bold">삭제</button>
           </div>
         }
       >
@@ -311,42 +315,72 @@ export default function AcademyMorePage() {
     showToast,
   } = useAcademyStore();
 
-  // ── State: use IDs, not snapshots ──────────────────────────────
-  const [viewTeacherId, setViewTeacherId]     = useState(null);
-  const [viewAssistantId, setViewAssistantId] = useState(null);
-
-  // teacher form: null = adding new, string ID = editing that teacher
-  const [teacherFormTarget, setTeacherFormTarget]   = useState(null); // null | 'new' | teacher.id
-  const [assistantFormTarget, setAssistantFormTarget] = useState(null);
-
-  const [showProfileEdit, setShowProfileEdit]     = useState(false);
-  const [showResetConfirm, setShowResetConfirm]   = useState(false);
+  // 뷰 모드 상태 — ID만 보관, 스냅샷 금지
+  const [viewTeacherId, setViewTeacherId]       = useState(null);
+  const [viewAssistantId, setViewAssistantId]   = useState(null);
+  const [teacherFormOpen, setTeacherFormOpen]   = useState(false);
+  const [assistantFormOpen, setAssistantFormOpen] = useState(false);
+  const [isNewTeacher, setIsNewTeacher]         = useState(false);
+  const [isNewAssistant, setIsNewAssistant]     = useState(false);
+  const [showProfileEdit, setShowProfileEdit]   = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const isOwner = role === 'owner';
 
-  // ── Live lookups (never stale, null-safe) ──────────────────────
-  const viewTeacher = useMemo(() => {
-    if (!viewTeacherId) return null;
-    const found = academyTeachers.find((t) => t.id === viewTeacherId);
-    return normalizeTeacher(found || null);
-  }, [viewTeacherId, academyTeachers]);
+  // 항상 store에서 최신 데이터 조회 (stale snapshot 방지)
+  const viewTeacher = useMemo(
+    () => normalizeTeacher(academyTeachers.find((t) => t.id === viewTeacherId) || null),
+    [viewTeacherId, academyTeachers]
+  );
 
-  const viewAssistant = useMemo(() => {
-    if (!viewAssistantId) return null;
-    const found = academyAssistants.find((a) => a.id === viewAssistantId);
-    return normalizeAssistant(found || null);
-  }, [viewAssistantId, academyAssistants]);
+  const viewAssistant = useMemo(
+    () => normalizeAssistant(academyAssistants.find((a) => a.id === viewAssistantId) || null),
+    [viewAssistantId, academyAssistants]
+  );
 
-  // Form initial data (null = brand new)
-  const teacherFormInitial = teacherFormTarget === 'new' ? null : viewTeacher;
-  const assistantFormInitial = assistantFormTarget === 'new' ? null : viewAssistant;
+  // 폼 초기값: 신규면 null, 수정이면 현재 상세 데이터
+  const teacherFormInitial  = isNewTeacher  ? null : viewTeacher;
+  const assistantFormInitial = isNewAssistant ? null : viewAssistant;
 
-  // ── Handlers ──────────────────────────────────────────────────
+  // ── 강사 핸들러 ────────────────────────────────────────────────
+  const openTeacherDetail  = (id)  => setViewTeacherId(id);
+  const closeTeacherDetail = ()    => { setViewTeacherId(null); setTeacherFormOpen(false); };
+  const openTeacherEdit    = ()    => { setIsNewTeacher(false); setTeacherFormOpen(true); };
+  const openTeacherAdd     = ()    => { setIsNewTeacher(true);  setViewTeacherId(null); setTeacherFormOpen(true); };
+  const closeTeacherForm   = ()    => { setTeacherFormOpen(false); };
+
+  const handleSaveTeacher = (data) => {
+    if (isNewTeacher) {
+      addTeacher(data);
+    } else if (viewTeacherId) {
+      updateTeacher(viewTeacherId, data);
+      showToast('강사 정보가 수정되었어요.');
+    }
+    setTeacherFormOpen(false);
+  };
+
   const handleDeleteTeacher = () => {
     if (!viewTeacherId) return;
     deleteTeacher(viewTeacherId);
     setViewTeacherId(null);
     showToast('강사 정보가 삭제되었어요.');
+  };
+
+  // ── 보조강사 핸들러 ────────────────────────────────────────────
+  const openAssistantDetail  = (id) => setViewAssistantId(id);
+  const closeAssistantDetail = ()   => { setViewAssistantId(null); setAssistantFormOpen(false); };
+  const openAssistantEdit    = ()   => { setIsNewAssistant(false); setAssistantFormOpen(true); };
+  const openAssistantAdd     = ()   => { setIsNewAssistant(true);  setViewAssistantId(null); setAssistantFormOpen(true); };
+  const closeAssistantForm   = ()   => { setAssistantFormOpen(false); };
+
+  const handleSaveAssistant = (data) => {
+    if (isNewAssistant) {
+      addAssistant(data);
+    } else if (viewAssistantId) {
+      updateAssistant(viewAssistantId, data);
+      showToast('보조강사 정보가 수정되었어요.');
+    }
+    setAssistantFormOpen(false);
   };
 
   const handleDeleteAssistant = () => {
@@ -356,26 +390,62 @@ export default function AcademyMorePage() {
     showToast('보조강사 정보가 삭제되었어요.');
   };
 
-  const handleSaveTeacher = (data) => {
-    if (teacherFormTarget === 'new') {
-      addTeacher(data);
-    } else if (viewTeacherId) {
-      updateTeacher(viewTeacherId, data);
-      showToast('강사 정보가 수정되었어요.');
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 강사 상세 뷰 — 목록 대신 상세 페이지를 렌더링
+  // fixed overlay 금지: AcademyMorePage 자체가 이 JSX를 반환함
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  if (viewTeacherId) {
+    if (!viewTeacher) {
+      return <StaffNotFound label="강사" onBack={closeTeacherDetail} />;
     }
-    setTeacherFormTarget(null);
-  };
+    return (
+      <>
+        <TeacherDetailPage
+          teacher={viewTeacher}
+          onBack={closeTeacherDetail}
+          onEdit={openTeacherEdit}
+          onDelete={handleDeleteTeacher}
+        />
+        {teacherFormOpen && (
+          <TeacherFormModal
+            initialData={teacherFormInitial}
+            onClose={closeTeacherForm}
+            onSave={handleSaveTeacher}
+          />
+        )}
+      </>
+    );
+  }
 
-  const handleSaveAssistant = (data) => {
-    if (assistantFormTarget === 'new') {
-      addAssistant(data);
-    } else if (viewAssistantId) {
-      updateAssistant(viewAssistantId, data);
-      showToast('보조강사 정보가 수정되었어요.');
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 보조강사 상세 뷰
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  if (viewAssistantId) {
+    if (!viewAssistant) {
+      return <StaffNotFound label="보조강사" onBack={closeAssistantDetail} />;
     }
-    setAssistantFormTarget(null);
-  };
+    return (
+      <>
+        <AssistantDetailPage
+          assistant={viewAssistant}
+          onBack={closeAssistantDetail}
+          onEdit={openAssistantEdit}
+          onDelete={handleDeleteAssistant}
+        />
+        {assistantFormOpen && (
+          <AssistantFormModal
+            initialData={assistantFormInitial}
+            onClose={closeAssistantForm}
+            onSave={handleSaveAssistant}
+          />
+        )}
+      </>
+    );
+  }
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 목록 뷰 (기본)
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   return (
     <div>
       <Header title="더보기" />
@@ -383,6 +453,7 @@ export default function AcademyMorePage() {
 
         {/* 학원 프로필 */}
         <button
+          type="button"
           onClick={() => isOwner && setShowProfileEdit(true)}
           className="mx-4 mt-4 w-[calc(100%-2rem)] bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 text-left active:scale-[0.97] transition-transform"
         >
@@ -402,10 +473,8 @@ export default function AcademyMorePage() {
           <div className="mx-4 mt-5">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-bold text-gray-700">강사 관리</p>
-              <button
-                onClick={() => setTeacherFormTarget('new')}
-                className="flex items-center gap-1 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full"
-              >
+              <button type="button" onClick={openTeacherAdd}
+                className="flex items-center gap-1 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full">
                 <Plus size={12} />추가
               </button>
             </div>
@@ -418,20 +487,15 @@ export default function AcademyMorePage() {
                 {academyTeachers.map((raw) => {
                   const t = normalizeTeacher(raw);
                   return (
-                    <button
-                      key={t.id}
-                      onClick={() => setViewTeacherId(t.id)}
-                      className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0 text-left active:bg-gray-50"
-                    >
+                    <button type="button" key={t.id} onClick={() => openTeacherDetail(t.id)}
+                      className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0 text-left active:bg-gray-50">
                       <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center text-sm font-bold text-blue-600 flex-shrink-0">
                         {t.name.charAt(0)}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-gray-900 text-sm">{t.name}</p>
                         <p className="text-xs text-gray-400 truncate">
-                          {t.subjects.join(', ')}
-                          {t.subjects.length > 0 ? ' · ' : ''}
-                          {wageLabel(t.wageType)}
+                          {t.subjects.join(', ')}{t.subjects.length > 0 ? ' · ' : ''}{wageLabel(t.wageType)}
                         </p>
                       </div>
                       <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
@@ -448,10 +512,8 @@ export default function AcademyMorePage() {
           <div className="mx-4 mt-5">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-bold text-gray-700">보조강사 관리</p>
-              <button
-                onClick={() => setAssistantFormTarget('new')}
-                className="flex items-center gap-1 text-xs font-semibold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-full"
-              >
+              <button type="button" onClick={openAssistantAdd}
+                className="flex items-center gap-1 text-xs font-semibold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-full">
                 <Plus size={12} />추가
               </button>
             </div>
@@ -463,16 +525,13 @@ export default function AcademyMorePage() {
               <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                 {academyAssistants.map((raw) => {
                   const a = normalizeAssistant(raw);
-                  const tasks = a.taskTypes.map(taskTypeLabel).join(' · ');
+                  const tasks = a.taskTypes.map(taskLabel).join(' · ');
                   const wage = a.wageType === 'monthly'
                     ? `월급 ${(a.monthlySalary || 0).toLocaleString()}원`
                     : `시급 ${(a.hourlyWage || 0).toLocaleString()}원`;
                   return (
-                    <button
-                      key={a.id}
-                      onClick={() => setViewAssistantId(a.id)}
-                      className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0 text-left active:bg-gray-50"
-                    >
+                    <button type="button" key={a.id} onClick={() => openAssistantDetail(a.id)}
+                      className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0 text-left active:bg-gray-50">
                       <div className="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center text-sm font-bold text-purple-600 flex-shrink-0">
                         {a.name.charAt(0)}
                       </div>
@@ -495,20 +554,16 @@ export default function AcademyMorePage() {
           <div className="mx-4 mt-5">
             <p className="text-sm font-bold text-gray-700 mb-3">데이터 관리</p>
             <div className="flex flex-col gap-2">
-              <button
-                onClick={() => generateAcademySampleData()}
-                className="w-full flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3.5 text-left active:bg-blue-100"
-              >
+              <button type="button" onClick={() => generateAcademySampleData()}
+                className="w-full flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3.5 text-left active:bg-blue-100">
                 <RotateCcw size={16} className="text-blue-500" />
                 <div>
                   <p className="text-sm font-bold text-blue-600">샘플 데이터 생성</p>
                   <p className="text-xs text-blue-400 mt-0.5">테스트용 반/학생/클리닉 데이터를 만들어요</p>
                 </div>
               </button>
-              <button
-                onClick={() => setShowResetConfirm(true)}
-                className="w-full flex items-center gap-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-3.5 text-left active:bg-red-100"
-              >
+              <button type="button" onClick={() => setShowResetConfirm(true)}
+                className="w-full flex items-center gap-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-3.5 text-left active:bg-red-100">
                 <Trash2 size={16} className="text-red-500" />
                 <div>
                   <p className="text-sm font-bold text-red-600">학원 데이터 초기화</p>
@@ -521,46 +576,25 @@ export default function AcademyMorePage() {
 
         {/* 역할 변경 */}
         <div className="mx-4 mt-5">
-          <button
-            onClick={logout}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white shadow-sm text-gray-600 text-sm font-medium"
-          >
+          <button type="button" onClick={logout}
+            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white shadow-sm text-gray-600 text-sm font-medium">
             <LogOut size={16} />
             역할 변경
           </button>
         </div>
       </div>
 
-      {/* ── 강사 상세 오버레이 ─────────────────────────────────── */}
-      {viewTeacherId && viewTeacher && (
-        <TeacherDetailPage
-          teacher={viewTeacher}
-          onBack={() => setViewTeacherId(null)}
-          onEdit={() => setTeacherFormTarget(viewTeacherId)}
-          onDelete={handleDeleteTeacher}
-        />
+      {/* 강사 추가 폼 (목록 뷰에서 열림) */}
+      {teacherFormOpen && isNewTeacher && (
+        <TeacherFormModal initialData={null} onClose={closeTeacherForm} onSave={handleSaveTeacher} />
       )}
 
-      {/* 강사를 찾을 수 없는 경우 (삭제되었거나 잘못된 ID) */}
-      {viewTeacherId && !viewTeacher && (
-        <StaffNotFound onBack={() => setViewTeacherId(null)} />
+      {/* 보조강사 추가 폼 (목록 뷰에서 열림) */}
+      {assistantFormOpen && isNewAssistant && (
+        <AssistantFormModal initialData={null} onClose={closeAssistantForm} onSave={handleSaveAssistant} />
       )}
 
-      {/* ── 보조강사 상세 오버레이 ────────────────────────────── */}
-      {viewAssistantId && viewAssistant && (
-        <AssistantDetailPage
-          assistant={viewAssistant}
-          onBack={() => setViewAssistantId(null)}
-          onEdit={() => setAssistantFormTarget(viewAssistantId)}
-          onDelete={handleDeleteAssistant}
-        />
-      )}
-
-      {viewAssistantId && !viewAssistant && (
-        <StaffNotFound onBack={() => setViewAssistantId(null)} />
-      )}
-
-      {/* ── 학원 프로필 수정 ──────────────────────────────────── */}
+      {/* 학원 프로필 수정 */}
       {showProfileEdit && (
         <AcademyProfileModal
           profile={academyProfile}
@@ -569,33 +603,12 @@ export default function AcademyMorePage() {
         />
       )}
 
-      {/* ── 강사 폼 ───────────────────────────────────────────── */}
-      {teacherFormTarget !== null && (
-        <TeacherFormModal
-          initialData={teacherFormInitial}
-          onClose={() => setTeacherFormTarget(null)}
-          onSave={handleSaveTeacher}
-        />
-      )}
-
-      {/* ── 보조강사 폼 ───────────────────────────────────────── */}
-      {assistantFormTarget !== null && (
-        <AssistantFormModal
-          initialData={assistantFormInitial}
-          onClose={() => setAssistantFormTarget(null)}
-          onSave={handleSaveAssistant}
-        />
-      )}
-
-      {/* ── 데이터 초기화 확인 ────────────────────────────────── */}
-      <Modal
-        isOpen={showResetConfirm}
-        onClose={() => setShowResetConfirm(false)}
-        title="학원 데이터 초기화"
+      {/* 데이터 초기화 확인 */}
+      <Modal isOpen={showResetConfirm} onClose={() => setShowResetConfirm(false)} title="학원 데이터 초기화"
         footer={
           <div className="flex gap-2">
-            <button onClick={() => setShowResetConfirm(false)} className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">취소</button>
-            <button onClick={() => { resetAcademyData(); setShowResetConfirm(false); }} className="flex-1 py-3.5 rounded-xl bg-red-500 text-white text-sm font-bold">초기화</button>
+            <button type="button" onClick={() => setShowResetConfirm(false)} className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">취소</button>
+            <button type="button" onClick={() => { resetAcademyData(); setShowResetConfirm(false); }} className="flex-1 py-3.5 rounded-xl bg-red-500 text-white text-sm font-bold">초기화</button>
           </div>
         }
       >
@@ -611,26 +624,26 @@ export default function AcademyMorePage() {
   );
 }
 
-// ─── Empty state for missing staff ──────────────────────────────
-function StaffNotFound({ onBack }) {
+// ─── StaffNotFound ───────────────────────────────────────────────
+function StaffNotFound({ label, onBack }) {
   return (
-    <div className="fixed inset-0 bg-[#F5F6F8] z-20 flex flex-col items-center justify-center px-6 text-center">
+    <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
       <div className="text-5xl mb-4">😕</div>
-      <p className="text-base font-bold text-gray-800 mb-2">프로필 정보를 찾을 수 없어요.</p>
+      <p className="text-base font-bold text-gray-800 mb-2">{label} 정보를 찾을 수 없어요.</p>
       <p className="text-sm text-gray-500 mb-6">삭제되었거나 다른 역할의 데이터일 수 있어요.</p>
-      <button onClick={onBack} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm">
+      <button type="button" onClick={onBack} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm">
         목록으로 돌아가기
       </button>
     </div>
   );
 }
 
-// ─── 학원 프로필 수정 모달 ───────────────────────────────────────
+// ─── 학원 프로필 수정 ────────────────────────────────────────────
 function AcademyProfileModal({ profile, onClose, onSave }) {
   const [form, setForm] = useState({ name: profile?.name || '', address: profile?.address || '', phone: profile?.phone || '' });
   return (
     <Modal isOpen onClose={onClose} title="학원 정보 수정"
-      footer={<button onClick={() => onSave(form)} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">저장</button>}>
+      footer={<button type="button" onClick={() => onSave(form)} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">저장</button>}>
       <div className="flex flex-col gap-4">
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">학원 이름</label>
@@ -651,21 +664,20 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
 
 // ─── 강사 폼 ────────────────────────────────────────────────────
 function TeacherFormModal({ initialData, onClose, onSave }) {
-  const isEdit = !!initialData;
   const [form, setForm] = useState({
-    name: initialData?.name || '',
-    phone: initialData?.phone || '',
-    subjects: initialData?.subjects || [],
-    wageType: initialData?.wageType || 'hourly',
-    hourlyWage: initialData?.hourlyWage ? String(initialData.hourlyWage) : '',
+    name:        initialData?.name || '',
+    phone:       initialData?.phone || '',
+    subjects:    Array.isArray(initialData?.subjects) ? initialData.subjects : [],
+    wageType:    initialData?.wageType || 'hourly',
+    hourlyWage:  initialData?.hourlyWage ? String(initialData.hourlyWage) : '',
     monthlyWage: initialData?.monthlyWage ? String(initialData.monthlyWage) : '',
-    memo: initialData?.memo || '',
-    status: 'active',
+    memo:        initialData?.memo || '',
+    status:      'active',
   });
 
-  const toggleSubject = (s) => setForm((f) => ({
+  const toggle = (key, val) => setForm((f) => ({
     ...f,
-    subjects: f.subjects.includes(s) ? f.subjects.filter((x) => x !== s) : [...f.subjects, s],
+    [key]: f[key].includes(val) ? f[key].filter((x) => x !== val) : [...f[key], val],
   }));
 
   const handleSave = () => {
@@ -674,9 +686,8 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
   };
 
   return (
-    <Modal isOpen onClose={onClose} title={isEdit ? '강사 수정' : '강사 추가'}
-      footer={<button onClick={handleSave} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">저장</button>}
-    >
+    <Modal isOpen onClose={onClose} title={initialData ? '강사 수정' : '강사 추가'}
+      footer={<button type="button" onClick={handleSave} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">저장</button>}>
       <div className="flex flex-col gap-4">
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">이름 *</label>
@@ -690,7 +701,7 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">담당 과목</label>
           <div className="flex flex-wrap gap-2">
             {SUBJECTS.map((s) => (
-              <button key={s} type="button" onClick={() => toggleSubject(s)}
+              <button key={s} type="button" onClick={() => toggle('subjects', s)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${form.subjects.includes(s) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}>
                 {s}
               </button>
@@ -725,26 +736,21 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
 
 // ─── 보조강사 폼 ─────────────────────────────────────────────────
 function AssistantFormModal({ initialData, onClose, onSave }) {
-  const isEdit = !!initialData;
   const [form, setForm] = useState({
-    name: initialData?.name || '',
-    phone: initialData?.phone || '',
-    subjects: initialData?.subjects || [],
-    taskTypes: initialData?.taskTypes || [],
-    wageType: initialData?.wageType || 'hourly',
-    hourlyWage: initialData?.hourlyWage ? String(initialData.hourlyWage) : '',
+    name:          initialData?.name || '',
+    phone:         initialData?.phone || '',
+    subjects:      Array.isArray(initialData?.subjects)  ? initialData.subjects  : [],
+    taskTypes:     Array.isArray(initialData?.taskTypes) ? initialData.taskTypes : [],
+    wageType:      initialData?.wageType || 'hourly',
+    hourlyWage:    initialData?.hourlyWage    ? String(initialData.hourlyWage)    : '',
     monthlySalary: initialData?.monthlySalary ? String(initialData.monthlySalary) : '',
-    memo: initialData?.memo || '',
-    status: 'active',
+    memo:          initialData?.memo || '',
+    status:        'active',
   });
 
-  const toggleSubject = (s) => setForm((f) => ({
+  const toggle = (key, val) => setForm((f) => ({
     ...f,
-    subjects: f.subjects.includes(s) ? f.subjects.filter((x) => x !== s) : [...f.subjects, s],
-  }));
-  const toggleTaskType = (key) => setForm((f) => ({
-    ...f,
-    taskTypes: f.taskTypes.includes(key) ? f.taskTypes.filter((x) => x !== key) : [...f.taskTypes, key],
+    [key]: f[key].includes(val) ? f[key].filter((x) => x !== val) : [...f[key], val],
   }));
 
   const handleSave = () => {
@@ -753,9 +759,8 @@ function AssistantFormModal({ initialData, onClose, onSave }) {
   };
 
   return (
-    <Modal isOpen onClose={onClose} title={isEdit ? '보조강사 수정' : '보조강사 추가'}
-      footer={<button onClick={handleSave} className="w-full bg-purple-600 text-white font-bold py-3.5 rounded-xl">저장</button>}
-    >
+    <Modal isOpen onClose={onClose} title={initialData ? '보조강사 수정' : '보조강사 추가'}
+      footer={<button type="button" onClick={handleSave} className="w-full bg-purple-600 text-white font-bold py-3.5 rounded-xl">저장</button>}>
       <div className="flex flex-col gap-4">
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">이름 *</label>
@@ -769,7 +774,7 @@ function AssistantFormModal({ initialData, onClose, onSave }) {
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">담당 과목</label>
           <div className="flex flex-wrap gap-2">
             {SUBJECTS.map((s) => (
-              <button key={s} type="button" onClick={() => toggleSubject(s)}
+              <button key={s} type="button" onClick={() => toggle('subjects', s)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${form.subjects.includes(s) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200'}`}>
                 {s}
               </button>
@@ -780,7 +785,7 @@ function AssistantFormModal({ initialData, onClose, onSave }) {
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">담당 업무</label>
           <div className="flex flex-wrap gap-2">
             {TASK_TYPES.map(({ key, label }) => (
-              <button key={key} type="button" onClick={() => toggleTaskType(key)}
+              <button key={key} type="button" onClick={() => toggle('taskTypes', key)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold border ${form.taskTypes.includes(key) ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200'}`}>
                 {label}
               </button>
