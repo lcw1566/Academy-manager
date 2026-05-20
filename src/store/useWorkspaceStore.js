@@ -19,8 +19,11 @@ import { isSupabaseConfigured } from '../lib/supabase';
 import {
   getProfile,
   upsertProfile,
+  updateMyProfileAccountType,
   getMyAcademyMemberships,
   createAcademyAsOwner,
+  listMyPendingInvitations,
+  acceptAcademyInvitation,
 } from '../services/supabase/workspaceApi';
 import {
   listAcademyStudents,
@@ -89,7 +92,33 @@ const initialState = {
   isServerPayrollsLoading: false,
   serverPayrollsError: null,
   serverPayrollsLoadedAt: null,
+
+  // 받은 학원 초대 (강사/보조강사) — pending 목록만 보관
+  myPendingInvitations: [],
+  isMyPendingInvitationsLoading: false,
+  myPendingInvitationsError: null,
+  myPendingInvitationsLoadedAt: null,
 };
+
+const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type';
+
+function readPendingAccountType() {
+  if (typeof sessionStorage === 'undefined') return null;
+  try {
+    return sessionStorage.getItem(PENDING_ACCOUNT_TYPE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingAccountType() {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.removeItem(PENDING_ACCOUNT_TYPE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 const useWorkspaceStore = create(
   persist(
@@ -104,22 +133,65 @@ const useWorkspaceStore = create(
           currentAcademyId: null,
         }),
 
-      // 프로필 동기화 — 없으면 email 을 기본 display_name 으로 자동 생성
+      // 프로필 동기화 — 없으면 email 을 기본 display_name 으로 자동 생성.
+      // sessionStorage 의 pending-account-type 이 있으면 프로필에 반영하고 삭제.
+      // (회원가입 시 이메일 인증이 필요해 session 이 없는 경우 account_type 을
+      //  바로 저장하지 못하는 케이스를 위해 sessionStorage 에 임시 보관해둠.)
       syncProfile: async () => {
         if (!isSupabaseConfigured) return null;
         try {
+          const authUser = useAuthStore.getState().user;
+          const pendingAccountType = readPendingAccountType();
+
           let profile = await getProfile();
           if (!profile) {
-            const authUser = useAuthStore.getState().user;
             profile = await upsertProfile({
               displayName: authUser?.email ?? null,
+              accountType: pendingAccountType || undefined,
+              defaultRole:
+                pendingAccountType === 'tutor'
+                  ? 'tutor'
+                  : pendingAccountType === 'owner'
+                  ? 'owner'
+                  : pendingAccountType === 'staff'
+                  ? 'teacher'
+                  : undefined,
             });
+            if (pendingAccountType) clearPendingAccountType();
+          } else if (
+            pendingAccountType &&
+            (!profile.account_type || profile.account_type === 'tutor')
+          ) {
+            // 기존 profile 에 account_type 이 비어있거나 기본값(tutor) 이면 덮어쓴다.
+            // 명시적으로 다른 값이 들어가 있는 경우는 보존.
+            try {
+              profile = await updateMyProfileAccountType({
+                accountType: pendingAccountType,
+              });
+            } catch (err) {
+              // 계정 유형 반영 실패는 치명적이지 않음 — 사용자가 더보기에서 다시 설정 가능
+              console.warn('[syncProfile] account_type 반영 실패', err);
+            }
+            clearPendingAccountType();
           }
           set({ profile });
           return profile;
         } catch (err) {
           set({ workspaceError: err?.message ?? '프로필 동기화에 실패했어요.' });
           return null;
+        }
+      },
+
+      // 프로필 account_type 수동 갱신 (더보기 UI 등에서 사용)
+      setMyAccountType: async (accountType) => {
+        if (!isSupabaseConfigured) return null;
+        try {
+          const profile = await updateMyProfileAccountType({ accountType });
+          set({ profile });
+          return profile;
+        } catch (err) {
+          set({ workspaceError: err?.message ?? '계정 유형 저장에 실패했어요.' });
+          throw err;
         }
       },
 
@@ -435,6 +507,55 @@ const useWorkspaceStore = create(
         }
       },
 
+      // 받은 학원 초대 목록 (pending 만) 조회
+      loadMyPendingInvitations: async () => {
+        if (!isSupabaseConfigured) {
+          set({ myPendingInvitations: [] });
+          return [];
+        }
+        set({ isMyPendingInvitationsLoading: true, myPendingInvitationsError: null });
+        try {
+          const list = await listMyPendingInvitations();
+          set({
+            myPendingInvitations: list,
+            myPendingInvitationsLoadedAt: new Date().toISOString(),
+          });
+          return list;
+        } catch (err) {
+          set({
+            myPendingInvitationsError: err?.message ?? '받은 초대를 불러오지 못했어요.',
+          });
+          return [];
+        } finally {
+          set({ isMyPendingInvitationsLoading: false });
+        }
+      },
+
+      // 초대 수락 → academy_members 생성 → 멤버십 reload → 새 학원을 current 로 지정
+      // 도메인 서버 데이터도 새로 fetch.
+      acceptInvitation: async (invitationId) => {
+        if (!isSupabaseConfigured) {
+          throw new Error('Supabase가 설정되지 않았어요.');
+        }
+        const result = await acceptAcademyInvitation(invitationId);
+        const memberships = await getMyAcademyMemberships();
+        set({ memberships, currentAcademyId: result.academyId });
+        // 받은 초대 목록 갱신 (방금 수락한 건은 pending 에서 빠짐)
+        await get().loadMyPendingInvitations();
+        // 새 학원의 도메인 데이터 fetch (정원장 케이스와 동일)
+        await Promise.all([
+          get().loadServerStudents(),
+          get().loadServerClassGroups(),
+          get().loadServerClassSessions(),
+          get().loadServerLessonRecords(),
+          get().loadServerAttendanceRecords(),
+          get().loadServerClinicRecords(),
+          get().loadServerPayments(),
+          get().loadServerPayrolls(),
+        ]);
+        return result;
+      },
+
       // 로그인 직후 호출: 모든 서버 데이터 일괄 동기화
       initializeWorkspace: async () => {
         if (!isSupabaseConfigured) return;
@@ -451,6 +572,7 @@ const useWorkspaceStore = create(
             get().loadServerClinicRecords(),
             get().loadServerPayments(),
             get().loadServerPayrolls(),
+            get().loadMyPendingInvitations(),
           ]);
           set({ isWorkspaceReady: true });
         } finally {

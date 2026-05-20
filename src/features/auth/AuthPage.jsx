@@ -1,12 +1,57 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
+import { X, GraduationCap, Building2, Users } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useAcademyStore from '../../store/useAcademyStore';
+import useWorkspaceStore from '../../store/useWorkspaceStore';
+import { updateMyProfileAccountType } from '../../services/supabase/workspaceApi';
+
+const ACCOUNT_TYPES = [
+  {
+    id: 'tutor',
+    title: '과외 선생님',
+    desc: '개인 과외 학생, 수업, 수납을 관리해요.',
+    Icon: GraduationCap,
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+    borderActive: 'border-blue-500 bg-blue-50',
+  },
+  {
+    id: 'owner',
+    title: '학원 원장',
+    desc: '학원 워크스페이스를 만들고 강사와 학생을 함께 관리해요.',
+    Icon: Building2,
+    iconBg: 'bg-emerald-50',
+    iconColor: 'text-emerald-600',
+    borderActive: 'border-emerald-500 bg-emerald-50',
+  },
+  {
+    id: 'staff',
+    title: '강사 / 보조강사',
+    desc: '학원 초대를 수락하면 담당 수업과 클리닉을 관리할 수 있어요.',
+    Icon: Users,
+    iconBg: 'bg-purple-50',
+    iconColor: 'text-purple-600',
+    borderActive: 'border-purple-500 bg-purple-50',
+  },
+];
+
+const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type';
+
+function setPendingAccountType(value) {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    if (value) sessionStorage.setItem(PENDING_ACCOUNT_TYPE_KEY, value);
+    else sessionStorage.removeItem(PENDING_ACCOUNT_TYPE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 export default function AuthPage({ onAuthSuccess, onCancel }) {
   const [mode, setMode] = useState('signIn'); // 'signIn' | 'signUp'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [accountType, setAccountType] = useState(null); // 'tutor' | 'owner' | 'staff' | null
   const [localMessage, setLocalMessage] = useState(null);
 
   const signIn = useAuthStore((s) => s.signIn);
@@ -16,6 +61,7 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
   const isSupabaseReady = useAuthStore((s) => s.isSupabaseReady);
   const clearAuthError = useAuthStore((s) => s.clearAuthError);
   const showToast = useAcademyStore((s) => s.showToast);
+  const syncProfile = useWorkspaceStore((s) => s.syncProfile);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27,12 +73,20 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
       return;
     }
 
+    if (mode === 'signUp' && !accountType) {
+      setLocalMessage({ type: 'error', text: '계정 유형을 선택해주세요.' });
+      return;
+    }
+
     try {
       if (mode === 'signIn') {
         await signIn({ email, password });
         showToast('로그인되었어요.');
         onAuthSuccess?.();
       } else {
+        // 회원가입 — 선택한 accountType 을 sessionStorage 에 미리 저장.
+        // 이메일 인증이 필요한 경우 syncProfile 이 다음 로그인에서 반영함.
+        setPendingAccountType(accountType);
         const data = await signUp({ email, password });
         if (!data?.session) {
           // 이메일 인증 필요 — 패널은 유지하고 안내 표시
@@ -41,7 +95,16 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
             text: '인증 메일이 발송되었어요. 이메일 인증 후 로그인해주세요.',
           });
         } else {
-          // 즉시 로그인됨 (이메일 confirm off 상태)
+          // 즉시 로그인됨 — profile 에 account_type 즉시 반영
+          try {
+            await updateMyProfileAccountType({ accountType });
+            setPendingAccountType(null);
+            // store 의 profile mirror 도 갱신
+            await syncProfile();
+          } catch (err) {
+            // account_type 저장이 실패해도 회원가입 자체는 성공이므로 토스트만
+            console.warn('[signUp] account_type 저장 실패', err);
+          }
           showToast('회원가입이 완료되었어요.');
           onAuthSuccess?.();
         }
@@ -70,8 +133,21 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
     );
   }
 
+  const switchMode = (next) => {
+    setMode(next);
+    setLocalMessage(null);
+    clearAuthError();
+    if (next === 'signIn') {
+      // 로그인 모드로 돌아오면 선택 상태 초기화 (재가입 시 다시 선택하도록)
+      setAccountType(null);
+    }
+  };
+
+  const submitDisabled =
+    isAuthLoading || (mode === 'signUp' && !accountType);
+
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center px-6 bg-[#F5F6F8]">
+    <div className="relative min-h-screen flex flex-col items-center justify-center px-6 py-10 bg-[#F5F6F8]">
       <CloseButton onClick={onCancel} />
 
       <div className="w-full max-w-sm">
@@ -88,6 +164,45 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
           onSubmit={handleSubmit}
           className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4"
         >
+          {/* 회원가입 모드에서만 계정 유형 선택 */}
+          {mode === 'signUp' && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-2">
+                계정 유형
+              </label>
+              <div className="flex flex-col gap-2">
+                {ACCOUNT_TYPES.map(({ id, title, desc, Icon, iconBg, iconColor, borderActive }) => {
+                  const active = accountType === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setAccountType(id)}
+                      disabled={isAuthLoading}
+                      className={`w-full flex items-start gap-3 rounded-2xl p-3 text-left border-2 transition-colors ${
+                        active
+                          ? borderActive
+                          : 'border-gray-200 bg-white active:bg-gray-50'
+                      }`}
+                    >
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+                        <Icon size={16} className={iconColor} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-bold ${active ? 'text-gray-900' : 'text-gray-800'}`}>
+                          {title}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
+                          {desc}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">
               이메일
@@ -132,7 +247,7 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
 
           <button
             type="submit"
-            disabled={isAuthLoading}
+            disabled={submitDisabled}
             className="w-full py-3 rounded-xl bg-blue-600 text-white text-sm font-bold disabled:opacity-60"
           >
             {isAuthLoading
@@ -148,11 +263,7 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
                 계정이 없으면{' '}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('signUp');
-                    setLocalMessage(null);
-                    clearAuthError();
-                  }}
+                  onClick={() => switchMode('signUp')}
                   className="text-blue-600 font-semibold"
                 >
                   회원가입
@@ -163,11 +274,7 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
                 이미 계정이 있으면{' '}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('signIn');
-                    setLocalMessage(null);
-                    clearAuthError();
-                  }}
+                  onClick={() => switchMode('signIn')}
                   className="text-blue-600 font-semibold"
                 >
                   로그인

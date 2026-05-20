@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { LogOut, Plus, Trash2, AlertTriangle, ChevronRight, RotateCcw, ChevronLeft, Pencil } from 'lucide-react';
+import { LogOut, Plus, Trash2, AlertTriangle, ChevronRight, RotateCcw, ChevronLeft, Pencil, ClipboardCheck } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
@@ -7,6 +7,8 @@ import { roleMap, formatPhoneNumber } from '../../../utils/format';
 import { WAGE_TYPE_LABELS } from '../../../constants/labels';
 import AuthSection from '../../auth/AuthSection';
 import WorkspaceSection from '../../workspace/WorkspaceSection';
+import PilotChecklistModal from './PilotChecklistModal';
+import StaffInviteWidget from './StaffInviteWidget';
 
 // ─── Constants ──────────────────────────────────────────────────
 const WAGE_TYPES = [
@@ -91,6 +93,30 @@ function TeacherDetailPage({ teacher, onBack, onEdit, onDelete }) {
             <div className="flex items-center justify-between py-2.5 border-t border-gray-50">
               <span className="text-sm text-gray-500">연락처</span>
               <span className="text-sm font-medium text-gray-800">{teacher.phone}</span>
+            </div>
+          ) : null}
+          {teacher.email ? (
+            <div className="flex items-center justify-between py-2.5 border-t border-gray-50">
+              <span className="text-sm text-gray-500">계정 이메일</span>
+              <span className="text-sm font-medium text-gray-800 truncate ml-2">{teacher.email}</span>
+            </div>
+          ) : null}
+          {teacher.inviteStatus ? (
+            <div className="flex items-center justify-between py-2.5 border-t border-gray-50">
+              <span className="text-sm text-gray-500">초대 상태</span>
+              <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                teacher.inviteStatus === 'accepted'
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : teacher.inviteStatus === 'pending'
+                  ? 'bg-amber-50 text-amber-700'
+                  : 'bg-gray-100 text-gray-500'
+              }`}>
+                {teacher.inviteStatus === 'accepted'
+                  ? '수락됨'
+                  : teacher.inviteStatus === 'pending'
+                  ? '대기 중'
+                  : '취소됨'}
+              </span>
             </div>
           ) : null}
         </div>
@@ -211,6 +237,30 @@ function AssistantDetailPage({ assistant, onBack, onEdit, onDelete }) {
               <span className="text-sm font-medium text-gray-800">{assistant.phone}</span>
             </div>
           ) : null}
+          {assistant.email ? (
+            <div className="flex items-center justify-between py-2.5 border-t border-gray-50">
+              <span className="text-sm text-gray-500">계정 이메일</span>
+              <span className="text-sm font-medium text-gray-800 truncate ml-2">{assistant.email}</span>
+            </div>
+          ) : null}
+          {assistant.inviteStatus ? (
+            <div className="flex items-center justify-between py-2.5 border-t border-gray-50">
+              <span className="text-sm text-gray-500">초대 상태</span>
+              <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                assistant.inviteStatus === 'accepted'
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : assistant.inviteStatus === 'pending'
+                  ? 'bg-amber-50 text-amber-700'
+                  : 'bg-gray-100 text-gray-500'
+              }`}>
+                {assistant.inviteStatus === 'accepted'
+                  ? '수락됨'
+                  : assistant.inviteStatus === 'pending'
+                  ? '대기 중'
+                  : '취소됨'}
+              </span>
+            </div>
+          ) : null}
         </div>
 
         {/* 담당 과목 */}
@@ -297,6 +347,7 @@ export default function AcademyMorePage() {
   const [isNewAssistant, setIsNewAssistant]     = useState(false);
   const [showProfileEdit, setShowProfileEdit]   = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showPilotChecklist, setShowPilotChecklist] = useState(false);
 
   const isOwner = role === 'owner';
 
@@ -443,6 +494,26 @@ export default function AcademyMorePage() {
         {/* 학원 워크스페이스 */}
         <WorkspaceSection />
 
+        {/* 파일럿 테스트 체크리스트 — 원장 전용. 실제 학원 도입 전 검증 진입점 */}
+        {isOwner && (
+          <div className="mx-4 mt-5">
+            <button
+              type="button"
+              onClick={() => setShowPilotChecklist(true)}
+              className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-2xl px-4 py-3.5 text-left active:bg-gray-50 shadow-sm"
+            >
+              <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                <ClipboardCheck size={16} className="text-blue-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900">파일럿 테스트 체크리스트</p>
+                <p className="text-xs text-gray-400 mt-0.5">실제 학원 도입 전 8가지 핵심 항목 점검</p>
+              </div>
+              <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
+            </button>
+          </div>
+        )}
+
         {/* 강사 관리 */}
         {isOwner && (
           <div className="mx-4 mt-5">
@@ -578,6 +649,12 @@ export default function AcademyMorePage() {
         />
       )}
 
+      {/* 파일럿 테스트 체크리스트 모달 */}
+      <PilotChecklistModal
+        isOpen={showPilotChecklist}
+        onClose={() => setShowPilotChecklist(false)}
+      />
+
       {/* 데이터 초기화 확인 */}
       <Modal isOpen={showResetConfirm} onClose={() => setShowResetConfirm(false)} title="학원 데이터 초기화"
         footer={
@@ -652,12 +729,14 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
   const [form, setForm] = useState({
     name:          initialData?.name || '',
     phone:         initialData?.phone || '',
+    email:         initialData?.email || '',
     subjects:      Array.isArray(initialData?.subjects) ? initialData.subjects : [],
     wageType:      initialData?.wageType || 'hourly',
     hourlyWage:    initialData?.hourlyWage ? String(initialData.hourlyWage) : '',
     monthlySalary: initialData?.monthlySalary ? String(initialData.monthlySalary) : (initialData?.monthlyWage ? String(initialData.monthlyWage) : ''),
     memo:          initialData?.memo || '',
     status:        'active',
+    inviteStatus:  initialData?.inviteStatus || null,
   });
 
   const toggle = (key, val) => setForm((f) => ({
@@ -667,7 +746,12 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
 
   const handleSave = () => {
     if (!form.name.trim()) return alert('이름을 입력해주세요.');
-    onSave({ ...form, hourlyWage: Number(form.hourlyWage) || 0, monthlySalary: Number(form.monthlySalary) || 0 });
+    onSave({
+      ...form,
+      email: (form.email || '').trim().toLowerCase() || null,
+      hourlyWage: Number(form.hourlyWage) || 0,
+      monthlySalary: Number(form.monthlySalary) || 0,
+    });
   };
 
   return (
@@ -714,6 +798,17 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
           <textarea value={form.memo} onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))} rows={2} placeholder="특이사항 등" className="input resize-none" />
         </div>
+
+        {/* 계정 연결 / 초대 — Supabase 로그인 + 학원 선택 상태에서만 실제 동작 */}
+        <div className="border-t border-gray-100 pt-4">
+          <p className="text-xs font-bold text-gray-500 mb-3">서버 계정 연결</p>
+          <StaffInviteWidget
+            role="teacher"
+            initialEmail={form.email}
+            onEmailChange={(value) => setForm((f) => ({ ...f, email: value }))}
+            onInviteSent={({ status }) => setForm((f) => ({ ...f, inviteStatus: status }))}
+          />
+        </div>
       </div>
     </Modal>
   );
@@ -724,12 +819,14 @@ function AssistantFormModal({ initialData, onClose, onSave }) {
   const [form, setForm] = useState({
     name:          initialData?.name || '',
     phone:         initialData?.phone || '',
+    email:         initialData?.email || '',
     subjects:      Array.isArray(initialData?.subjects)  ? initialData.subjects  : [],
     wageType:      initialData?.wageType || 'hourly',
     hourlyWage:    initialData?.hourlyWage    ? String(initialData.hourlyWage)    : '',
     monthlySalary: initialData?.monthlySalary ? String(initialData.monthlySalary) : '',
     memo:          initialData?.memo || '',
     status:        'active',
+    inviteStatus:  initialData?.inviteStatus || null,
   });
 
   const toggle = (key, val) => setForm((f) => ({
@@ -739,7 +836,12 @@ function AssistantFormModal({ initialData, onClose, onSave }) {
 
   const handleSave = () => {
     if (!form.name.trim()) return alert('이름을 입력해주세요.');
-    onSave({ ...form, hourlyWage: Number(form.hourlyWage) || 0, monthlySalary: Number(form.monthlySalary) || 0 });
+    onSave({
+      ...form,
+      email: (form.email || '').trim().toLowerCase() || null,
+      hourlyWage: Number(form.hourlyWage) || 0,
+      monthlySalary: Number(form.monthlySalary) || 0,
+    });
   };
 
   return (
@@ -785,6 +887,17 @@ function AssistantFormModal({ initialData, onClose, onSave }) {
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
           <textarea value={form.memo} onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))} rows={2} placeholder="특이사항 등" className="input resize-none" />
+        </div>
+
+        {/* 계정 연결 / 초대 — Supabase 로그인 + 학원 선택 상태에서만 실제 동작 */}
+        <div className="border-t border-gray-100 pt-4">
+          <p className="text-xs font-bold text-gray-500 mb-3">서버 계정 연결</p>
+          <StaffInviteWidget
+            role="assistant"
+            initialEmail={form.email}
+            onEmailChange={(value) => setForm((f) => ({ ...f, email: value }))}
+            onInviteSent={({ status }) => setForm((f) => ({ ...f, inviteStatus: status }))}
+          />
         </div>
       </div>
     </Modal>

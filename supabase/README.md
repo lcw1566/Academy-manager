@@ -10,7 +10,8 @@ supabase/
 ├── README.md                       (이 파일)
 └── sql/
     ├── 001_workspace_schema.sql    (계정 / 학원 워크스페이스 스키마)
-    └── 002_domain_schema.sql       (학생·수업·정산·클리닉 등 도메인 스키마)
+    ├── 002_domain_schema.sql       (학생·수업·정산·클리닉 등 도메인 스키마)
+    └── 003_account_type_and_invitations.sql  (계정 유형 + 학원 초대)
 ```
 
 ## 실행 순서 요약
@@ -19,6 +20,7 @@ supabase/
 | --- | --- | --- |
 | 1 | `001_workspace_schema.sql` | profiles / academies / academy_members + helper functions |
 | 2 | `002_domain_schema.sql` | 도메인 테이블 10개 + RLS + GRANT |
+| 3 | `003_account_type_and_invitations.sql` | profiles.account_type 컬럼 + academy_invitations 테이블 + RLS |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -98,7 +100,38 @@ RLS 가 row 단위로 차단하므로, GRANT 가 있어도 안전합니다.
 
 ---
 
-## STEP 3 — 앱 동작 확인
+## STEP 3 — `003_account_type_and_invitations.sql` 실행
+
+1. SQL Editor 에서 **New query** 새로 클릭
+2. `supabase/sql/003_account_type_and_invitations.sql` 의 내용 전체를 복사하여 붙여넣기
+3. **Run**
+4. `Success. No rows returned` 확인
+
+### 결과 확인
+
+- **Table Editor** 에서 `academy_invitations` 테이블이 보이고 **RLS enabled** 배지 확인
+- **Table Editor → profiles** 컬럼 목록에 `account_type` 컬럼 추가 확인
+- **academy_invitations 의 Auth policies** 에 다음 3개 정책 확인:
+  - `academy_invitations select owner or invitee`
+  - `academy_invitations insert by owner`
+  - `academy_invitations update by owner or invitee`
+
+### 정책 요약
+
+| 동작 | 허용 대상 |
+| --- | --- |
+| select | 해당 학원의 owner **또는** 본인 이메일과 일치하는 초대를 받은 사용자 |
+| insert | 해당 학원의 owner (invited_by 가 본인) |
+| update | 해당 학원의 owner 또는 본인 이메일과 일치하는 invitee |
+| delete | 정책 없음 → 차단. 취소는 `status='canceled'` 로 update 처리 |
+
+> `auth.email()` 헬퍼 (Supabase 가 JWT 에서 email 을 꺼내주는 함수) 를 사용해
+> 본인 이메일과의 매칭을 RLS 안에서 직접 처리합니다. 이메일은 lowercase 로
+> 비교하므로 앱에서도 lowercase trim 후 저장해야 합니다.
+
+---
+
+## STEP 4 — 앱 동작 확인
 
 1. 앱은 별도 변경 없이 계속 정상 동작해야 합니다 (기존 localStorage 모드 유지).
 2. `npm run dev` 로 띄운 뒤 더보기 탭에서:

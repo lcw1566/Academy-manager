@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   Building2, Check, ChevronRight, ChevronDown, ChevronUp, Plus, Loader2, X, RefreshCw, Download,
+  Mail, GraduationCap, Users,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -8,15 +9,46 @@ import useAcademyStore from '../../store/useAcademyStore';
 import { fetchAcademySnapshot } from '../../services/supabase/hydrateApi';
 import { roleMap } from '../../utils/format';
 
+const ACCOUNT_TYPE_HINT = {
+  tutor: {
+    title: '과외 선생님 계정',
+    desc: '개인 과외 모드로 사용할 수 있어요. 학원에 참여하지 않아도 돼요.',
+    Icon: GraduationCap,
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
+  },
+  owner: {
+    title: '학원 원장 계정',
+    desc: '학원 워크스페이스를 만들고 강사를 초대할 수 있어요.',
+    Icon: Building2,
+    iconBg: 'bg-emerald-50',
+    iconColor: 'text-emerald-600',
+  },
+  staff: {
+    title: '강사 / 보조강사 계정',
+    desc: '학원 초대를 수락하면 수업과 클리닉을 확인할 수 있어요.',
+    Icon: Users,
+    iconBg: 'bg-purple-50',
+    iconColor: 'text-purple-600',
+  },
+};
+
+const INVITE_ROLE_LABEL = { teacher: '강사', assistant: '보조강사' };
+
 export default function WorkspaceSection() {
   const isSupabaseReady = useAuthStore((s) => s.isSupabaseReady);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const profile = useWorkspaceStore((s) => s.profile);
   const memberships = useWorkspaceStore((s) => s.memberships);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const setCurrentAcademyId = useWorkspaceStore((s) => s.setCurrentAcademyId);
   const createAcademy = useWorkspaceStore((s) => s.createAcademy);
   const isWorkspaceLoading = useWorkspaceStore((s) => s.isWorkspaceLoading);
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
+  const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations);
+  const isMyPendingInvitationsLoading = useWorkspaceStore((s) => s.isMyPendingInvitationsLoading);
+  const loadMyPendingInvitations = useWorkspaceStore((s) => s.loadMyPendingInvitations);
+  const acceptInvitation = useWorkspaceStore((s) => s.acceptInvitation);
   const serverStudents = useWorkspaceStore((s) => s.serverStudents);
   const isServerStudentsLoading = useWorkspaceStore((s) => s.isServerStudentsLoading);
   const serverStudentsError = useWorkspaceStore((s) => s.serverStudentsError);
@@ -56,6 +88,21 @@ export default function WorkspaceSection() {
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [hydrating, setHydrating] = useState(false);
+  const [acceptingId, setAcceptingId] = useState(null);
+
+  const handleAcceptInvitation = async (invitationId) => {
+    if (acceptingId) return;
+    setAcceptingId(invitationId);
+    try {
+      const result = await acceptInvitation(invitationId);
+      const academyName = result?.academy?.name ?? '학원';
+      showToast(`${academyName}에 참여했어요.`);
+    } catch (err) {
+      showToast(err?.message ?? '초대 수락에 실패했어요.', 'error');
+    } finally {
+      setAcceptingId(null);
+    }
+  };
 
   const handleHydrate = async () => {
     if (hydrating) return;
@@ -129,11 +176,34 @@ export default function WorkspaceSection() {
     setName('');
   };
 
+  const accountType = profile?.account_type || 'tutor';
+  const isStaffAccount = accountType === 'staff';
+  const hasMemberships = memberships.length > 0;
+  const hasPendingInvitations = myPendingInvitations.length > 0;
+
   return (
     <div className="mx-4 mt-5">
       <p className="text-sm font-bold text-gray-700 mb-3">학원 워크스페이스</p>
 
+      {/* 계정 유형 안내 — profile 이 동기화되면 표시 */}
+      {profile && ACCOUNT_TYPE_HINT[accountType] && (
+        <AccountTypeHint type={accountType} />
+      )}
+
+      {/* 받은 학원 초대 — 강사/보조강사 또는 누구든 pending 이 있으면 표시 */}
+      {(isStaffAccount || hasPendingInvitations) && (
+        <InvitationsCard
+          invitations={myPendingInvitations}
+          loading={isMyPendingInvitationsLoading}
+          acceptingId={acceptingId}
+          onAccept={handleAcceptInvitation}
+          onRefresh={loadMyPendingInvitations}
+        />
+      )}
+
       {memberships.length === 0 ? (
+        // staff 계정이고 pending 초대가 표시될 예정이면 EmptyCard 의 학원 만들기 강조는 줄임.
+        // (account_type === 'staff' 의 경우 학원 만들기 버튼을 약하게 노출)
         <EmptyCard
           loading={!isWorkspaceReady && isWorkspaceLoading}
           creating={creating}
@@ -143,6 +213,7 @@ export default function WorkspaceSection() {
           onStart={() => setCreating(true)}
           onSubmit={handleSubmit}
           onCancel={handleCancel}
+          deemphasized={isStaffAccount}
         />
       ) : (
         <div className="flex flex-col gap-2">
@@ -198,13 +269,25 @@ export default function WorkspaceSection() {
               onCancel={handleCancel}
             />
           ) : (
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="w-full flex items-center justify-center gap-1.5 py-3 rounded-2xl bg-white shadow-sm text-sm font-semibold text-blue-600 active:bg-blue-50"
-            >
-              <Plus size={14} />새 학원 만들기
-            </button>
+            // staff 계정은 학원을 직접 만들지 않고 초대 수락으로 합류하는 흐름.
+            // 버튼을 약하게(작은 텍스트 링크)만 노출.
+            isStaffAccount ? (
+              <button
+                type="button"
+                onClick={() => setCreating(true)}
+                className="w-full text-center py-2 text-xs text-gray-400 hover:text-blue-600"
+              >
+                직접 학원 만들기
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setCreating(true)}
+                className="w-full flex items-center justify-center gap-1.5 py-3 rounded-2xl bg-white shadow-sm text-sm font-semibold text-blue-600 active:bg-blue-50"
+              >
+                <Plus size={14} />새 학원 만들기
+              </button>
+            )
           )}
 
           {currentAcademyId && (
@@ -350,8 +433,10 @@ function StatusLine({ label, unit, count, loading, error }) {
 }
 
 function EmptyCard({
-  loading, creating, submitting, name, onNameChange, onStart, onSubmit, onCancel,
+  loading, creating, submitting, name, onNameChange, onStart, onSubmit, onCancel, deemphasized,
 }) {
+  // staff 계정은 학원을 직접 만들기보다 초대 수락 흐름을 권장하므로
+  // 버튼/문구를 약하게 노출한다.
   return (
     <div className="bg-white rounded-2xl p-4 shadow-sm">
       <div className="flex items-center gap-3 mb-3">
@@ -360,10 +445,12 @@ function EmptyCard({
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-gray-900">
-            연결된 학원이 없어요
+            {deemphasized ? '아직 참여한 학원이 없어요' : '연결된 학원이 없어요'}
           </p>
           <p className="text-xs text-gray-500 mt-0.5">
-            학원을 만들면 PC와 핸드폰에서 같은 데이터를 사용할 수 있어요.
+            {deemphasized
+              ? '원장이 보낸 초대를 수락하면 학원에 합류할 수 있어요.'
+              : '학원을 만들면 PC와 핸드폰에서 같은 데이터를 사용할 수 있어요.'}
           </p>
         </div>
       </div>
@@ -382,6 +469,14 @@ function EmptyCard({
           onCancel={onCancel}
           variant="empty"
         />
+      ) : deemphasized ? (
+        <button
+          type="button"
+          onClick={onStart}
+          className="w-full text-center py-2 text-xs text-gray-400 hover:text-blue-600"
+        >
+          직접 학원 만들기
+        </button>
       ) : (
         <button
           type="button"
@@ -390,6 +485,105 @@ function EmptyCard({
         >
           <Plus size={14} />학원 만들기
         </button>
+      )}
+    </div>
+  );
+}
+
+function AccountTypeHint({ type }) {
+  const config = ACCOUNT_TYPE_HINT[type];
+  if (!config) return null;
+  const { title, desc, Icon, iconBg, iconColor } = config;
+  return (
+    <div className="bg-white rounded-2xl p-3 shadow-sm flex items-start gap-3 mb-2">
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${iconBg}`}>
+        <Icon size={16} className={iconColor} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-gray-900">{title}</p>
+        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{desc}</p>
+      </div>
+    </div>
+  );
+}
+
+function InvitationsCard({ invitations, loading, acceptingId, onAccept, onRefresh }) {
+  if (loading && (!invitations || invitations.length === 0)) {
+    return (
+      <div className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-2 mb-2 text-sm text-gray-500">
+        <Loader2 size={14} className="animate-spin" />
+        받은 초대 확인 중…
+      </div>
+    );
+  }
+  return (
+    <div className="bg-white rounded-2xl p-4 shadow-sm mb-2">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Mail size={14} className="text-blue-500" />
+          <p className="text-sm font-bold text-gray-900">받은 학원 초대</p>
+          {invitations.length > 0 && (
+            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+              {invitations.length}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="text-xs text-blue-600 font-semibold flex items-center gap-1 disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+          새로고침
+        </button>
+      </div>
+      {invitations.length === 0 ? (
+        <p className="text-xs text-gray-400 text-center py-3">
+          받은 초대가 없어요.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {invitations.map((inv) => {
+            const accepting = acceptingId === inv.id;
+            const academyName = inv.academy?.name ?? '(이름 없는 학원)';
+            const roleLabel = INVITE_ROLE_LABEL[inv.role] ?? inv.role;
+            return (
+              <div
+                key={inv.id}
+                className="border border-gray-100 rounded-xl p-3 flex items-center gap-3"
+              >
+                <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                  <Building2 size={16} className="text-blue-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">
+                    {academyName}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">{roleLabel} 역할</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onAccept(inv.id)}
+                  disabled={!!acceptingId}
+                  className="px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold disabled:opacity-60 flex-shrink-0 flex items-center gap-1"
+                >
+                  {accepting ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" />
+                      참여 중…
+                    </>
+                  ) : (
+                    <>
+                      <Check size={12} />
+                      수락
+                    </>
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
