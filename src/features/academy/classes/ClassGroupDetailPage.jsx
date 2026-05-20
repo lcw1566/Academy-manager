@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import { ChevronLeft, Pencil, Trash2, CalendarDays } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import { deleteClassGroup as deleteServerClassGroup } from '../../../services/supabase/domainApi';
 import EmptyState from '../../../components/EmptyState';
 import Modal from '../../../components/Modal';
 import { today, formatDateShort, compareYMD } from '../../../utils/date';
@@ -46,8 +49,12 @@ export default function ClassGroupDetailPage() {
     role, selectedClassGroupId, classGroups, classSessions,
     academyStudents, academyTeachers, academyProfile, academyAttendanceRecords,
     clinicRecords = [], navigateToClassSession, goBackFromClassGroup, setActiveTab,
-    deleteClassGroup,
+    deleteClassGroup, showToast,
   } = useAcademyStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
+  const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
 
   const [showEditForm, setShowEditForm] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
@@ -104,6 +111,34 @@ export default function ClassGroupDetailPage() {
     ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile)
     : null;
 
+  const handleDeleteClassGroup = async () => {
+    if (!window.confirm(`'${group.name}' 반과 모든 수업 회차를 삭제할까요?`)) return;
+
+    const serverId = group.serverId;
+
+    // 1) localStorage 삭제 (source of truth) — class_sessions / clinicTasks cascade 포함
+    deleteClassGroup(selectedClassGroupId);
+
+    // 2) Supabase write-through — serverId 있을 때만.
+    //    class_sessions 는 FK on delete cascade 로 자동 삭제됨.
+    if (serverId && isAuthenticated && currentAcademyId) {
+      try {
+        await deleteServerClassGroup(serverId);
+        await Promise.all([loadServerClassGroups(), loadServerClassSessions()]);
+      } catch (err) {
+        console.error('[supabase] deleteClassGroup failed', err);
+        showToast(
+          err?.message
+            ? `서버 삭제 실패: ${err.message}`
+            : '반은 삭제되었지만 서버 삭제는 실패했어요.',
+          'error',
+        );
+      }
+    }
+
+    goBackFromClassGroup();
+  };
+
   return (
     <div>
       {/* Header */}
@@ -129,12 +164,7 @@ export default function ClassGroupDetailPage() {
               <motion.button
                 type="button"
                 whileTap={{ scale: 0.97 }}
-                onClick={() => {
-                  if (window.confirm(`'${group.name}' 반과 모든 수업 회차를 삭제할까요?`)) {
-                    deleteClassGroup(selectedClassGroupId);
-                    goBackFromClassGroup();
-                  }
-                }}
+                onClick={handleDeleteClassGroup}
                 className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100"
               >
                 <Trash2 size={16} className="text-red-400" />

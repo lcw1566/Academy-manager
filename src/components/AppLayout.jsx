@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import useAcademyStore from '../store/useAcademyStore';
-import BottomNav from './BottomNav';
+import BottomNav, { PRIVATE_TABS } from './BottomNav';
+import Sidebar from './Sidebar';
 import DashboardPage from '../features/dashboard/DashboardPage';
 import ClassesPage from '../features/classes/ClassesPage';
 import ClassDetailPage from '../features/classes/ClassDetailPage';
@@ -80,20 +81,25 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8]">
-      <main className="main-content max-w-md mx-auto">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={pageKey}
-            variants={pageVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            style={{ willChange: 'opacity, transform' }}
-          >
-            {renderContent()}
-          </motion.div>
-        </AnimatePresence>
+    <div className="min-h-screen bg-[#F5F6F8] md:flex">
+      {/* PC 사이드바 — md 이상에서만 표시 */}
+      <Sidebar tabs={PRIVATE_TABS} />
+
+      <main className="flex-1 min-w-0">
+        <div className="main-content max-w-md mx-auto md:mx-0 md:max-w-none md:px-8 md:py-6 pb-24 md:pb-8">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={pageKey}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={{ willChange: 'opacity, transform' }}
+            >
+              {renderContent()}
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </main>
       <BottomNav />
     </div>

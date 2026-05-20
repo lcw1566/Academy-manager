@@ -4,6 +4,16 @@ import { generateClassDates } from '../utils/recurringClass';
 import { getCurrentMonth, getMonthsBetween } from '../utils/date';
 import { generatePaymentForMonth, groupHasPayment, resolveStudentBilling } from '../utils/billing';
 import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../constants/aiPrompts';
+import {
+  mapServerStudentToLocal,
+  mapServerClassGroupToLocal,
+  mapServerClassSessionToLocal,
+  expandServerLessonRecordToLocal,
+  mapServerAttendanceRecordToLocal,
+  mapServerClinicRecordToLocal,
+  mapServerPaymentToLocal,
+  mapServerPayrollToLocal,
+} from '../services/supabase/hydrateMappers';
 
 const defaultTutorProfile = {
   name: '과외 선생님',
@@ -782,6 +792,16 @@ const useAcademyStore = create(
     set((s) => ({ academyStudents: s.academyStudents.filter((st) => st.id !== id) }));
     get().showToast('학생이 삭제되었습니다.');
   },
+  // Supabase students row 의 uuid 를 local 학생에 매핑. write-through 성공 후 호출.
+  // toast 미발생 — 순수 매핑 기록용.
+  setAcademyStudentServerId: (localId, serverId) => {
+    if (!localId || !serverId) return;
+    set((s) => ({
+      academyStudents: s.academyStudents.map((st) =>
+        st.id === localId ? { ...st, serverId } : st
+      ),
+    }));
+  },
 
   // ─── Class Groups (반) ────────────────────────────
   generateClassSessions: (group) => {
@@ -814,7 +834,10 @@ const useAcademyStore = create(
       classSessions: [...s.classSessions, ...sessions],
     }));
     get().showToast(`반이 생성되었습니다. 수업 회차 ${sessions.length}개가 만들어졌어요.`);
-    return newGroup;
+    // 10단계: write-through 호출처가 생성된 sessions 에 serverId 매핑할 수 있도록
+    // group 과 sessions 를 함께 반환. 기존 caller 는 newGroup.id / .name 등으로
+    // 사용 중이라 group 을 그대로 spread 한다 (호환).
+    return { ...newGroup, group: newGroup, sessions };
   },
   updateClassGroup: (groupId, updates) => {
     set((s) => ({
@@ -830,6 +853,15 @@ const useAcademyStore = create(
     }));
     get().showToast('반이 삭제되었습니다.');
   },
+  // Supabase class_groups row 의 uuid 를 local 반에 매핑. write-through 성공 후 호출.
+  setClassGroupServerId: (localId, serverId) => {
+    if (!localId || !serverId) return;
+    set((s) => ({
+      classGroups: s.classGroups.map((g) =>
+        g.id === localId ? { ...g, serverId } : g
+      ),
+    }));
+  },
 
   // ─── Class Sessions (수업 회차) ───────────────────
   updateClassSession: (sessionId, updates) => {
@@ -839,6 +871,26 @@ const useAcademyStore = create(
       ),
     }));
     get().showToast('수업 회차가 수정되었습니다.');
+  },
+  // Supabase class_sessions row 의 uuid 를 local session 에 매핑 (silent).
+  setClassSessionServerId: (localId, serverId) => {
+    if (!localId || !serverId) return;
+    set((s) => ({
+      classSessions: s.classSessions.map((cs) =>
+        cs.id === localId ? { ...cs, serverId } : cs
+      ),
+    }));
+  },
+  // bulk insert 후 (localId, serverId) 쌍을 한번에 매핑. silent.
+  setClassSessionServerIds: (pairs) => {
+    if (!Array.isArray(pairs) || pairs.length === 0) return;
+    const map = new Map(pairs.filter((p) => p?.localId && p?.serverId).map((p) => [p.localId, p.serverId]));
+    if (map.size === 0) return;
+    set((s) => ({
+      classSessions: s.classSessions.map((cs) =>
+        map.has(cs.id) ? { ...cs, serverId: map.get(cs.id) } : cs
+      ),
+    }));
   },
   deleteClassSession: (sessionId) => {
     set((s) => ({
@@ -870,6 +922,30 @@ const useAcademyStore = create(
       }));
     }
     get().showToast('출결이 저장되었습니다.');
+  },
+
+  // 수업 기록 저장 시 호출 — 출결 버튼을 누르지 않은 학생에 대해 기본 present record 보장.
+  // toast 없이 조용히 동작. 이미 record가 있는 학생은 그대로 둔다.
+  ensureAttendanceRecordsForSession: ({ sessionId, studentIds, date }) => {
+    if (!sessionId || !Array.isArray(studentIds) || studentIds.length === 0) return [];
+    const existing = get().academyAttendanceRecords;
+    const existingForSession = new Set(
+      existing.filter((a) => a.sessionId === sessionId).map((a) => a.studentId)
+    );
+    const missing = studentIds.filter((sid) => sid && !existingForSession.has(sid));
+    if (missing.length === 0) return [];
+    const now = Date.now();
+    const toAdd = missing.map((sid, idx) => ({
+      id: `aa${now}_${idx}_${sid}`,
+      sessionId,
+      studentId: sid,
+      date: date || '',
+      status: 'present',
+    }));
+    set((s) => ({
+      academyAttendanceRecords: [...s.academyAttendanceRecords, ...toAdd],
+    }));
+    return toAdd;
   },
 
   // ─── Academy Lesson Records ───────────────────────
@@ -970,6 +1046,15 @@ const useAcademyStore = create(
     set((s) => ({ clinicRecords: (s.clinicRecords || []).filter((r) => r.id !== recordId) }));
     get().showToast('클리닉 기록이 삭제되었어요.');
   },
+  // 서버 저장 성공 후 local clinicRecord 에 serverId 주입 (toast 없음).
+  setClinicRecordServerId: (localId, serverId) => {
+    if (!localId || !serverId) return;
+    set((s) => ({
+      clinicRecords: (s.clinicRecords || []).map((r) =>
+        r.id === localId ? { ...r, serverId } : r
+      ),
+    }));
+  },
 
   // ─── Academy Teachers ─────────────────────────────
   addTeacher: (teacher) => {
@@ -1008,6 +1093,7 @@ const useAcademyStore = create(
     const newPayment = { ...payment, id: `ap${Date.now()}` };
     set((s) => ({ academyPayments: [...s.academyPayments, newPayment] }));
     get().showToast('수납 항목이 추가되었습니다.');
+    return newPayment;
   },
   updateAcademyPayment: (id, data) => {
     set((s) => ({ academyPayments: s.academyPayments.map((p) => (p.id === id ? { ...p, ...data } : p)) }));
@@ -1016,6 +1102,15 @@ const useAcademyStore = create(
   deleteAcademyPayment: (id) => {
     set((s) => ({ academyPayments: s.academyPayments.filter((p) => p.id !== id) }));
     get().showToast('수납 항목이 삭제되었습니다.');
+  },
+  // 서버 저장 성공 후 local payment 에 serverId 주입 (toast 없음).
+  setPaymentServerId: (localId, serverId) => {
+    if (!localId || !serverId) return;
+    set((s) => ({
+      academyPayments: s.academyPayments.map((p) =>
+        p.id === localId ? { ...p, serverId } : p
+      ),
+    }));
   },
   generateAcademyPaymentsForMonth: (month) => {
     const { classGroups, classSessions, academyPayments } = get();
@@ -1049,6 +1144,7 @@ const useAcademyStore = create(
     } else {
       get().showToast('생성할 수납 항목이 없습니다. (이미 존재하거나 수강료 미설정)');
     }
+    return newPayments;
   },
 
   // ─── Academy Student Events ───────────────────────
@@ -1138,6 +1234,7 @@ const useAcademyStore = create(
       ],
     }));
     get().showToast(`${month} 급여 명세가 생성되었습니다.`);
+    return payrolls;
   },
   updatePayroll: (payrollId, updates) => {
     set((s) => ({
@@ -1152,6 +1249,120 @@ const useAcademyStore = create(
       ),
     }));
     get().showToast('급여 지급 완료 처리되었습니다.');
+  },
+  // 서버 저장 성공 후 local payroll 에 serverId 주입 (toast 없음).
+  setPayrollServerId: (localId, serverId) => {
+    if (!localId || !serverId) return;
+    set((s) => ({
+      academyPayrolls: s.academyPayrolls.map((p) =>
+        p.id === localId ? { ...p, serverId } : p
+      ),
+    }));
+  },
+
+  // ─── Phase 16: 수동 hydrate (서버 snapshot → local) ──────────
+  // Supabase fetchAcademySnapshot 의 결과를 8개 local 컬렉션에 머지한다.
+  //
+  // 정책:
+  //   - strategy='serverWins' — 동일 식별자를 가진 row 는 server 값으로 덮어쓴다
+  //   - preserveLocalOnly=true — server snapshot 과 매칭되지 않는 local row 는 유지
+  //   - 자연키(이름, month 등) 단순 일치로 merge 하지 않는다 (중복 risk 는 인지된 한계)
+  //
+  // 매칭 키:
+  //   - students / class_groups / class_sessions / clinic_records / payments / payrolls:
+  //       id 또는 serverId 가 server.id 와 일치
+  //   - lesson_records: sessionId 단위 (server 1 row → local N row 로 펼쳐지므로)
+  //   - attendance_records: (sessionId, studentId) 자연키
+  //
+  // 과외(private) 모드 데이터는 건드리지 않는다. private store 분리 구조라 자동 안전.
+  hydrateAcademyFromServerSnapshot: (snapshot, options = {}) => {
+    if (!snapshot || typeof snapshot !== 'object') return null;
+    const {
+      strategy = 'serverWins',
+      preserveLocalOnly = true,
+    } = options;
+    if (strategy !== 'serverWins') {
+      throw new Error(`Unsupported hydrate strategy: ${strategy}`);
+    }
+
+    // 1:1 도메인용 — server.id / serverId 기준 머지
+    const mergeByIdOrServerId = (localRows, newServerRows) => {
+      const serverIds = new Set(newServerRows.map((r) => r.id));
+      const preserved = preserveLocalOnly
+        ? (localRows || []).filter((r) => {
+            if (serverIds.has(r.id)) return false;
+            if (r.serverId && serverIds.has(r.serverId)) return false;
+            return true;
+          })
+        : [];
+      return [...preserved, ...newServerRows];
+    };
+
+    // 복합 자연키 머지 (attendance_records 용)
+    const mergeByCompositeKey = (localRows, newServerRows, getKey) => {
+      const newKeys = new Set(newServerRows.map(getKey));
+      const preserved = preserveLocalOnly
+        ? (localRows || []).filter((r) => !newKeys.has(getKey(r)))
+        : [];
+      return [...preserved, ...newServerRows];
+    };
+
+    // 변환
+    const newStudents = (snapshot.students || []).map(mapServerStudentToLocal).filter(Boolean);
+    const newClassGroups = (snapshot.classGroups || []).map(mapServerClassGroupToLocal).filter(Boolean);
+    const newClassSessions = (snapshot.classSessions || []).map(mapServerClassSessionToLocal).filter(Boolean);
+    const newAttendance = (snapshot.attendanceRecords || [])
+      .map(mapServerAttendanceRecordToLocal)
+      .filter(Boolean);
+    const newClinic = (snapshot.clinicRecords || []).map(mapServerClinicRecordToLocal).filter(Boolean);
+    const newPayments = (snapshot.payments || []).map(mapServerPaymentToLocal).filter(Boolean);
+    const newPayrolls = (snapshot.payrolls || []).map(mapServerPayrollToLocal).filter(Boolean);
+    // lesson_records: 1 server row → N local row
+    const newLessonRecords = (snapshot.lessonRecords || []).flatMap(expandServerLessonRecordToLocal);
+    const newLrSessionIds = new Set(newLessonRecords.map((lr) => lr.sessionId));
+
+    let counts = null;
+    set((s) => {
+      const mergedStudents = mergeByIdOrServerId(s.academyStudents, newStudents);
+      const mergedClassGroups = mergeByIdOrServerId(s.classGroups, newClassGroups);
+      const mergedClassSessions = mergeByIdOrServerId(s.classSessions, newClassSessions);
+      // lesson_records: server snapshot 에 들어 있는 sessionId 의 local row 들은 전부 교체
+      const preservedLr = preserveLocalOnly
+        ? (s.academyLessonRecords || []).filter((lr) => !newLrSessionIds.has(lr.sessionId))
+        : [];
+      const mergedLessonRecords = [...preservedLr, ...newLessonRecords];
+      const mergedAttendance = mergeByCompositeKey(
+        s.academyAttendanceRecords,
+        newAttendance,
+        (a) => `${a.sessionId}__${a.studentId}`,
+      );
+      const mergedClinic = mergeByIdOrServerId(s.clinicRecords, newClinic);
+      const mergedPayments = mergeByIdOrServerId(s.academyPayments, newPayments);
+      const mergedPayrolls = mergeByIdOrServerId(s.academyPayrolls, newPayrolls);
+
+      counts = {
+        students: newStudents.length,
+        classGroups: newClassGroups.length,
+        classSessions: newClassSessions.length,
+        lessonRecords: newLessonRecords.length,
+        attendanceRecords: newAttendance.length,
+        clinicRecords: newClinic.length,
+        payments: newPayments.length,
+        payrolls: newPayrolls.length,
+      };
+
+      return {
+        academyStudents: mergedStudents,
+        classGroups: mergedClassGroups,
+        classSessions: mergedClassSessions,
+        academyLessonRecords: mergedLessonRecords,
+        academyAttendanceRecords: mergedAttendance,
+        clinicRecords: mergedClinic,
+        academyPayments: mergedPayments,
+        academyPayrolls: mergedPayrolls,
+      };
+    });
+    return counts;
   },
 
   // ─── Academy Reset ────────────────────────────────

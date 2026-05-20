@@ -5,6 +5,8 @@ import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
 import { roleMap, formatPhoneNumber } from '../../../utils/format';
 import { WAGE_TYPE_LABELS } from '../../../constants/labels';
+import AuthSection from '../../auth/AuthSection';
+import WorkspaceSection from '../../workspace/WorkspaceSection';
 
 // ─── Constants ──────────────────────────────────────────────────
 const WAGE_TYPES = [
@@ -434,6 +436,12 @@ export default function AcademyMorePage() {
           </div>
           {isOwner && <ChevronRight size={16} className="text-gray-300" />}
         </button>
+
+        {/* 서버 계정 (선택 사항) */}
+        <AuthSection />
+
+        {/* 학원 워크스페이스 */}
+        <WorkspaceSection />
 
         {/* 강사 관리 */}
         {isOwner && (

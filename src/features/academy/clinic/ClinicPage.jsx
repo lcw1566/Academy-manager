@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import { Plus, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import { deleteClinicRecord as deleteServerClinicRecord } from '../../../services/supabase/domainApi';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import ClinicRecordFormModal from './ClinicRecordFormModal';
@@ -64,8 +67,11 @@ export default function ClinicPage() {
   const {
     role, clinicRecords = [], academyStudents, classGroups,
     academyLessonRecords = [], classSessions = [],
-    deleteClinicRecord,
+    deleteClinicRecord, showToast,
   } = useAcademyStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const loadServerClinicRecords = useWorkspaceStore((s) => s.loadServerClinicRecords);
 
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
@@ -110,10 +116,26 @@ export default function ClinicPage() {
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
+    const target = clinicRecords.find((r) => r.id === id);
+    const serverId = target?.serverId || null;
     deleteClinicRecord(id);
     setDeleteConfirmId(null);
     setExpandedId(null);
+    if (serverId && isAuthenticated && currentAcademyId) {
+      try {
+        await deleteServerClinicRecord(serverId);
+        await loadServerClinicRecords();
+      } catch (err) {
+        console.error('[supabase] deleteClinicRecord failed', err);
+        showToast(
+          err?.message
+            ? `클리닉 서버 삭제 실패: ${err.message}`
+            : '클리닉 기록은 삭제되었지만 서버 삭제는 실패했어요.',
+          'error',
+        );
+      }
+    }
   };
 
   return (
@@ -276,6 +298,9 @@ export default function ClinicPage() {
           presetStudentId={showClinicFromSupport.studentId}
           presetDate={showClinicFromSupport.session?.date}
           presetSubject={showClinicFromSupport.group?.subject || ''}
+          presetSourceSupportTags={showClinicFromSupport.supportTags || []}
+          presetSourceSupportMemo={showClinicFromSupport.supportMemo || ''}
+          presetSourceLessonRecordId={showClinicFromSupport.id || null}
           onClose={() => setShowClinicFromSupport(null)}
         />
       )}

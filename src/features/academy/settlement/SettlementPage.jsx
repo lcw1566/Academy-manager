@@ -2,8 +2,53 @@ import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Check, RefreshCw, Plus, X, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import {
+  createAcademyPayment,
+  createAcademyPaymentsBulk,
+  updatePayment as updateServerPayment,
+  deletePayment as deleteServerPayment,
+  createAcademyPayrollsBulk,
+  updatePayroll as updateServerPayroll,
+} from '../../../services/supabase/domainApi';
 import Header from '../../../components/Header';
 import { formatMonth } from '../../../utils/date';
+
+// local 수납 → server payments 컬럼 매핑. student.serverId 없으면 null 반환.
+function mapLocalPaymentToServerPayload({ payment, student, group }) {
+  if (!student?.serverId) return null;
+  return {
+    student_id: student.serverId,
+    class_group_id: group?.serverId || null,
+    month: payment.month,
+    amount: Number(payment.amount) || 0,
+    due_date: payment.dueDate || null,
+    paid_date: payment.paidDate || null,
+    status: payment.status || 'unpaid',
+    payer_name: payment.payerName || null,
+    memo: payment.memo || null,
+  };
+}
+
+// local 급여 → server payrolls 컬럼 매핑. staff_id 는 local id 그대로 (text).
+function mapLocalPayrollToServerPayload(payroll) {
+  return {
+    staff_type: payroll.staffType,
+    staff_id: payroll.staffId,
+    month: payroll.month,
+    wage_type: payroll.wageType || null,
+    hourly_wage: Number(payroll.hourlyWage) || 0,
+    monthly_salary: Number(payroll.monthlySalary) || 0,
+    total_hours: Number(payroll.totalHours) || 0,
+    completed_session_count: Number(payroll.completedSessionCount) || 0,
+    completed_clinic_count: Number(payroll.completedClinicCount) || 0,
+    amount: Number(payroll.amount) || 0,
+    status: payroll.status || 'scheduled',
+    paid_date: payroll.paidDate || null,
+    memo: payroll.memo || null,
+  };
+}
 
 const MONTHS_BACK = 5;
 
@@ -30,8 +75,14 @@ export default function SettlementPage() {
     academyTeachers, academyAssistants, academyPayrolls,
     updateAcademyPayment, addAcademyPayment, deleteAcademyPayment,
     generatePayrollsForMonth, markPayrollPaid,
-    generateAcademyPaymentsForMonth,
+    generateAcademyPaymentsForMonth, setPaymentServerId,
+    setPayrollServerId,
+    showToast,
   } = useAcademyStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
+  const loadServerPayrolls = useWorkspaceStore((s) => s.loadServerPayrolls);
 
   const months = getRecentMonths();
   const [selectedMonth, setSelectedMonth] = useState(months[0]);
@@ -83,18 +134,93 @@ export default function SettlementPage() {
     [academyStudents, monthPayments]
   );
 
-  const handleTogglePaid = (payment) => {
-    updateAcademyPayment(payment.id, { status: payment.status === 'paid' ? 'unpaid' : 'paid' });
+  const canSyncServer = isAuthenticated && currentAcademyId;
+
+  const handleTogglePaid = async (payment) => {
+    const nextStatus = payment.status === 'paid' ? 'unpaid' : 'paid';
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const patch = nextStatus === 'paid'
+      ? { status: 'paid', paidDate: payment.paidDate || todayStr }
+      : { status: 'unpaid', paidDate: null };
+    updateAcademyPayment(payment.id, patch);
+    if (payment.serverId && canSyncServer) {
+      try {
+        await updateServerPayment(payment.serverId, {
+          status: patch.status,
+          paid_date: patch.paidDate || null,
+        });
+        await loadServerPayments();
+      } catch (err) {
+        console.error('[supabase] updatePayment(status) failed', err);
+        showToast(
+          err?.message
+            ? `수납 서버 동기화 실패: ${err.message}`
+            : '수납 기록은 수정되었지만 서버 동기화는 실패했어요.',
+          'error',
+        );
+      }
+    }
   };
 
-  const handleAutoGeneratePayrolls = () => {
-    generatePayrollsForMonth(selectedMonth);
+  const handleAutoGeneratePayrolls = async () => {
+    const newPayrolls = generatePayrollsForMonth(selectedMonth) || [];
+    if (newPayrolls.length === 0) return;
+    if (!canSyncServer) return;
+    try {
+      const inserted = await createAcademyPayrollsBulk({
+        academyId: currentAcademyId,
+        payrolls: newPayrolls.map(mapLocalPayrollToServerPayload),
+      });
+      // (staff_type, staff_id, month) 키 기준으로 local newPayroll ↔ server row 매핑
+      const byKey = new Map(
+        (inserted || []).map((row) => [
+          `${row.staff_type}__${row.staff_id}__${row.month}`,
+          row.id,
+        ]),
+      );
+      for (const local of newPayrolls) {
+        const key = `${local.staffType}__${local.staffId}__${local.month}`;
+        const serverId = byKey.get(key);
+        if (serverId) setPayrollServerId(local.id, serverId);
+      }
+      await loadServerPayrolls();
+    } catch (err) {
+      console.error('[supabase] createAcademyPayrollsBulk failed', err);
+      showToast(
+        err?.message
+          ? `급여 서버 동기화 실패: ${err.message}`
+          : '급여 명세는 저장되었지만 서버 동기화는 실패했어요.',
+        'error',
+      );
+    }
   };
 
-  const handleAddPayment = () => {
+  const handleMarkPayrollPaid = async (payroll) => {
+    markPayrollPaid(payroll.id);
+    if (payroll.serverId && canSyncServer) {
+      try {
+        await updateServerPayroll(payroll.serverId, {
+          status: 'completed',
+          paid_date: new Date().toISOString().slice(0, 10),
+        });
+        await loadServerPayrolls();
+      } catch (err) {
+        console.error('[supabase] updatePayroll failed', err);
+        showToast(
+          err?.message
+            ? `급여 서버 동기화 실패: ${err.message}`
+            : '급여 기록은 수정되었지만 서버 동기화는 실패했어요.',
+          'error',
+        );
+      }
+    }
+  };
+
+  const handleAddPayment = async () => {
     if (!addForm.studentId || !addForm.amount) return;
     const group = classGroups.find((g) => g.id === addForm.classGroupId);
-    addAcademyPayment({
+    const student = academyStudents.find((s) => s.id === addForm.studentId);
+    const localPayment = addAcademyPayment({
       studentId: addForm.studentId,
       classGroupId: addForm.classGroupId || '',
       month: selectedMonth,
@@ -105,6 +231,99 @@ export default function SettlementPage() {
     });
     setShowAddPayment(false);
     setAddForm({ studentId: '', classGroupId: '', amount: '' });
+
+    if (canSyncServer && student?.serverId && localPayment?.id) {
+      const serverPayload = mapLocalPaymentToServerPayload({
+        payment: localPayment,
+        student,
+        group,
+      });
+      if (serverPayload) {
+        try {
+          const created = await createAcademyPayment({
+            academyId: currentAcademyId,
+            ...serverPayload,
+          });
+          if (created?.id) setPaymentServerId(localPayment.id, created.id);
+          await loadServerPayments();
+        } catch (err) {
+          console.error('[supabase] createAcademyPayment failed', err);
+          showToast(
+            err?.message
+              ? `수납 서버 저장 실패: ${err.message}`
+              : '수납 기록은 저장되었지만 서버 동기화는 실패했어요.',
+            'error',
+          );
+        }
+      }
+    }
+  };
+
+  const handleDeletePayment = async (payment) => {
+    const serverId = payment.serverId || null;
+    deleteAcademyPayment(payment.id);
+    if (serverId && canSyncServer) {
+      try {
+        await deleteServerPayment(serverId);
+        await loadServerPayments();
+      } catch (err) {
+        console.error('[supabase] deletePayment failed', err);
+        showToast(
+          err?.message
+            ? `수납 서버 삭제 실패: ${err.message}`
+            : '수납 기록은 삭제되었지만 서버 삭제는 실패했어요.',
+          'error',
+        );
+      }
+    }
+  };
+
+  const handleAutoGeneratePayments = async () => {
+    const newPayments = generateAcademyPaymentsForMonth(selectedMonth) || [];
+    if (newPayments.length === 0) return;
+    if (!canSyncServer) return;
+
+    // server payload 변환 — student.serverId 있는 행만 서버 동기화 대상
+    const studentById = new Map(academyStudents.map((s) => [s.id, s]));
+    const groupById = new Map(classGroups.map((g) => [g.id, g]));
+    const eligible = newPayments
+      .map((p) => {
+        const student = studentById.get(p.studentId);
+        const group = groupById.get(p.classGroupId);
+        const serverPayload = mapLocalPaymentToServerPayload({ payment: p, student, group });
+        return serverPayload ? { local: p, server: serverPayload } : null;
+      })
+      .filter(Boolean);
+
+    if (eligible.length === 0) return;
+
+    try {
+      const inserted = await createAcademyPaymentsBulk({
+        academyId: currentAcademyId,
+        payments: eligible.map((e) => e.server),
+      });
+      // (student_id, class_group_id, month) 키 기준으로 local newPayment ↔ server row 매핑
+      const byKey = new Map(
+        (inserted || []).map((row) => [
+          `${row.student_id}__${row.class_group_id ?? ''}__${row.month}`,
+          row.id,
+        ]),
+      );
+      for (const e of eligible) {
+        const key = `${e.server.student_id}__${e.server.class_group_id ?? ''}__${e.server.month}`;
+        const serverId = byKey.get(key);
+        if (serverId) setPaymentServerId(e.local.id, serverId);
+      }
+      await loadServerPayments();
+    } catch (err) {
+      console.error('[supabase] createAcademyPaymentsBulk failed', err);
+      showToast(
+        err?.message
+          ? `자동 수납 서버 동기화 실패: ${err.message}`
+          : '자동 생성된 수납 중 일부는 서버 동기화에 실패했어요.',
+        'error',
+      );
+    }
   };
 
   return (
@@ -170,7 +389,7 @@ export default function SettlementPage() {
             {/* 액션 버튼 */}
             <div className="flex gap-2">
               <motion.button whileTap={{ scale: 0.97 }}
-                onClick={() => generateAcademyPaymentsForMonth(selectedMonth)}
+                onClick={handleAutoGeneratePayments}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-50 text-blue-600 text-xs font-bold rounded-xl">
                 <RefreshCw size={13} /> 자동 생성
               </motion.button>
@@ -246,7 +465,7 @@ export default function SettlementPage() {
                       {p.status === 'paid' && <Check size={14} className="text-white" />}
                     </motion.button>
                     <motion.button whileTap={{ scale: 0.95 }}
-                      onClick={() => deleteAcademyPayment(p.id)}
+                      onClick={() => handleDeletePayment(p)}
                       className="w-7 h-7 rounded-full flex items-center justify-center text-red-300 active:bg-red-50">
                       <Trash2 size={13} />
                     </motion.button>
@@ -315,7 +534,7 @@ export default function SettlementPage() {
                   </div>
                   {pr.status !== 'completed' && (
                     <motion.button whileTap={{ scale: 0.97 }}
-                      onClick={() => markPayrollPaid(pr.id)}
+                      onClick={() => handleMarkPayrollPaid(pr)}
                       className="w-full mt-2 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl">
                       지급 완료 처리
                     </motion.button>

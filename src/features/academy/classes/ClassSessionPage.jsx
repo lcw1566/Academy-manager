@@ -2,6 +2,13 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import {
+  updateClassSession as updateServerClassSession,
+  upsertAcademyLessonRecord,
+  upsertAcademyAttendanceRecordsBulk,
+} from '../../../services/supabase/domainApi';
 import EmptyState from '../../../components/EmptyState';
 import { formatDateShort } from '../../../utils/date';
 import { attendanceStatusMap, getTeacherDisplayName } from '../../../utils/format';
@@ -286,8 +293,14 @@ export default function ClassSessionPage() {
     classSessions, classGroups, academyStudents, academyTeachers, academyProfile,
     academyAttendanceRecords, academyLessonRecords,
     updateAcademyAttendance, batchSaveSessionRecords, updateClassSession,
-    goBackFromClassSession,
+    ensureAttendanceRecordsForSession,
+    goBackFromClassSession, showToast,
   } = useAcademyStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
+  const loadServerLessonRecords = useWorkspaceStore((s) => s.loadServerLessonRecords);
+  const loadServerAttendanceRecords = useWorkspaceStore((s) => s.loadServerAttendanceRecords);
 
   // session/group 탐색 (null이어도 useMemo가 먼저 실행됨)
   const session = useMemo(
@@ -355,17 +368,133 @@ export default function ClassSessionPage() {
   const handleSave = useCallback(async () => {
     if (!session || isSaving) return;
     setIsSaving(true);
+    // 1) localStorage 저장 (source of truth, 항상 성공)
     batchSaveSessionRecords({
       sessionId: session.id,
       date: session.date,
       commonRecord: commonRec,
       studentRecords: studentRecDraftRef.current,
     });
+    // 출결 buttons 를 누르지 않은 학생도 기본 present record 보장
+    const sessionStudentIds = (session.studentIds || []).filter(Boolean);
+    ensureAttendanceRecordsForSession({
+      sessionId: session.id,
+      studentIds: sessionStudentIds,
+      date: session.date,
+    });
     setSavedCommon({ ...commonRec });
     setStudentDirtyMap({});
     setSaveCount((c) => c + 1);
+
+    // 2) Supabase write-through — session.serverId / group.serverId 모두 있고 로그인 + 학원 선택 시
+    if (
+      session.serverId &&
+      group?.serverId &&
+      isAuthenticated &&
+      currentAcademyId
+    ) {
+      // 2-a) lesson_records upsert (unique class_session_id)
+      try {
+        // local studentId → server studentId 매핑된 student_records jsonb 생성
+        const studentByLocalId = new Map(academyStudents.map((s) => [s.id, s]));
+        const draftStudentRecs = studentRecDraftRef.current || {};
+        const serverStudentRecords = {};
+        for (const [localStudentId, rec] of Object.entries(draftStudentRecs)) {
+          const stu = studentByLocalId.get(localStudentId);
+          if (stu?.serverId) {
+            serverStudentRecords[stu.serverId] = rec;
+          }
+        }
+        await upsertAcademyLessonRecord({
+          academyId: currentAcademyId,
+          class_group_id: group.serverId,
+          class_session_id: session.serverId,
+          date: session.date,
+          teacher_id: session.teacherId || group.teacherId || null,
+          common_progress: commonRec.commonProgress || null,
+          common_lesson_content: commonRec.commonContent || null,
+          common_homework: commonRec.commonHomework || null,
+          next_lesson_plan: commonRec.nextLessonPlan || null,
+          teacher_memo: commonRec.teacherMemo || null,
+          student_records: serverStudentRecords,
+        });
+        await loadServerLessonRecords();
+      } catch (err) {
+        console.error('[supabase] upsertAcademyLessonRecord failed', err);
+        showToast(
+          err?.message
+            ? `수업 기록 서버 저장 실패: ${err.message}`
+            : '수업 기록은 저장됐지만 서버 동기화는 실패했어요.',
+          'error',
+        );
+      }
+
+      // 2-b) attendance_records bulk upsert (unique class_session_id + student_id)
+      //   - sessionStudents 전체 기준으로 payload 생성
+      //   - local record 있으면 그 값 사용, 없으면 default present
+      //   - student.serverId 있는 학생만 서버 전송 대상
+      try {
+        const studentByLocalId = new Map(academyStudents.map((s) => [s.id, s]));
+        const existingForSession = new Map(
+          academyAttendanceRecords
+            .filter((a) => a.sessionId === session.id)
+            .map((a) => [a.studentId, a]),
+        );
+        const sessionStudents = sessionStudentIds
+          .map((sid) => studentByLocalId.get(sid))
+          .filter(Boolean);
+        const studentsWithServerId = sessionStudents.filter((s) => s.serverId);
+        const skippedStudents = sessionStudents.filter((s) => !s.serverId);
+
+        const records = studentsWithServerId.map((stu) => {
+          const local = existingForSession.get(stu.id);
+          return {
+            class_group_id: group.serverId,
+            class_session_id: session.serverId,
+            student_id: stu.serverId,
+            date: local?.date || session.date,
+            status: local?.status || 'present',
+            memo: local?.memo || null,
+          };
+        });
+
+        if (import.meta.env?.DEV) {
+          console.debug('[attendance sync]', {
+            sessionId: session.id,
+            sessionServerId: session.serverId,
+            sessionStudentsCount: sessionStudents.length,
+            studentsWithServerIdCount: studentsWithServerId.length,
+            existingLocalRecordsCount: existingForSession.size,
+            payloadCount: records.length,
+            skippedNoServerId: skippedStudents.map((s) => ({ id: s.id, name: s.name })),
+          });
+        }
+
+        if (records.length > 0) {
+          await upsertAcademyAttendanceRecordsBulk({
+            academyId: currentAcademyId,
+            records,
+          });
+          await loadServerAttendanceRecords();
+        }
+      } catch (err) {
+        console.error('[supabase] upsertAcademyAttendanceRecordsBulk failed', err);
+        showToast(
+          err?.message
+            ? `출결 서버 저장 실패: ${err.message}`
+            : '출결은 저장됐지만 서버 동기화는 실패했어요.',
+          'error',
+        );
+      }
+    }
+
     setIsSaving(false);
-  }, [session, isSaving, commonRec, batchSaveSessionRecords]);
+  }, [
+    session, group, isSaving, commonRec, academyStudents, academyAttendanceRecords,
+    batchSaveSessionRecords, ensureAttendanceRecordsForSession,
+    isAuthenticated, currentAcademyId,
+    loadServerLessonRecords, loadServerAttendanceRecords, showToast,
+  ]);
 
   const setCommonField = (k, v) => setCommonRec((r) => ({ ...r, [k]: v }));
 
@@ -515,6 +644,21 @@ export default function ClassSessionPage() {
                 onClick={async () => {
                   if (isDirty) await handleSave();
                   updateClassSession(session.id, { status: 'completed' });
+                  // Supabase write-through — serverId 가 있고 로그인 + 학원 선택 시
+                  if (session.serverId && isAuthenticated && currentAcademyId) {
+                    try {
+                      await updateServerClassSession(session.serverId, { status: 'completed' });
+                      await loadServerClassSessions();
+                    } catch (err) {
+                      console.error('[supabase] updateClassSession failed', err);
+                      showToast(
+                        err?.message
+                          ? `서버 동기화 실패: ${err.message}`
+                          : '수업 완료는 저장됐지만 서버 동기화는 실패했어요.',
+                        'error',
+                      );
+                    }
+                  }
                 }}
                 className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-green-600 text-white shadow-lg shadow-green-200"
               >

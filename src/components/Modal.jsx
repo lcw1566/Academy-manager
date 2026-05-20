@@ -56,7 +56,7 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ duration: 0.32, ease: SHEET_EASE }}
-            className="sheet-shell absolute bottom-0 left-0 right-0 max-w-md mx-auto bg-white rounded-t-[28px] flex flex-col overflow-hidden shadow-2xl"
+            className="sheet-shell absolute bottom-0 left-0 right-0 max-w-md md:max-w-[560px] mx-auto bg-white rounded-t-[28px] flex flex-col overflow-hidden shadow-2xl"
             style={{ willChange: 'transform' }}
           >
             {/* Header — 항상 shrink-0, 제목 잘림 방지 */}

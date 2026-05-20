@@ -3,6 +3,12 @@ import { createPortal } from 'react-dom';
 import { Plus, X, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import {
+  createAcademyClinicRecord,
+  updateClinicRecord as updateServerClinicRecord,
+} from '../../../services/supabase/domainApi';
 import { today } from '../../../utils/date';
 import { getClinicOptions, subjectToKey } from '../../../constants/clinicOptions';
 
@@ -16,11 +22,19 @@ export default function ClinicRecordFormModal({
   presetSubject,
   presetClassGroupId,
   presetClassSessionId,
+  presetSourceSupportTags,
+  presetSourceSupportMemo,
+  presetSourceLessonRecordId,
 }) {
   const {
-    addClinicRecord, updateClinicRecord,
-    academyStudents, classGroups, academyTeachers, academyAssistants, role,
+    addClinicRecord, updateClinicRecord, setClinicRecordServerId,
+    academyStudents, classGroups, classSessions, academyLessonRecords,
+    academyTeachers, academyAssistants, role,
+    showToast,
   } = useAcademyStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const loadServerClinicRecords = useWorkspaceStore((s) => s.loadServerClinicRecords);
 
   const [studentId, setStudentId] = useState(editRecord?.studentId || presetStudentId || '');
   const [date, setDate] = useState(editRecord?.date || presetDate || today());
@@ -81,7 +95,7 @@ export default function ClinicRecordFormModal({
     setSelectedItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!studentId) return alert('학생을 선택해주세요.');
     if (!date) return alert('날짜를 선택해주세요.');
     if (!subject) return alert('과목을 선택해주세요.');
@@ -94,22 +108,111 @@ export default function ClinicRecordFormModal({
         ? (academyAssistants[0]?.id || '')
         : '';
 
+    // 학습 보완 항목 참고 정보: preset 우선, 없으면 기존 record / lessonRecord 추적
+    const sourceSupportTags =
+      presetSourceSupportTags
+      ?? editRecord?.sourceSupportTags
+      ?? [];
+    const sourceSupportMemo =
+      presetSourceSupportMemo
+      ?? editRecord?.sourceSupportMemo
+      ?? '';
+    const sourceLessonRecordId =
+      presetSourceLessonRecordId
+      ?? editRecord?.sourceLessonRecordId
+      ?? null;
+
     const payload = {
       studentId,
       date,
       subject,
       classGroupId: classGroupId || '',
       classSessionId: classSessionId || '',
+      sourceLessonRecordId,
+      sourceSupportTags,
+      sourceSupportMemo,
       items: selectedItems,
       overallMemo,
       createdByRole: role,
       createdById,
     };
 
+    // 서버 매핑용 정보
+    const student = academyStudents.find((s) => s.id === studentId);
+    const groupForServer = classGroupId
+      ? classGroups.find((g) => g.id === classGroupId)
+      : null;
+    const sessionForServer = classSessionId
+      ? classSessions?.find((cs) => cs.id === classSessionId)
+      : null;
+    // sourceLessonRecordId 는 local id 이므로 serverId 매핑 시도
+    const sourceLr = sourceLessonRecordId
+      ? academyLessonRecords?.find((lr) => lr.id === sourceLessonRecordId)
+      : null;
+
+    const buildServerPayload = () => ({
+      student_id: student?.serverId,
+      class_group_id: groupForServer?.serverId || null,
+      class_session_id: sessionForServer?.serverId || null,
+      date,
+      subject: subject || null,
+      teacher_id: createdById && role === 'teacher' ? createdById : null,
+      assistant_id: createdById && role === 'assistant' ? createdById : null,
+      source_lesson_record_id: sourceLr?.serverId || null,
+      source_support_tags: Array.isArray(sourceSupportTags) ? sourceSupportTags : [],
+      source_support_memo: sourceSupportMemo || null,
+      items: selectedItems,
+      overall_memo: overallMemo || null,
+      created_by_role: role || null,
+      created_by_id: createdById || null,
+    });
+
+    const canSyncServer = isAuthenticated && currentAcademyId && student?.serverId;
+
     if (editRecord) {
       updateClinicRecord(editRecord.id, payload);
+      // 서버 update — editRecord.serverId 있을 때만
+      if (editRecord.serverId && isAuthenticated && currentAcademyId) {
+        try {
+          const serverPatch = buildServerPayload();
+          // student_id 변경은 허용하지 않음 — strip 으로 안전하게 처리되지만
+          // student.serverId 가 없으면 patch 에서 제거.
+          if (!student?.serverId) delete serverPatch.student_id;
+          await updateServerClinicRecord(editRecord.serverId, serverPatch);
+          await loadServerClinicRecords();
+        } catch (err) {
+          console.error('[supabase] updateClinicRecord failed', err);
+          showToast(
+            err?.message
+              ? `클리닉 기록 서버 동기화 실패: ${err.message}`
+              : '클리닉 기록은 수정되었지만 서버 동기화는 실패했어요.',
+            'error',
+          );
+        }
+      }
     } else {
-      addClinicRecord(payload);
+      const localRecord = addClinicRecord(payload);
+      // 서버 create — serverId 있는 학생만
+      if (canSyncServer && localRecord?.id) {
+        try {
+          const created = await createAcademyClinicRecord({
+            academyId: currentAcademyId,
+            ...buildServerPayload(),
+          });
+          if (created?.id) {
+            setClinicRecordServerId(localRecord.id, created.id);
+          }
+          await loadServerClinicRecords();
+        } catch (err) {
+          console.error('[supabase] createAcademyClinicRecord failed', err);
+          showToast(
+            err?.message
+              ? `클리닉 기록 서버 동기화 실패: ${err.message}`
+              : '클리닉 기록은 저장되었지만 서버 동기화는 실패했어요.',
+            'error',
+          );
+        }
+      }
     }
     onClose();
   };

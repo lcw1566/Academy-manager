@@ -2,6 +2,14 @@ import { useEffect, useState, useMemo } from 'react';
 import { ChevronLeft, Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import {
+  deleteStudent as deleteServerStudent,
+  createAcademyPayment,
+  updatePayment as updateServerPayment,
+  deletePayment as deleteServerPayment,
+} from '../../../services/supabase/domainApi';
 import { formatDateShort, getKoreanWeekdayFromYMD, today } from '../../../utils/date';
 import { attendanceStatusMap } from '../../../utils/format';
 import EmptyState from '../../../components/EmptyState';
@@ -244,9 +252,14 @@ export default function AcademyStudentDetailPage() {
     role, selectedAcademyStudentId, academyStudents, classGroups, classSessions,
     academyAttendanceRecords, academyLessonRecords, clinicTasks, clinicRecords = [], academyPayments,
     academyTeachers, academyAssistants,
-    deleteAcademyStudent, goBackFromAcademyStudent,
+    deleteAcademyStudent, goBackFromAcademyStudent, showToast,
     updateAcademyPayment, addAcademyPayment, deleteAcademyPayment,
+    setPaymentServerId,
   } = useAcademyStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
+  const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
 
   const [activeTab, setActiveTab] = useState('요약');
   const [showEdit, setShowEdit] = useState(false);
@@ -308,11 +321,32 @@ export default function AcademyStudentDetailPage() {
   // 최근 수업 (요약용)
   const latestRecord = dailyRecords[0];
 
-  const handleDelete = () => {
-    if (window.confirm(`${student.name} 학생을 삭제할까요?`)) {
-      deleteAcademyStudent(student.id);
-      goBackFromAcademyStudent();
+  const handleDelete = async () => {
+    if (!window.confirm(`${student.name} 학생을 삭제할까요?`)) return;
+
+    // 서버 매핑된 uuid 는 삭제 전 캡처 (local 삭제 후엔 student 객체에서 사라짐)
+    const serverId = student.serverId;
+
+    // 1) localStorage 삭제 (source of truth, 항상 성공)
+    deleteAcademyStudent(student.id);
+
+    // 2) Supabase write-through — serverId 가 있고 로그인 + 학원 선택 시에만 시도
+    if (serverId && isAuthenticated && currentAcademyId) {
+      try {
+        await deleteServerStudent(serverId);
+        await loadServerStudents();
+      } catch (err) {
+        console.error('[supabase] deleteStudent failed', err);
+        showToast(
+          err?.message
+            ? `서버 삭제 실패: ${err.message}`
+            : '학생은 삭제되었지만 서버 삭제는 실패했어요.',
+          'error',
+        );
+      }
     }
+
+    goBackFromAcademyStudent();
   };
 
   // ── 렌더 함수들 ───────────────────────────────────────────────────
@@ -436,9 +470,14 @@ export default function AcademyStudentDetailPage() {
       .sort((a, b) => b.month?.localeCompare(a.month || '') || 0);
     const studentGroups = classGroups.filter((g) => (g.studentIds || []).includes(student.id));
 
-    const handleAddPayment = () => {
+    const canSyncServer = isAuthenticated && currentAcademyId;
+
+    const handleAddPayment = async () => {
       if (!paymentForm.amount || !paymentForm.month) return;
-      addAcademyPayment({
+      const group = paymentForm.classGroupId
+        ? classGroups.find((g) => g.id === paymentForm.classGroupId)
+        : null;
+      const localPayment = addAcademyPayment({
         studentId: student.id,
         classGroupId: paymentForm.classGroupId || '',
         month: paymentForm.month,
@@ -448,6 +487,74 @@ export default function AcademyStudentDetailPage() {
       });
       setShowAddPayment(false);
       setPaymentForm({ classGroupId: '', amount: '', month: today().slice(0, 7) });
+
+      if (canSyncServer && student.serverId && localPayment?.id) {
+        try {
+          const created = await createAcademyPayment({
+            academyId: currentAcademyId,
+            student_id: student.serverId,
+            class_group_id: group?.serverId || null,
+            month: paymentForm.month,
+            amount: Number(paymentForm.amount) || 0,
+            status: 'unpaid',
+          });
+          if (created?.id) setPaymentServerId(localPayment.id, created.id);
+          await loadServerPayments();
+        } catch (err) {
+          console.error('[supabase] createAcademyPayment failed', err);
+          showToast(
+            err?.message
+              ? `수납 서버 저장 실패: ${err.message}`
+              : '수납 기록은 저장되었지만 서버 동기화는 실패했어요.',
+            'error',
+          );
+        }
+      }
+    };
+
+    const handleTogglePaid = async (p) => {
+      const nextStatus = p.status === 'paid' ? 'unpaid' : 'paid';
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const patch = nextStatus === 'paid'
+        ? { status: 'paid', paidDate: p.paidDate || todayStr }
+        : { status: 'unpaid', paidDate: null };
+      updateAcademyPayment(p.id, patch);
+      if (p.serverId && canSyncServer) {
+        try {
+          await updateServerPayment(p.serverId, {
+            status: patch.status,
+            paid_date: patch.paidDate || null,
+          });
+          await loadServerPayments();
+        } catch (err) {
+          console.error('[supabase] updatePayment(status) failed', err);
+          showToast(
+            err?.message
+              ? `수납 서버 동기화 실패: ${err.message}`
+              : '수납 기록은 수정되었지만 서버 동기화는 실패했어요.',
+            'error',
+          );
+        }
+      }
+    };
+
+    const handleDeletePayment = async (p) => {
+      const serverId = p.serverId || null;
+      deleteAcademyPayment(p.id);
+      if (serverId && canSyncServer) {
+        try {
+          await deleteServerPayment(serverId);
+          await loadServerPayments();
+        } catch (err) {
+          console.error('[supabase] deletePayment failed', err);
+          showToast(
+            err?.message
+              ? `수납 서버 삭제 실패: ${err.message}`
+              : '수납 기록은 삭제되었지만 서버 삭제는 실패했어요.',
+            'error',
+          );
+        }
+      }
     };
 
     return (
@@ -509,12 +616,12 @@ export default function AcademyStudentDetailPage() {
                   </span>
                 </div>
                 <motion.button whileTap={{ scale: 0.95 }}
-                  onClick={() => updateAcademyPayment(p.id, { status: p.status === 'paid' ? 'unpaid' : 'paid' })}
+                  onClick={() => handleTogglePaid(p)}
                   className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${p.status === 'paid' ? 'bg-green-500' : 'border-2 border-gray-200'}`}>
                   {p.status === 'paid' && <Check size={13} className="text-white" />}
                 </motion.button>
                 <motion.button whileTap={{ scale: 0.95 }}
-                  onClick={() => deleteAcademyPayment(p.id)}
+                  onClick={() => handleDeletePayment(p)}
                   className="w-7 h-7 rounded-full flex items-center justify-center text-red-300 active:bg-red-50 flex-shrink-0">
                   <Trash2 size={13} />
                 </motion.button>

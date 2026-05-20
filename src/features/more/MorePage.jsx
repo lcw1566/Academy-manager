@@ -9,6 +9,8 @@ import Modal from '../../components/Modal';
 import { roleMap, formatPhoneNumber } from '../../utils/format';
 import { testGeminiConnection } from '../../utils/aiNotice';
 import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../../constants/aiPrompts';
+import AuthSection from '../auth/AuthSection';
+import WorkspaceSection from '../workspace/WorkspaceSection';
 
 const SUBJECTS = ['수학', '영어', '국어', '과학', '물리', '화학', '사회', '역사', '기타'];
 
@@ -117,6 +119,12 @@ export default function MorePage() {
             <p className="text-xs text-orange-500 mt-0.5">프로필에서 계좌 정보 추가하기 →</p>
           </button>
         )}
+
+        {/* 서버 계정 (선택 사항) */}
+        <AuthSection />
+
+        {/* 학원 워크스페이스 */}
+        <WorkspaceSection />
 
         {/* Gemini API Key */}
         <div className="mx-4 mt-5">

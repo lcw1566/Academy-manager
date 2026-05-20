@@ -1,14 +1,116 @@
 import { useState } from 'react';
 import Modal from '../../../components/Modal';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import {
+  createAcademyClassGroup,
+  updateClassGroup as updateServerClassGroup,
+  createAcademyClassSessionsBulk,
+} from '../../../services/supabase/domainApi';
 import { OWNER_TEACHER_ID } from '../../../utils/format';
+
+function emptyToNull(v) {
+  if (v === undefined) return null;
+  if (typeof v === 'string' && v.trim() === '') return null;
+  return v;
+}
+
+// 로컬 반 폼 → Supabase class_groups snake_case payload.
+// student_ids / student_billings 는 academyStudents 에서 serverId 가 있는 학생만
+// 서버 uuid 로 매핑. serverId 없는 학생은 서버 row 에서 제외 (로컬은 그대로 유지).
+// id / academy_id / user_id / mode 는 createAcademyClassGroup 에서 자동 주입.
+function mapClassGroupFormToServerPayload(form, academyStudents) {
+  const studentById = new Map(academyStudents.map((s) => [s.id, s]));
+
+  const serverStudentIds = (form.studentIds || [])
+    .map((localId) => studentById.get(localId)?.serverId)
+    .filter(Boolean);
+
+  const serverStudentBillings = {};
+  for (const [localId, fee] of Object.entries(form.studentBillings || {})) {
+    const stu = studentById.get(localId);
+    if (stu?.serverId) {
+      serverStudentBillings[stu.serverId] = Number(fee) || 0;
+    }
+  }
+
+  const monthlyFee = Number(form.monthlyFee) || 0;
+  const defaultBilling = monthlyFee > 0 ? { monthlyFee } : {};
+
+  return {
+    name: form.name?.trim() ?? '',
+    subject: emptyToNull(form.subject),
+    level: emptyToNull(form.level),
+    teacher_id: emptyToNull(form.teacherId),
+    teacher_type: form.teacherId === OWNER_TEACHER_ID ? 'owner' : 'teacher',
+    student_ids: serverStudentIds,
+    weekdays: Array.isArray(form.weekdays) ? form.weekdays : [],
+    start_time: emptyToNull(form.startTime),
+    end_time: emptyToNull(form.endTime),
+    room: emptyToNull(form.room),
+    start_date: emptyToNull(form.startDate),
+    end_date: emptyToNull(form.endDate),
+    billing_mode: form.billingMode || 'same',
+    default_billing: defaultBilling,
+    student_billings: serverStudentBillings,
+    memo: emptyToNull(form.memo),
+    status: form.status || 'active',
+  };
+}
+
+// local classSession → Supabase class_sessions snake_case payload.
+// class_group_id 는 호출처에서 (serverGroupId) 로 명시적으로 전달.
+// student_ids 는 학생 serverId 가 있는 항목만 포함.
+function mapClassSessionToServerPayload(localSession, classGroupServerId, academyStudents) {
+  const studentById = new Map(academyStudents.map((s) => [s.id, s]));
+  const serverStudentIds = (localSession.studentIds || [])
+    .map((localId) => studentById.get(localId)?.serverId)
+    .filter(Boolean);
+  const teacherId = localSession.teacherId || null;
+  return {
+    class_group_id: classGroupServerId,
+    date: localSession.date,
+    start_time: emptyToNull(localSession.startTime),
+    end_time: emptyToNull(localSession.endTime),
+    room: emptyToNull(localSession.room),
+    teacher_id: teacherId,
+    teacher_type: teacherId === OWNER_TEACHER_ID ? 'owner' : 'teacher',
+    student_ids: serverStudentIds,
+    status: localSession.status || 'scheduled',
+    memo: emptyToNull(localSession.memo),
+  };
+}
+
+// bulk insert 결과를 local sessions 와 매칭. (date, start_time) 조합이
+// 같은 class_group 안에서 unique 하므로 이를 key 로 사용.
+function matchSessionPairs(localSessions, serverSessions) {
+  const serverByKey = new Map(
+    serverSessions.map((srv) => [`${srv.date}__${srv.start_time ?? ''}`, srv])
+  );
+  return localSessions
+    .map((local) => {
+      const key = `${local.date}__${local.startTime ?? ''}`;
+      const srv = serverByKey.get(key);
+      return srv ? { localId: local.id, serverId: srv.id } : null;
+    })
+    .filter(Boolean);
+}
 
 const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const SUBJECTS = ['수학', '영어', '국어', '과학', '사회', '물리', '화학', '역사', '기타'];
 const LEVELS = ['초등', '초1', '초2', '초3', '초4', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3', '수능'];
 
 export default function ClassGroupFormModal({ editGroup, onClose }) {
-  const { addClassGroup, updateClassGroup, academyStudents, academyTeachers, academyProfile } = useAcademyStore();
+  const {
+    addClassGroup, updateClassGroup, setClassGroupServerId, setClassSessionServerIds,
+    academyStudents, academyTeachers, academyProfile, showToast,
+  } = useAcademyStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
+  const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
+  const [submitting, setSubmitting] = useState(false);
   const ownerLabel = academyProfile?.ownerName?.trim() || '원장';
 
   const [form, setForm] = useState({
@@ -53,7 +155,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
       studentBillings: { ...f.studentBillings, [id]: value },
     }));
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (submitting) return;
     if (!form.name.trim()) return alert('반 이름을 입력해주세요.');
     if (form.weekdays.length === 0) return alert('수업 요일을 선택해주세요.');
     if (!form.startDate) return alert('시작일을 선택해주세요.');
@@ -65,12 +168,97 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         Object.entries(form.studentBillings).map(([k, v]) => [k, Number(v) || 0])
       ),
     };
-    if (editGroup) {
-      updateClassGroup(editGroup.id, data);
-    } else {
-      addClassGroup(data);
+
+    setSubmitting(true);
+    try {
+      if (editGroup) {
+        // ── 수정 ──────────────────────────────────────────────
+        // 1) localStorage 수정 (source of truth)
+        updateClassGroup(editGroup.id, data);
+
+        // 2) Supabase write-through — serverId 가 있을 때만 시도
+        if (editGroup.serverId && isAuthenticated && currentAcademyId) {
+          try {
+            await updateServerClassGroup(
+              editGroup.serverId,
+              mapClassGroupFormToServerPayload(data, academyStudents),
+            );
+            await loadServerClassGroups();
+          } catch (err) {
+            console.error('[supabase] updateClassGroup failed', err);
+            showToast(
+              err?.message
+                ? `서버 동기화 실패: ${err.message}`
+                : '반 정보는 수정되었지만 서버 동기화는 실패했어요.',
+              'error',
+            );
+          }
+        }
+      } else {
+        // ── 생성 ──────────────────────────────────────────────
+        // 1) localStorage: classGroup 생성 + classSessions 자동 생성. 둘 다 확보.
+        const result = addClassGroup(data);
+        const localGroup = result.group;
+        const localSessions = result.sessions ?? [];
+
+        // 2) Supabase write-through — class_groups 먼저, 성공 시 class_sessions bulk
+        if (isAuthenticated && currentAcademyId) {
+          let serverGroup = null;
+          try {
+            serverGroup = await createAcademyClassGroup({
+              academyId: currentAcademyId,
+              ...mapClassGroupFormToServerPayload(data, academyStudents),
+            });
+            if (serverGroup?.id && localGroup?.id) {
+              setClassGroupServerId(localGroup.id, serverGroup.id);
+            }
+            await loadServerClassGroups();
+          } catch (err) {
+            console.error('[supabase] createAcademyClassGroup failed', err);
+            showToast(
+              err?.message
+                ? `서버 저장 실패: ${err.message}`
+                : '반은 생성되었지만 서버 저장은 실패했어요.',
+              'error',
+            );
+          }
+
+          // class_group 서버 저장 성공 시 sessions bulk insert 시도
+          if (serverGroup?.id && localSessions.length > 0) {
+            try {
+              const sessionPayloads = localSessions.map((ls) =>
+                mapClassSessionToServerPayload(ls, serverGroup.id, academyStudents)
+              );
+              const serverSessions = await createAcademyClassSessionsBulk({
+                academyId: currentAcademyId,
+                sessions: sessionPayloads,
+              });
+              // local ↔ server 매칭 (date + start_time 기준)
+              const pairs = matchSessionPairs(localSessions, serverSessions);
+              setClassSessionServerIds(pairs);
+              await loadServerClassSessions();
+              showToast(
+                `반이 생성되고 서버에도 저장되었어요 · 수업 회차 ${serverSessions.length}개`,
+              );
+            } catch (err) {
+              console.error('[supabase] createAcademyClassSessionsBulk failed', err);
+              showToast(
+                err?.message
+                  ? `수업 회차 서버 저장 실패: ${err.message}`
+                  : '반은 서버에 저장되었지만 수업 회차 서버 저장은 실패했어요.',
+                'error',
+              );
+            }
+          } else if (serverGroup?.id && localSessions.length === 0) {
+            // 회차 없는 경우 (요일 미지정 등) — class_group 성공 안내만
+            showToast('반이 생성되고 서버에도 저장되었어요.');
+          }
+        }
+      }
+      onClose();
+    } finally {
+      setSubmitting(false);
     }
-    onClose();
   };
 
   const selectedStudents = academyStudents.filter((s) => form.studentIds.includes(s.id));
@@ -81,8 +269,12 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
       onClose={onClose}
       title={editGroup ? '반 정보 수정' : '반 만들기'}
       footer={
-        <button onClick={handleSave} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">
-          {editGroup ? '저장' : '반 생성'}
+        <button
+          onClick={handleSave}
+          disabled={submitting}
+          className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl disabled:opacity-60"
+        >
+          {submitting ? '저장 중…' : editGroup ? '저장' : '반 생성'}
         </button>
       }
     >

@@ -1,0 +1,444 @@
+import { useState } from 'react';
+import {
+  Building2, Check, ChevronRight, ChevronDown, ChevronUp, Plus, Loader2, X, RefreshCw, Download,
+} from 'lucide-react';
+import useAuthStore from '../../store/useAuthStore';
+import useWorkspaceStore from '../../store/useWorkspaceStore';
+import useAcademyStore from '../../store/useAcademyStore';
+import { fetchAcademySnapshot } from '../../services/supabase/hydrateApi';
+import { roleMap } from '../../utils/format';
+
+export default function WorkspaceSection() {
+  const isSupabaseReady = useAuthStore((s) => s.isSupabaseReady);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const memberships = useWorkspaceStore((s) => s.memberships);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const setCurrentAcademyId = useWorkspaceStore((s) => s.setCurrentAcademyId);
+  const createAcademy = useWorkspaceStore((s) => s.createAcademy);
+  const isWorkspaceLoading = useWorkspaceStore((s) => s.isWorkspaceLoading);
+  const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
+  const serverStudents = useWorkspaceStore((s) => s.serverStudents);
+  const isServerStudentsLoading = useWorkspaceStore((s) => s.isServerStudentsLoading);
+  const serverStudentsError = useWorkspaceStore((s) => s.serverStudentsError);
+  const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
+  const serverClassGroups = useWorkspaceStore((s) => s.serverClassGroups);
+  const isServerClassGroupsLoading = useWorkspaceStore((s) => s.isServerClassGroupsLoading);
+  const serverClassGroupsError = useWorkspaceStore((s) => s.serverClassGroupsError);
+  const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
+  const serverClassSessions = useWorkspaceStore((s) => s.serverClassSessions);
+  const isServerClassSessionsLoading = useWorkspaceStore((s) => s.isServerClassSessionsLoading);
+  const serverClassSessionsError = useWorkspaceStore((s) => s.serverClassSessionsError);
+  const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
+  const serverLessonRecords = useWorkspaceStore((s) => s.serverLessonRecords);
+  const isServerLessonRecordsLoading = useWorkspaceStore((s) => s.isServerLessonRecordsLoading);
+  const serverLessonRecordsError = useWorkspaceStore((s) => s.serverLessonRecordsError);
+  const loadServerLessonRecords = useWorkspaceStore((s) => s.loadServerLessonRecords);
+  const serverAttendanceRecords = useWorkspaceStore((s) => s.serverAttendanceRecords);
+  const isServerAttendanceRecordsLoading = useWorkspaceStore((s) => s.isServerAttendanceRecordsLoading);
+  const serverAttendanceRecordsError = useWorkspaceStore((s) => s.serverAttendanceRecordsError);
+  const loadServerAttendanceRecords = useWorkspaceStore((s) => s.loadServerAttendanceRecords);
+  const serverClinicRecords = useWorkspaceStore((s) => s.serverClinicRecords);
+  const isServerClinicRecordsLoading = useWorkspaceStore((s) => s.isServerClinicRecordsLoading);
+  const serverClinicRecordsError = useWorkspaceStore((s) => s.serverClinicRecordsError);
+  const loadServerClinicRecords = useWorkspaceStore((s) => s.loadServerClinicRecords);
+  const serverPayments = useWorkspaceStore((s) => s.serverPayments);
+  const isServerPaymentsLoading = useWorkspaceStore((s) => s.isServerPaymentsLoading);
+  const serverPaymentsError = useWorkspaceStore((s) => s.serverPaymentsError);
+  const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
+  const serverPayrolls = useWorkspaceStore((s) => s.serverPayrolls);
+  const isServerPayrollsLoading = useWorkspaceStore((s) => s.isServerPayrollsLoading);
+  const serverPayrollsError = useWorkspaceStore((s) => s.serverPayrollsError);
+  const loadServerPayrolls = useWorkspaceStore((s) => s.loadServerPayrolls);
+  const showToast = useAcademyStore((s) => s.showToast);
+  const hydrateAcademyFromServerSnapshot = useAcademyStore((s) => s.hydrateAcademyFromServerSnapshot);
+
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [hydrating, setHydrating] = useState(false);
+
+  const handleHydrate = async () => {
+    if (hydrating) return;
+    if (!currentAcademyId) {
+      showToast('학원을 먼저 선택해주세요.', 'error');
+      return;
+    }
+    const ok = window.confirm(
+      '서버 데이터를 현재 기기에 불러옵니다. 기존 로컬 전용 데이터는 유지됩니다. 계속할까요?'
+    );
+    if (!ok) return;
+    setHydrating(true);
+    try {
+      // 1) snapshot fetch — 어느 한 테이블이라도 실패하면 throw → hydrate 시도하지 않음
+      const snapshot = await fetchAcademySnapshot(currentAcademyId);
+      // 2) localStorage 반영 (serverWins + preserveLocalOnly)
+      const counts = hydrateAcademyFromServerSnapshot(snapshot, {
+        strategy: 'serverWins',
+        preserveLocalOnly: true,
+      });
+      // 3) 서버 카운트도 재조회 (snapshot fetch 직후라 사실상 동일하지만 일관성 유지)
+      await Promise.all([
+        loadServerStudents(),
+        loadServerClassGroups(),
+        loadServerClassSessions(),
+        loadServerLessonRecords(),
+        loadServerAttendanceRecords(),
+        loadServerClinicRecords(),
+        loadServerPayments(),
+        loadServerPayrolls(),
+      ]);
+      const total =
+        (counts?.students || 0) + (counts?.classGroups || 0) +
+        (counts?.classSessions || 0) + (counts?.lessonRecords || 0) +
+        (counts?.attendanceRecords || 0) + (counts?.clinicRecords || 0) +
+        (counts?.payments || 0) + (counts?.payrolls || 0);
+      showToast(`서버 데이터를 불러왔어요. (${total}개 row)`);
+    } catch (err) {
+      console.error('[hydrate] fetchAcademySnapshot failed', err);
+      showToast(
+        err?.message ?? '서버 데이터를 불러오지 못했어요.',
+        'error',
+      );
+    } finally {
+      setHydrating(false);
+    }
+  };
+
+  // 미로그인 / 미설정이면 표시하지 않음 (AuthSection 이 처리)
+  if (!isSupabaseReady || !isAuthenticated) return null;
+
+  const handleSubmit = async (e) => {
+    e?.preventDefault?.();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setSubmitting(true);
+    try {
+      await createAcademy({ name: trimmed });
+      showToast('학원 워크스페이스가 생성되었어요.');
+      setName('');
+      setCreating(false);
+    } catch (err) {
+      showToast(err?.message ?? '학원 생성에 실패했어요.', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setCreating(false);
+    setName('');
+  };
+
+  return (
+    <div className="mx-4 mt-5">
+      <p className="text-sm font-bold text-gray-700 mb-3">학원 워크스페이스</p>
+
+      {memberships.length === 0 ? (
+        <EmptyCard
+          loading={!isWorkspaceReady && isWorkspaceLoading}
+          creating={creating}
+          submitting={submitting}
+          name={name}
+          onNameChange={setName}
+          onStart={() => setCreating(true)}
+          onSubmit={handleSubmit}
+          onCancel={handleCancel}
+        />
+      ) : (
+        <div className="flex flex-col gap-2">
+          {memberships.map((m) => {
+            const isCurrent = m.academy_id === currentAcademyId;
+            const academyName = m.academy?.name ?? '(이름 없음)';
+            const roleLabel = roleMap[m.role] ?? m.role;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setCurrentAcademyId(m.academy_id)}
+                className={`w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 text-left transition-colors ${
+                  isCurrent
+                    ? 'bg-blue-50 border border-blue-200'
+                    : 'bg-white shadow-sm border border-transparent active:bg-gray-50'
+                }`}
+              >
+                <div
+                  className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    isCurrent ? 'bg-blue-100' : 'bg-gray-100'
+                  }`}
+                >
+                  <Building2
+                    size={16}
+                    className={isCurrent ? 'text-blue-600' : 'text-gray-400'}
+                  />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    {academyName}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">{roleLabel}</p>
+                </div>
+                {isCurrent ? (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-blue-600">
+                    <Check size={13} />
+                    선택됨
+                  </span>
+                ) : (
+                  <ChevronRight size={14} className="text-gray-300" />
+                )}
+              </button>
+            );
+          })}
+
+          {creating ? (
+            <InlineCreateForm
+              name={name}
+              submitting={submitting}
+              onNameChange={setName}
+              onSubmit={handleSubmit}
+              onCancel={handleCancel}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-3 rounded-2xl bg-white shadow-sm text-sm font-semibold text-blue-600 active:bg-blue-50"
+            >
+              <Plus size={14} />새 학원 만들기
+            </button>
+          )}
+
+          {currentAcademyId && (
+            <ServerDataStatus
+              studentCount={serverStudents.length}
+              classGroupCount={serverClassGroups.length}
+              classSessionCount={serverClassSessions.length}
+              lessonRecordCount={serverLessonRecords.length}
+              attendanceRecordCount={serverAttendanceRecords.length}
+              clinicRecordCount={serverClinicRecords.length}
+              paymentCount={serverPayments.length}
+              payrollCount={serverPayrolls.length}
+              studentsLoading={isServerStudentsLoading}
+              classGroupsLoading={isServerClassGroupsLoading}
+              classSessionsLoading={isServerClassSessionsLoading}
+              lessonRecordsLoading={isServerLessonRecordsLoading}
+              attendanceRecordsLoading={isServerAttendanceRecordsLoading}
+              clinicRecordsLoading={isServerClinicRecordsLoading}
+              paymentsLoading={isServerPaymentsLoading}
+              payrollsLoading={isServerPayrollsLoading}
+              studentsError={serverStudentsError}
+              classGroupsError={serverClassGroupsError}
+              classSessionsError={serverClassSessionsError}
+              lessonRecordsError={serverLessonRecordsError}
+              attendanceRecordsError={serverAttendanceRecordsError}
+              clinicRecordsError={serverClinicRecordsError}
+              paymentsError={serverPaymentsError}
+              payrollsError={serverPayrollsError}
+              onRefresh={() => {
+                loadServerStudents();
+                loadServerClassGroups();
+                loadServerClassSessions();
+                loadServerLessonRecords();
+                loadServerAttendanceRecords();
+                loadServerClinicRecords();
+                loadServerPayments();
+                loadServerPayrolls();
+              }}
+              onHydrate={handleHydrate}
+              hydrating={hydrating}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ServerDataStatus({
+  studentCount, classGroupCount, classSessionCount,
+  lessonRecordCount, attendanceRecordCount, clinicRecordCount, paymentCount, payrollCount,
+  studentsLoading, classGroupsLoading, classSessionsLoading,
+  lessonRecordsLoading, attendanceRecordsLoading, clinicRecordsLoading, paymentsLoading, payrollsLoading,
+  studentsError, classGroupsError, classSessionsError,
+  lessonRecordsError, attendanceRecordsError, clinicRecordsError, paymentsError, payrollsError,
+  onRefresh, onHydrate, hydrating,
+}) {
+  const [open, setOpen] = useState(false);
+  const anyLoading =
+    studentsLoading || classGroupsLoading || classSessionsLoading ||
+    lessonRecordsLoading || attendanceRecordsLoading || clinicRecordsLoading ||
+    paymentsLoading || payrollsLoading;
+  const totalAny =
+    studentCount + classGroupCount + classSessionCount +
+    lessonRecordCount + attendanceRecordCount + clinicRecordCount + paymentCount + payrollCount;
+
+  return (
+    <div className="mt-2 px-1 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-1 text-gray-500 font-semibold"
+        >
+          {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          서버 데이터 {totalAny > 0 ? `(${totalAny})` : ''}
+        </button>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={anyLoading}
+          aria-label="새로고침"
+          className="flex items-center gap-1 text-blue-600 font-semibold disabled:opacity-50 flex-shrink-0"
+        >
+          <RefreshCw size={12} className={anyLoading ? 'animate-spin' : ''} />
+          새로고침
+        </button>
+      </div>
+      {open && (
+        <div className="mt-1.5 flex flex-col gap-0.5">
+          <StatusLine label="학생" unit="명" count={studentCount} loading={studentsLoading} error={studentsError} />
+          <StatusLine label="반" unit="개" count={classGroupCount} loading={classGroupsLoading} error={classGroupsError} />
+          <StatusLine label="수업 회차" unit="개" count={classSessionCount} loading={classSessionsLoading} error={classSessionsError} />
+          <StatusLine label="수업 기록" unit="개" count={lessonRecordCount} loading={lessonRecordsLoading} error={lessonRecordsError} />
+          <StatusLine label="출결" unit="개" count={attendanceRecordCount} loading={attendanceRecordsLoading} error={attendanceRecordsError} />
+          <StatusLine label="클리닉 기록" unit="개" count={clinicRecordCount} loading={clinicRecordsLoading} error={clinicRecordsError} />
+          <StatusLine label="수납 기록" unit="개" count={paymentCount} loading={paymentsLoading} error={paymentsError} />
+          <StatusLine label="급여 기록" unit="개" count={payrollCount} loading={payrollsLoading} error={payrollsError} />
+          <span className="text-gray-400">읽기 전용 미리보기</span>
+          {onHydrate && (
+            <button
+              type="button"
+              onClick={onHydrate}
+              disabled={hydrating || anyLoading}
+              className="mt-2 self-start flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-100 text-gray-700 font-semibold text-xs disabled:opacity-60"
+            >
+              {hydrating ? (
+                <>
+                  <Loader2 size={12} className="animate-spin" />
+                  불러오는 중…
+                </>
+              ) : (
+                <>
+                  <Download size={12} />
+                  서버 데이터 불러오기
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusLine({ label, unit, count, loading, error }) {
+  if (loading) {
+    return (
+      <span className="flex items-center gap-1 text-gray-500">
+        <Loader2 size={11} className="animate-spin" />
+        서버 {label} 불러오는 중…
+      </span>
+    );
+  }
+  if (error) {
+    return <span className="text-red-500 truncate">{label} 오류: {error}</span>;
+  }
+  return (
+    <span className="text-gray-500">
+      서버 {label} <span className="font-semibold text-gray-700">{count}{unit}</span>
+    </span>
+  );
+}
+
+function EmptyCard({
+  loading, creating, submitting, name, onNameChange, onStart, onSubmit, onCancel,
+}) {
+  return (
+    <div className="bg-white rounded-2xl p-4 shadow-sm">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+          <Building2 size={18} className="text-blue-500" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-gray-900">
+            연결된 학원이 없어요
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            학원을 만들면 PC와 핸드폰에서 같은 데이터를 사용할 수 있어요.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gray-50 text-gray-400 text-sm">
+          <Loader2 size={14} className="animate-spin" />
+          불러오는 중…
+        </div>
+      ) : creating ? (
+        <InlineCreateForm
+          name={name}
+          submitting={submitting}
+          onNameChange={onNameChange}
+          onSubmit={onSubmit}
+          onCancel={onCancel}
+          variant="empty"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onStart}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold"
+        >
+          <Plus size={14} />학원 만들기
+        </button>
+      )}
+    </div>
+  );
+}
+
+function InlineCreateForm({
+  name, submitting, onNameChange, onSubmit, onCancel, variant,
+}) {
+  const containerClass =
+    variant === 'empty'
+      ? ''
+      : 'bg-white rounded-2xl p-3 shadow-sm';
+  return (
+    <form onSubmit={onSubmit} className={containerClass}>
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => onNameChange(e.target.value)}
+        placeholder="학원 이름"
+        disabled={submitting}
+        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 disabled:opacity-60"
+      />
+      <div className="flex gap-2 mt-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={submitting}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold disabled:opacity-60"
+        >
+          <X size={13} />취소
+        </button>
+        <button
+          type="submit"
+          disabled={submitting || !name.trim()}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold disabled:opacity-60"
+        >
+          {submitting ? (
+            <>
+              <Loader2 size={13} className="animate-spin" />
+              생성 중…
+            </>
+          ) : (
+            <>
+              <Check size={13} />
+              만들기
+            </>
+          )}
+        </button>
+      </div>
+    </form>
+  );
+}

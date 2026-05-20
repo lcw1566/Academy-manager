@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { Check } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import { createAcademyStudent, updateStudent } from '../../../services/supabase/domainApi';
 import { formatPhoneNumber } from '../../../utils/format';
 import { getTodayYMD } from '../../../utils/date';
 
@@ -59,8 +62,45 @@ export function buildParentDisplayName(studentName, parentTitle) {
   return trimmed ? `${trimmed} ${title}` : title;
 }
 
+// 빈 문자열을 null 로 정리. Supabase nullable 컬럼과 호환.
+function emptyToNull(v) {
+  if (v === undefined) return null;
+  if (typeof v === 'string' && v.trim() === '') return null;
+  return v;
+}
+
+// camelCase 학생 폼 → Supabase students 테이블 snake_case payload.
+// id / academy_id / user_id / mode 는 createAcademyStudent 가 자동 주입.
+// class_group_ids 는 폼이 관리하지 않으므로 입력에 명시적으로 있을 때만 포함
+// (update 시 빈 배열로 서버의 기존 매핑을 덮어쓰지 않도록).
+function mapAcademyStudentFormToServerPayload(form) {
+  const payload = {
+    name: form.name?.trim() ?? '',
+    school_type: emptyToNull(form.schoolType),
+    school_name: emptyToNull(form.school),
+    grade: emptyToNull(form.grade),
+    phone: emptyToNull(form.phone),
+    parent_phone: emptyToNull(form.parentPhone),
+    parent_title: emptyToNull(form.parentTitle),
+    parent_name: emptyToNull(form.parentName),
+    enrollment_date: emptyToNull(form.enrollmentDate),
+    status: form.status || 'active',
+    memo: emptyToNull(form.memo),
+  };
+  if (Array.isArray(form.classGroupIds)) {
+    payload.class_group_ids = form.classGroupIds;
+  }
+  return payload;
+}
+
 export default function AcademyStudentFormModal({ editStudent, onClose }) {
-  const { addAcademyStudent, updateAcademyStudent, schoolNames, addSchoolName } = useAcademyStore();
+  const {
+    addAcademyStudent, updateAcademyStudent, setAcademyStudentServerId,
+    schoolNames, addSchoolName, showToast,
+  } = useAcademyStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
   const isEdit = !!editStudent;
 
   const [form, setForm] = useState({
@@ -78,6 +118,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
 
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [phase, setPhase] = useState('form');
+  const [submitting, setSubmitting] = useState(false);
   const schoolInputRef = useRef(null);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -95,7 +136,8 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     ? schoolNames.filter((s) => s.includes(form.school) && s !== form.school)
     : schoolNames.filter(Boolean).slice(0, 5);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (submitting) return;
     if (!form.name.trim()) return alert('이름을 입력해주세요.');
     const trimmedName = form.name.trim();
     const parentDisplayName = buildParentDisplayName(trimmedName, form.parentTitle);
@@ -108,12 +150,65 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     };
     if (form.school.trim()) addSchoolName(form.school.trim());
 
-    if (isEdit) {
-      updateAcademyStudent(editStudent.id, data);
-      onClose();
-    } else {
-      addAcademyStudent(data);
+    setSubmitting(true);
+    try {
+      if (isEdit) {
+        // ── 수정 ──────────────────────────────────────────────
+        // 1) localStorage 수정 (source of truth, 항상 성공)
+        updateAcademyStudent(editStudent.id, data);
+
+        // 2) Supabase write-through — serverId 가 있고 로그인 + 학원 선택 시에만 시도.
+        //    serverId 없는 기존 로컬 학생은 조용히 skip.
+        if (editStudent.serverId && isAuthenticated && currentAcademyId) {
+          try {
+            await updateStudent(editStudent.serverId, mapAcademyStudentFormToServerPayload(data));
+            await loadServerStudents();
+          } catch (err) {
+            console.error('[supabase] updateStudent failed', err);
+            showToast(
+              err?.message
+                ? `서버 동기화 실패: ${err.message}`
+                : '학생 정보는 수정되었지만 서버 동기화는 실패했어요.',
+              'error',
+            );
+          }
+        }
+
+        onClose();
+        return;
+      }
+
+      // ── 추가 ────────────────────────────────────────────────
+      // 1) localStorage 저장 (source of truth, 항상 성공). 반환된 localStudent.id 확보.
+      const localStudent = addAcademyStudent(data);
+
+      // 2) Supabase write-through — 로그인 + 학원 선택 시에만 시도
+      if (isAuthenticated && currentAcademyId) {
+        try {
+          const serverStudent = await createAcademyStudent({
+            academyId: currentAcademyId,
+            ...mapAcademyStudentFormToServerPayload(data),
+          });
+          // 3) 반환된 server uuid 를 local 학생에 매핑 (이후 수정/삭제 라우팅용)
+          if (serverStudent?.id && localStudent?.id) {
+            setAcademyStudentServerId(localStudent.id, serverStudent.id);
+          }
+          await loadServerStudents();
+          showToast('학생이 추가되고 서버에도 저장되었어요.');
+        } catch (err) {
+          console.error('[supabase] createAcademyStudent failed', err);
+          showToast(
+            err?.message
+              ? `서버 저장 실패: ${err.message}`
+              : '학생은 추가되었지만 서버 저장은 실패했어요.',
+            'error',
+          );
+        }
+      }
+
       setPhase('success');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -146,8 +241,12 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
       onClose={onClose}
       title={isEdit ? '학생 수정' : '학생 등록'}
       footer={
-        <button onClick={handleSubmit} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">
-          {isEdit ? '수정 완료' : '학생 등록'}
+        <button
+          onClick={handleSubmit}
+          disabled={submitting}
+          className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl disabled:opacity-60"
+        >
+          {submitting ? '저장 중…' : isEdit ? '수정 완료' : '학생 등록'}
         </button>
       }
     >

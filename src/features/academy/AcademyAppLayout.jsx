@@ -14,6 +14,8 @@ import AcademyStudentDetailPage from './students/AcademyStudentDetailPage';
 import AcademyMorePage from './more/AcademyMorePage';
 import SettlementPage from './settlement/SettlementPage';
 import PayrollPage from './payroll/PayrollPage';
+import HydratePromptModal from '../workspace/HydratePromptModal';
+import Sidebar from '../../components/Sidebar';
 
 const pageVariants = {
   initial: { opacity: 0, y: 8 },
@@ -154,24 +156,32 @@ export default function AcademyAppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8]">
-      <main className="main-content max-w-md mx-auto">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={pageKey}
-            variants={pageVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            style={{ willChange: 'opacity, transform' }}
-          >
-            {renderContent()}
-          </motion.div>
-        </AnimatePresence>
+    <div className="min-h-screen bg-[#F5F6F8] md:flex">
+      {/* PC 사이드바 — md 이상에서만 표시 */}
+      <Sidebar tabs={tabs} />
+
+      <main className="flex-1 min-w-0">
+        <div className="main-content max-w-md mx-auto md:mx-0 md:max-w-none md:px-8 md:py-6 pb-24 md:pb-8">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={pageKey}
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              style={{ willChange: 'opacity, transform' }}
+            >
+              {renderContent()}
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </main>
 
-      {/* Bottom Nav */}
-      <nav className="bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
+      {/* Phase 17 — 새 기기/빈 localStorage 감지 시 hydrate 안내 (자동 실행 아님) */}
+      <HydratePromptModal />
+
+      {/* Bottom Nav — 모바일 전용 (md 이상에서는 좌측 사이드바가 대체) */}
+      <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
         <div className="max-w-md mx-auto flex pt-2">
           {tabs.map(({ id, label, Icon }) => {
             const active = activeTab === id;
