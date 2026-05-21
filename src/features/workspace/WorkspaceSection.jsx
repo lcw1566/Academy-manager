@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import {
-  Building2, Check, ChevronRight, ChevronDown, ChevronUp, Plus, Loader2, X, RefreshCw, Download,
-  Mail, GraduationCap, Users, Settings2,
+  Building2, Check, ChevronRight, Plus, Loader2, X, RefreshCw,
+  Mail, GraduationCap, Users,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAcademyStore from '../../store/useAcademyStore';
 import { fetchAcademySnapshot } from '../../services/supabase/hydrateApi';
-import { roleMap, membershipRoleToAppRole, appRoleToLabel } from '../../utils/format';
+import { roleMap, appRoleToLabel } from '../../utils/format';
 
 const ACCOUNT_TYPE_HINT = {
   tutor: {
@@ -49,51 +49,25 @@ export default function WorkspaceSection() {
   const isMyPendingInvitationsLoading = useWorkspaceStore((s) => s.isMyPendingInvitationsLoading);
   const loadMyPendingInvitations = useWorkspaceStore((s) => s.loadMyPendingInvitations);
   const acceptInvitation = useWorkspaceStore((s) => s.acceptInvitation);
-  const serverStudents = useWorkspaceStore((s) => s.serverStudents);
-  const isServerStudentsLoading = useWorkspaceStore((s) => s.isServerStudentsLoading);
-  const serverStudentsError = useWorkspaceStore((s) => s.serverStudentsError);
+  // Phase 28: 학원 정보 카드의 "새로고침" 버튼이 실제로 부르는 loaders. 사용자에게는
+  // 서버/로컬 구분 없이 "동기화" 로만 표현한다.
   const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
-  const serverClassGroups = useWorkspaceStore((s) => s.serverClassGroups);
-  const isServerClassGroupsLoading = useWorkspaceStore((s) => s.isServerClassGroupsLoading);
-  const serverClassGroupsError = useWorkspaceStore((s) => s.serverClassGroupsError);
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
-  const serverClassSessions = useWorkspaceStore((s) => s.serverClassSessions);
-  const isServerClassSessionsLoading = useWorkspaceStore((s) => s.isServerClassSessionsLoading);
-  const serverClassSessionsError = useWorkspaceStore((s) => s.serverClassSessionsError);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
-  const serverLessonRecords = useWorkspaceStore((s) => s.serverLessonRecords);
-  const isServerLessonRecordsLoading = useWorkspaceStore((s) => s.isServerLessonRecordsLoading);
-  const serverLessonRecordsError = useWorkspaceStore((s) => s.serverLessonRecordsError);
   const loadServerLessonRecords = useWorkspaceStore((s) => s.loadServerLessonRecords);
-  const serverAttendanceRecords = useWorkspaceStore((s) => s.serverAttendanceRecords);
-  const isServerAttendanceRecordsLoading = useWorkspaceStore((s) => s.isServerAttendanceRecordsLoading);
-  const serverAttendanceRecordsError = useWorkspaceStore((s) => s.serverAttendanceRecordsError);
   const loadServerAttendanceRecords = useWorkspaceStore((s) => s.loadServerAttendanceRecords);
-  const serverClinicRecords = useWorkspaceStore((s) => s.serverClinicRecords);
-  const isServerClinicRecordsLoading = useWorkspaceStore((s) => s.isServerClinicRecordsLoading);
-  const serverClinicRecordsError = useWorkspaceStore((s) => s.serverClinicRecordsError);
   const loadServerClinicRecords = useWorkspaceStore((s) => s.loadServerClinicRecords);
-  const serverPayments = useWorkspaceStore((s) => s.serverPayments);
-  const isServerPaymentsLoading = useWorkspaceStore((s) => s.isServerPaymentsLoading);
-  const serverPaymentsError = useWorkspaceStore((s) => s.serverPaymentsError);
   const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
-  const serverPayrolls = useWorkspaceStore((s) => s.serverPayrolls);
-  const isServerPayrollsLoading = useWorkspaceStore((s) => s.isServerPayrollsLoading);
-  const serverPayrollsError = useWorkspaceStore((s) => s.serverPayrollsError);
   const loadServerPayrolls = useWorkspaceStore((s) => s.loadServerPayrolls);
   const showToast = useAcademyStore((s) => s.showToast);
   const hydrateAcademyFromServerSnapshot = useAcademyStore((s) => s.hydrateAcademyFromServerSnapshot);
   const appRole = useAcademyStore((s) => s.role);
-  const setAppRole = useAcademyStore((s) => s.setRole);
 
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [hydrating, setHydrating] = useState(false);
   const [acceptingId, setAcceptingId] = useState(null);
-  // Phase 25: 역할 수동 변경 (고급) 토글. 모든 useState 는 early return 위에 두어
-  // Rules of Hooks 위반 방지.
-  const [advancedRoleOpen, setAdvancedRoleOpen] = useState(false);
 
   const handleAcceptInvitation = async (invitationId) => {
     if (acceptingId) return;
@@ -183,26 +157,24 @@ export default function WorkspaceSection() {
 
   const accountType = profile?.account_type || 'tutor';
   const isStaffAccount = accountType === 'staff';
-  const hasMemberships = memberships.length > 0;
   const hasPendingInvitations = myPendingInvitations.length > 0;
 
-  // Current membership for the active academy. Drives role status display.
+  // Current membership for the active academy.
   const currentMembership = memberships.find((m) => m.academy_id === currentAcademyId);
   const membershipRole = currentMembership?.role || null;
-  const recommendedAppRole = membershipRoleToAppRole(membershipRole);
 
-  // Phase 25: 자동 진입 후 사용자가 수동으로 다른 역할을 시도하고 싶을 때만 열리는
-  // 보조 UI. 기본은 닫혀 있고, "역할 수동 변경 (고급)" 토글로 펼친다.
-  // (advancedRoleOpen state 는 상단에서 미리 선언 — Rules of Hooks)
-  const handleSwitchAppRole = (target) => {
-    if (!target) return;
-    setAppRole(target);
-    showToast(`${appRoleToLabel(target)} 모드로 전환했어요.`);
-  };
+  // Phase 28 — 사용자 시야에 노출되는 UX:
+  //   - "학원 워크스페이스" 라는 기술적 이름 대신 "학원 정보" 로 부른다.
+  //   - 서버/로컬 구분 라벨을 모두 제거. "동기화됨" 으로 통일.
+  //   - 원장이 학원 1개를 운영하는 일반 케이스에서는 학원 목록(선택 UI) 을 숨긴다.
+  //   - 강사/보조강사 의 학원 선택은 별도 페이지(WorkspaceSelectionPage) 에서 처리.
+  const isOwnerRole = appRole === 'owner';
+  const showAcademyList = memberships.length > 1; // 여러 학원이 있을 때만 노출
+  const lastSyncedLabel = useLastSyncedLabel();
 
   return (
     <div className="mx-4 mt-5">
-      <p className="text-sm font-bold text-gray-700 mb-3">학원 워크스페이스</p>
+      <p className="text-sm font-bold text-gray-700 mb-3">학원 정보</p>
 
       {/* 계정 유형 안내 — profile 이 동기화되면 표시 */}
       {profile && ACCOUNT_TYPE_HINT[accountType] && (
@@ -220,22 +192,19 @@ export default function WorkspaceSection() {
         />
       )}
 
-      {/* 현재 학원 권한 + 앱 모드 안내 — currentAcademy 가 있을 때만 표시 */}
+      {/* 현재 학원 + 동기화 상태 — currentAcademy 가 있을 때만 표시 */}
       {currentMembership && (
-        <MembershipRoleStatus
+        <CurrentAcademyCard
           academyName={currentMembership.academy?.name ?? '(이름 없음)'}
           membershipRole={membershipRole}
-          appRole={appRole}
-          advancedOpen={advancedRoleOpen}
-          onToggleAdvanced={() => setAdvancedRoleOpen((v) => !v)}
-          onSwitch={handleSwitchAppRole}
-          recommendedAppRole={recommendedAppRole}
+          lastSyncedLabel={lastSyncedLabel}
+          onRefresh={handleHydrate}
+          refreshing={hydrating}
         />
       )}
 
       {memberships.length === 0 ? (
         // staff 계정이고 pending 초대가 표시될 예정이면 EmptyCard 의 학원 만들기 강조는 줄임.
-        // (account_type === 'staff' 의 경우 학원 만들기 버튼을 약하게 노출)
         <EmptyCard
           loading={!isWorkspaceReady && isWorkspaceLoading}
           creating={creating}
@@ -247,8 +216,10 @@ export default function WorkspaceSection() {
           onCancel={handleCancel}
           deemphasized={isStaffAccount}
         />
-      ) : (
+      ) : showAcademyList ? (
+        // 여러 학원에 소속된 경우에만 학원 전환 카드 노출.
         <div className="flex flex-col gap-2">
+          <p className="text-xs font-bold text-gray-500 mt-2">학원 전환</p>
           {memberships.map((m) => {
             const isCurrent = m.academy_id === currentAcademyId;
             const academyName = m.academy?.name ?? '(이름 없음)';
@@ -291,178 +262,86 @@ export default function WorkspaceSection() {
               </button>
             );
           })}
-
-          {creating ? (
-            <InlineCreateForm
-              name={name}
-              submitting={submitting}
-              onNameChange={setName}
-              onSubmit={handleSubmit}
-              onCancel={handleCancel}
-            />
-          ) : (
-            // staff 계정은 학원을 직접 만들지 않고 초대 수락으로 합류하는 흐름.
-            // 버튼을 약하게(작은 텍스트 링크)만 노출.
-            isStaffAccount ? (
-              <button
-                type="button"
-                onClick={() => setCreating(true)}
-                className="w-full text-center py-2 text-xs text-gray-400 hover:text-blue-600"
-              >
-                직접 학원 만들기
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setCreating(true)}
-                className="w-full flex items-center justify-center gap-1.5 py-3 rounded-2xl bg-white shadow-sm text-sm font-semibold text-blue-600 active:bg-blue-50"
-              >
-                <Plus size={14} />새 학원 만들기
-              </button>
-            )
-          )}
-
-          {currentAcademyId && (
-            <ServerDataStatus
-              studentCount={serverStudents.length}
-              classGroupCount={serverClassGroups.length}
-              classSessionCount={serverClassSessions.length}
-              lessonRecordCount={serverLessonRecords.length}
-              attendanceRecordCount={serverAttendanceRecords.length}
-              clinicRecordCount={serverClinicRecords.length}
-              paymentCount={serverPayments.length}
-              payrollCount={serverPayrolls.length}
-              studentsLoading={isServerStudentsLoading}
-              classGroupsLoading={isServerClassGroupsLoading}
-              classSessionsLoading={isServerClassSessionsLoading}
-              lessonRecordsLoading={isServerLessonRecordsLoading}
-              attendanceRecordsLoading={isServerAttendanceRecordsLoading}
-              clinicRecordsLoading={isServerClinicRecordsLoading}
-              paymentsLoading={isServerPaymentsLoading}
-              payrollsLoading={isServerPayrollsLoading}
-              studentsError={serverStudentsError}
-              classGroupsError={serverClassGroupsError}
-              classSessionsError={serverClassSessionsError}
-              lessonRecordsError={serverLessonRecordsError}
-              attendanceRecordsError={serverAttendanceRecordsError}
-              clinicRecordsError={serverClinicRecordsError}
-              paymentsError={serverPaymentsError}
-              payrollsError={serverPayrollsError}
-              onRefresh={() => {
-                loadServerStudents();
-                loadServerClassGroups();
-                loadServerClassSessions();
-                loadServerLessonRecords();
-                loadServerAttendanceRecords();
-                loadServerClinicRecords();
-                loadServerPayments();
-                loadServerPayrolls();
-              }}
-              onHydrate={handleHydrate}
-              hydrating={hydrating}
-            />
-          )}
         </div>
+      ) : null}
+
+      {/* Phase 28: 원장이 1개 학원만 운영하면 "새 학원 만들기" 는 노출하지 않는다.
+          여러 학원이 있을 때만 fold-out 식 추가 UI (드물게 사용). */}
+      {isOwnerRole && memberships.length > 0 && showAcademyList && (
+        creating ? (
+          <InlineCreateForm
+            name={name}
+            submitting={submitting}
+            onNameChange={setName}
+            onSubmit={handleSubmit}
+            onCancel={handleCancel}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="mt-2 w-full text-center py-2 text-xs text-gray-400 hover:text-blue-600"
+          >
+            직접 학원 만들기
+          </button>
+        )
       )}
     </div>
   );
 }
 
-function ServerDataStatus({
-  studentCount, classGroupCount, classSessionCount,
-  lessonRecordCount, attendanceRecordCount, clinicRecordCount, paymentCount, payrollCount,
-  studentsLoading, classGroupsLoading, classSessionsLoading,
-  lessonRecordsLoading, attendanceRecordsLoading, clinicRecordsLoading, paymentsLoading, payrollsLoading,
-  studentsError, classGroupsError, classSessionsError,
-  lessonRecordsError, attendanceRecordsError, clinicRecordsError, paymentsError, payrollsError,
-  onRefresh, onHydrate, hydrating,
-}) {
-  const [open, setOpen] = useState(false);
-  const anyLoading =
-    studentsLoading || classGroupsLoading || classSessionsLoading ||
-    lessonRecordsLoading || attendanceRecordsLoading || clinicRecordsLoading ||
-    paymentsLoading || payrollsLoading;
-  const totalAny =
-    studentCount + classGroupCount + classSessionCount +
-    lessonRecordCount + attendanceRecordCount + clinicRecordCount + paymentCount + payrollCount;
+// Phase 28: "마지막 동기화 HH:mm" 라벨용 보조 훅. 핵심 3개 loadedAt 중 최신값.
+function useLastSyncedLabel() {
+  const a = useWorkspaceStore((s) => s.serverStudentsLoadedAt);
+  const b = useWorkspaceStore((s) => s.serverClassGroupsLoadedAt);
+  const c = useWorkspaceStore((s) => s.serverClassSessionsLoadedAt);
+  const latest = [a, b, c].filter(Boolean).sort().pop() || null;
+  if (!latest) return null;
+  return new Date(latest).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+}
 
+// Phase 28: "현재 학원" 카드. 학원 이름 + 권한 + 마지막 동기화 시간 + 새로고침.
+// 서버/로컬 구분 라벨은 모두 제거 — 일반 앱처럼 "동기화됨" 만 보여준다.
+function CurrentAcademyCard({ academyName, membershipRole, lastSyncedLabel, onRefresh, refreshing }) {
+  const membershipLabel = appRoleToLabel(membershipRole) || '';
   return (
-    <div className="mt-2 px-1 text-xs">
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1 text-gray-500 font-semibold"
-        >
-          {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          서버 데이터 {totalAny > 0 ? `(${totalAny})` : ''}
-        </button>
+    <div className="bg-white rounded-2xl shadow-sm mb-2 overflow-hidden">
+      <div className="p-3 flex items-start gap-3">
+        <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+          <Building2 size={16} className="text-blue-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-gray-900 truncate">
+            {academyName}
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {membershipLabel}
+            {lastSyncedLabel ? (
+              <>
+                <span className="text-gray-300"> · </span>
+                마지막 동기화 {lastSyncedLabel}
+              </>
+            ) : null}
+          </p>
+        </div>
         <button
           type="button"
           onClick={onRefresh}
-          disabled={anyLoading}
+          disabled={refreshing}
           aria-label="새로고침"
-          className="flex items-center gap-1 text-blue-600 font-semibold disabled:opacity-50 flex-shrink-0"
+          className="text-xs text-blue-600 font-semibold flex items-center gap-1 disabled:opacity-50 flex-shrink-0"
         >
-          <RefreshCw size={12} className={anyLoading ? 'animate-spin' : ''} />
+          <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} />
           새로고침
         </button>
       </div>
-      {open && (
-        <div className="mt-1.5 flex flex-col gap-0.5">
-          <StatusLine label="학생" unit="명" count={studentCount} loading={studentsLoading} error={studentsError} />
-          <StatusLine label="반" unit="개" count={classGroupCount} loading={classGroupsLoading} error={classGroupsError} />
-          <StatusLine label="수업 회차" unit="개" count={classSessionCount} loading={classSessionsLoading} error={classSessionsError} />
-          <StatusLine label="수업 기록" unit="개" count={lessonRecordCount} loading={lessonRecordsLoading} error={lessonRecordsError} />
-          <StatusLine label="출결" unit="개" count={attendanceRecordCount} loading={attendanceRecordsLoading} error={attendanceRecordsError} />
-          <StatusLine label="클리닉 기록" unit="개" count={clinicRecordCount} loading={clinicRecordsLoading} error={clinicRecordsError} />
-          <StatusLine label="수납 기록" unit="개" count={paymentCount} loading={paymentsLoading} error={paymentsError} />
-          <StatusLine label="급여 기록" unit="개" count={payrollCount} loading={payrollsLoading} error={payrollsError} />
-          <span className="text-gray-400">읽기 전용 미리보기</span>
-          {onHydrate && (
-            <button
-              type="button"
-              onClick={onHydrate}
-              disabled={hydrating || anyLoading}
-              className="mt-2 self-start flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-100 text-gray-700 font-semibold text-xs disabled:opacity-60"
-            >
-              {hydrating ? (
-                <>
-                  <Loader2 size={12} className="animate-spin" />
-                  불러오는 중…
-                </>
-              ) : (
-                <>
-                  <Download size={12} />
-                  서버 데이터 불러오기
-                </>
-              )}
-            </button>
-          )}
-        </div>
-      )}
     </div>
   );
 }
 
-function StatusLine({ label, unit, count, loading, error }) {
-  if (loading) {
-    return (
-      <span className="flex items-center gap-1 text-gray-500">
-        <Loader2 size={11} className="animate-spin" />
-        서버 {label} 불러오는 중…
-      </span>
-    );
-  }
-  if (error) {
-    return <span className="text-red-500 truncate">{label} 오류: {error}</span>;
-  }
-  return (
-    <span className="text-gray-500">
-      서버 {label} <span className="font-semibold text-gray-700">{count}{unit}</span>
-    </span>
-  );
-}
+// Phase 28 — ServerDataStatus / StatusLine / MembershipRoleStatus 컴포넌트 제거.
+// "서버 데이터" 라는 기술적 라벨을 사용자에게 노출하지 않고, CurrentAcademyCard 의
+// "마지막 동기화 HH:mm + 새로고침" 만 노출한다. 자동 hydrate 가 정상 흐름.
 
 function EmptyCard({
   loading, creating, submitting, name, onNameChange, onStart, onSubmit, onCancel, deemphasized,
@@ -517,78 +396,6 @@ function EmptyCard({
         >
           <Plus size={14} />학원 만들기
         </button>
-      )}
-    </div>
-  );
-}
-
-function MembershipRoleStatus({
-  academyName, membershipRole, appRole,
-  advancedOpen, onToggleAdvanced, onSwitch, recommendedAppRole,
-}) {
-  // tutor/private mode 사용자에게는 표시하지 않음 — academy roles 만 안내한다.
-  if (!membershipRole) return null;
-  const membershipLabel = appRoleToLabel(membershipRole);
-  const appLabel = appRoleToLabel(appRole) || '과외 모드';
-
-  // Phase 25 — 자동 진입이 동작하므로 mismatch 경고를 별도로 띄우지 않는다.
-  // 대신 현재 권한 / 현재 앱 모드 두 줄을 차분히 표시하고,
-  // 필요한 사람은 "역할 수동 변경 (고급)" 을 열어 강제로 전환할 수 있게 한다.
-  return (
-    <div className="bg-white rounded-2xl shadow-sm mb-2 overflow-hidden">
-      <div className="p-3 flex items-start gap-3">
-        <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-          <Check size={16} className="text-blue-600" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-900 truncate">
-            {academyName}
-          </p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            현재 권한 <span className="font-semibold text-gray-700">{membershipLabel}</span>
-            <span className="text-gray-300"> · </span>
-            앱 모드 <span className="font-semibold text-gray-700">{appLabel}</span>
-          </p>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={onToggleAdvanced}
-        className="w-full flex items-center justify-center gap-1 px-4 py-2 border-t border-gray-100 text-[11px] text-gray-400 hover:text-blue-600"
-      >
-        <Settings2 size={11} />
-        역할 수동 변경 (고급)
-      </button>
-      {advancedOpen && (
-        <div className="px-4 pb-3 flex flex-col gap-2">
-          <p className="text-[11px] text-gray-400 leading-relaxed">
-            평소에는 학원 권한에 맞춰 앱 모드가 자동으로 정해져요.
-            여러 학원을 함께 운영하거나 테스트가 필요할 때만 수동으로 바꿔주세요.
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {['owner', 'teacher', 'assistant', 'tutor'].map((target) => {
-              const isActive = appRole === target;
-              const isRecommended = target === recommendedAppRole;
-              return (
-                <button
-                  key={target}
-                  type="button"
-                  onClick={() => onSwitch(target)}
-                  className={`text-[11px] font-bold px-2.5 py-1.5 rounded-full transition-colors ${
-                    isActive
-                      ? 'bg-blue-600 text-white'
-                      : isRecommended
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'bg-gray-50 text-gray-500'
-                  }`}
-                >
-                  {appRoleToLabel(target)}
-                  {isRecommended && !isActive ? ' (권장)' : ''}
-                </button>
-              );
-            })}
-          </div>
-        </div>
       )}
     </div>
   );

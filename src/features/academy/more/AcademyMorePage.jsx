@@ -15,7 +15,8 @@ import AcademyStaffMembersSection from './AcademyStaffMembersSection';
 import RekeyStaffModal from './RekeyStaffModal';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { UserCog } from 'lucide-react';
+import { UserCog, Building2 } from 'lucide-react';
+import { clearWorkspacePicked } from '../../auth/WorkspaceSelectionPage';
 
 // ─── Constants ──────────────────────────────────────────────────
 const WAGE_TYPES = [
@@ -436,8 +437,21 @@ export default function AcademyMorePage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const userProfile = useWorkspaceStore((s) => s.profile);
   const academyMemberProfiles = useWorkspaceStore((s) => s.academyMemberProfiles);
+  const memberships = useWorkspaceStore((s) => s.memberships);
 
   const isOwner = role === 'owner';
+  // Phase 28: staff(강사/보조강사) 가 여러 학원에 속할 때만 "학원 전환" 버튼 노출.
+  const isStaff = role === 'teacher' || role === 'assistant';
+  const showSwitchAcademy = isStaff && memberships.length > 1;
+
+  const handleSwitchAcademy = () => {
+    // sessionStorage 플래그를 비우면 다음 render 에서 App.jsx 가 WorkspaceSelectionPage 를 노출.
+    clearWorkspacePicked();
+    // 강제 리렌더링: setRole 동일 값으로 호출하면 academy store 가 state 를 갱신해
+    // App.jsx 의 renderLayout 이 재평가된다.
+    // 더 깔끔하게: window.location.reload() — 사용자 데이터 손실 없음 (모두 store/localStorage)
+    if (typeof window !== 'undefined') window.location.reload();
+  };
 
   // 서버 멤버 이메일 셋 — 로컬 강사/보조강사 카드에 "서버 연결됨" 배지 표시용.
   // 이메일은 lowercase 로 비교 (academy_invitations 와 동일 규칙).
@@ -649,6 +663,28 @@ export default function AcademyMorePage() {
         {/* 학원 워크스페이스 */}
         <WorkspaceSection />
 
+        {/* Phase 28: staff (강사/보조강사) 가 여러 학원에 소속된 경우 학원 전환 버튼. */}
+        {showSwitchAcademy && (
+          <div className="mx-4 mt-5">
+            <button
+              type="button"
+              onClick={handleSwitchAcademy}
+              className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-2xl px-4 py-3.5 text-left active:bg-gray-50 shadow-sm"
+            >
+              <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                <Building2 size={16} className="text-blue-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900">학원 전환</p>
+                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                  다른 학원으로 이동해요 ({memberships.length}개 소속)
+                </p>
+              </div>
+              <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
+            </button>
+          </div>
+        )}
+
         {/* 내 프로필 — 로그인 상태에서만 표시. 모든 역할(원장/강사/보조강사) 공통 */}
         {isAuthenticated && (
           <div className="mx-4 mt-5">
@@ -665,9 +701,7 @@ export default function AcademyMorePage() {
                   {userProfile?.display_name || '내 프로필'}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5 truncate">
-                  {userProfile?.phone
-                    ? userProfile.phone
-                    : '이름과 연락처를 등록해두면 원장에게 표시돼요.'}
+                  {userProfile?.phone || '연락처를 등록해두면 더 편해요.'}
                 </p>
               </div>
               <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
@@ -675,27 +709,7 @@ export default function AcademyMorePage() {
           </div>
         )}
 
-        {/* 파일럿 테스트 체크리스트 — 원장 전용. 실제 학원 도입 전 검증 진입점 */}
-        {isOwner && (
-          <div className="mx-4 mt-5">
-            <button
-              type="button"
-              onClick={() => setShowPilotChecklist(true)}
-              className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-2xl px-4 py-3.5 text-left active:bg-gray-50 shadow-sm"
-            >
-              <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                <ClipboardCheck size={16} className="text-blue-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-900">파일럿 테스트 체크리스트</p>
-                <p className="text-xs text-gray-400 mt-0.5">실제 학원 도입 전 8가지 핵심 항목 점검</p>
-              </div>
-              <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
-            </button>
-          </div>
-        )}
-
-        {/* 서버 학원 멤버 — 초대 수락한 강사/보조강사 (원장 전용) */}
+        {/* 구성원 관리 — 원장 전용. 학원 멤버 + 강사/보조강사 통합 (Phase 28) */}
         {isOwner && <AcademyStaffMembersSection />}
 
         {/* 강사 관리 */}
@@ -729,7 +743,7 @@ export default function AcademyMorePage() {
                           <p className="font-semibold text-gray-900 text-sm">{t.name}</p>
                           {linked && (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                              서버 연결됨
+                              참여 중
                             </span>
                           )}
                         </div>
@@ -737,7 +751,7 @@ export default function AcademyMorePage() {
                           {t.subjects.join(', ')}{t.subjects.length > 0 ? ' · ' : ''}{wageLabel(t.wageType)}
                         </p>
                         <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                          반 {counts.groups} · 회차 {counts.sessions} · id {t.id}
+                          반 {counts.groups} · 회차 {counts.sessions}
                         </p>
                       </div>
                       <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
@@ -784,14 +798,14 @@ export default function AcademyMorePage() {
                           <p className="font-semibold text-gray-900 text-sm">{a.name}</p>
                           {linked && (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                              서버 연결됨
+                              참여 중
                             </span>
                           )}
                         </div>
                         {subjects && <p className="text-xs text-gray-500 mt-0.5 truncate">{subjects}</p>}
                         <p className="text-xs text-gray-400 mt-0.5">{wage}</p>
                         <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                          클리닉 {taskCount} · id {a.id}
+                          클리닉 {taskCount}
                         </p>
                       </div>
                       <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
@@ -803,25 +817,18 @@ export default function AcademyMorePage() {
           </div>
         )}
 
-        {/* 데이터 관리 */}
+        {/* 데이터 관리 (원장만) — 샘플 데이터 / 파일럿 체크리스트는 Phase 28 에서 제거.
+            "이 기기 데이터 초기화" 는 캐시 비우기 용도로 유지. */}
         {isOwner && (
           <div className="mx-4 mt-5">
             <p className="text-sm font-bold text-gray-700 mb-3">데이터 관리</p>
             <div className="flex flex-col gap-2">
-              <button type="button" onClick={() => generateAcademySampleData()}
-                className="w-full flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3.5 text-left active:bg-blue-100">
-                <RotateCcw size={16} className="text-blue-500" />
-                <div>
-                  <p className="text-sm font-bold text-blue-600">샘플 데이터 생성</p>
-                  <p className="text-xs text-blue-400 mt-0.5">테스트용 반/학생/클리닉 데이터를 만들어요</p>
-                </div>
-              </button>
               <button type="button" onClick={() => setShowResetConfirm(true)}
-                className="w-full flex items-center gap-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-3.5 text-left active:bg-red-100">
-                <Trash2 size={16} className="text-red-500" />
+                className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-2xl px-4 py-3.5 text-left active:bg-gray-50">
+                <Trash2 size={16} className="text-gray-500" />
                 <div>
-                  <p className="text-sm font-bold text-red-600">이 기기 데이터 초기화</p>
-                  <p className="text-xs text-red-400 mt-0.5">이 기기의 localStorage 만 비워요. 서버 데이터는 그대로 유지돼요.</p>
+                  <p className="text-sm font-bold text-gray-700">이 기기 캐시 초기화</p>
+                  <p className="text-xs text-gray-400 mt-0.5">이 기기에 저장된 임시 데이터만 비워요. 학원 데이터는 그대로 유지돼요.</p>
                 </div>
               </button>
             </div>
@@ -831,8 +838,9 @@ export default function AcademyMorePage() {
         {/* Danger Zone — 원장 본인 + currentAcademy 가 있을 때만 표시 */}
         <DangerZoneSection />
 
-        {/* 역할 변경 */}
-        <div className="mx-4 mt-5">
+        {/* Phase 28: "역할 변경" 버튼 제거. 로그아웃은 위 계정 카드(AuthSection) 에서.
+            여러 학원을 가진 강사/보조강사는 아래 "학원 전환" 으로 전환. */}
+        <div className="mx-4 mt-5 hidden">
           <button type="button" onClick={logout}
             className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white shadow-sm text-gray-600 text-sm font-medium">
             <LogOut size={16} />

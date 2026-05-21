@@ -7,6 +7,7 @@ import useWorkspaceStore from './store/useWorkspaceStore';
 import RoleSelectPage from './features/auth/RoleSelectPage';
 import AuthPage from './features/auth/AuthPage';
 import StaffWaitingPage from './features/auth/StaffWaitingPage';
+import WorkspaceSelectionPage, { wasWorkspacePicked, clearWorkspacePicked } from './features/auth/WorkspaceSelectionPage';
 import AppLayout from './components/AppLayout';
 import AcademyAppLayout from './features/academy/AcademyAppLayout';
 import Toast from './components/Toast';
@@ -84,6 +85,8 @@ export default function App() {
       // Phase 27: 로그아웃 시 자동 역할 ref 초기화. 다음 사용자의 권장 역할이
       // 이전 사용자 값과 같아 잘못 skip 되는 것을 방지.
       autoAppliedRoleRef.current = null;
+      // Phase 28: 학원 선택 sessionStorage 도 비워서 다음 사용자가 다시 선택할 수 있게.
+      clearWorkspacePicked();
     }
   }, [isAuthenticated, initializeWorkspace, clearWorkspace]);
 
@@ -215,6 +218,19 @@ export default function App() {
     ) {
       return <StaffWaitingPage />;
     }
+
+    // Phase 28 — 강사/보조강사가 여러 학원에 속해 있고 이번 세션에 아직 선택 안 함:
+    // 학원 선택 화면. (원장은 보통 1개 학원이므로 이 분기 미적용)
+    if (
+      isAuthenticated &&
+      isWorkspaceReady &&
+      (role === 'teacher' || role === 'assistant') &&
+      memberships.length > 1 &&
+      !wasWorkspacePicked()
+    ) {
+      return <WorkspaceSelectionPage />;
+    }
+
     // 역할이 결정되지 않은 인증 사용자 (예: account_type 미설정) → RoleSelectPage 폴백.
     // 인증 전에는 위에서 AuthPage 로 분기되므로 이 코드에 도달하지 않는다.
     if (!role) return <RoleSelectPage />;

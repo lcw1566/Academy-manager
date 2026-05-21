@@ -86,7 +86,7 @@ export default function AcademyStaffMembersSection() {
   return (
     <div className="mx-4 mt-5">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-bold text-gray-700">학원 멤버 (서버)</p>
+        <p className="text-sm font-bold text-gray-700">구성원 관리</p>
         <button
           type="button"
           onClick={handleRefresh}
@@ -101,15 +101,15 @@ export default function AcademyStaffMembersSection() {
       {loading && visible.length === 0 ? (
         <div className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-2 text-sm text-gray-500">
           <Loader2 size={14} className="animate-spin" />
-          멤버 정보를 불러오는 중…
+          구성원 정보를 불러오는 중…
         </div>
       ) : visible.length === 0 ? (
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <p className="text-sm text-gray-400 text-center">
-            아직 초대를 수락한 멤버가 없어요.
+            아직 참여 중인 강사/보조강사가 없어요.
           </p>
           <p className="text-[11px] text-gray-400 text-center mt-1.5 leading-relaxed">
-            아래 “강사 관리 / 보조강사 관리” 에서 이메일로 앱 초대를 보낼 수 있어요.
+            아래 "강사 관리 / 보조강사 관리" 에서 이메일로 초대를 보낼 수 있어요.
           </p>
         </div>
       ) : (
@@ -170,8 +170,8 @@ export default function AcademyStaffMembersSection() {
       )}
 
       <p className="text-[11px] text-gray-400 mt-2 leading-relaxed">
-        멤버의 이름·전화는 본인이 “내 프로필”에서 직접 등록해요.
-        과목·급여·메모 같은 학원 설정만 여기서 수정해요.
+        이름·연락처는 본인이 "내 프로필" 에서 직접 등록해요.
+        과목·급여·메모 같은 학원 설정만 여기서 수정합니다.
       </p>
 
       {editingUserId && (
