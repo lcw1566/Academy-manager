@@ -36,7 +36,7 @@ export async function getProfile() {
   return data; // 없으면 null
 }
 
-export async function upsertProfile({ displayName, defaultRole, accountType } = {}) {
+export async function upsertProfile({ displayName, defaultRole, accountType, phone } = {}) {
   const user = await getCurrentUserOrThrow();
 
   const payload = {
@@ -46,6 +46,7 @@ export async function upsertProfile({ displayName, defaultRole, accountType } = 
   if (displayName !== undefined) payload.display_name = displayName;
   if (defaultRole !== undefined) payload.default_role = defaultRole;
   if (accountType !== undefined) payload.account_type = accountType;
+  if (phone !== undefined) payload.phone = phone;
 
   const { data, error } = await supabase
     .from('profiles')
@@ -54,6 +55,13 @@ export async function upsertProfile({ displayName, defaultRole, accountType } = 
     .single();
   if (error) throw error;
   return data;
+}
+
+// Profile edit helper for end users (display_name + phone).
+// Used by the profile-edit modal in More. Account type stays read-only here;
+// users change it via the dedicated setMyAccountType action.
+export async function updateMyProfileBasic({ displayName, phone } = {}) {
+  return upsertProfile({ displayName, phone });
 }
 
 // 회원가입 직후 / 프로필 설정에서 account_type 갱신용.
@@ -215,68 +223,47 @@ export async function listMyPendingInvitations() {
 }
 
 // 강사/보조강사가 초대 수락.
-// 1) invitation 조회 + 본인 이메일 일치 검증
-// 2) academy_members 에 (academy_id, user_id, role) 행 upsert (status='active')
-// 3) invitation 자체를 status='accepted', accepted_user_id=user.id 로 update
 //
-// 주의: 두 작업 사이가 트랜잭션이 아니다. academy_members upsert 가 성공한 뒤
-// invitation update 가 실패하면 invitation 은 pending 으로 남는다 (이미 멤버는
-// 됐으니 큰 문제는 없고, 재수락 시 academy_members upsert 가 멱등).
+// IMPORTANT: academy_members.insert RLS 는 owner 한정이므로 일반 사용자는
+// 자기 자신의 멤버 행을 직접 insert 할 수 없다. 그래서 SQL 005 의
+// security definer RPC `accept_academy_invitation` 를 호출한다. 함수 내부에서:
+//   - auth.uid() / auth.email() 검증
+//   - invitation 존재 + status='pending' 확인
+//   - email 일치 확인
+//   - academy_members upsert + invitation update 를 한 트랜잭션으로 처리
+//
+// 그 외 RLS 정책은 그대로 유지된다. RPC 가 유일한 합법적 우회 경로다.
 export async function acceptAcademyInvitation(invitationId) {
-  const user = await getCurrentUserOrThrow();
+  assertSupabaseConfigured();
   if (!invitationId) throw new Error('invitationId가 필요해요.');
-  const cleanedEmail = normalizeEmail(user.email);
 
-  // Step 1: invitation 조회
-  const { data: invitation, error: fetchErr } = await supabase
-    .from('academy_invitations')
-    .select('*, academy:academies(id, name, owner_id)')
-    .eq('id', invitationId)
-    .maybeSingle();
-  if (fetchErr) throw fetchErr;
-  if (!invitation) throw new Error('초대를 찾을 수 없어요.');
-  if (invitation.status !== 'pending') {
-    throw new Error('이미 처리된 초대예요.');
-  }
-  if (normalizeEmail(invitation.email) !== cleanedEmail) {
-    throw new Error('초대받은 이메일과 로그인 이메일이 달라요.');
-  }
-  assertInviteRole(invitation.role);
-
-  // Step 2: academy_members 에 active 멤버로 추가
-  // 기존 행이 있으면 role/status 를 갱신 (재초대 케이스)
-  const { error: memberErr } = await supabase
-    .from('academy_members')
-    .upsert(
-      {
-        academy_id: invitation.academy_id,
-        user_id: user.id,
-        role: invitation.role,
-        status: 'active',
-      },
-      { onConflict: 'academy_id,user_id' },
-    );
-  if (memberErr) throw memberErr;
-
-  // Step 3: invitation 마감 처리
-  const { error: updateErr } = await supabase
-    .from('academy_invitations')
-    .update({
-      status: 'accepted',
-      accepted_user_id: user.id,
-    })
-    .eq('id', invitationId);
-  if (updateErr) {
-    // 멤버는 들어갔지만 invitation 상태 업데이트 실패. 사용자에게는 성공으로
-    // 노출해도 무방하지만, 로그를 위해 throw 한다.
-    throw updateErr;
+  // Call the security definer RPC. It returns one row:
+  //   { out_invitation_id, out_academy_id, out_role, out_accepted_user_id }
+  // (OUT params are prefixed with out_ to avoid colliding with column names
+  //  of the same name inside the function body.)
+  const { data, error } = await supabase.rpc('accept_academy_invitation', {
+    p_invitation_id: invitationId,
+  });
+  if (error) {
+    // RPC raises typed exceptions with Korean messages. Surface them.
+    throw new Error(error.message || '초대 수락에 실패했어요.');
   }
 
-  return {
-    academyId: invitation.academy_id,
-    academy: invitation.academy ?? null,
-    role: invitation.role,
-  };
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('초대 수락 결과가 없어요.');
+
+  const academyId = row.out_academy_id;
+  const role = row.out_role;
+
+  // Optional: fetch academy display info for the caller (toast / store).
+  let academy = null;
+  try {
+    academy = await getAcademyById(academyId);
+  } catch {
+    // best-effort; not blocking
+  }
+
+  return { academyId, academy, role };
 }
 
 // 원장이 보낸 초대 취소.
@@ -353,4 +340,109 @@ export async function createAcademyAsOwner({ name }) {
   }
 
   return academy;
+}
+
+
+// ────────────────────────────────────────────────────────────────
+// academy member profile lookup (SQL 004)
+// ────────────────────────────────────────────────────────────────
+
+// Lists basic profile info (display_name/email/phone/account_type) for users
+// who are active members of the given academy. Uses the security definer
+// function from SQL 004 so the caller only sees rows when they're the
+// academy owner. Returns [] if not the owner or if the function isn't
+// available yet (graceful fallback).
+export async function listAcademyMemberProfiles(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const { data, error } = await supabase.rpc('list_academy_member_profiles', {
+    p_academy_id: academyId,
+  });
+  if (error) {
+    // If the function is missing (SQL 004 not yet applied) we don't want
+    // to break the UI — fall back to empty.
+    if ((error.code || '').toLowerCase() === '42883') return [];
+    throw error;
+  }
+  return data ?? [];
+}
+
+
+// ────────────────────────────────────────────────────────────────
+// academy_staff_profiles (SQL 004)
+// ────────────────────────────────────────────────────────────────
+
+function sanitizeStaffProfilePayload(input = {}) {
+  const out = {};
+  if (input.role !== undefined) out.role = input.role;
+  if (input.subject !== undefined) out.subject = input.subject;
+  if (input.subjects !== undefined) {
+    out.subjects = Array.isArray(input.subjects) ? input.subjects : [];
+  }
+  if (input.wageType !== undefined) {
+    out.wage_type = input.wageType || null;
+  }
+  if (input.hourlyWage !== undefined) {
+    out.hourly_wage = Number(input.hourlyWage) || 0;
+  }
+  if (input.monthlySalary !== undefined) {
+    out.monthly_salary = Number(input.monthlySalary) || 0;
+  }
+  if (input.memo !== undefined) out.memo = input.memo;
+  if (input.status !== undefined) out.status = input.status;
+  if (input.memberId !== undefined) out.member_id = input.memberId;
+  return out;
+}
+
+// Owner-side list of academy-specific staff settings.
+export async function listAcademyStaffProfiles(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const { data, error } = await supabase
+    .from('academy_staff_profiles')
+    .select('*')
+    .eq('academy_id', academyId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+// Owner creates or updates a staff profile row. Keyed by (academy_id, user_id).
+// The caller passes role + academy-managed fields. Basic identity (name/email/
+// phone) is NOT stored here — that lives on public.profiles.
+export async function upsertAcademyStaffProfile({ academyId, userId, ...rest }) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!userId) throw new Error('userId가 필요해요.');
+  if (rest.role && !['teacher', 'assistant'].includes(rest.role)) {
+    throw new Error('role 은 teacher 또는 assistant 여야 해요.');
+  }
+  const payload = {
+    academy_id: academyId,
+    user_id: userId,
+    ...sanitizeStaffProfilePayload(rest),
+  };
+  const { data, error } = await supabase
+    .from('academy_staff_profiles')
+    .upsert(payload, { onConflict: 'academy_id,user_id' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Soft-delete via status='inactive' (no delete policy on the table).
+export async function deactivateAcademyStaffProfile({ academyId, userId }) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!userId) throw new Error('userId가 필요해요.');
+  const { data, error } = await supabase
+    .from('academy_staff_profiles')
+    .update({ status: 'inactive' })
+    .eq('academy_id', academyId)
+    .eq('user_id', userId)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return data;
 }

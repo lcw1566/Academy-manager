@@ -2,8 +2,11 @@ import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Clock } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { today, formatDateShort, greetingByTime } from '../../../utils/date';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
+import { findLocalStaffForUser } from '../../../utils/staffMatch';
 
 // "HH:mm" 문자열을 분 단위로 변환 (00:00 기준)
 function parseHHmmToMinutes(hhmm) {
@@ -22,6 +25,24 @@ export default function TeacherDashboard() {
     academyTeachers, navigateToClassGroup, navigateToClassSession, setActiveTab,
   } = useAcademyStore();
 
+  // Phase 25 — 본인(local academyTeachers) 식별. 서버 멤버십 정보 기반.
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const authUserEmail = useAuthStore((s) => s.user?.email);
+  const memberships = useWorkspaceStore((s) => s.memberships);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const myMembership = useMemo(
+    () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
+    [memberships, currentAcademyId],
+  );
+  const myTeacher = useMemo(
+    () => findLocalStaffForUser(academyTeachers, {
+      userId: authUserId,
+      memberId: myMembership?.id,
+      email: authUserEmail,
+    }),
+    [academyTeachers, authUserId, myMembership?.id, authUserEmail],
+  );
+
   const [selectedDate, setSelectedDate] = useState(today());
   const todayStr = today();
 
@@ -32,11 +53,21 @@ export default function TeacherDashboard() {
     return () => clearInterval(t);
   }, []);
 
-  // MVP: 모든 세션을 본인 담당으로 취급 (실제 teacher ID 매핑은 추후 계정 연동 시)
-  const mySessions = useMemo(
-    () => classSessions.filter((s) => s.status !== 'canceled'),
-    [classSessions]
-  );
+  // 본인 담당 반 — local 강사 id 가 매칭될 때만 필터. 매칭 실패 시 빈 배열.
+  const myGroupIds = useMemo(() => {
+    if (!myTeacher) return new Set();
+    return new Set(classGroups.filter((g) => g.teacherId === myTeacher.id).map((g) => g.id));
+  }, [classGroups, myTeacher]);
+
+  // 본인 담당 세션 — teacherId 일치 OR 본인 담당 반의 세션
+  const mySessions = useMemo(() => {
+    if (!myTeacher) return [];
+    return classSessions.filter(
+      (s) =>
+        s.status !== 'canceled' &&
+        (s.teacherId === myTeacher.id || myGroupIds.has(s.classGroupId)),
+    );
+  }, [classSessions, myTeacher, myGroupIds]);
 
   const todaySessions = useMemo(
     () => mySessions.filter((s) => s.date === todayStr).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
@@ -50,10 +81,14 @@ export default function TeacherDashboard() {
 
   const schedules = useMemo(() => mySessions.map((s) => ({ date: s.date, type: 'class' })), [mySessions]);
 
-  const myClinics = useMemo(
-    () => clinicTasks.filter((t) => t.status !== 'completed'),
-    [clinicTasks]
-  );
+  const myClinics = useMemo(() => {
+    if (!myTeacher) return [];
+    return clinicTasks.filter(
+      (t) =>
+        t.status !== 'completed' &&
+        (t.createdById === myTeacher.id || myGroupIds.has(t.classGroupId)),
+    );
+  }, [clinicTasks, myTeacher, myGroupIds]);
 
   const todayStudentIds = useMemo(
     () => [...new Set(todaySessions.flatMap((s) => s.studentIds || []))],
@@ -197,12 +232,18 @@ export default function TeacherDashboard() {
         </div>
       )}
 
-      {classGroups.length === 0 && (
+      {mySessions.length === 0 && (
         <div className="mx-4">
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
             <div className="text-4xl mb-3">✏️</div>
-            <p className="font-bold text-gray-900 mb-1">배정된 수업이 없어요</p>
-            <p className="text-sm text-gray-500">원장이 반을 생성하고 배정하면 여기 표시됩니다.</p>
+            <p className="font-bold text-gray-900 mb-1">아직 배정된 수업이 없어요</p>
+            <p className="text-sm text-gray-500">원장에게 배정을 요청해주세요.</p>
+            {!myTeacher && (
+              <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                계정과 연결된 강사 정보가 없어요.<br />
+                원장이 강사로 등록하면 여기에 수업이 표시됩니다.
+              </p>
+            )}
           </div>
         </div>
       )}

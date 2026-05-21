@@ -1,7 +1,10 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { today, formatDateShort, greetingByTime, getDDay } from '../../../utils/date';
+import { findLocalStaffForUser } from '../../../utils/staffMatch';
 
 const CLINIC_TYPE_LABELS = {
   homework: '숙제', wrong_answer: '오답', vocabulary: '단어', reading: '본문',
@@ -23,35 +26,62 @@ const PRIORITY_CONFIG = {
 };
 
 export default function AssistantDashboard() {
-  const { academyStudents, classGroups, clinicTasks, completeClinicTask, updateClinicTask, setActiveTab } = useAcademyStore();
+  const {
+    academyStudents, classGroups, clinicTasks, academyAssistants,
+    completeClinicTask, updateClinicTask, setActiveTab,
+  } = useAcademyStore();
   const todayStr = today();
 
+  // Phase 25 — 본인 보조강사 식별. 매칭 실패 시 빈 화면 안내.
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const authUserEmail = useAuthStore((s) => s.user?.email);
+  const memberships = useWorkspaceStore((s) => s.memberships);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const myMembership = useMemo(
+    () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
+    [memberships, currentAcademyId],
+  );
+  const myAssistant = useMemo(
+    () => findLocalStaffForUser(academyAssistants, {
+      userId: authUserId,
+      memberId: myMembership?.id,
+      email: authUserEmail,
+    }),
+    [academyAssistants, authUserId, myMembership?.id, authUserEmail],
+  );
+
+  // 내 클리닉만 필터 — assignedToId 가 내 id 와 일치하는 항목.
+  const myClinicTasks = useMemo(() => {
+    if (!myAssistant) return [];
+    return clinicTasks.filter((t) => t.assignedToId === myAssistant.id);
+  }, [clinicTasks, myAssistant]);
+
   const pendingClinics = useMemo(
-    () => clinicTasks.filter((t) => t.status === 'pending').sort((a, b) => {
+    () => myClinicTasks.filter((t) => t.status === 'pending').sort((a, b) => {
       const pri = { urgent: 0, high: 1, normal: 2, low: 3 };
       return (pri[a.priority] ?? 2) - (pri[b.priority] ?? 2);
     }),
-    [clinicTasks]
+    [myClinicTasks]
   );
 
   const inProgressClinics = useMemo(
-    () => clinicTasks.filter((t) => t.status === 'in_progress'),
-    [clinicTasks]
+    () => myClinicTasks.filter((t) => t.status === 'in_progress'),
+    [myClinicTasks]
   );
 
   const todayDueClinics = useMemo(
-    () => clinicTasks.filter((t) => t.dueDate === todayStr && t.status !== 'completed'),
-    [clinicTasks, todayStr]
+    () => myClinicTasks.filter((t) => t.dueDate === todayStr && t.status !== 'completed'),
+    [myClinicTasks, todayStr]
   );
 
   const urgentClinics = useMemo(
-    () => clinicTasks.filter((t) => t.priority === 'urgent' && t.status !== 'completed'),
-    [clinicTasks]
+    () => myClinicTasks.filter((t) => t.priority === 'urgent' && t.status !== 'completed'),
+    [myClinicTasks]
   );
 
   const completedToday = useMemo(
-    () => clinicTasks.filter((t) => t.completedAt?.startsWith(todayStr)),
-    [clinicTasks, todayStr]
+    () => myClinicTasks.filter((t) => t.completedAt?.startsWith(todayStr)),
+    [myClinicTasks, todayStr]
   );
 
   return (
@@ -61,6 +91,19 @@ export default function AssistantDashboard() {
         <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 클리닉</h2>
         <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
       </div>
+
+      {!myAssistant && (
+        <div className="mx-4 mb-5">
+          <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
+            <div className="text-4xl mb-3">📋</div>
+            <p className="font-bold text-gray-900 mb-1">아직 배정된 클리닉이 없어요</p>
+            <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+              계정과 연결된 보조강사 정보가 없어요.<br />
+              원장이 보조강사로 등록하면 여기에 클리닉이 표시됩니다.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* 요약 카드 */}
       <div className="px-4 grid grid-cols-2 gap-3 mb-5">

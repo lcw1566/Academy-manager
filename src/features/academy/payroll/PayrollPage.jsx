@@ -1,8 +1,11 @@
 import { useState, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import Header from '../../../components/Header';
 import { formatMonth } from '../../../utils/date';
+import { findLocalStaffForUser } from '../../../utils/staffMatch';
 
 const MONTHS_BACK = 5;
 
@@ -23,14 +26,6 @@ function getRecentMonths() {
   return result;
 }
 
-function getStaffId(role, academyTeachers, academyAssistants) {
-  // MVP: 단일 강사/보조강사가 본인 역할에 해당하는 첫 번째 레코드를 자신으로 간주
-  // 실제 계정 연동 시 userId와 매핑
-  if (role === 'teacher') return academyTeachers[0]?.id || null;
-  if (role === 'assistant') return academyAssistants[0]?.id || null;
-  return null;
-}
-
 export default function PayrollPage() {
   const {
     role,
@@ -38,14 +33,35 @@ export default function PayrollPage() {
     classSessions, classGroups, clinicTasks,
   } = useAcademyStore();
 
+  // Phase 25 — 본인 식별 (auth → local 강사/보조강사 매칭)
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const authUserEmail = useAuthStore((s) => s.user?.email);
+  const memberships = useWorkspaceStore((s) => s.memberships);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const myMembership = useMemo(
+    () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
+    [memberships, currentAcademyId],
+  );
+
   const months = getRecentMonths();
   const [selectedMonth, setSelectedMonth] = useState(months[0]);
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
 
-  const staffId = useMemo(
-    () => getStaffId(role, academyTeachers, academyAssistants),
-    [role, academyTeachers, academyAssistants]
-  );
+  const staffId = useMemo(() => {
+    if (role === 'teacher') {
+      const me = findLocalStaffForUser(academyTeachers, {
+        userId: authUserId, memberId: myMembership?.id, email: authUserEmail,
+      });
+      return me?.id || null;
+    }
+    if (role === 'assistant') {
+      const me = findLocalStaffForUser(academyAssistants, {
+        userId: authUserId, memberId: myMembership?.id, email: authUserEmail,
+      });
+      return me?.id || null;
+    }
+    return null;
+  }, [role, academyTeachers, academyAssistants, authUserId, myMembership?.id, authUserEmail]);
 
   const staffInfo = useMemo(() => {
     if (role === 'teacher') return academyTeachers.find((t) => t.id === staffId);

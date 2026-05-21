@@ -1,18 +1,21 @@
 // StaffInviteWidget
 //
-// Phase 19 — 원장이 강사/보조강사를 이메일로 초대하는 위젯.
+// 원장이 강사/보조강사를 "앱 내부 초대" 로 부르는 위젯.
 // TeacherFormModal / AssistantFormModal 에 끼워 넣어 쓴다.
+//
+// 이메일은 **계정 식별자** 일 뿐, 실제 메일은 발송되지 않는다.
+// 초대는 academy_invitations 테이블에 pending row 로 저장되며,
+// 해당 이메일로 로그인한 사용자의 워크스페이스에 "받은 초대" 로 표시된다.
 //
 // 흐름:
 //   1) 원장이 이메일 입력
 //   2) "계정 검색" → findProfileByEmail (best-effort; RLS 차단 가능)
-//   3) "초대 보내기" → createAcademyInvitation (pending row 생성)
-//   4) 강사/보조강사가 본인 로그인 후 받은 초대 영역에서 수락
+//   3) "앱 초대 보내기" → createAcademyInvitation (pending row 생성)
+//   4) 강사/보조강사가 같은 이메일로 로그인한 뒤 "받은 초대" 에서 수락
 //
 // 안전 가드:
 //   - 본인이 본인을 초대하는 케이스 차단 (원장 == 입력 이메일)
 //   - 이메일은 lowercase trim 후 비교/전송
-//   - 이메일 발송은 이번 단계에서 하지 않음 (원장이 카톡/문자로 직접 전달)
 import { useEffect, useState } from 'react';
 import { Mail, Search, Send, Loader2, Check, Info } from 'lucide-react';
 import useAuthStore from '../../../store/useAuthStore';
@@ -106,7 +109,7 @@ export default function StaffInviteWidget({
         setSearchResult('found');
         setFeedback({
           type: 'info',
-          text: '가입된 계정을 찾았어요. 초대를 보내면 상대가 수락 후 학원에 참여합니다.',
+          text: '가입된 계정을 찾았어요. 앱 초대를 보내면 해당 계정의 “받은 초대” 에 표시됩니다.',
         });
       } else {
         // RLS 가 다른 사용자 profile 조회를 차단하므로 대부분 여기에 떨어진다.
@@ -115,7 +118,7 @@ export default function StaffInviteWidget({
           type: 'info',
           text:
             '아직 가입하지 않은 이메일이거나 검색이 제한된 이메일이에요. ' +
-            '초대를 만들어두면 해당 이메일로 가입 후 수락할 수 있어요.',
+            '앱 초대를 만들어두면 해당 이메일로 가입한 뒤 “받은 초대” 에 표시돼요.',
         });
       }
     } catch (err) {
@@ -150,8 +153,7 @@ export default function StaffInviteWidget({
       setFeedback({
         type: 'success',
         text:
-          '초대를 만들었어요. ' +
-          '카톡/문자로 상대에게 회원가입 또는 로그인 후 수락하도록 안내해주세요.',
+          '앱 초대를 보냈어요. 해당 이메일로 로그인하면 “받은 초대” 에서 학원을 수락할 수 있어요.',
       });
       onInviteSent?.({ email: cleanedEmail, status: inv.status });
     } catch (err) {
@@ -230,7 +232,7 @@ export default function StaffInviteWidget({
           className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-60"
         >
           {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-          초대 보내기
+          앱 초대 보내기
         </button>
       </div>
 
@@ -252,13 +254,12 @@ export default function StaffInviteWidget({
       {!feedback && searchResult === 'found' && (
         <div className="text-xs rounded-xl px-3 py-2.5 bg-blue-50 text-blue-700 flex items-start gap-2">
           <Check size={12} className="mt-0.5 flex-shrink-0" />
-          <span>가입된 계정이 확인됐어요. “초대 보내기” 를 눌러 학원에 합류하도록 요청하세요.</span>
+          <span>가입된 계정을 확인했어요. “앱 초대 보내기” 를 눌러 학원에 합류하도록 요청하세요.</span>
         </div>
       )}
 
       <p className="text-[11px] text-gray-400 leading-relaxed mt-1">
-        초대 이메일 자동 발송은 아직 지원되지 않아요.
-        원장이 카톡/문자로 가입 또는 로그인 안내를 직접 전달해주세요.
+        이메일은 발송되지 않으며, 해당 이메일 계정으로 로그인한 사용자의 앱 “받은 초대” 에 표시되는 방식이에요.
       </p>
     </div>
   );

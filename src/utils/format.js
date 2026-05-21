@@ -87,3 +87,24 @@ export function getTeacherDisplayName(teacherId, teachers, academyProfile) {
   const teacher = teachers?.find((t) => t.id === teacherId);
   return teacher?.name || '담당 강사 없음';
 }
+
+// ─── Membership ↔ App role mapping ──────────────────────────────
+// academy_members.role 값 → useAcademyStore.role 앱 모드 값.
+// 현재는 1:1 매핑이지만 별도 함수로 두어 향후 분기(예: assistant→owner 임시
+// 위임)가 생길 때 한 곳에서 처리 가능하게 한다.
+export function membershipRoleToAppRole(role) {
+  if (role === 'owner') return 'owner';
+  if (role === 'teacher') return 'teacher';
+  if (role === 'assistant') return 'assistant';
+  return null;
+}
+
+// 앱 모드(또는 academy_members role) 값에 대한 짧은 한글 라벨.
+// roleMap 과 분리: roleMap 은 직책 라벨, appRoleToLabel 은 메시지 내 짧은 라벨.
+export function appRoleToLabel(role) {
+  if (role === 'owner') return '원장';
+  if (role === 'teacher') return '강사';
+  if (role === 'assistant') return '보조강사';
+  if (role === 'tutor') return '과외 선생님';
+  return '';
+}

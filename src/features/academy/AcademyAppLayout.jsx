@@ -14,7 +14,6 @@ import AcademyStudentDetailPage from './students/AcademyStudentDetailPage';
 import AcademyMorePage from './more/AcademyMorePage';
 import SettlementPage from './settlement/SettlementPage';
 import PayrollPage from './payroll/PayrollPage';
-import HydratePromptModal from '../workspace/HydratePromptModal';
 import Sidebar from '../../components/Sidebar';
 
 const pageVariants = {
@@ -177,8 +176,9 @@ export default function AcademyAppLayout() {
         </div>
       </main>
 
-      {/* Phase 17 — 새 기기/빈 localStorage 감지 시 hydrate 안내 (자동 실행 아님) */}
-      <HydratePromptModal />
+      {/* Phase 25 — 자동 hydrate 가 App.jsx 에서 처리되므로 HydratePromptModal 은
+          기본 흐름에서 표시하지 않는다. 수동 새로고침은 더보기 → 학원 워크스페이스 패널의
+          "서버 데이터 새로고침/불러오기" 버튼으로 진행. */}
 
       {/* Bottom Nav — 모바일 전용 (md 이상에서는 좌측 사이드바가 대체) */}
       <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">

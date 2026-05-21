@@ -1088,6 +1088,188 @@ const useAcademyStore = create(
     get().showToast('보조강사가 삭제되었습니다.');
   },
 
+  // ─── Server-mirrored staff upsert ─────────────────────
+  // Phase 23: take a payload built from `profiles` + `academy_staff_profiles`
+  // and merge it into the local academyTeachers / academyAssistants arrays.
+  //
+  // Matching rules (first match wins):
+  //   1) existing.serverUserId === userId
+  //   2) existing.academyMemberId === memberId
+  //   3) lowercase(existing.email) === lowercase(email)  (only when both present)
+  //
+  // Behavior:
+  //   - existing match → patch in place, KEEP the local id (so classSessions
+  //     that reference it via teacherId stay valid, and payroll keeps matching)
+  //   - no match → append a new entry with stable id `teacher_${userId}` /
+  //     `assistant_${userId}` (so future syncs hit branch 1, not duplicate)
+  //   - never delete (matches the spec; orphans stay until the owner removes
+  //     them via the existing list UI)
+  //
+  // Quiet by design — these are triggered from sync orchestration on the
+  // workspace store, not direct user action, so no toast.
+  upsertLocalTeacherFromServerStaff: (payload = {}) => {
+    const {
+      userId, memberId, email, displayName, phone,
+      subject, subjects, wageType, hourlyWage, monthlySalary, memo, status,
+    } = payload;
+    if (!userId) return null;
+    const normalizedEmail = (email || '').trim().toLowerCase() || null;
+
+    let saved = null;
+    set((s) => {
+      const idx = s.academyTeachers.findIndex((t) =>
+        (t.serverUserId && t.serverUserId === userId) ||
+        (memberId && t.academyMemberId && t.academyMemberId === memberId) ||
+        (normalizedEmail && (t.email || '').trim().toLowerCase() === normalizedEmail)
+      );
+      const existing = idx >= 0 ? s.academyTeachers[idx] : null;
+      const stableId = existing?.id || `teacher_${userId}`;
+
+      const merged = {
+        ...(existing || {}),
+        id: stableId,
+        serverUserId: userId,
+        academyMemberId: memberId || existing?.academyMemberId || null,
+        email: normalizedEmail,
+        name: displayName || existing?.name || normalizedEmail || '(이름 없음)',
+        phone: phone || existing?.phone || '',
+        subject: subject !== undefined ? subject : (existing?.subject ?? ''),
+        subjects: Array.isArray(subjects)
+          ? subjects
+          : (Array.isArray(existing?.subjects) ? existing.subjects : []),
+        wageType: wageType || existing?.wageType || 'hourly',
+        hourlyWage: hourlyWage !== undefined && hourlyWage !== null
+          ? Number(hourlyWage) || 0
+          : (existing?.hourlyWage ?? 0),
+        monthlySalary: monthlySalary !== undefined && monthlySalary !== null
+          ? Number(monthlySalary) || 0
+          : (existing?.monthlySalary ?? 0),
+        memo: memo !== undefined ? memo : (existing?.memo ?? ''),
+        status: status || existing?.status || 'active',
+        source: 'server',
+      };
+      saved = merged;
+
+      if (existing) {
+        const next = s.academyTeachers.slice();
+        next[idx] = merged;
+        return { academyTeachers: next };
+      }
+      return { academyTeachers: [...s.academyTeachers, merged] };
+    });
+    return saved;
+  },
+
+  upsertLocalAssistantFromServerStaff: (payload = {}) => {
+    const {
+      userId, memberId, email, displayName, phone,
+      subject, subjects, wageType, hourlyWage, monthlySalary, memo, status,
+    } = payload;
+    if (!userId) return null;
+    const normalizedEmail = (email || '').trim().toLowerCase() || null;
+
+    let saved = null;
+    set((s) => {
+      const idx = s.academyAssistants.findIndex((a) =>
+        (a.serverUserId && a.serverUserId === userId) ||
+        (memberId && a.academyMemberId && a.academyMemberId === memberId) ||
+        (normalizedEmail && (a.email || '').trim().toLowerCase() === normalizedEmail)
+      );
+      const existing = idx >= 0 ? s.academyAssistants[idx] : null;
+      const stableId = existing?.id || `assistant_${userId}`;
+
+      const merged = {
+        ...(existing || {}),
+        id: stableId,
+        serverUserId: userId,
+        academyMemberId: memberId || existing?.academyMemberId || null,
+        email: normalizedEmail,
+        name: displayName || existing?.name || normalizedEmail || '(이름 없음)',
+        phone: phone || existing?.phone || '',
+        subject: subject !== undefined ? subject : (existing?.subject ?? ''),
+        subjects: Array.isArray(subjects)
+          ? subjects
+          : (Array.isArray(existing?.subjects) ? existing.subjects : []),
+        wageType: wageType || existing?.wageType || 'hourly',
+        hourlyWage: hourlyWage !== undefined && hourlyWage !== null
+          ? Number(hourlyWage) || 0
+          : (existing?.hourlyWage ?? 0),
+        monthlySalary: monthlySalary !== undefined && monthlySalary !== null
+          ? Number(monthlySalary) || 0
+          : (existing?.monthlySalary ?? 0),
+        memo: memo !== undefined ? memo : (existing?.memo ?? ''),
+        status: status || existing?.status || 'active',
+        source: 'server',
+      };
+      saved = merged;
+
+      if (existing) {
+        const next = s.academyAssistants.slice();
+        next[idx] = merged;
+        return { academyAssistants: next };
+      }
+      return { academyAssistants: [...s.academyAssistants, merged] };
+    });
+    return saved;
+  },
+
+  // ─── Staff rekey (manual reconciliation) ──────────────
+  // Phase 24: owner-driven action to move existing class/session/clinic
+  // assignments from an old local staff id (e.g. t1700000000) onto a
+  // server-linked local staff id (e.g. teacher_<userId>).
+  //
+  // Why manual: auto-rekey is unsafe — names may coincide, owner may have
+  // intentionally separated entries, and we never want to silently rewrite
+  // historical records. Owner runs it from the staff detail page.
+  //
+  // Returns { classGroupsTouched, classSessionsTouched } so the UI can
+  // show a precise summary in the confirmation toast.
+  rekeyTeacherSessions: (fromTeacherId, toTeacherId) => {
+    if (!fromTeacherId || !toTeacherId || fromTeacherId === toTeacherId) {
+      return { classGroupsTouched: 0, classSessionsTouched: 0 };
+    }
+    let classGroupsTouched = 0;
+    let classSessionsTouched = 0;
+    set((s) => {
+      const classGroups = s.classGroups.map((g) => {
+        if (g.teacherId === fromTeacherId) {
+          classGroupsTouched += 1;
+          return { ...g, teacherId: toTeacherId };
+        }
+        return g;
+      });
+      const classSessions = s.classSessions.map((sess) => {
+        if (sess.teacherId === fromTeacherId) {
+          classSessionsTouched += 1;
+          return { ...sess, teacherId: toTeacherId };
+        }
+        return sess;
+      });
+      return { classGroups, classSessions };
+    });
+    return { classGroupsTouched, classSessionsTouched };
+  },
+
+  // Move clinic task assignments from an old assistant local id to a new
+  // (server-linked) one. Keeps existing clinic_records / clinicTasks history.
+  rekeyAssistantClinicTasks: (fromAssistantId, toAssistantId) => {
+    if (!fromAssistantId || !toAssistantId || fromAssistantId === toAssistantId) {
+      return { clinicTasksTouched: 0 };
+    }
+    let clinicTasksTouched = 0;
+    set((s) => {
+      const clinicTasks = s.clinicTasks.map((t) => {
+        if (t.assignedToId === fromAssistantId) {
+          clinicTasksTouched += 1;
+          return { ...t, assignedToId: toAssistantId };
+        }
+        return t;
+      });
+      return { clinicTasks };
+    });
+    return { clinicTasksTouched };
+  },
+
   // ─── Academy Payments ─────────────────────────────
   addAcademyPayment: (payment) => {
     const newPayment = { ...payment, id: `ap${Date.now()}` };

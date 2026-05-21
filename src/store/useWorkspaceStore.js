@@ -20,10 +20,14 @@ import {
   getProfile,
   upsertProfile,
   updateMyProfileAccountType,
+  updateMyProfileBasic,
   getMyAcademyMemberships,
   createAcademyAsOwner,
   listMyPendingInvitations,
   acceptAcademyInvitation,
+  listAcademyMemberProfiles,
+  listAcademyStaffProfiles,
+  upsertAcademyStaffProfile,
 } from '../services/supabase/workspaceApi';
 import {
   listAcademyStudents,
@@ -36,6 +40,7 @@ import {
   listAcademyPayrolls,
 } from '../services/supabase/domainApi';
 import useAuthStore from './useAuthStore';
+import useAcademyStore from './useAcademyStore';
 
 const initialState = {
   profile: null,
@@ -98,6 +103,16 @@ const initialState = {
   isMyPendingInvitationsLoading: false,
   myPendingInvitationsError: null,
   myPendingInvitationsLoadedAt: null,
+
+  // Phase 20 — academy 멤버의 profile 정보 (RPC 조회). 원장에게만 의미 있는 값.
+  academyMemberProfiles: [],
+  isAcademyMemberProfilesLoading: false,
+  academyMemberProfilesError: null,
+
+  // Phase 20 — academy-specific staff settings
+  academyStaffProfiles: [],
+  isAcademyStaffProfilesLoading: false,
+  academyStaffProfilesError: null,
 };
 
 const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type';
@@ -182,6 +197,19 @@ const useWorkspaceStore = create(
         }
       },
 
+      // 프로필 기본 정보 수정 (display_name + phone)
+      updateProfileBasic: async ({ displayName, phone } = {}) => {
+        if (!isSupabaseConfigured) return null;
+        try {
+          const profile = await updateMyProfileBasic({ displayName, phone });
+          set({ profile });
+          return profile;
+        } catch (err) {
+          set({ workspaceError: err?.message ?? '프로필 저장에 실패했어요.' });
+          throw err;
+        }
+      },
+
       // 프로필 account_type 수동 갱신 (더보기 UI 등에서 사용)
       setMyAccountType: async (accountType) => {
         if (!isSupabaseConfigured) return null;
@@ -237,6 +265,8 @@ const useWorkspaceStore = create(
             get().loadServerClinicRecords(),
             get().loadServerPayments(),
             get().loadServerPayrolls(),
+            get().loadAcademyMemberProfiles(),
+            get().loadAcademyStaffProfiles(),
           ]);
           return academy;
         } catch (err) {
@@ -265,6 +295,8 @@ const useWorkspaceStore = create(
         get().loadServerClinicRecords();
         get().loadServerPayments();
         get().loadServerPayrolls();
+        get().loadAcademyMemberProfiles();
+        get().loadAcademyStaffProfiles();
       },
 
       // 서버 학생 목록 조회 (read-only). currentAcademyId 가 비어 있으면 빈 배열.
@@ -507,6 +539,157 @@ const useWorkspaceStore = create(
         }
       },
 
+      // 학원 멤버의 profile (이름/이메일/전화) 로드 — 원장만 결과를 받음.
+      // RPC 결과가 빈 배열이면 권한이 없거나 마이그레이션 미적용. 에러로 처리하지 않음.
+      // 성공 시 로컬 mirror 도 동기화 (staff_profiles 가 아직 로딩 전이면
+      // skip 만 되고 다음 staff_profiles 로딩 후 다시 호출되므로 안전).
+      loadAcademyMemberProfiles: async () => {
+        if (!isSupabaseConfigured) {
+          set({ academyMemberProfiles: [] });
+          return [];
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) {
+          set({ academyMemberProfiles: [], academyMemberProfilesError: null });
+          return [];
+        }
+        set({ isAcademyMemberProfilesLoading: true, academyMemberProfilesError: null });
+        try {
+          const list = await listAcademyMemberProfiles(academyId);
+          set({ academyMemberProfiles: list });
+          get().syncLocalStaffFromServerMembers();
+          return list;
+        } catch (err) {
+          set({
+            academyMemberProfilesError:
+              err?.message ?? '학원 멤버 프로필을 불러오지 못했어요.',
+          });
+          return [];
+        } finally {
+          set({ isAcademyMemberProfilesLoading: false });
+        }
+      },
+
+      // academy_staff_profiles 로드 — 원장 또는 본인 row 만 보임.
+      // 성공 시 자동으로 로컬 강사/보조강사 mirror 동기화.
+      loadAcademyStaffProfiles: async () => {
+        if (!isSupabaseConfigured) {
+          set({ academyStaffProfiles: [] });
+          return [];
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) {
+          set({ academyStaffProfiles: [], academyStaffProfilesError: null });
+          return [];
+        }
+        set({ isAcademyStaffProfilesLoading: true, academyStaffProfilesError: null });
+        try {
+          const list = await listAcademyStaffProfiles(academyId);
+          set({ academyStaffProfiles: list });
+          // member profiles + staff profiles 가 모두 있어야 의미가 있다.
+          // 둘 중 어느 쪽이 먼저 끝나든 mirror 를 호출하면 다른 쪽이 아직
+          // 비어 있어도 안전하게 무시되므로 양쪽 모두에서 호출한다.
+          get().syncLocalStaffFromServerMembers();
+          return list;
+        } catch (err) {
+          set({
+            academyStaffProfilesError:
+              err?.message ?? '학원 강사 설정을 불러오지 못했어요.',
+          });
+          return [];
+        } finally {
+          set({ isAcademyStaffProfilesLoading: false });
+        }
+      },
+
+      // Owner 가 학원-특정 강사 설정 저장 → academy_staff_profiles upsert.
+      // 성공 시 store cache + 로컬 강사/보조강사 mirror 도 갱신.
+      saveAcademyStaffProfile: async ({ academyId, userId, ...rest } = {}) => {
+        if (!isSupabaseConfigured) {
+          throw new Error('Supabase가 설정되지 않았어요.');
+        }
+        const aId = academyId || get().currentAcademyId;
+        const saved = await upsertAcademyStaffProfile({ academyId: aId, userId, ...rest });
+        // cache 갱신 (있으면 교체, 없으면 추가)
+        set((s) => {
+          const idx = s.academyStaffProfiles.findIndex(
+            (p) => p.academy_id === saved.academy_id && p.user_id === saved.user_id,
+          );
+          if (idx >= 0) {
+            const next = s.academyStaffProfiles.slice();
+            next[idx] = saved;
+            return { academyStaffProfiles: next };
+          }
+          return { academyStaffProfiles: [...s.academyStaffProfiles, saved] };
+        });
+        // Mirror this single change into local arrays so the existing
+        // class-teacher selector + payroll generator can see it immediately.
+        get().syncLocalStaffFromServerMembers();
+        return saved;
+      },
+
+      // Mirror accepted academy members into the local academyTeachers /
+      // academyAssistants arrays based on academy_staff_profiles role.
+      //
+      // We only mirror members that ALSO have an academy_staff_profiles row —
+      // a freshly accepted invitation without owner-side configuration has
+      // no role decided yet (teacher vs assistant), and the local arrays
+      // are split by that exact distinction. Skipping silently keeps the
+      // local arrays clean.
+      //
+      // Returns { mirrored, skipped } for diagnostics.
+      syncLocalStaffFromServerMembers: () => {
+        const memberProfiles = get().academyMemberProfiles || [];
+        const staffProfiles = get().academyStaffProfiles || [];
+        if (memberProfiles.length === 0) return { mirrored: 0, skipped: 0 };
+
+        const academyState = useAcademyStore.getState();
+        const upsertTeacher = academyState.upsertLocalTeacherFromServerStaff;
+        const upsertAssistant = academyState.upsertLocalAssistantFromServerStaff;
+        if (typeof upsertTeacher !== 'function' || typeof upsertAssistant !== 'function') {
+          return { mirrored: 0, skipped: memberProfiles.length };
+        }
+
+        let mirrored = 0;
+        let skipped = 0;
+
+        memberProfiles.forEach((profile) => {
+          const staff = staffProfiles.find((sp) => sp.user_id === profile.user_id);
+          if (!staff || !staff.role) {
+            // Accepted member but owner hasn't configured their academy
+            // settings (no role decided yet). Skip — they'll show up via
+            // AcademyStaffMembersSection until the owner picks teacher or
+            // assistant in the modal.
+            skipped += 1;
+            return;
+          }
+          const payload = {
+            userId: profile.user_id,
+            memberId: staff.member_id || null,
+            email: profile.email,
+            displayName: profile.display_name,
+            phone: profile.phone,
+            subject: staff.subject,
+            subjects: staff.subjects,
+            wageType: staff.wage_type,
+            hourlyWage: staff.hourly_wage,
+            monthlySalary: staff.monthly_salary,
+            memo: staff.memo,
+            status: staff.status,
+          };
+          if (staff.role === 'teacher') {
+            upsertTeacher(payload);
+            mirrored += 1;
+          } else if (staff.role === 'assistant') {
+            upsertAssistant(payload);
+            mirrored += 1;
+          } else {
+            skipped += 1;
+          }
+        });
+        return { mirrored, skipped };
+      },
+
       // 받은 학원 초대 목록 (pending 만) 조회
       loadMyPendingInvitations: async () => {
         if (!isSupabaseConfigured) {
@@ -552,6 +735,8 @@ const useWorkspaceStore = create(
           get().loadServerClinicRecords(),
           get().loadServerPayments(),
           get().loadServerPayrolls(),
+          get().loadAcademyMemberProfiles(),
+          get().loadAcademyStaffProfiles(),
         ]);
         return result;
       },
@@ -573,6 +758,8 @@ const useWorkspaceStore = create(
             get().loadServerPayments(),
             get().loadServerPayrolls(),
             get().loadMyPendingInvitations(),
+            get().loadAcademyMemberProfiles(),
+            get().loadAcademyStaffProfiles(),
           ]);
           set({ isWorkspaceReady: true });
         } finally {

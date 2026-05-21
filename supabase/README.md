@@ -11,7 +11,9 @@ supabase/
 └── sql/
     ├── 001_workspace_schema.sql    (계정 / 학원 워크스페이스 스키마)
     ├── 002_domain_schema.sql       (학생·수업·정산·클리닉 등 도메인 스키마)
-    └── 003_account_type_and_invitations.sql  (계정 유형 + 학원 초대)
+    ├── 003_account_type_and_invitations.sql  (계정 유형 + 학원 초대)
+    ├── 004_profiles_staff_and_delete_policies.sql  (profile.phone + staff_profiles + academies delete)
+    └── 005_accept_invitation_rpc.sql  (초대 수락 RPC hotfix)
 ```
 
 ## 실행 순서 요약
@@ -21,6 +23,8 @@ supabase/
 | 1 | `001_workspace_schema.sql` | profiles / academies / academy_members + helper functions |
 | 2 | `002_domain_schema.sql` | 도메인 테이블 10개 + RLS + GRANT |
 | 3 | `003_account_type_and_invitations.sql` | profiles.account_type 컬럼 + academy_invitations 테이블 + RLS |
+| 4 | `004_profiles_staff_and_delete_policies.sql` | profiles.phone, academy_staff_profiles, academies delete 정책, list_academy_member_profiles 함수 |
+| 5 | `005_accept_invitation_rpc.sql` | accept_academy_invitation security definer RPC (academy_members RLS 우회 + 강한 검증) |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -131,7 +135,67 @@ RLS 가 row 단위로 차단하므로, GRANT 가 있어도 안전합니다.
 
 ---
 
-## STEP 4 — 앱 동작 확인
+## STEP 4 — `004_profiles_staff_and_delete_policies.sql` 실행
+
+1. SQL Editor 에서 **New query** 클릭
+2. `supabase/sql/004_profiles_staff_and_delete_policies.sql` 의 내용 전체를 복사하여 붙여넣기
+3. **Run**
+4. `Success. No rows returned` 확인
+
+### 결과 확인
+
+- **Table Editor → profiles** 컬럼에 `phone` 추가 확인
+- **Table Editor** 에 `academy_staff_profiles` 테이블 생성 + **RLS enabled** 확인
+- **academies → Auth policies** 에 `academies delete by owner` 정책 추가 확인
+- **Database → Functions** 에 `list_academy_member_profiles` 함수 추가 확인
+
+### 변경 요약
+
+| 항목 | 동작 |
+| --- | --- |
+| `profiles.phone` | 사용자 본인이 편집 가능 (기존 profiles RLS 본인 row 정책 적용) |
+| `academy_staff_profiles` | 원장이 학원-특정 강사 설정(과목/급여/메모) 관리. 본인 row 는 강사 본인도 조회 가능. delete 정책 없음 → soft-delete(status='inactive')만 |
+| `academies delete by owner` | 원장 본인이 자기 학원 삭제 가능. cascade FK 로 자식 행 자동 정리 |
+| `list_academy_member_profiles(uuid)` | security definer 함수로, 원장이 자기 학원 멤버의 이름/이메일/전화/계정유형만 조회 (다른 사용자 profile 누출 없음) |
+
+> ⚠ **academies delete 는 매우 파괴적입니다.** 프론트엔드에서 학원 이름 입력 등
+> 강한 타입드-컨펌 UX 를 반드시 요구합니다.
+
+---
+
+## STEP 5 — `005_accept_invitation_rpc.sql` 실행
+
+1. SQL Editor 에서 **New query** 클릭
+2. `supabase/sql/005_accept_invitation_rpc.sql` 의 내용 전체를 복사하여 붙여넣기
+3. **Run**
+4. `Success. No rows returned` 확인
+
+### 결과 확인
+
+- **Database → Functions** 에 `accept_academy_invitation(uuid)` 함수가 존재 + execute 권한이 `authenticated` 에 부여되어 있는지 확인
+
+### 왜 필요한가
+
+`academy_members.insert` RLS 는 owner 만 허용합니다. 초대받은 사용자는 자기 자신의
+멤버 행을 직접 insert 할 수 없으므로, 초대 수락은 반드시 **security definer RPC**
+를 거쳐야 합니다. 함수 내부에서 다음을 강제로 검증합니다:
+
+| 검증 | 실패 시 |
+| --- | --- |
+| `auth.uid()` 존재 | `auth required` |
+| invitation 존재 | "초대를 찾을 수 없어요." |
+| status='pending' | "이미 처리된 초대예요." |
+| `lower(invitation.email) = lower(auth.email())` | "초대받은 이메일과 로그인 이메일이 달라요." |
+| role ∈ {teacher, assistant} | "잘못된 초대 역할이에요." |
+
+검증 통과 시 본인 academy_members 행만 upsert 하고 invitation 을 accepted 로 마킹합니다.
+다른 사용자의 멤버십은 절대 건드리지 않습니다.
+
+> RLS 정책은 그대로 유지됩니다. 이 RPC 가 유일한 합법적 우회 경로입니다.
+
+---
+
+## STEP 6 — 앱 동작 확인
 
 1. 앱은 별도 변경 없이 계속 정상 동작해야 합니다 (기존 localStorage 모드 유지).
 2. `npm run dev` 로 띄운 뒤 더보기 탭에서:

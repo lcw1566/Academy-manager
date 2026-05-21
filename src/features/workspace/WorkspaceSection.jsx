@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import {
   Building2, Check, ChevronRight, ChevronDown, ChevronUp, Plus, Loader2, X, RefreshCw, Download,
-  Mail, GraduationCap, Users,
+  Mail, GraduationCap, Users, Settings2,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAcademyStore from '../../store/useAcademyStore';
 import { fetchAcademySnapshot } from '../../services/supabase/hydrateApi';
-import { roleMap } from '../../utils/format';
+import { roleMap, membershipRoleToAppRole, appRoleToLabel } from '../../utils/format';
 
 const ACCOUNT_TYPE_HINT = {
   tutor: {
@@ -83,12 +83,17 @@ export default function WorkspaceSection() {
   const loadServerPayrolls = useWorkspaceStore((s) => s.loadServerPayrolls);
   const showToast = useAcademyStore((s) => s.showToast);
   const hydrateAcademyFromServerSnapshot = useAcademyStore((s) => s.hydrateAcademyFromServerSnapshot);
+  const appRole = useAcademyStore((s) => s.role);
+  const setAppRole = useAcademyStore((s) => s.setRole);
 
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [hydrating, setHydrating] = useState(false);
   const [acceptingId, setAcceptingId] = useState(null);
+  // Phase 25: 역할 수동 변경 (고급) 토글. 모든 useState 는 early return 위에 두어
+  // Rules of Hooks 위반 방지.
+  const [advancedRoleOpen, setAdvancedRoleOpen] = useState(false);
 
   const handleAcceptInvitation = async (invitationId) => {
     if (acceptingId) return;
@@ -181,6 +186,20 @@ export default function WorkspaceSection() {
   const hasMemberships = memberships.length > 0;
   const hasPendingInvitations = myPendingInvitations.length > 0;
 
+  // Current membership for the active academy. Drives role status display.
+  const currentMembership = memberships.find((m) => m.academy_id === currentAcademyId);
+  const membershipRole = currentMembership?.role || null;
+  const recommendedAppRole = membershipRoleToAppRole(membershipRole);
+
+  // Phase 25: 자동 진입 후 사용자가 수동으로 다른 역할을 시도하고 싶을 때만 열리는
+  // 보조 UI. 기본은 닫혀 있고, "역할 수동 변경 (고급)" 토글로 펼친다.
+  // (advancedRoleOpen state 는 상단에서 미리 선언 — Rules of Hooks)
+  const handleSwitchAppRole = (target) => {
+    if (!target) return;
+    setAppRole(target);
+    showToast(`${appRoleToLabel(target)} 모드로 전환했어요.`);
+  };
+
   return (
     <div className="mx-4 mt-5">
       <p className="text-sm font-bold text-gray-700 mb-3">학원 워크스페이스</p>
@@ -198,6 +217,19 @@ export default function WorkspaceSection() {
           acceptingId={acceptingId}
           onAccept={handleAcceptInvitation}
           onRefresh={loadMyPendingInvitations}
+        />
+      )}
+
+      {/* 현재 학원 권한 + 앱 모드 안내 — currentAcademy 가 있을 때만 표시 */}
+      {currentMembership && (
+        <MembershipRoleStatus
+          academyName={currentMembership.academy?.name ?? '(이름 없음)'}
+          membershipRole={membershipRole}
+          appRole={appRole}
+          advancedOpen={advancedRoleOpen}
+          onToggleAdvanced={() => setAdvancedRoleOpen((v) => !v)}
+          onSwitch={handleSwitchAppRole}
+          recommendedAppRole={recommendedAppRole}
         />
       )}
 
@@ -485,6 +517,78 @@ function EmptyCard({
         >
           <Plus size={14} />학원 만들기
         </button>
+      )}
+    </div>
+  );
+}
+
+function MembershipRoleStatus({
+  academyName, membershipRole, appRole,
+  advancedOpen, onToggleAdvanced, onSwitch, recommendedAppRole,
+}) {
+  // tutor/private mode 사용자에게는 표시하지 않음 — academy roles 만 안내한다.
+  if (!membershipRole) return null;
+  const membershipLabel = appRoleToLabel(membershipRole);
+  const appLabel = appRoleToLabel(appRole) || '과외 모드';
+
+  // Phase 25 — 자동 진입이 동작하므로 mismatch 경고를 별도로 띄우지 않는다.
+  // 대신 현재 권한 / 현재 앱 모드 두 줄을 차분히 표시하고,
+  // 필요한 사람은 "역할 수동 변경 (고급)" 을 열어 강제로 전환할 수 있게 한다.
+  return (
+    <div className="bg-white rounded-2xl shadow-sm mb-2 overflow-hidden">
+      <div className="p-3 flex items-start gap-3">
+        <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+          <Check size={16} className="text-blue-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-gray-900 truncate">
+            {academyName}
+          </p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            현재 권한 <span className="font-semibold text-gray-700">{membershipLabel}</span>
+            <span className="text-gray-300"> · </span>
+            앱 모드 <span className="font-semibold text-gray-700">{appLabel}</span>
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onToggleAdvanced}
+        className="w-full flex items-center justify-center gap-1 px-4 py-2 border-t border-gray-100 text-[11px] text-gray-400 hover:text-blue-600"
+      >
+        <Settings2 size={11} />
+        역할 수동 변경 (고급)
+      </button>
+      {advancedOpen && (
+        <div className="px-4 pb-3 flex flex-col gap-2">
+          <p className="text-[11px] text-gray-400 leading-relaxed">
+            평소에는 학원 권한에 맞춰 앱 모드가 자동으로 정해져요.
+            여러 학원을 함께 운영하거나 테스트가 필요할 때만 수동으로 바꿔주세요.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {['owner', 'teacher', 'assistant', 'tutor'].map((target) => {
+              const isActive = appRole === target;
+              const isRecommended = target === recommendedAppRole;
+              return (
+                <button
+                  key={target}
+                  type="button"
+                  onClick={() => onSwitch(target)}
+                  className={`text-[11px] font-bold px-2.5 py-1.5 rounded-full transition-colors ${
+                    isActive
+                      ? 'bg-blue-600 text-white'
+                      : isRecommended
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'bg-gray-50 text-gray-500'
+                  }`}
+                >
+                  {appRoleToLabel(target)}
+                  {isRecommended && !isActive ? ' (권장)' : ''}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
     </div>
   );

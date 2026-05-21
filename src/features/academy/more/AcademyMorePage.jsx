@@ -9,6 +9,13 @@ import AuthSection from '../../auth/AuthSection';
 import WorkspaceSection from '../../workspace/WorkspaceSection';
 import PilotChecklistModal from './PilotChecklistModal';
 import StaffInviteWidget from './StaffInviteWidget';
+import ProfileEditModal from '../../workspace/ProfileEditModal';
+import DangerZoneSection from './DangerZoneSection';
+import AcademyStaffMembersSection from './AcademyStaffMembersSection';
+import RekeyStaffModal from './RekeyStaffModal';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import { UserCog } from 'lucide-react';
 
 // ─── Constants ──────────────────────────────────────────────────
 const WAGE_TYPES = [
@@ -45,7 +52,7 @@ function wageLabel(w) { return WAGE_TYPE_LABELS[w] || w || '–'; }
 
 // ─── 강사 상세 페이지 ────────────────────────────────────────────
 // ClassGroupDetailPage와 동일한 패턴: fixed top-0 z-20 헤더 + 본문
-function TeacherDetailPage({ teacher, onBack, onEdit, onDelete }) {
+function TeacherDetailPage({ teacher, onBack, onEdit, onDelete, assignmentCounts, onRekey }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const wageInfo = teacher.wageType === 'monthly'
@@ -121,6 +128,44 @@ function TeacherDetailPage({ teacher, onBack, onEdit, onDelete }) {
           ) : null}
         </div>
 
+        {/* 진단 + rekey — Phase 24 */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <p className="text-xs font-bold text-gray-400 mb-3">서버 연결 / 배정</p>
+          <div className="flex items-center justify-between py-1.5">
+            <span className="text-sm text-gray-500">서버 연결</span>
+            <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+              teacher.source === 'server' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
+            }`}>
+              {teacher.source === 'server' ? '연결됨' : '로컬'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
+            <span className="text-sm text-gray-500">로컬 id</span>
+            <span className="text-xs font-mono text-gray-700 truncate ml-2">{teacher.id}</span>
+          </div>
+          {teacher.serverUserId && (
+            <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
+              <span className="text-sm text-gray-500">서버 사용자 id</span>
+              <span className="text-xs font-mono text-gray-700 truncate ml-2">{teacher.serverUserId.slice(0, 8)}…</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
+            <span className="text-sm text-gray-500">배정된 반 / 수업 회차</span>
+            <span className="text-xs font-semibold text-gray-800">
+              {assignmentCounts?.groups ?? 0}개 · {assignmentCounts?.sessions ?? 0}개
+            </span>
+          </div>
+          {onRekey && (
+            <button
+              type="button"
+              onClick={onRekey}
+              className="w-full mt-3 py-2.5 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold active:bg-blue-100"
+            >
+              기존 수업 배정 연결
+            </button>
+          )}
+        </div>
+
         {/* 담당 과목 */}
         {teacher.subjects.length > 0 && (
           <div className="bg-white rounded-2xl p-5 shadow-sm">
@@ -187,7 +232,7 @@ function TeacherDetailPage({ teacher, onBack, onEdit, onDelete }) {
 }
 
 // ─── 보조강사 상세 페이지 ────────────────────────────────────────
-function AssistantDetailPage({ assistant, onBack, onEdit, onDelete }) {
+function AssistantDetailPage({ assistant, onBack, onEdit, onDelete, taskCount, onRekey }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const wageInfo = assistant.wageType === 'monthly'
@@ -263,6 +308,42 @@ function AssistantDetailPage({ assistant, onBack, onEdit, onDelete }) {
           ) : null}
         </div>
 
+        {/* 진단 + rekey — Phase 24 */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <p className="text-xs font-bold text-gray-400 mb-3">서버 연결 / 배정</p>
+          <div className="flex items-center justify-between py-1.5">
+            <span className="text-sm text-gray-500">서버 연결</span>
+            <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+              assistant.source === 'server' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
+            }`}>
+              {assistant.source === 'server' ? '연결됨' : '로컬'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
+            <span className="text-sm text-gray-500">로컬 id</span>
+            <span className="text-xs font-mono text-gray-700 truncate ml-2">{assistant.id}</span>
+          </div>
+          {assistant.serverUserId && (
+            <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
+              <span className="text-sm text-gray-500">서버 사용자 id</span>
+              <span className="text-xs font-mono text-gray-700 truncate ml-2">{assistant.serverUserId.slice(0, 8)}…</span>
+            </div>
+          )}
+          <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
+            <span className="text-sm text-gray-500">배정된 클리닉 업무</span>
+            <span className="text-xs font-semibold text-gray-800">{taskCount ?? 0}개</span>
+          </div>
+          {onRekey && (
+            <button
+              type="button"
+              onClick={onRekey}
+              className="w-full mt-3 py-2.5 rounded-xl bg-purple-50 text-purple-700 text-xs font-bold active:bg-purple-100"
+            >
+              기존 클리닉 배정 연결
+            </button>
+          )}
+        </div>
+
         {/* 담당 과목 */}
         {assistant.subjects.length > 0 && (
           <div className="bg-white rounded-2xl p-5 shadow-sm">
@@ -334,6 +415,7 @@ export default function AcademyMorePage() {
     academyProfile, setAcademyProfile,
     academyTeachers, addTeacher, updateTeacher, deleteTeacher,
     academyAssistants, addAssistant, updateAssistant, deleteAssistant,
+    classGroups, classSessions, clinicTasks,
     resetAcademyData, generateAcademySampleData,
     showToast,
   } = useAcademyStore();
@@ -348,8 +430,57 @@ export default function AcademyMorePage() {
   const [showProfileEdit, setShowProfileEdit]   = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showPilotChecklist, setShowPilotChecklist] = useState(false);
+  const [showUserProfileEdit, setShowUserProfileEdit] = useState(false);
+  const [rekeyContext, setRekeyContext] = useState(null); // { kind, staff } | null
+
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const userProfile = useWorkspaceStore((s) => s.profile);
+  const academyMemberProfiles = useWorkspaceStore((s) => s.academyMemberProfiles);
 
   const isOwner = role === 'owner';
+
+  // 서버 멤버 이메일 셋 — 로컬 강사/보조강사 카드에 "서버 연결됨" 배지 표시용.
+  // 이메일은 lowercase 로 비교 (academy_invitations 와 동일 규칙).
+  const serverMemberEmails = useMemo(
+    () => new Set(
+      (academyMemberProfiles || [])
+        .map((p) => (p.email || '').trim().toLowerCase())
+        .filter(Boolean),
+    ),
+    [academyMemberProfiles],
+  );
+  const isLocalStaffLinked = (localStaff) => {
+    const email = (localStaff?.email || '').trim().toLowerCase();
+    return !!email && serverMemberEmails.has(email);
+  };
+
+  // Phase 24 diagnostics: count assignments per local staff id.
+  // Memoize to avoid repeated O(N*M) scans on every render.
+  const teacherAssignmentCounts = useMemo(() => {
+    const map = new Map();
+    classGroups.forEach((g) => {
+      if (!g.teacherId) return;
+      const entry = map.get(g.teacherId) || { groups: 0, sessions: 0 };
+      entry.groups += 1;
+      map.set(g.teacherId, entry);
+    });
+    classSessions.forEach((s) => {
+      if (!s.teacherId) return;
+      const entry = map.get(s.teacherId) || { groups: 0, sessions: 0 };
+      entry.sessions += 1;
+      map.set(s.teacherId, entry);
+    });
+    return map;
+  }, [classGroups, classSessions]);
+
+  const assistantAssignmentCounts = useMemo(() => {
+    const map = new Map();
+    clinicTasks.forEach((t) => {
+      if (!t.assignedToId) return;
+      map.set(t.assignedToId, (map.get(t.assignedToId) || 0) + 1);
+    });
+    return map;
+  }, [clinicTasks]);
 
   // 항상 store에서 최신 데이터 조회 (stale snapshot 방지)
   const viewTeacher = useMemo(
@@ -425,6 +556,12 @@ export default function AcademyMorePage() {
           onBack={closeTeacherDetail}
           onEdit={openTeacherEdit}
           onDelete={handleDeleteTeacher}
+          assignmentCounts={teacherAssignmentCounts.get(viewTeacher.id) || { groups: 0, sessions: 0 }}
+          onRekey={
+            viewTeacher.source === 'server'
+              ? () => setRekeyContext({ kind: 'teacher', staff: viewTeacher })
+              : null
+          }
         />
         {teacherFormOpen && (
           <TeacherFormModal
@@ -433,6 +570,12 @@ export default function AcademyMorePage() {
             onSave={handleSaveTeacher}
           />
         )}
+        <RekeyStaffModal
+          isOpen={rekeyContext?.kind === 'teacher'}
+          onClose={() => setRekeyContext(null)}
+          kind="teacher"
+          targetStaff={rekeyContext?.kind === 'teacher' ? rekeyContext.staff : null}
+        />
       </>
     );
   }
@@ -451,6 +594,12 @@ export default function AcademyMorePage() {
           onBack={closeAssistantDetail}
           onEdit={openAssistantEdit}
           onDelete={handleDeleteAssistant}
+          taskCount={assistantAssignmentCounts.get(viewAssistant.id) || 0}
+          onRekey={
+            viewAssistant.source === 'server'
+              ? () => setRekeyContext({ kind: 'assistant', staff: viewAssistant })
+              : null
+          }
         />
         {assistantFormOpen && (
           <AssistantFormModal
@@ -459,6 +608,12 @@ export default function AcademyMorePage() {
             onSave={handleSaveAssistant}
           />
         )}
+        <RekeyStaffModal
+          isOpen={rekeyContext?.kind === 'assistant'}
+          onClose={() => setRekeyContext(null)}
+          kind="assistant"
+          targetStaff={rekeyContext?.kind === 'assistant' ? rekeyContext.staff : null}
+        />
       </>
     );
   }
@@ -494,6 +649,32 @@ export default function AcademyMorePage() {
         {/* 학원 워크스페이스 */}
         <WorkspaceSection />
 
+        {/* 내 프로필 — 로그인 상태에서만 표시. 모든 역할(원장/강사/보조강사) 공통 */}
+        {isAuthenticated && (
+          <div className="mx-4 mt-5">
+            <button
+              type="button"
+              onClick={() => setShowUserProfileEdit(true)}
+              className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-2xl px-4 py-3.5 text-left active:bg-gray-50 shadow-sm"
+            >
+              <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                <UserCog size={16} className="text-gray-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-gray-900">
+                  {userProfile?.display_name || '내 프로필'}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                  {userProfile?.phone
+                    ? userProfile.phone
+                    : '이름과 연락처를 등록해두면 원장에게 표시돼요.'}
+                </p>
+              </div>
+              <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
+            </button>
+          </div>
+        )}
+
         {/* 파일럿 테스트 체크리스트 — 원장 전용. 실제 학원 도입 전 검증 진입점 */}
         {isOwner && (
           <div className="mx-4 mt-5">
@@ -514,6 +695,9 @@ export default function AcademyMorePage() {
           </div>
         )}
 
+        {/* 서버 학원 멤버 — 초대 수락한 강사/보조강사 (원장 전용) */}
+        {isOwner && <AcademyStaffMembersSection />}
+
         {/* 강사 관리 */}
         {isOwner && (
           <div className="mx-4 mt-5">
@@ -532,6 +716,8 @@ export default function AcademyMorePage() {
               <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
                 {academyTeachers.map((raw) => {
                   const t = normalizeTeacher(raw);
+                  const linked = isLocalStaffLinked(t) || t.source === 'server';
+                  const counts = teacherAssignmentCounts.get(t.id) || { groups: 0, sessions: 0 };
                   return (
                     <button type="button" key={t.id} onClick={() => openTeacherDetail(t.id)}
                       className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0 text-left active:bg-gray-50">
@@ -539,9 +725,19 @@ export default function AcademyMorePage() {
                         {t.name.charAt(0)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm">{t.name}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-semibold text-gray-900 text-sm">{t.name}</p>
+                          {linked && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                              서버 연결됨
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-gray-400 truncate">
                           {t.subjects.join(', ')}{t.subjects.length > 0 ? ' · ' : ''}{wageLabel(t.wageType)}
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                          반 {counts.groups} · 회차 {counts.sessions} · id {t.id}
                         </p>
                       </div>
                       <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
@@ -575,6 +771,8 @@ export default function AcademyMorePage() {
                   const wage = a.wageType === 'monthly'
                     ? `월급 ${(a.monthlySalary || 0).toLocaleString()}원`
                     : `시급 ${(a.hourlyWage || 0).toLocaleString()}원`;
+                  const linked = isLocalStaffLinked(a) || a.source === 'server';
+                  const taskCount = assistantAssignmentCounts.get(a.id) || 0;
                   return (
                     <button type="button" key={a.id} onClick={() => openAssistantDetail(a.id)}
                       className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0 text-left active:bg-gray-50">
@@ -582,9 +780,19 @@ export default function AcademyMorePage() {
                         {a.name.charAt(0)}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-900 text-sm">{a.name}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="font-semibold text-gray-900 text-sm">{a.name}</p>
+                          {linked && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                              서버 연결됨
+                            </span>
+                          )}
+                        </div>
                         {subjects && <p className="text-xs text-gray-500 mt-0.5 truncate">{subjects}</p>}
                         <p className="text-xs text-gray-400 mt-0.5">{wage}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                          클리닉 {taskCount} · id {a.id}
+                        </p>
                       </div>
                       <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
                     </button>
@@ -612,13 +820,16 @@ export default function AcademyMorePage() {
                 className="w-full flex items-center gap-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-3.5 text-left active:bg-red-100">
                 <Trash2 size={16} className="text-red-500" />
                 <div>
-                  <p className="text-sm font-bold text-red-600">학원 데이터 초기화</p>
-                  <p className="text-xs text-red-400 mt-0.5">학원 데이터 전체를 삭제해요</p>
+                  <p className="text-sm font-bold text-red-600">이 기기 데이터 초기화</p>
+                  <p className="text-xs text-red-400 mt-0.5">이 기기의 localStorage 만 비워요. 서버 데이터는 그대로 유지돼요.</p>
                 </div>
               </button>
             </div>
           </div>
         )}
+
+        {/* Danger Zone — 원장 본인 + currentAcademy 가 있을 때만 표시 */}
+        <DangerZoneSection />
 
         {/* 역할 변경 */}
         <div className="mx-4 mt-5">
@@ -655,8 +866,14 @@ export default function AcademyMorePage() {
         onClose={() => setShowPilotChecklist(false)}
       />
 
-      {/* 데이터 초기화 확인 */}
-      <Modal isOpen={showResetConfirm} onClose={() => setShowResetConfirm(false)} title="학원 데이터 초기화"
+      {/* 내 프로필 수정 모달 */}
+      <ProfileEditModal
+        isOpen={showUserProfileEdit}
+        onClose={() => setShowUserProfileEdit(false)}
+      />
+
+      {/* 이 기기 데이터 초기화 확인 (localStorage 만) */}
+      <Modal isOpen={showResetConfirm} onClose={() => setShowResetConfirm(false)} title="이 기기 데이터 초기화"
         footer={
           <div className="flex gap-2">
             <button type="button" onClick={() => setShowResetConfirm(false)} className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">취소</button>
@@ -667,8 +884,8 @@ export default function AcademyMorePage() {
         <div className="bg-red-50 rounded-2xl px-4 py-4 flex items-start gap-3">
           <AlertTriangle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-bold text-red-700 mb-1">되돌릴 수 없어요</p>
-            <p className="text-xs text-red-500">학원 학생, 반, 수업 회차, 클리닉, 강사 데이터가 모두 삭제됩니다.</p>
+            <p className="text-sm font-bold text-red-700 mb-1">이 기기의 학원 localStorage 만 비웁니다</p>
+            <p className="text-xs text-red-500">서버 데이터는 그대로 유지돼요. 다시 “서버 데이터 불러오기”로 복원할 수 있어요.</p>
           </div>
         </div>
       </Modal>
