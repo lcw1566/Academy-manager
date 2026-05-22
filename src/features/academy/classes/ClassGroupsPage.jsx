@@ -2,12 +2,15 @@ import { useMemo } from 'react';
 import { Plus, ChevronRight, Users, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import ClassGroupFormModal from './ClassGroupFormModal';
 import { today, formatDateShort } from '../../../utils/date';
 import { getTeacherDisplayName, OWNER_TEACHER_ID } from '../../../utils/format';
 import { useState } from 'react';
+import { currentUserCan } from '../../../utils/staffPermissions';
 
 const STATUS_MAP = {
   active:   { label: '운영 중', color: 'bg-green-50 text-green-700' },
@@ -24,6 +27,17 @@ export default function ClassGroupsPage() {
   const [showForm, setShowForm] = useState(false);
   const todayStr = today();
   const isOwner = role === 'owner';
+
+  // Phase 30 — canManageClasses 권한이 있으면 owner 가 아닌 staff 도 + 버튼 노출.
+  // owner 는 항상 true. teacher/assistant 는 default false 이지만 owner 가 명시적으로
+  // 토글하면 활성화된다.
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const myStaffProfile = useMemo(
+    () => academyStaffProfiles.find((sp) => sp.user_id === authUserId) || null,
+    [academyStaffProfiles, authUserId],
+  );
+  const canManage = currentUserCan({ role, staffProfile: myStaffProfile }, 'canManageClasses');
 
   const enriched = useMemo(() =>
     classGroups.map((group) => {
@@ -48,7 +62,7 @@ export default function ClassGroupsPage() {
       <Header
         title="수업 관리"
         right={
-          isOwner ? (
+          canManage ? (
             <motion.button
               whileTap={{ scale: 0.97 }}
               onClick={() => setShowForm(true)}
@@ -69,9 +83,9 @@ export default function ClassGroupsPage() {
           <EmptyState
             icon="📚"
             title="아직 반이 없어요"
-            description={isOwner ? '반을 만들고 학생과 강사를 배정해요.' : '원장이 반을 생성하면 여기 표시됩니다.'}
+            description={canManage ? '반을 만들고 학생과 강사를 배정해요.' : '원장이 반을 생성하면 여기 표시됩니다.'}
             action={
-              isOwner ? (
+              canManage ? (
                 <button
                   onClick={() => setShowForm(true)}
                   className="bg-blue-600 text-white text-sm font-semibold px-6 py-2.5 rounded-xl"

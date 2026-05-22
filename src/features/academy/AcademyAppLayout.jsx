@@ -1,7 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Home, BookOpen, Users, MoreHorizontal, Stethoscope, CreditCard, BarChart2 } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
+import useAuthStore from '../../store/useAuthStore';
+import useWorkspaceStore from '../../store/useWorkspaceStore';
+import { currentUserCan } from '../../utils/staffPermissions';
 import OwnerDashboard from './dashboard/OwnerDashboard';
 import TeacherDashboard from './dashboard/TeacherDashboard';
 import AssistantDashboard from './dashboard/AssistantDashboard';
@@ -80,7 +83,31 @@ export default function AcademyAppLayout() {
     goBackFromAcademyStudent,
   } = useAcademyStore();
 
-  const tabs = TAB_CONFIG[role] || TAB_CONFIG.owner;
+  // Phase 31 — 역할별 default 탭 후, staffPermissions 로 일부 탭 (payroll 등) 가린다.
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const myStaffProfile = useMemo(
+    () => academyStaffProfiles.find((sp) => sp.user_id === authUserId) || null,
+    [academyStaffProfiles, authUserId],
+  );
+  const baseTabs = TAB_CONFIG[role] || TAB_CONFIG.owner;
+  const tabs = useMemo(() => {
+    return baseTabs.filter((tab) => {
+      if (tab.id === 'payroll') {
+        return currentUserCan({ role, staffProfile: myStaffProfile }, 'canViewPayroll');
+      }
+      if (tab.id === 'students') {
+        return currentUserCan({ role, staffProfile: myStaffProfile }, 'canViewStudents');
+      }
+      if (tab.id === 'settlement') {
+        // 정산 탭은 owner 기본만 노출 (TAB_CONFIG.owner 에만 포함). owner 의 정산에는
+        // 수납 관리도 포함되므로 owner 한정 + 향후 staff 에게 부여 시 canViewPayments 사용.
+        if (role === 'owner') return true;
+        return currentUserCan({ role, staffProfile: myStaffProfile }, 'canViewPayments');
+      }
+      return true;
+    });
+  }, [baseTabs, role, myStaffProfile]);
 
   // 역할이 바뀌어 현재 activeTab이 해당 역할 탭 목록에 없으면 첫 번째 탭으로 보정
   useEffect(() => {

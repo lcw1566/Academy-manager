@@ -1,21 +1,25 @@
-import { useMemo, useState } from 'react';
-import { LogOut, Plus, Trash2, AlertTriangle, ChevronRight, RotateCcw, ChevronLeft, Pencil, ClipboardCheck } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import {
+  AlertTriangle, ChevronRight, ChevronLeft, Pencil, CalendarClock, Wallet,
+  RefreshCw, LogOut, BookOpen, Stethoscope, Inbox, Loader2,
+} from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
 import { roleMap, formatPhoneNumber } from '../../../utils/format';
 import { WAGE_TYPE_LABELS } from '../../../constants/labels';
-import AuthSection from '../../auth/AuthSection';
-import WorkspaceSection from '../../workspace/WorkspaceSection';
-import PilotChecklistModal from './PilotChecklistModal';
 import StaffInviteWidget from './StaffInviteWidget';
+import WorkspaceSection from '../../workspace/WorkspaceSection';
 import ProfileEditModal from '../../workspace/ProfileEditModal';
 import DangerZoneSection from './DangerZoneSection';
 import AcademyStaffMembersSection from './AcademyStaffMembersSection';
 import RekeyStaffModal from './RekeyStaffModal';
+import StaffInviteModal from './StaffInviteModal';
+import StaffShiftPage from './StaffShiftPage';
+import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { UserCog, Building2 } from 'lucide-react';
+import { UserCog, Building2, Mail, Phone } from 'lucide-react';
 import { clearWorkspacePicked } from '../../auth/WorkspaceSelectionPage';
 
 // ─── Constants ──────────────────────────────────────────────────
@@ -129,29 +133,11 @@ function TeacherDetailPage({ teacher, onBack, onEdit, onDelete, assignmentCounts
           ) : null}
         </div>
 
-        {/* 진단 + rekey — Phase 24 */}
+        {/* 수업 배정 */}
         <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <p className="text-xs font-bold text-gray-400 mb-3">서버 연결 / 배정</p>
+          <p className="text-xs font-bold text-gray-400 mb-3">수업 배정</p>
           <div className="flex items-center justify-between py-1.5">
-            <span className="text-sm text-gray-500">서버 연결</span>
-            <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-              teacher.source === 'server' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
-            }`}>
-              {teacher.source === 'server' ? '연결됨' : '로컬'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
-            <span className="text-sm text-gray-500">로컬 id</span>
-            <span className="text-xs font-mono text-gray-700 truncate ml-2">{teacher.id}</span>
-          </div>
-          {teacher.serverUserId && (
-            <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
-              <span className="text-sm text-gray-500">서버 사용자 id</span>
-              <span className="text-xs font-mono text-gray-700 truncate ml-2">{teacher.serverUserId.slice(0, 8)}…</span>
-            </div>
-          )}
-          <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
-            <span className="text-sm text-gray-500">배정된 반 / 수업 회차</span>
+            <span className="text-sm text-gray-500">맡고 있는 반 / 수업 회차</span>
             <span className="text-xs font-semibold text-gray-800">
               {assignmentCounts?.groups ?? 0}개 · {assignmentCounts?.sessions ?? 0}개
             </span>
@@ -309,29 +295,11 @@ function AssistantDetailPage({ assistant, onBack, onEdit, onDelete, taskCount, o
           ) : null}
         </div>
 
-        {/* 진단 + rekey — Phase 24 */}
+        {/* 클리닉 배정 */}
         <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <p className="text-xs font-bold text-gray-400 mb-3">서버 연결 / 배정</p>
+          <p className="text-xs font-bold text-gray-400 mb-3">클리닉 배정</p>
           <div className="flex items-center justify-between py-1.5">
-            <span className="text-sm text-gray-500">서버 연결</span>
-            <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-              assistant.source === 'server' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'
-            }`}>
-              {assistant.source === 'server' ? '연결됨' : '로컬'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
-            <span className="text-sm text-gray-500">로컬 id</span>
-            <span className="text-xs font-mono text-gray-700 truncate ml-2">{assistant.id}</span>
-          </div>
-          {assistant.serverUserId && (
-            <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
-              <span className="text-sm text-gray-500">서버 사용자 id</span>
-              <span className="text-xs font-mono text-gray-700 truncate ml-2">{assistant.serverUserId.slice(0, 8)}…</span>
-            </div>
-          )}
-          <div className="flex items-center justify-between py-1.5 border-t border-gray-50">
-            <span className="text-sm text-gray-500">배정된 클리닉 업무</span>
+            <span className="text-sm text-gray-500">맡고 있는 클리닉 업무</span>
             <span className="text-xs font-semibold text-gray-800">{taskCount ?? 0}개</span>
           </div>
           {onRekey && (
@@ -411,15 +379,23 @@ function AssistantDetailPage({ assistant, onBack, onEdit, onDelete, taskCount, o
 
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────
 export default function AcademyMorePage() {
-  const {
-    role, logout,
-    academyProfile, setAcademyProfile,
-    academyTeachers, addTeacher, updateTeacher, deleteTeacher,
-    academyAssistants, addAssistant, updateAssistant, deleteAssistant,
-    classGroups, classSessions, clinicTasks,
-    resetAcademyData, generateAcademySampleData,
-    showToast,
-  } = useAcademyStore();
+  // Phase 29 — 개별 셀렉터 + 안전 fallback. HMR 또는 store 마이그레이션 중 어떤
+  // 키가 undefined 로 들어오는 경우에도 컴포넌트가 터지지 않도록 방어한다.
+  const role = useAcademyStore((s) => s.role);
+  const academyProfile = useAcademyStore((s) => s.academyProfile);
+  const setAcademyProfile = useAcademyStore((s) => s.setAcademyProfile);
+  const academyTeachers = useAcademyStore((s) => s.academyTeachers) ?? [];
+  const addTeacher = useAcademyStore((s) => s.addTeacher);
+  const updateTeacher = useAcademyStore((s) => s.updateTeacher);
+  const deleteTeacher = useAcademyStore((s) => s.deleteTeacher);
+  const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
+  const addAssistant = useAcademyStore((s) => s.addAssistant);
+  const updateAssistant = useAcademyStore((s) => s.updateAssistant);
+  const deleteAssistant = useAcademyStore((s) => s.deleteAssistant);
+  const classGroups = useAcademyStore((s) => s.classGroups) ?? [];
+  const classSessions = useAcademyStore((s) => s.classSessions) ?? [];
+  const clinicTasks = useAcademyStore((s) => s.clinicTasks) ?? [];
+  const showToast = useAcademyStore((s) => s.showToast);
 
   // 뷰 모드 상태 — ID만 보관, 스냅샷 금지
   const [viewTeacherId, setViewTeacherId]       = useState(null);
@@ -429,20 +405,59 @@ export default function AcademyMorePage() {
   const [isNewTeacher, setIsNewTeacher]         = useState(false);
   const [isNewAssistant, setIsNewAssistant]     = useState(false);
   const [showProfileEdit, setShowProfileEdit]   = useState(false);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [showPilotChecklist, setShowPilotChecklist] = useState(false);
   const [showUserProfileEdit, setShowUserProfileEdit] = useState(false);
   const [rekeyContext, setRekeyContext] = useState(null); // { kind, staff } | null
+  // Pre-Phase 31 — 새로운 초대 진입점은 email-only 모달만 띄운다.
+  // (기존 TeacherFormModal / AssistantFormModal 은 detail 페이지의 "수정" 에서만 사용.)
+  const [inviteRole, setInviteRole] = useState(null); // null | 'teacher' | 'assistant'
+  // Phase 31 — 근무표 진입. shiftContext = { staff, staffRole } | null
+  const [shiftContext, setShiftContext] = useState(null);
 
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authUserEmail = useAuthStore((s) => s.user?.email);
   const userProfile = useWorkspaceStore((s) => s.profile);
-  const academyMemberProfiles = useWorkspaceStore((s) => s.academyMemberProfiles);
-  const memberships = useWorkspaceStore((s) => s.memberships);
+  const academyMemberProfiles = useWorkspaceStore((s) => s.academyMemberProfiles) ?? [];
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+
+  // Post-Phase 32 — 진짜 학원 이름은 memberships 의 academy.name. 로컬
+  // useAcademyStore.academyProfile 는 초기값 "우리 학원" default 가 박혀있어서
+  // 카드에 노출하면 항상 그 값이 나온다. memberships 우선으로 교체.
+  const currentMembership = useMemo(
+    () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
+    [memberships, currentAcademyId],
+  );
+  const currentAcademyName = currentMembership?.academy?.name || null;
+
+  // academyProfile.name 자동 동기화 — 학원이 바뀌거나 이름이 갱신되면 로컬
+  // store 의 academyProfile 도 같이 맞춰서, 다른 위치(예: 헤더, 로컬 hydrate
+  // 모달)도 일관된 이름을 본다. createAcademy 직후에도 곧바로 반영된다.
+  useEffect(() => {
+    if (!currentAcademyId || !currentAcademyName) return;
+    const localName = academyProfile?.name;
+    if (localName === currentAcademyName) return;
+    setAcademyProfile({
+      ...(academyProfile || { ownerName: '', address: '', phone: '' }),
+      name: currentAcademyName,
+    });
+  }, [currentAcademyId, currentAcademyName, academyProfile, setAcademyProfile]);
+
+  // Phase 28 hotfix: 마지막 동기화 시각 — owner More 하단 Danger Zone 위에 한 줄로 표시.
+  const lastSyncedAt = useWorkspaceStore((s) => s.serverStudentsLoadedAt)
+    || useWorkspaceStore((s) => s.serverClassGroupsLoadedAt)
+    || useWorkspaceStore((s) => s.serverClassSessionsLoadedAt);
+  const lastSyncedLabel = lastSyncedAt
+    ? new Date(lastSyncedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+    : null;
 
   const isOwner = role === 'owner';
-  // Phase 28: staff(강사/보조강사) 가 여러 학원에 속할 때만 "학원 전환" 버튼 노출.
+  // Phase 30: 원장 / 강사 / 보조강사 모두 여러 학원에 속할 수 있다.
+  // 학원이 2개 이상이면 "학원 전환" 버튼 노출.
   const isStaff = role === 'teacher' || role === 'assistant';
-  const showSwitchAcademy = isStaff && memberships.length > 1;
+  const showSwitchAcademy = memberships.length > 1;
+  // Phase 29: 신규 가입한 원장(학원 없음) 은 학원 생성 진입점이 필요하다.
+  // AcademyStaffMembersSection 은 currentAcademyId 없으면 null 이라 화면이 텅 비게 된다.
+  const ownerHasNoAcademy = isOwner && memberships.length === 0;
 
   const handleSwitchAcademy = () => {
     // sessionStorage 플래그를 비우면 다음 render 에서 App.jsx 가 WorkspaceSelectionPage 를 노출.
@@ -515,7 +530,29 @@ export default function AcademyMorePage() {
   const openTeacherDetail  = (id)  => setViewTeacherId(id);
   const closeTeacherDetail = ()    => { setViewTeacherId(null); setTeacherFormOpen(false); };
   const openTeacherEdit    = ()    => { setIsNewTeacher(false); setTeacherFormOpen(true); };
-  const openTeacherAdd     = ()    => { setIsNewTeacher(true);  setViewTeacherId(null); setTeacherFormOpen(true); };
+  // Pre-Phase 31 — "강사 추가" 는 email-only 초대 모달로 이동.
+  // 이름·연락처는 본인 프로필에서, 과목·급여는 수락 후 학원 설정에서 처리한다.
+  const openTeacherAdd     = ()    => { setInviteRole('teacher'); };
+
+  // Phase 31 — 구성원의 user_id 와 role 로 로컬 staff 매핑 후 근무표 열기.
+  // 매칭이 안 되면 (예: server staff 가 mirror 안 됐을 때) email 매칭도 시도.
+  const openShiftForUser = ({ userId, role: shiftRole, email }) => {
+    if (!shiftRole) return;
+    const list = shiftRole === 'assistant' ? academyAssistants : academyTeachers;
+    let staffEntry = findLocalStaffForUser(list, { userId, email });
+    if (!staffEntry && userId) {
+      // 서버 mirror 안 됐을 수도 — 가상 staff entry 생성 (id=teacher_<userId>).
+      // 실제로는 syncLocalStaffFromServerMembers 가 곧 채워주지만, 즉시 열기 가능하도록.
+      staffEntry = {
+        id: `${shiftRole}_${userId}`,
+        name: '(이름 없음)',
+        serverUserId: userId,
+        email: email || '',
+      };
+    }
+    if (!staffEntry) return;
+    setShiftContext({ staff: staffEntry, staffRole: shiftRole });
+  };
   const closeTeacherForm   = ()    => { setTeacherFormOpen(false); };
 
   const handleSaveTeacher = (data) => {
@@ -537,7 +574,8 @@ export default function AcademyMorePage() {
   const openAssistantDetail  = (id) => setViewAssistantId(id);
   const closeAssistantDetail = ()   => { setViewAssistantId(null); setAssistantFormOpen(false); };
   const openAssistantEdit    = ()   => { setIsNewAssistant(false); setAssistantFormOpen(true); };
-  const openAssistantAdd     = ()   => { setIsNewAssistant(true);  setViewAssistantId(null); setAssistantFormOpen(true); };
+  // Pre-Phase 31 — "보조강사 추가" 도 email-only 초대 모달로 이동.
+  const openAssistantAdd     = ()   => { setInviteRole('assistant'); };
   const closeAssistantForm   = ()   => { setAssistantFormOpen(false); };
 
   const handleSaveAssistant = (data) => {
@@ -594,6 +632,18 @@ export default function AcademyMorePage() {
     );
   }
 
+  // Phase 31 — 근무표 진입 (전체 페이지로 띄움)
+  if (shiftContext?.staff) {
+    return (
+      <StaffShiftPage
+        staff={shiftContext.staff}
+        staffRole={shiftContext.staffRole}
+        canEdit={isOwner || shiftContext.staff.serverUserId === useAuthStore.getState().user?.id}
+        onBack={() => setShiftContext(null)}
+      />
+    );
+  }
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 보조강사 상세 뷰
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -634,230 +684,63 @@ export default function AcademyMorePage() {
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // 목록 뷰 (기본)
+  // 역할별 분기 (Phase 28 hotfix):
+  //   - Owner : 학원 정보(통합) → 구성원 관리 → 마지막 동기화 → Danger Zone
+  //   - Teacher/Assistant : 학원 카드 → AuthSection → WorkspaceSection → 학원 전환 → 내 프로필
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   return (
     <div>
       <Header title="더보기" />
       <div className="pt-14 pb-6">
 
-        {/* 학원 프로필 */}
-        <button
-          type="button"
-          onClick={() => isOwner && setShowProfileEdit(true)}
-          className="mx-4 mt-4 w-[calc(100%-2rem)] bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 text-left active:scale-[0.97] transition-transform"
-        >
-          <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-xl font-bold text-blue-600 flex-shrink-0">
-            🏫
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-gray-900">{academyProfile?.name || '학원'}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{roleMap[role]}</p>
-            {academyProfile?.phone && <p className="text-xs text-gray-400 mt-0.5">{academyProfile.phone}</p>}
-          </div>
-          {isOwner && <ChevronRight size={16} className="text-gray-300" />}
-        </button>
+      {isOwner ? (
+        ownerHasNoAcademy ? (
+          <OwnerEmptyState
+            displayName={userProfile?.display_name || authUserEmail}
+            onEditMyProfile={() => setShowUserProfileEdit(true)}
+          />
+        ) : (
+          <OwnerMoreSections
+            academyProfile={academyProfile}
+            academyName={currentAcademyName}
+            displayName={userProfile?.display_name}
+            email={authUserEmail}
+            phone={userProfile?.phone}
+            memberships={memberships}
+            showSwitchAcademy={showSwitchAcademy}
+            lastSyncedLabel={lastSyncedLabel}
+            onEditAcademy={() => setShowProfileEdit(true)}
+            onEditMyProfile={() => setShowUserProfileEdit(true)}
+            onOpenTeacherAdd={openTeacherAdd}
+            onOpenAssistantAdd={openAssistantAdd}
+            onOpenShift={openShiftForUser}
+            onSwitchAcademy={handleSwitchAcademy}
+          />
+        )
+      ) : (
+        <StaffMoreSections
+          role={role}
+          academyProfile={academyProfile}
+          displayName={userProfile?.display_name}
+          email={authUserEmail}
+          phone={userProfile?.phone}
+          memberships={memberships}
+          showSwitchAcademy={showSwitchAcademy}
+          onEditMyProfile={() => setShowUserProfileEdit(true)}
+          onOpenMyShift={() => {
+            const uid = useAuthStore.getState().user?.id;
+            if (!uid) return;
+            openShiftForUser({ userId: uid, role, email: authUserEmail });
+          }}
+          onSwitchAcademy={handleSwitchAcademy}
+        />
+      )}
 
-        {/* 서버 계정 (선택 사항) */}
-        <AuthSection />
-
-        {/* 학원 워크스페이스 */}
-        <WorkspaceSection />
-
-        {/* Phase 28: staff (강사/보조강사) 가 여러 학원에 소속된 경우 학원 전환 버튼. */}
-        {showSwitchAcademy && (
-          <div className="mx-4 mt-5">
-            <button
-              type="button"
-              onClick={handleSwitchAcademy}
-              className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-2xl px-4 py-3.5 text-left active:bg-gray-50 shadow-sm"
-            >
-              <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                <Building2 size={16} className="text-blue-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-900">학원 전환</p>
-                <p className="text-xs text-gray-400 mt-0.5 truncate">
-                  다른 학원으로 이동해요 ({memberships.length}개 소속)
-                </p>
-              </div>
-              <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
-            </button>
-          </div>
-        )}
-
-        {/* 내 프로필 — 로그인 상태에서만 표시. 모든 역할(원장/강사/보조강사) 공통 */}
-        {isAuthenticated && (
-          <div className="mx-4 mt-5">
-            <button
-              type="button"
-              onClick={() => setShowUserProfileEdit(true)}
-              className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-2xl px-4 py-3.5 text-left active:bg-gray-50 shadow-sm"
-            >
-              <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                <UserCog size={16} className="text-gray-600" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-900">
-                  {userProfile?.display_name || '내 프로필'}
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5 truncate">
-                  {userProfile?.phone || '연락처를 등록해두면 더 편해요.'}
-                </p>
-              </div>
-              <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
-            </button>
-          </div>
-        )}
-
-        {/* 구성원 관리 — 원장 전용. 학원 멤버 + 강사/보조강사 통합 (Phase 28) */}
-        {isOwner && <AcademyStaffMembersSection />}
-
-        {/* 강사 관리 */}
-        {isOwner && (
-          <div className="mx-4 mt-5">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-bold text-gray-700">강사 관리</p>
-              <button type="button" onClick={openTeacherAdd}
-                className="flex items-center gap-1 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full">
-                <Plus size={12} />추가
-              </button>
-            </div>
-            {academyTeachers.length === 0 ? (
-              <div className="bg-white rounded-2xl p-4 text-center shadow-sm">
-                <p className="text-sm text-gray-400">등록된 강사가 없어요</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                {academyTeachers.map((raw) => {
-                  const t = normalizeTeacher(raw);
-                  const linked = isLocalStaffLinked(t) || t.source === 'server';
-                  const counts = teacherAssignmentCounts.get(t.id) || { groups: 0, sessions: 0 };
-                  return (
-                    <button type="button" key={t.id} onClick={() => openTeacherDetail(t.id)}
-                      className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0 text-left active:bg-gray-50">
-                      <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center text-sm font-bold text-blue-600 flex-shrink-0">
-                        {t.name.charAt(0)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="font-semibold text-gray-900 text-sm">{t.name}</p>
-                          {linked && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                              참여 중
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-gray-400 truncate">
-                          {t.subjects.join(', ')}{t.subjects.length > 0 ? ' · ' : ''}{wageLabel(t.wageType)}
-                        </p>
-                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                          반 {counts.groups} · 회차 {counts.sessions}
-                        </p>
-                      </div>
-                      <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 보조강사 관리 */}
-        {isOwner && (
-          <div className="mx-4 mt-5">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-bold text-gray-700">보조강사 관리</p>
-              <button type="button" onClick={openAssistantAdd}
-                className="flex items-center gap-1 text-xs font-semibold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-full">
-                <Plus size={12} />추가
-              </button>
-            </div>
-            {academyAssistants.length === 0 ? (
-              <div className="bg-white rounded-2xl p-4 text-center shadow-sm">
-                <p className="text-sm text-gray-400">등록된 보조강사가 없어요</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-                {academyAssistants.map((raw) => {
-                  const a = normalizeAssistant(raw);
-                  const subjects = a.subjects.join(' · ');
-                  const wage = a.wageType === 'monthly'
-                    ? `월급 ${(a.monthlySalary || 0).toLocaleString()}원`
-                    : `시급 ${(a.hourlyWage || 0).toLocaleString()}원`;
-                  const linked = isLocalStaffLinked(a) || a.source === 'server';
-                  const taskCount = assistantAssignmentCounts.get(a.id) || 0;
-                  return (
-                    <button type="button" key={a.id} onClick={() => openAssistantDetail(a.id)}
-                      className="w-full flex items-center gap-3 px-4 py-3.5 border-b border-gray-50 last:border-0 text-left active:bg-gray-50">
-                      <div className="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center text-sm font-bold text-purple-600 flex-shrink-0">
-                        {a.name.charAt(0)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="font-semibold text-gray-900 text-sm">{a.name}</p>
-                          {linked && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                              참여 중
-                            </span>
-                          )}
-                        </div>
-                        {subjects && <p className="text-xs text-gray-500 mt-0.5 truncate">{subjects}</p>}
-                        <p className="text-xs text-gray-400 mt-0.5">{wage}</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5 truncate">
-                          클리닉 {taskCount}
-                        </p>
-                      </div>
-                      <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 데이터 관리 (원장만) — 샘플 데이터 / 파일럿 체크리스트는 Phase 28 에서 제거.
-            "이 기기 데이터 초기화" 는 캐시 비우기 용도로 유지. */}
-        {isOwner && (
-          <div className="mx-4 mt-5">
-            <p className="text-sm font-bold text-gray-700 mb-3">데이터 관리</p>
-            <div className="flex flex-col gap-2">
-              <button type="button" onClick={() => setShowResetConfirm(true)}
-                className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-2xl px-4 py-3.5 text-left active:bg-gray-50">
-                <Trash2 size={16} className="text-gray-500" />
-                <div>
-                  <p className="text-sm font-bold text-gray-700">이 기기 캐시 초기화</p>
-                  <p className="text-xs text-gray-400 mt-0.5">이 기기에 저장된 임시 데이터만 비워요. 학원 데이터는 그대로 유지돼요.</p>
-                </div>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Danger Zone — 원장 본인 + currentAcademy 가 있을 때만 표시 */}
-        <DangerZoneSection />
-
-        {/* Phase 28: "역할 변경" 버튼 제거. 로그아웃은 위 계정 카드(AuthSection) 에서.
-            여러 학원을 가진 강사/보조강사는 아래 "학원 전환" 으로 전환. */}
-        <div className="mx-4 mt-5 hidden">
-          <button type="button" onClick={logout}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white shadow-sm text-gray-600 text-sm font-medium">
-            <LogOut size={16} />
-            역할 변경
-          </button>
-        </div>
       </div>
 
-      {/* 강사 추가 폼 (목록 뷰에서 열림) */}
-      {teacherFormOpen && isNewTeacher && (
-        <TeacherFormModal initialData={null} onClose={closeTeacherForm} onSave={handleSaveTeacher} />
-      )}
-
-      {/* 보조강사 추가 폼 (목록 뷰에서 열림) */}
-      {assistantFormOpen && isNewAssistant && (
-        <AssistantFormModal initialData={null} onClose={closeAssistantForm} onSave={handleSaveAssistant} />
-      )}
+      {/* Pre-Phase 31 — 신규 강사 추가는 StaffInviteModal 로 일원화됨.
+          dead 블록(isNewTeacher/isNewAssistant) 은 제거. detail 페이지의 "수정"
+          진입은 그대로 동작한다 (isNewX=false 로 setTeacherFormOpen). */}
 
       {/* 학원 프로필 수정 */}
       {showProfileEdit && (
@@ -868,35 +751,435 @@ export default function AcademyMorePage() {
         />
       )}
 
-      {/* 파일럿 테스트 체크리스트 모달 */}
-      <PilotChecklistModal
-        isOpen={showPilotChecklist}
-        onClose={() => setShowPilotChecklist(false)}
-      />
-
       {/* 내 프로필 수정 모달 */}
       <ProfileEditModal
         isOpen={showUserProfileEdit}
         onClose={() => setShowUserProfileEdit(false)}
       />
 
-      {/* 이 기기 데이터 초기화 확인 (localStorage 만) */}
-      <Modal isOpen={showResetConfirm} onClose={() => setShowResetConfirm(false)} title="이 기기 데이터 초기화"
-        footer={
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setShowResetConfirm(false)} className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">취소</button>
-            <button type="button" onClick={() => { resetAcademyData(); setShowResetConfirm(false); }} className="flex-1 py-3.5 rounded-xl bg-red-500 text-white text-sm font-bold">초기화</button>
+      {/* Pre-Phase 31 — 강사/보조강사 초대 (email-only) 모달 */}
+      {inviteRole && (
+        <StaffInviteModal
+          role={inviteRole}
+          onClose={() => setInviteRole(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Phase 31 UI cleanup — 공통 layout 헬퍼
+// ═══════════════════════════════════════════════════════════════════
+
+// 섹션 제목 (예: "운영 관리", "계정")
+function SectionTitle({ children, className = '' }) {
+  return (
+    <p className={`mx-4 mt-6 mb-2 text-xs font-bold text-gray-800 ${className}`}>
+      {children}
+    </p>
+  );
+}
+
+// 깔끔한 settings row (icon + 제목 + 부제 + chevron).
+// 색 톤은 단순화 (icon 색상만 lightly tint). 일관된 시각 무게.
+function SettingsRow({
+  icon: Icon, title, subtitle, onClick, tone = 'gray', danger = false,
+  rightAdornment,
+}) {
+  const toneClass =
+    danger ? 'text-red-600 bg-red-50' :
+    tone === 'blue' ? 'text-blue-600 bg-blue-50' :
+    tone === 'emerald' ? 'text-emerald-600 bg-emerald-50' :
+    'text-gray-600 bg-gray-100';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-3.5 text-left active:bg-gray-50 ${danger ? 'border border-red-100' : 'border border-gray-100'} shadow-sm`}
+    >
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${toneClass}`}>
+        <Icon size={16} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-bold ${danger ? 'text-red-600' : 'text-gray-900'}`}>{title}</p>
+        {subtitle && (
+          <p className="text-xs text-gray-400 mt-0.5 truncate">{subtitle}</p>
+        )}
+      </div>
+      {rightAdornment || (
+        <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
+      )}
+    </button>
+  );
+}
+
+// 같은 섹션 안 카드들을 묶는 그리드 (mobile: 1col, md+: 2col)
+function CardGrid({ children }) {
+  return (
+    <div className="mx-4 grid grid-cols-1 md:grid-cols-2 gap-2">
+      {children}
+    </div>
+  );
+}
+
+// Owner More — 원장이 학원이 없는 상태 (학원 만들기 안내).
+// 학원 생성 UI 는 WorkspaceSection 이 담당 — 학원 0개 owner 케이스에서만 노출.
+function OwnerEmptyState({ displayName, onEditMyProfile }) {
+  return (
+    <>
+      <div className="mx-4 mt-4 bg-white rounded-2xl p-5 shadow-sm">
+        <p className="font-bold text-gray-900 text-base mb-1">학원을 먼저 만들어주세요</p>
+        <p className="text-xs text-gray-500 leading-relaxed">
+          학원을 만들면 강사·보조강사 초대와 학생 관리를 시작할 수 있어요.
+        </p>
+      </div>
+      <WorkspaceSection />
+      <SectionTitle>계정</SectionTitle>
+      <div className="mx-4 flex flex-col gap-2">
+        <SettingsRow
+          icon={UserCog}
+          title={displayName || '내 프로필'}
+          subtitle="이름·연락처 수정"
+          onClick={onEditMyProfile}
+        />
+        <InlineLogoutButton />
+      </div>
+    </>
+  );
+}
+
+// Owner More — 메인 layout (학원 있는 원장)
+function OwnerMoreSections({
+  academyProfile, academyName, displayName, email, phone, memberships = [], showSwitchAcademy,
+  lastSyncedLabel,
+  onEditAcademy, onEditMyProfile,
+  onOpenTeacherAdd, onOpenAssistantAdd, onOpenShift, onSwitchAcademy,
+}) {
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
+  const showToast = useAcademyStore((s) => s.showToast);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const ws = useWorkspaceStore.getState();
+    try {
+      await Promise.all([
+        ws.loadServerStudents?.(),
+        ws.loadServerClassGroups?.(),
+        ws.loadServerClassSessions?.(),
+        ws.loadServerLessonRecords?.(),
+        ws.loadServerAttendanceRecords?.(),
+        ws.loadServerClinicRecords?.(),
+        ws.loadServerPayments?.(),
+        ws.loadServerPayrolls?.(),
+        ws.loadAcademyMemberProfiles?.(),
+        ws.loadAcademyStaffProfiles?.(),
+        ws.loadAcademyInvitations?.(),
+        ws.loadServerStaffShifts?.(),
+      ]);
+      showToast('새로고침했어요.');
+    } catch (err) {
+      console.warn('[refresh-all] failed', err);
+      showToast('일부 데이터를 불러오지 못했어요.', 'error');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  return (
+    <>
+      {/* A. 학원 정보 + 원장 프로필 — academyName 우선 (memberships 의 진짜 이름) */}
+      <AcademyOwnerInfoCard
+        academyProfile={academyProfile}
+        academyName={academyName}
+        displayName={displayName}
+        email={email}
+        phone={phone}
+        onEditAcademy={onEditAcademy}
+        onEditMyProfile={onEditMyProfile}
+      />
+
+      {/* B. 운영 관리 */}
+      <SectionTitle>운영 관리</SectionTitle>
+      <div className="mx-4">
+        <AcademyStaffMembersSection
+          onAddTeacher={onOpenTeacherAdd}
+          onAddAssistant={onOpenAssistantAdd}
+          onOpenShift={onOpenShift}
+          embedded
+        />
+      </div>
+      <div className="mx-4 mt-2 flex flex-col gap-2">
+        <SettingsRow
+          icon={Wallet}
+          tone="emerald"
+          title="근무·급여 설정"
+          subtitle="이번 달 급여 명세 생성과 지급 상태"
+          onClick={() => setActiveTab('settlement')}
+        />
+        <SettingsRow
+          icon={RefreshCw}
+          title="데이터 관리"
+          subtitle={lastSyncedLabel ? `마지막 동기화 ${lastSyncedLabel}` : '최신 정보를 다시 불러와요'}
+          onClick={handleRefresh}
+          rightAdornment={
+            refreshing ? <Loader2 size={14} className="animate-spin text-gray-400" /> : undefined
+          }
+        />
+        {showSwitchAcademy && (
+          <SettingsRow
+            icon={Building2}
+            tone="blue"
+            title="학원 전환"
+            subtitle={`다른 학원으로 이동 (${memberships.length}개 보유)`}
+            onClick={onSwitchAcademy}
+          />
+        )}
+      </div>
+
+      {/* C. 계정 */}
+      <SectionTitle>계정</SectionTitle>
+      <div className="mx-4 flex flex-col gap-2">
+        <SettingsRow
+          icon={UserCog}
+          title={displayName || '내 프로필'}
+          subtitle={phone || email || '이름·연락처 수정'}
+          onClick={onEditMyProfile}
+        />
+        <InlineLogoutButton />
+      </div>
+
+      {/* D. 위험 영역 */}
+      <SectionTitle className="text-red-600">위험 영역</SectionTitle>
+      <DangerZoneSection />
+    </>
+  );
+}
+
+// Staff (teacher/assistant) More 메인 layout
+function StaffMoreSections({
+  role, academyProfile, displayName, email, phone, memberships = [], showSwitchAcademy,
+  onEditMyProfile, onOpenMyShift, onSwitchAcademy,
+}) {
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
+  const acceptInvitation = useWorkspaceStore((s) => s.acceptInvitation);
+  const showToast = useAcademyStore((s) => s.showToast);
+  const [acceptingId, setAcceptingId] = useState(null);
+
+  const myMembership = memberships.find((m) => m.academy_id === currentAcademyId);
+  const myRoleLabel = roleMap[role] || role;
+
+  const handleAcceptInvitation = async (invitationId) => {
+    if (acceptingId) return;
+    setAcceptingId(invitationId);
+    try {
+      const result = await acceptInvitation(invitationId);
+      const academyName = result?.academy?.name ?? '학원';
+      showToast(`${academyName}에 참여했어요.`);
+    } catch (err) {
+      showToast(err?.message ?? '초대 수락에 실패했어요.', 'error');
+    } finally {
+      setAcceptingId(null);
+    }
+  };
+
+  const workTitle = role === 'assistant' ? '담당 클리닉' : '담당 수업';
+  const workIcon = role === 'assistant' ? Stethoscope : BookOpen;
+  const workTab = role === 'assistant' ? 'clinic' : 'classes';
+
+  return (
+    <>
+      {/* A. 내 프로필 */}
+      <SectionTitle>내 프로필</SectionTitle>
+      <div className="mx-4">
+        <button
+          type="button"
+          onClick={onEditMyProfile}
+          className="w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-4 text-left active:bg-gray-50 border border-gray-100 shadow-sm"
+        >
+          <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-base font-bold text-blue-600 flex-shrink-0">
+            {(displayName || email || '?').charAt(0).toUpperCase()}
           </div>
-        }
-      >
-        <div className="bg-red-50 rounded-2xl px-4 py-4 flex items-start gap-3">
-          <AlertTriangle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-bold text-red-700 mb-1">이 기기의 학원 localStorage 만 비웁니다</p>
-            <p className="text-xs text-red-500">서버 데이터는 그대로 유지돼요. 다시 “서버 데이터 불러오기”로 복원할 수 있어요.</p>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-gray-900 text-base truncate">
+              {displayName || '이름을 등록해주세요'}
+            </p>
+            {email && <p className="text-xs text-gray-500 mt-0.5 truncate">{email}</p>}
+            {phone && <p className="text-xs text-gray-400 mt-0.5 truncate">{phone}</p>}
+          </div>
+          <ChevronRight size={14} className="text-gray-300 flex-shrink-0" />
+        </button>
+      </div>
+
+      {/* B. 소속 학원 */}
+      <SectionTitle>소속 학원</SectionTitle>
+      <div className="mx-4 flex flex-col gap-2">
+        <div className="bg-white rounded-2xl px-4 py-3.5 border border-gray-100 shadow-sm flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+            <Building2 size={16} className="text-blue-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-gray-900 truncate">
+              {myMembership?.academy?.name || academyProfile?.name || '학원'}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">{myRoleLabel}</p>
           </div>
         </div>
-      </Modal>
+
+        {showSwitchAcademy && (
+          <SettingsRow
+            icon={Building2}
+            tone="blue"
+            title="학원 전환"
+            subtitle={`다른 학원으로 이동 (${memberships.length}개 소속)`}
+            onClick={onSwitchAcademy}
+          />
+        )}
+
+        {myPendingInvitations.length > 0 && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-2 border-b border-gray-50 flex items-center gap-2">
+              <Inbox size={13} className="text-amber-600" />
+              <p className="text-xs font-bold text-gray-700">받은 초대 ({myPendingInvitations.length})</p>
+            </div>
+            {myPendingInvitations.map((inv) => (
+              <div key={inv.id} className="flex items-center gap-2 px-4 py-3 border-b border-gray-50 last:border-0">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">
+                    {inv.academy?.name || '학원'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">{roleMap[inv.role] || inv.role}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleAcceptInvitation(inv.id)}
+                  disabled={acceptingId === inv.id}
+                  className="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-600 text-white disabled:opacity-60"
+                >
+                  {acceptingId === inv.id ? '수락 중…' : '수락'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* C. 내 업무 */}
+      <SectionTitle>내 업무</SectionTitle>
+      <div className="mx-4 flex flex-col gap-2">
+        <SettingsRow
+          icon={CalendarClock}
+          tone="blue"
+          title="내 근무표"
+          subtitle="이번 달 일정과 출/퇴근"
+          onClick={onOpenMyShift}
+        />
+        <SettingsRow
+          icon={Wallet}
+          tone="emerald"
+          title="내 급여"
+          subtitle="이번 달 급여 정보"
+          onClick={() => setActiveTab('payroll')}
+        />
+        <SettingsRow
+          icon={workIcon}
+          title={workTitle}
+          subtitle={role === 'assistant' ? '담당 클리닉으로 이동' : '담당 수업으로 이동'}
+          onClick={() => setActiveTab(workTab)}
+        />
+      </div>
+
+      {/* D. 계정 */}
+      <SectionTitle>계정</SectionTitle>
+      <div className="mx-4">
+        <InlineLogoutButton />
+      </div>
+    </>
+  );
+}
+
+// 단일 로그아웃 버튼 — 두 사용처 모두 동일.
+function InlineLogoutButton() {
+  const signOutUser = useAuthStore((s) => s.signOutUser);
+  const isAuthLoading = useAuthStore((s) => s.isAuthLoading);
+  const showToast = useAcademyStore((s) => s.showToast);
+
+  const handle = async () => {
+    try {
+      await signOutUser();
+      showToast('로그아웃되었어요.');
+    } catch (err) {
+      showToast(err?.message ?? '로그아웃에 실패했어요.', 'error');
+    }
+  };
+
+  return (
+    <SettingsRow
+      icon={LogOut}
+      title="로그아웃"
+      onClick={handle}
+      rightAdornment={
+        isAuthLoading ? <Loader2 size={14} className="animate-spin text-gray-400" /> : <span />
+      }
+    />
+  );
+}
+
+// ─── 학원 정보 + 원장 프로필 통합 카드 (Phase 28 hotfix, owner More 전용) ──────
+// 학원 이름 / 원장 이름 / 원장 이메일 / 원장 전화 한 카드에 보여주고,
+// 학원 정보 수정과 내 프로필 수정 두 가지 진입점을 같이 제공한다.
+function AcademyOwnerInfoCard({
+  academyProfile, academyName, displayName, email, phone, onEditAcademy, onEditMyProfile,
+}) {
+  // Post-Phase 32 — 진짜 학원 이름 우선. academyProfile.name 의 기본값 '우리 학원'
+  // 가 노출되지 않도록 academyName(memberships 기반) → academyProfile.name → '학원' 순서.
+  const displayedAcademyName = academyName || academyProfile?.name || '학원';
+  return (
+    <div className="mx-4 mt-4 bg-white rounded-2xl p-4 shadow-sm">
+      <button
+        type="button"
+        onClick={onEditAcademy}
+        className="w-full flex items-center gap-3 text-left active:opacity-90"
+      >
+        <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-xl font-bold text-blue-600 flex-shrink-0">
+          🏫
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-gray-900 text-base truncate">{displayedAcademyName}</p>
+          <p className="text-xs text-gray-500 mt-0.5">원장</p>
+        </div>
+        <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
+      </button>
+
+      <div className="mt-3 pt-3 border-t border-gray-50 flex flex-col gap-2">
+        <InfoRow icon={UserCog} label="원장 이름" value={displayName} />
+        <InfoRow icon={Mail} label="이메일" value={email} />
+        <InfoRow icon={Phone} label="연락처" value={phone} placeholder="등록되지 않음" />
+      </div>
+
+      <button
+        type="button"
+        onClick={onEditMyProfile}
+        className="mt-3 w-full py-2.5 rounded-xl bg-gray-50 text-gray-700 text-xs font-bold active:bg-gray-100"
+      >
+        내 프로필 수정
+      </button>
+    </div>
+  );
+}
+
+function InfoRow({ icon: Icon, label, value, placeholder }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon size={13} className="text-gray-400 flex-shrink-0" />
+      <span className="text-xs text-gray-500 flex-shrink-0 w-16">{label}</span>
+      <span className={`text-xs flex-1 min-w-0 truncate ${value ? 'text-gray-800' : 'text-gray-400'}`}>
+        {value || placeholder || '—'}
+      </span>
     </div>
   );
 }

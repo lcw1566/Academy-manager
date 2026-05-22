@@ -25,6 +25,8 @@ import {
   createAcademyAsOwner,
   listMyPendingInvitations,
   acceptAcademyInvitation,
+  listAcademyInvitations,
+  cancelAcademyInvitation,
   listAcademyMemberProfiles,
   listAcademyStaffProfiles,
   upsertAcademyStaffProfile,
@@ -38,9 +40,20 @@ import {
   listAcademyClinicRecords,
   listAcademyPayments,
   listAcademyPayrolls,
+  listAcademyStaffShifts,
 } from '../services/supabase/domainApi';
 import useAuthStore from './useAuthStore';
 import useAcademyStore from './useAcademyStore';
+
+// Phase 32 — 학원 선택 picked 여부. sessionStorage 에도 동기화하지만 React 가
+// 변화를 감지할 수 있도록 store state 로도 관리한다. WorkspaceSelectionPage 의
+// markWorkspacePicked() 가 이 값을 true 로 set 하고, App.jsx 가 subscribe.
+const WORKSPACE_PICKED_SESSION_KEY = 'workspace-picked';
+function readInitialWorkspacePicked() {
+  if (typeof sessionStorage === 'undefined') return false;
+  try { return sessionStorage.getItem(WORKSPACE_PICKED_SESSION_KEY) === '1'; }
+  catch { return false; }
+}
 
 const initialState = {
   profile: null,
@@ -49,6 +62,8 @@ const initialState = {
   isWorkspaceLoading: false,
   workspaceError: null,
   isWorkspaceReady: false,
+  // Phase 32 — 학원 선택 화면 통과 여부 (reactive).
+  workspacePicked: readInitialWorkspacePicked(),
 
   // 서버 학생 (read-only)
   serverStudents: [],
@@ -113,23 +128,63 @@ const initialState = {
   academyStaffProfiles: [],
   isAcademyStaffProfilesLoading: false,
   academyStaffProfilesError: null,
+
+  // Phase 29 — 원장이 보낸 학원 초대 목록 (pending / accepted / canceled 모두).
+  // 구성원 관리 섹션에서 pending 만 추려 보여준다.
+  academyInvitations: [],
+  isAcademyInvitationsLoading: false,
+  academyInvitationsError: null,
+
+  // Phase 31 — 학원 staff 근무표 (SQL 006 academy_staff_shifts). owner 는 전체,
+  // staff 는 본인 row 만 RLS 가 노출. 로컬 store(academyStaffShifts) 와 sync.
+  serverStaffShifts: [],
+  isServerStaffShiftsLoading: false,
+  serverStaffShiftsError: null,
+  serverStaffShiftsLoadedAt: null,
 };
 
 const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type';
+const PENDING_PROFILE_KEY = 'pending-profile-info';
 
+// 회원가입 시 AuthPage 가 localStorage 에 저장한 정보를, 이메일 인증 후 첫
+// 로그인 시 syncProfile 에서 한 번 소비한다. localStorage 인 이유:
+//   - 이메일 인증 링크가 새 탭에서 열려도 sessionStorage 와 달리 보존됨.
 function readPendingAccountType() {
-  if (typeof sessionStorage === 'undefined') return null;
+  if (typeof localStorage === 'undefined') return null;
   try {
-    return sessionStorage.getItem(PENDING_ACCOUNT_TYPE_KEY) || null;
+    return localStorage.getItem(PENDING_ACCOUNT_TYPE_KEY) || null;
   } catch {
     return null;
   }
 }
 
 function clearPendingAccountType() {
-  if (typeof sessionStorage === 'undefined') return;
+  if (typeof localStorage === 'undefined') return;
   try {
-    sessionStorage.removeItem(PENDING_ACCOUNT_TYPE_KEY);
+    localStorage.removeItem(PENDING_ACCOUNT_TYPE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+// Pre-Phase 31 — display_name / phone 도 같은 패턴으로 보관/소비.
+function readPendingProfileInfo() {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(PENDING_PROFILE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingProfileInfo() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.removeItem(PENDING_PROFILE_KEY);
   } catch {
     /* ignore */
   }
@@ -146,7 +201,19 @@ const useWorkspaceStore = create(
         set({
           ...initialState,
           currentAcademyId: null,
+          workspacePicked: false,
         }),
+
+      // Phase 32 — 학원 선택 picked 토글. sessionStorage 도 함께 동기화.
+      setWorkspacePicked: (picked) => {
+        if (typeof sessionStorage !== 'undefined') {
+          try {
+            if (picked) sessionStorage.setItem(WORKSPACE_PICKED_SESSION_KEY, '1');
+            else sessionStorage.removeItem(WORKSPACE_PICKED_SESSION_KEY);
+          } catch { /* ignore */ }
+        }
+        set({ workspacePicked: !!picked });
+      },
 
       // 프로필 동기화 — 없으면 email 을 기본 display_name 으로 자동 생성.
       // sessionStorage 의 pending-account-type 이 있으면 프로필에 반영하고 삭제.
@@ -157,12 +224,20 @@ const useWorkspaceStore = create(
         try {
           const authUser = useAuthStore.getState().user;
           const pendingAccountType = readPendingAccountType();
+          const pendingProfile = readPendingProfileInfo();
+          const pendingDisplayName = (pendingProfile?.displayName || '').trim() || null;
+          const pendingPhone = (pendingProfile?.phone || '').trim() || null;
 
           let profile = await getProfile();
           if (!profile) {
+            // pendingAccountType 이 없으면 account_type 을 명시적 null 로 저장한다.
+            // (undefined 로 넘기면 upsertProfile 가 컬럼을 생략 → DB default 'tutor'
+            //  가 박혀버려서 owner 로 가입한 사용자가 tutor 로 등록되는 버그가 있었음.)
+            // display_name / phone 도 pending 값을 우선 사용. 없으면 email 을 fallback.
             profile = await upsertProfile({
-              displayName: authUser?.email ?? null,
-              accountType: pendingAccountType || undefined,
+              displayName: pendingDisplayName || authUser?.email || null,
+              phone: pendingPhone ?? undefined,
+              accountType: pendingAccountType ?? null,
               defaultRole:
                 pendingAccountType === 'tutor'
                   ? 'tutor'
@@ -173,12 +248,12 @@ const useWorkspaceStore = create(
                   : undefined,
             });
             if (pendingAccountType) clearPendingAccountType();
-          } else if (
-            pendingAccountType &&
-            (!profile.account_type || profile.account_type === 'tutor')
-          ) {
-            // 기존 profile 에 account_type 이 비어있거나 기본값(tutor) 이면 덮어쓴다.
-            // 명시적으로 다른 값이 들어가 있는 경우는 보존.
+            if (pendingProfile) clearPendingProfileInfo();
+          } else if (pendingAccountType && !profile.account_type) {
+            // 기존 profile 에 account_type 이 NULL 일 때만 pending 으로 덮어쓴다.
+            // (이전에는 'tutor' default 도 덮어썼지만, 신규 가입은 이제 null 로
+            //  명시 저장되므로 이 경로로 옴. 'tutor' 등 명시값은 항상 보존해서
+            //  stale pending 으로 진짜 tutor 가 owner 로 바뀌는 사고를 막는다.)
             try {
               profile = await updateMyProfileAccountType({
                 accountType: pendingAccountType,
@@ -188,6 +263,27 @@ const useWorkspaceStore = create(
               console.warn('[syncProfile] account_type 반영 실패', err);
             }
             clearPendingAccountType();
+          } else if (pendingAccountType) {
+            // 명시값이 이미 있는데 stale pending 이 남아있는 경우 — 보존하고 정리만.
+            clearPendingAccountType();
+          }
+          // Pre-Phase 31 — 기존 profile 에 display_name 이 비어있거나 email 그대로면
+          // pending 의 displayName/phone 으로 보강. 명시적 값은 보존.
+          if (profile && pendingProfile) {
+            const needsName =
+              !profile.display_name || profile.display_name === authUser?.email;
+            const needsPhone = !profile.phone;
+            if ((needsName && pendingDisplayName) || (needsPhone && pendingPhone)) {
+              try {
+                profile = await updateMyProfileBasic({
+                  displayName: needsName && pendingDisplayName ? pendingDisplayName : undefined,
+                  phone: needsPhone && pendingPhone ? pendingPhone : undefined,
+                });
+              } catch (err) {
+                console.warn('[syncProfile] display_name/phone 보강 실패', err);
+              }
+            }
+            clearPendingProfileInfo();
           }
           set({ profile });
           return profile;
@@ -267,6 +363,8 @@ const useWorkspaceStore = create(
             get().loadServerPayrolls(),
             get().loadAcademyMemberProfiles(),
             get().loadAcademyStaffProfiles(),
+            get().loadAcademyInvitations(),
+            get().loadServerStaffShifts(),
           ]);
           return academy;
         } catch (err) {
@@ -297,6 +395,8 @@ const useWorkspaceStore = create(
         get().loadServerPayrolls();
         get().loadAcademyMemberProfiles();
         get().loadAcademyStaffProfiles();
+        get().loadAcademyInvitations();
+        get().loadServerStaffShifts();
       },
 
       // 서버 학생 목록 조회 (read-only). currentAcademyId 가 비어 있으면 빈 배열.
@@ -449,6 +549,40 @@ const useWorkspaceStore = create(
         }
       },
 
+      // Phase 31 — 서버 staff shifts 목록.
+      // RLS 가 owner 는 전체, staff 는 본인 row 만 통과시키므로 호출자에 따라 결과 차이.
+      // 로드 직후 local academyStaffShifts 에 mirror.
+      loadServerStaffShifts: async () => {
+        if (!isSupabaseConfigured) {
+          set({ serverStaffShifts: [] });
+          return [];
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) {
+          set({ serverStaffShifts: [], serverStaffShiftsError: null });
+          return [];
+        }
+        set({ isServerStaffShiftsLoading: true, serverStaffShiftsError: null });
+        try {
+          const list = await listAcademyStaffShifts(academyId);
+          set({
+            serverStaffShifts: list,
+            serverStaffShiftsLoadedAt: new Date().toISOString(),
+          });
+          // local mirror — academy store 의 academyStaffShifts 에도 반영.
+          const mirror = useAcademyStore.getState().mirrorServerStaffShifts;
+          if (typeof mirror === 'function') mirror(list);
+          return list;
+        } catch (err) {
+          set({
+            serverStaffShiftsError: err?.message ?? '근무표를 불러오지 못했어요.',
+          });
+          return [];
+        } finally {
+          set({ isServerStaffShiftsLoading: false });
+        }
+      },
+
       // 서버 수납 기록 목록 조회 (read-only).
       loadServerPayments: async () => {
         if (!isSupabaseConfigured) {
@@ -567,6 +701,69 @@ const useWorkspaceStore = create(
           return [];
         } finally {
           set({ isAcademyMemberProfilesLoading: false });
+        }
+      },
+
+      // Phase 29 — 원장이 자기 학원의 모든 초대(pending/accepted/canceled) 목록을 조회.
+      // 구성원 관리 섹션에서 pending 항목만 추려 표시한다. RLS 가 owner 만 통과시키므로
+      // staff 가 호출하면 RLS 가 빈 결과를 줄 뿐 에러는 나지 않는다.
+      loadAcademyInvitations: async () => {
+        if (!isSupabaseConfigured) {
+          set({ academyInvitations: [] });
+          return [];
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) {
+          set({ academyInvitations: [], academyInvitationsError: null });
+          return [];
+        }
+        set({ isAcademyInvitationsLoading: true, academyInvitationsError: null });
+        try {
+          const list = await listAcademyInvitations(academyId);
+          set({ academyInvitations: list });
+          return list;
+        } catch (err) {
+          set({
+            academyInvitationsError: err?.message ?? '학원 초대 목록을 불러오지 못했어요.',
+          });
+          return [];
+        } finally {
+          set({ isAcademyInvitationsLoading: false });
+        }
+      },
+
+      // Phase 33 — invitation 을 로컬 캐시에 즉시 upsert. 새 row 면 prepend,
+      // 같은 id 가 있으면 patch. createAcademyInvitation 직후 호출하면 UI 가
+      // 즉시 반영된다 (full loadAcademyInvitations 재호출 불필요).
+      upsertAcademyInvitationLocal: (inv) => {
+        if (!inv?.id) return;
+        set((s) => {
+          const existing = s.academyInvitations || [];
+          const idx = existing.findIndex((x) => x.id === inv.id);
+          if (idx >= 0) {
+            const next = existing.slice();
+            next[idx] = { ...next[idx], ...inv };
+            return { academyInvitations: next };
+          }
+          // 최신이 위로 오도록 prepend
+          return { academyInvitations: [inv, ...existing] };
+        });
+      },
+
+      // Phase 29 — 원장이 보낸 초대를 취소. 성공하면 캐시도 갱신.
+      cancelAcademyInvitationById: async (invitationId) => {
+        if (!isSupabaseConfigured || !invitationId) return null;
+        try {
+          const saved = await cancelAcademyInvitation(invitationId);
+          set((s) => ({
+            academyInvitations: s.academyInvitations.map((inv) =>
+              inv.id === invitationId ? { ...inv, ...saved } : inv,
+            ),
+          }));
+          return saved;
+        } catch (err) {
+          set({ academyInvitationsError: err?.message ?? '초대 취소에 실패했어요.' });
+          throw err;
         }
       },
 
@@ -737,6 +934,8 @@ const useWorkspaceStore = create(
           get().loadServerPayrolls(),
           get().loadAcademyMemberProfiles(),
           get().loadAcademyStaffProfiles(),
+          get().loadAcademyInvitations(),
+          get().loadServerStaffShifts(),
         ]);
         return result;
       },
@@ -760,6 +959,8 @@ const useWorkspaceStore = create(
             get().loadMyPendingInvitations(),
             get().loadAcademyMemberProfiles(),
             get().loadAcademyStaffProfiles(),
+            get().loadAcademyInvitations(),
+            get().loadServerStaffShifts(),
           ]);
           set({ isWorkspaceReady: true });
         } finally {

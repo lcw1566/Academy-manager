@@ -13,7 +13,9 @@ supabase/
     ├── 002_domain_schema.sql       (학생·수업·정산·클리닉 등 도메인 스키마)
     ├── 003_account_type_and_invitations.sql  (계정 유형 + 학원 초대)
     ├── 004_profiles_staff_and_delete_policies.sql  (profile.phone + staff_profiles + academies delete)
-    └── 005_accept_invitation_rpc.sql  (초대 수락 RPC hotfix)
+    ├── 005_accept_invitation_rpc.sql  (초대 수락 RPC hotfix)
+    ├── 006_staff_operations.sql    (근무표 + 권한·범위 + 대체 강사)
+    └── 007_profile_search_rpc.sql  (이메일로 profile 검색 RPC)
 ```
 
 ## 실행 순서 요약
@@ -25,6 +27,8 @@ supabase/
 | 3 | `003_account_type_and_invitations.sql` | profiles.account_type 컬럼 + academy_invitations 테이블 + RLS |
 | 4 | `004_profiles_staff_and_delete_policies.sql` | profiles.phone, academy_staff_profiles, academies delete 정책, list_academy_member_profiles 함수 |
 | 5 | `005_accept_invitation_rpc.sql` | accept_academy_invitation security definer RPC (academy_members RLS 우회 + 강한 검증) |
+| 6 | `006_staff_operations.sql` | academy_staff_shifts 테이블 + academy_staff_profiles 의 permissions/scope jsonb + class_sessions 의 substitute_teacher_user_id / substitute_reason 컬럼 |
+| 7 | `007_profile_search_rpc.sql` | search_profile_by_email(text) security definer RPC (강사 초대 시 이메일로 profile 조회) |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -195,7 +199,80 @@ RLS 가 row 단위로 차단하므로, GRANT 가 있어도 안전합니다.
 
 ---
 
-## STEP 6 — 앱 동작 확인
+## STEP 6 — `006_staff_operations.sql` 실행 (Phase 30/31)
+
+1. SQL Editor 에서 **New query** 클릭
+2. `supabase/sql/006_staff_operations.sql` 의 내용 전체를 복사하여 붙여넣기
+3. **Run**
+4. `Success. No rows returned` 확인
+
+### 결과 확인
+
+- **Table Editor** 에 `academy_staff_shifts` 테이블이 생성 + **RLS enabled** 배지 확인
+- **Table Editor → academy_staff_profiles** 컬럼에 `permissions` (jsonb) / `scope` (jsonb) 추가 확인
+- **Table Editor → class_sessions** 컬럼에 `substitute_teacher_user_id` / `substitute_reason` 추가 확인
+- **academy_staff_shifts → Auth policies** 4개 확인:
+  - `academy_staff_shifts select owner or self`
+  - `academy_staff_shifts insert by owner`
+  - `academy_staff_shifts update by owner or self`
+  - `academy_staff_shifts delete by owner`
+
+### 변경 요약
+
+| 항목 | 용도 |
+| --- | --- |
+| `academy_staff_shifts` | 강사·보조강사의 일별 근무표 / 타임카드. scheduled/actual 시간 분리, status (scheduled/completed/canceled), 휴게 분 |
+| `academy_staff_profiles.permissions` | UI 게이팅용 권한 토글 jsonb (canViewStudents / canEditLessonRecords 등) |
+| `academy_staff_profiles.scope` | 강사가 다룰 수 있는 대상 제한 jsonb (subjects / classGroupIds / studentIds) — 현재는 helper 만 제공, 점진 적용 예정 |
+| `class_sessions.substitute_teacher_user_id` | 한 회차의 대체 강사 (auth.users.id 참조, on delete set null) |
+| `class_sessions.substitute_reason` | 대체 사유 (선택) |
+
+### 권한 정책 요약
+
+| 동작 | 허용 대상 |
+| --- | --- |
+| select (shift) | 학원 owner **또는** 본인(`staff_user_id = auth.uid()`) |
+| insert (shift) | 학원 owner 만 |
+| update (shift) | 학원 owner **또는** 본인 (column-level 제한은 현재 미적용; staff 가 actual 시간만 갱신하도록 추후 강화) |
+| delete (shift) | 학원 owner 만 |
+
+> 이 단계에서 `permissions` / `scope` 는 jsonb 컬럼만 추가하고 RLS 수준 검증은
+> 아직 적용하지 않습니다. 프론트엔드 UI 게이팅만 수행하며, 추후 단계적으로 강화됩니다.
+
+---
+
+## STEP 7 — `007_profile_search_rpc.sql` 실행 (Phase 32 post-fix)
+
+1. SQL Editor 에서 **New query** 클릭
+2. `supabase/sql/007_profile_search_rpc.sql` 의 내용 전체를 복사하여 붙여넣기
+3. **Run**
+4. `Success. No rows returned` 확인
+
+### 결과 확인
+
+- **Database → Functions** 에 `public.search_profile_by_email(text)` 함수 존재 확인
+- execute 권한이 `authenticated` 에만 부여되어 있는지 확인 (anon / service_role 부여 없음)
+
+### 왜 필요한가
+
+`profiles` RLS 는 본인 row 만 select 허용한다. 따라서 원장이 강사/보조강사를 초대하려고
+이메일로 검색해도 RLS 가 다른 사용자 row 를 차단한다. 이 RPC 는 **security definer** 로
+RLS 를 우회하되, 다음 안전 가드를 강제한다:
+
+| 가드 | 동작 |
+| --- | --- |
+| exact match | `lower(p.email) = lower(trim(p_email))` — 부분 일치 / wildcard 없음 |
+| 1행 제한 | `limit 1` |
+| 노출 컬럼 제한 | `id / email / display_name / phone / account_type` — 전체 profile 누출 방지 |
+| 최소 입력 길이 | `length(cleaned) < 3` 이면 빈 결과 |
+| GRANT 범위 | `authenticated` 만 |
+
+`StaffInviteWidget` 의 "계정 검색" 버튼이 이 함수를 호출한다. 검색 실패 시에도
+초대 생성은 그대로 동작한다 (가입 안 한 이메일에 invitation row 만 미리 만들어 둠).
+
+---
+
+## STEP 8 — 앱 동작 확인
 
 1. 앱은 별도 변경 없이 계속 정상 동작해야 합니다 (기존 localStorage 모드 유지).
 2. `npm run dev` 로 띄운 뒤 더보기 탭에서:

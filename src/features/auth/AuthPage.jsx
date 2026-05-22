@@ -3,7 +3,8 @@ import { X, GraduationCap, Building2, Users } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useAcademyStore from '../../store/useAcademyStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
-import { updateMyProfileAccountType } from '../../services/supabase/workspaceApi';
+import { updateMyProfileAccountType, updateMyProfileBasic } from '../../services/supabase/workspaceApi';
+import { formatPhoneNumber } from '../../utils/format';
 
 const ACCOUNT_TYPES = [
   {
@@ -36,12 +37,30 @@ const ACCOUNT_TYPES = [
 ];
 
 const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type';
+const PENDING_PROFILE_KEY = 'pending-profile-info';
 
+// localStorage 를 사용해 이메일 인증 링크가 새 탭에서 열려도 값이 살아남도록 한다.
+// (sessionStorage 는 탭 단위라 새 탭으로 redirect 되면 손실됨.)
 function setPendingAccountType(value) {
-  if (typeof sessionStorage === 'undefined') return;
+  if (typeof localStorage === 'undefined') return;
   try {
-    if (value) sessionStorage.setItem(PENDING_ACCOUNT_TYPE_KEY, value);
-    else sessionStorage.removeItem(PENDING_ACCOUNT_TYPE_KEY);
+    if (value) localStorage.setItem(PENDING_ACCOUNT_TYPE_KEY, value);
+    else localStorage.removeItem(PENDING_ACCOUNT_TYPE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+// 회원가입 시 입력한 display_name / phone 을 같은 이유로 localStorage 에 저장.
+// 이메일 인증 후 다른 탭에서 로그인해도 보존되도록.
+function setPendingProfileInfo(info) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (info && (info.displayName || info.phone)) {
+      localStorage.setItem(PENDING_PROFILE_KEY, JSON.stringify(info));
+    } else {
+      localStorage.removeItem(PENDING_PROFILE_KEY);
+    }
   } catch {
     /* ignore */
   }
@@ -52,6 +71,8 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [accountType, setAccountType] = useState(null); // 'tutor' | 'owner' | 'staff' | null
+  const [displayName, setDisplayName] = useState('');
+  const [phone, setPhone] = useState('');
   const [localMessage, setLocalMessage] = useState(null);
 
   const signIn = useAuthStore((s) => s.signIn);
@@ -77,6 +98,12 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
       setLocalMessage({ type: 'error', text: '계정 유형을 선택해주세요.' });
       return;
     }
+    const trimmedName = (displayName || '').trim();
+    if (mode === 'signUp' && !trimmedName) {
+      setLocalMessage({ type: 'error', text: '이름을 입력해주세요.' });
+      return;
+    }
+    const cleanedPhone = (phone || '').trim() || null;
 
     try {
       if (mode === 'signIn') {
@@ -84,9 +111,10 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
         showToast('로그인되었어요.');
         onAuthSuccess?.();
       } else {
-        // 회원가입 — 선택한 accountType 을 sessionStorage 에 미리 저장.
-        // 이메일 인증이 필요한 경우 syncProfile 이 다음 로그인에서 반영함.
+        // 회원가입 — 선택한 accountType + display_name + phone 을 localStorage 에
+        // 미리 저장. 이메일 인증이 필요한 경우 syncProfile 이 다음 로그인에서 반영.
         setPendingAccountType(accountType);
+        setPendingProfileInfo({ displayName: trimmedName, phone: cleanedPhone });
         const data = await signUp({ email, password });
         if (!data?.session) {
           // 이메일 인증 필요 — 패널은 유지하고 안내 표시
@@ -95,15 +123,17 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
             text: '인증 메일이 발송되었어요. 이메일 인증 후 로그인해주세요.',
           });
         } else {
-          // 즉시 로그인됨 — profile 에 account_type 즉시 반영
+          // 즉시 로그인됨 — profile 에 account_type + display_name + phone 반영
           try {
             await updateMyProfileAccountType({ accountType });
+            await updateMyProfileBasic({ displayName: trimmedName, phone: cleanedPhone });
             setPendingAccountType(null);
+            setPendingProfileInfo(null);
             // store 의 profile mirror 도 갱신
             await syncProfile();
           } catch (err) {
-            // account_type 저장이 실패해도 회원가입 자체는 성공이므로 토스트만
-            console.warn('[signUp] account_type 저장 실패', err);
+            // 프로필 저장 실패해도 회원가입 자체는 성공이므로 토스트만
+            console.warn('[signUp] 프로필 저장 실패', err);
           }
           showToast('회원가입이 완료되었어요.');
           onAuthSuccess?.();
@@ -144,7 +174,7 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
   };
 
   const submitDisabled =
-    isAuthLoading || (mode === 'signUp' && !accountType);
+    isAuthLoading || (mode === 'signUp' && (!accountType || !displayName.trim()));
 
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center px-6 py-10 bg-[#F5F6F8]">
@@ -232,6 +262,42 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
               disabled={isAuthLoading}
             />
           </div>
+
+          {/* 회원가입 모드에서만 이름/연락처 입력 */}
+          {mode === 'signUp' && (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  이름
+                </label>
+                <input
+                  type="text"
+                  autoComplete="name"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+                  placeholder="홍길동"
+                  disabled={isAuthLoading}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+                  연락처 <span className="text-gray-400 font-normal">(선택)</span>
+                </label>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+                  placeholder="010-0000-0000"
+                  disabled={isAuthLoading}
+                />
+              </div>
+            </>
+          )}
 
           {(authError || localMessage) && (
             <div

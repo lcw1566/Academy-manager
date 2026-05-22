@@ -854,6 +854,87 @@ export async function deletePayroll(id) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// academy_staff_shifts (Phase 30/31 — SQL 006)
+// ────────────────────────────────────────────────────────────────
+//
+// 한 행 = 한 명 staff 의 하루(또는 슬롯) 근무 기록.
+// RLS: owner 는 학원 전체, staff 는 본인 row 만.
+
+const STAFF_SHIFT_ALLOWED_FIELDS = new Set([
+  'id', 'academy_id', 'staff_user_id', 'staff_role',
+  'date',
+  'scheduled_start_time', 'scheduled_end_time',
+  'actual_start_time', 'actual_end_time',
+  'break_minutes', 'status', 'memo',
+]);
+
+function sanitizeStaffShiftPayload(input, { strip = [] } = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(input ?? {})) {
+    if (!STAFF_SHIFT_ALLOWED_FIELDS.has(key)) continue;
+    if (strip.includes(key)) continue;
+    if (value === undefined) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+export async function listAcademyStaffShifts(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const { data, error } = await supabase
+    .from('academy_staff_shifts')
+    .select('*')
+    .eq('academy_id', academyId)
+    .order('date', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createAcademyStaffShift({ academyId, ...payload } = {}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const row = sanitizeStaffShiftPayload({
+    ...payload,
+    academy_id: academyId,
+  }, { strip: ['id', 'created_at', 'updated_at'] });
+  const { data, error } = await supabase
+    .from('academy_staff_shifts')
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateAcademyStaffShift(id, patch = {}) {
+  assertSupabaseConfigured();
+  if (!id) throw new Error('id가 필요해요.');
+  const safe = sanitizeStaffShiftPayload(patch, {
+    strip: ['id', 'academy_id', 'created_at', 'updated_at'],
+  });
+  if (Object.keys(safe).length === 0) return null;
+  const { data, error } = await supabase
+    .from('academy_staff_shifts')
+    .update(safe)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteAcademyStaffShift(id) {
+  assertSupabaseConfigured();
+  if (!id) throw new Error('id가 필요해요.');
+  const { error } = await supabase
+    .from('academy_staff_shifts')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
+// ────────────────────────────────────────────────────────────────
 // internal helpers
 // ────────────────────────────────────────────────────────────────
 
@@ -903,6 +984,8 @@ const CLASS_SESSION_ALLOWED_FIELDS = new Set([
   'start_time', 'end_time', 'room',
   'teacher_id', 'teacher_type',
   'student_ids', 'status', 'memo',
+  // Phase 30 — 대체 강사 (SQL 006 에서 추가됨)
+  'substitute_teacher_user_id', 'substitute_reason',
 ]);
 
 function sanitizeClassSessionPayload(input, { strip = [] } = {}) {

@@ -5,6 +5,8 @@ import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { today, formatDateShort, greetingByTime, getDDay } from '../../../utils/date';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
+import MyTodayShiftCard from './MyTodayShiftCard';
+import MyPayrollCard from './MyPayrollCard';
 
 const CLINIC_TYPE_LABELS = {
   homework: '숙제', wrong_answer: '오답', vocabulary: '단어', reading: '본문',
@@ -30,7 +32,9 @@ export default function AssistantDashboard() {
     academyStudents, classGroups, clinicTasks, academyAssistants,
     completeClinicTask, updateClinicTask, setActiveTab,
   } = useAcademyStore();
+  const academyPayrolls = useAcademyStore((s) => s.academyPayrolls) ?? [];
   const todayStr = today();
+  const currentMonth = todayStr.slice(0, 7);
 
   // Phase 25 — 본인 보조강사 식별. 매칭 실패 시 빈 화면 안내.
   const authUserId = useAuthStore((s) => s.user?.id);
@@ -84,6 +88,14 @@ export default function AssistantDashboard() {
     [myClinicTasks, todayStr]
   );
 
+  // Phase 32 — 내 급여 (이번 달)
+  const myPayroll = useMemo(() => {
+    if (!myAssistant) return null;
+    return academyPayrolls.find(
+      (p) => p.month === currentMonth && p.staffType === 'assistant' && p.staffId === myAssistant.id,
+    ) || null;
+  }, [academyPayrolls, currentMonth, myAssistant]);
+
   return (
     <div className="pt-6 pb-4">
       <div className="px-5 mb-5">
@@ -91,6 +103,9 @@ export default function AssistantDashboard() {
         <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 클리닉</h2>
         <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
       </div>
+
+      {/* Phase 31 — 오늘 근무 카드 + 출/퇴근 */}
+      <MyTodayShiftCard staff={myAssistant} staffRole="assistant" />
 
       {!myAssistant && (
         <div className="mx-4 mb-5">
@@ -131,6 +146,14 @@ export default function AssistantDashboard() {
           color="text-green-600"
         />
       </div>
+
+      {/* Phase 32 — 내 급여 (이번 달) */}
+      <MyPayrollCard
+        role="assistant"
+        myPayroll={myPayroll}
+        myStaffProfile={myAssistant}
+        onOpen={() => setActiveTab('payroll')}
+      />
 
       {/* 긴급 클리닉 */}
       {urgentClinics.length > 0 && (

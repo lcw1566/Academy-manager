@@ -96,7 +96,7 @@ export default function ProfileEditModal({ isOpen, onClose, onSaved }) {
             className="input"
           />
           <p className="text-[11px] text-gray-400 mt-1.5">
-            원장이 강사 관리에서 보게 될 이름이에요.
+            학원에 초대된 경우 원장이 보는 이름이기도 해요.
           </p>
         </div>
 

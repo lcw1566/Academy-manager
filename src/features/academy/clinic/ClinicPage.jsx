@@ -11,6 +11,7 @@ import EmptyState from '../../../components/EmptyState';
 import ClinicRecordFormModal from './ClinicRecordFormModal';
 import { today, formatDateShort } from '../../../utils/date';
 import { CLINIC_SUBJECT_FILTERS, DATE_FILTER_OPTIONS } from '../../../constants/labels';
+import { currentUserCan } from '../../../utils/staffPermissions';
 
 function groupByDate(records) {
   const map = {};
@@ -72,6 +73,12 @@ export default function ClinicPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerClinicRecords = useWorkspaceStore((s) => s.loadServerClinicRecords);
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const myStaffProfile = useMemo(
+    () => academyStaffProfiles.find((sp) => sp.user_id === authUserId) || null,
+    [academyStaffProfiles, authUserId],
+  );
 
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
@@ -119,37 +126,44 @@ export default function ClinicPage() {
   const handleDelete = async (id) => {
     const target = clinicRecords.find((r) => r.id === id);
     const serverId = target?.serverId || null;
+    // Phase 33 — optimistic delete. local 이 즉시 갱신되고 server 실패는 토스트만.
+    // full loadServerClinicRecords 호출 안 함 (local 이 이미 정답).
     deleteClinicRecord(id);
     setDeleteConfirmId(null);
     setExpandedId(null);
     if (serverId && isAuthenticated && currentAcademyId) {
       try {
         await deleteServerClinicRecord(serverId);
-        await loadServerClinicRecords();
       } catch (err) {
         console.error('[supabase] deleteClinicRecord failed', err);
         showToast(
-          err?.message
-            ? `클리닉 서버 삭제 실패: ${err.message}`
-            : '클리닉 기록은 삭제되었지만 서버 삭제는 실패했어요.',
+          '클리닉 기록은 삭제되었지만 동기화에 실패했어요.',
           'error',
         );
       }
     }
   };
 
+  // Phase 31 — 권한 게이팅. 클리닉 작성 권한이 있어야 + 버튼 노출.
+  const canEditClinic = currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canEditClinicRecords',
+  );
+
   return (
     <div>
       <Header
         title="클리닉"
         right={
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={() => setShowForm(true)}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white"
-          >
-            <Plus size={18} />
-          </motion.button>
+          canEditClinic ? (
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setShowForm(true)}
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white"
+            >
+              <Plus size={18} />
+            </motion.button>
+          ) : null
         }
       />
 

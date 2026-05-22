@@ -14,6 +14,12 @@ import { Loader2 } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import useAcademyStore from '../../../store/useAcademyStore';
+import {
+  PERMISSION_DEFAULTS,
+  PERMISSION_LABELS,
+  PERMISSION_KEYS,
+  resolvePermissions,
+} from '../../../utils/staffPermissions';
 
 const WAGE_TYPES = [
   { id: 'hourly',  label: '시급' },
@@ -55,16 +61,33 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
   );
   const [memo, setMemo] = useState(existing?.memo || '');
   const [saving, setSaving] = useState(false);
+  // Phase 30 — 권한 토글. 빈 객체면 default 사용.
+  const [permissions, setPermissions] = useState(
+    existing?.permissions && typeof existing.permissions === 'object' && Object.keys(existing.permissions).length > 0
+      ? { ...resolvePermissions(existing.role || defaultRole, existing.permissions) }
+      : { ...PERMISSION_DEFAULTS[existing?.role || defaultRole] },
+  );
 
   // Refresh form if userId/staffProfiles change while open
   useEffect(() => {
-    setRole(existing?.role || defaultRole);
+    const nextRole = existing?.role || defaultRole;
+    setRole(nextRole);
     setSubjects(Array.isArray(existing?.subjects) ? existing.subjects : []);
     setWageType(existing?.wage_type || 'hourly');
     setHourlyWage(existing?.hourly_wage ? String(existing.hourly_wage) : '');
     setMonthlySalary(existing?.monthly_salary ? String(existing.monthly_salary) : '');
     setMemo(existing?.memo || '');
+    setPermissions(
+      existing?.permissions && typeof existing.permissions === 'object' && Object.keys(existing.permissions).length > 0
+        ? { ...resolvePermissions(nextRole, existing.permissions) }
+        : { ...PERMISSION_DEFAULTS[nextRole] },
+    );
   }, [existing, defaultRole]);
+
+  // 역할 변경 시 권한 default 도 따라가도록 — 단 owner 가 명시적으로 토글한 값은 유지.
+  useEffect(() => {
+    setPermissions((prev) => ({ ...PERMISSION_DEFAULTS[role], ...prev }));
+  }, [role]);
 
   const toggleSubject = (s) =>
     setSubjects((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
@@ -82,6 +105,7 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
         monthlySalary: Number(monthlySalary) || 0,
         memo: memo || null,
         status: 'active',
+        permissions, // Phase 30 — jsonb 으로 그대로 전달
       });
       showToast('학원 설정이 저장되었습니다.');
       onClose?.();
@@ -223,6 +247,33 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
             placeholder="학원 내부 메모"
             className="input resize-none"
           />
+        </div>
+
+        {/* Phase 30 — 권한 토글 */}
+        <div className="border-t border-gray-100 pt-4">
+          <label className="text-xs font-semibold text-gray-600 mb-2 block">권한</label>
+          <div className="flex flex-col gap-1.5">
+            {PERMISSION_KEYS.map((key) => (
+              <label
+                key={key}
+                className="flex items-center justify-between py-1.5 cursor-pointer"
+              >
+                <span className="text-sm text-gray-700">{PERMISSION_LABELS[key]}</span>
+                <input
+                  type="checkbox"
+                  checked={!!permissions[key]}
+                  onChange={(e) =>
+                    setPermissions((prev) => ({ ...prev, [key]: e.target.checked }))
+                  }
+                  className="w-4 h-4 rounded accent-blue-600"
+                />
+              </label>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-1.5 leading-relaxed">
+            기본값은 역할별로 다르게 설정돼 있어요.
+            지금은 UI 노출/숨김 용도이며, 서버 검증은 다음 단계에서 강화됩니다.
+          </p>
         </div>
       </div>
     </Modal>

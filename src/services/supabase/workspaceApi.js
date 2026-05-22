@@ -122,29 +122,36 @@ export async function getAcademyById(academyId) {
 // ────────────────────────────────────────────────────────────────
 
 // 이메일로 사용자 검색.
-// 주의: profiles RLS 가 "본인 row 만 select" 이므로, 다른 사용자의 row 는
-// 사실상 조회되지 않는다. 따라서 이 함수는 best-effort 로 동작한다:
-//   - 본인 이메일을 검색하면 본인 row 반환
-//   - 그 외에는 거의 항상 null 반환
-// 가입 여부 확인은 invitation 수락 단계에서 실제로 확인된다 (이메일이
-// 일치하는 사용자가 로그인해서 수락해야만 academy_members 가 만들어진다).
-// 이 함수의 가치는 "원장 본인을 잘못 초대하지 않게" 정도이며, 그 외의
-// 가입 확인은 UX 상 "초대 row 가 만들어졌다" 안내로 대체한다.
+// Post-Phase 32 — search_profile_by_email RPC (SQL 007) 사용.
+//
+// profiles RLS 가 "본인 row 만 select" 라서 직접 select 로는 다른 사용자 검색이
+// 불가능했다. SQL 007 의 security definer RPC 는 exact email 일치만 허용하고
+// 제한된 컬럼(id/email/display_name/phone/account_type) 만 반환하므로 안전하다.
+//
+// 동작:
+//   - 이메일 lowercase + trim
+//   - 빈 값 / 너무 짧으면 즉시 null
+//   - RPC 호출. 실패해도 invite flow 가 계속 동작하도록 console.warn + null 반환.
 export async function findProfileByEmail(email) {
   assertSupabaseConfigured();
   const cleaned = (email ?? '').trim().toLowerCase();
-  if (!cleaned) return null;
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, email, display_name, account_type')
-    .ilike('email', cleaned)
-    .limit(1)
-    .maybeSingle();
-  if (error) {
-    // RLS 차단으로 인한 0-row 응답이 error 로 오지는 않지만, 다른 종류의 에러는 상위로 노출
-    throw error;
+  if (!cleaned || cleaned.length < 3) return null;
+  try {
+    const { data, error } = await supabase.rpc('search_profile_by_email', {
+      p_email: cleaned,
+    });
+    if (error) {
+      // RPC 가 아직 배포 안 됐거나 (404) 권한 이슈 등은 모두 null 로 fallback.
+      console.warn('[findProfileByEmail] RPC failed', error);
+      return null;
+    }
+    if (Array.isArray(data) && data.length > 0) return data[0];
+    if (data && typeof data === 'object' && !Array.isArray(data)) return data;
+    return null;
+  } catch (err) {
+    console.warn('[findProfileByEmail] threw', err);
+    return null;
   }
-  return data ?? null;
 }
 
 
@@ -391,6 +398,13 @@ function sanitizeStaffProfilePayload(input = {}) {
   if (input.memo !== undefined) out.memo = input.memo;
   if (input.status !== undefined) out.status = input.status;
   if (input.memberId !== undefined) out.member_id = input.memberId;
+  // Phase 30 — permissions / scope (jsonb). SQL 006 에서 컬럼 추가.
+  if (input.permissions !== undefined) {
+    out.permissions = input.permissions && typeof input.permissions === 'object' ? input.permissions : {};
+  }
+  if (input.scope !== undefined) {
+    out.scope = input.scope && typeof input.scope === 'object' ? input.scope : {};
+  }
   return out;
 }
 

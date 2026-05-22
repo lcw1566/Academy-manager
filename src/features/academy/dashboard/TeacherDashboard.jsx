@@ -7,6 +7,9 @@ import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { today, formatDateShort, greetingByTime } from '../../../utils/date';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
+import MyTodayShiftCard from './MyTodayShiftCard';
+import MyPayrollCard from './MyPayrollCard';
+import { FileText } from 'lucide-react';
 
 // "HH:mm" 문자열을 분 단위로 변환 (00:00 기준)
 function parseHHmmToMinutes(hhmm) {
@@ -59,15 +62,26 @@ export default function TeacherDashboard() {
     return new Set(classGroups.filter((g) => g.teacherId === myTeacher.id).map((g) => g.id));
   }, [classGroups, myTeacher]);
 
-  // 본인 담당 세션 — teacherId 일치 OR 본인 담당 반의 세션
+  // 본인 담당 세션 — teacherId / 본인 담당 반 / Phase 30 대체 강사 배정.
+  // 대체 강사로 배정된 세션은 원래 강사 대신 본인이 담당이므로 그대로 노출한다.
+  // substitute 매칭: local id (substituteTeacherId) 우선, server user_id (substituteTeacherUserId) fallback.
   const mySessions = useMemo(() => {
     if (!myTeacher) return [];
-    return classSessions.filter(
-      (s) =>
-        s.status !== 'canceled' &&
-        (s.teacherId === myTeacher.id || myGroupIds.has(s.classGroupId)),
-    );
-  }, [classSessions, myTeacher, myGroupIds]);
+    const subMatchesMe = (s) => {
+      if (s.substituteTeacherId && s.substituteTeacherId === myTeacher.id) return true;
+      if (s.substituteTeacherUserId && authUserId && s.substituteTeacherUserId === authUserId) return true;
+      return false;
+    };
+    return classSessions.filter((s) => {
+      if (s.status === 'canceled') return false;
+      const hasSubstitute = !!(s.substituteTeacherId || s.substituteTeacherUserId);
+      if (hasSubstitute) {
+        // 대체 강사 배정 — 그 사람이 본인이면 노출, 원 강사면 제외.
+        return subMatchesMe(s);
+      }
+      return s.teacherId === myTeacher.id || myGroupIds.has(s.classGroupId);
+    });
+  }, [classSessions, myTeacher, myGroupIds, authUserId]);
 
   const todaySessions = useMemo(
     () => mySessions.filter((s) => s.date === todayStr).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
@@ -122,6 +136,25 @@ export default function TeacherDashboard() {
     return candidates[0] || null;
   }, [todaySessions, now]);
 
+  // Phase 32 — 작성 필요한 수업 기록: 본인 담당 완료 세션 중 _common_ 기록 없는 것
+  const unfinishedRecordSessions = useMemo(() => {
+    if (!myTeacher) return [];
+    return mySessions
+      .filter((s) => s.status === 'completed')
+      .filter((s) => !academyLessonRecords.some((lr) => lr.sessionId === s.id && lr.studentId === '_common_'))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [mySessions, myTeacher, academyLessonRecords]);
+
+  // Phase 32 — 내 급여 요약 (이번 달)
+  const academyPayrolls = useAcademyStore((s) => s.academyPayrolls) ?? [];
+  const currentMonth = todayStr.slice(0, 7);
+  const myPayroll = useMemo(() => {
+    if (!myTeacher) return null;
+    return academyPayrolls.find(
+      (p) => p.month === currentMonth && p.staffType === 'teacher' && p.staffId === myTeacher.id,
+    ) || null;
+  }, [academyPayrolls, currentMonth, myTeacher]);
+
   return (
     <div className="pt-6 pb-4">
       <div className="px-5 mb-5">
@@ -133,6 +166,9 @@ export default function TeacherDashboard() {
       <div className="mb-5">
         <WeeklyExpandableCalendar selectedDate={selectedDate} onSelectDate={setSelectedDate} schedules={schedules} />
       </div>
+
+      {/* Phase 31 — 오늘 근무 카드 + 출/퇴근 */}
+      <MyTodayShiftCard staff={myTeacher} staffRole="teacher" />
 
       {/* 곧 수업이 시작해요! — 시작 10분 전 */}
       {upcomingSoon && (
@@ -203,6 +239,51 @@ export default function TeacherDashboard() {
           color={myClinics.length > 0 ? 'text-purple-600' : 'text-gray-900'}
         />
       </div>
+
+      {/* Phase 32 — 작성 필요한 수업 기록 (본인 담당 완료 세션 중 기록 없음) */}
+      {unfinishedRecordSessions.length > 0 && (
+        <div className="mx-4 mb-5">
+          <p className="text-sm font-bold text-gray-700 mb-2">작성 필요한 수업 기록</p>
+          <div className="bg-amber-50 rounded-2xl border border-amber-100 overflow-hidden">
+            {unfinishedRecordSessions.slice(0, 3).map((s) => {
+              const group = classGroups.find((g) => g.id === s.classGroupId);
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => navigateToClassSession(s.id)}
+                  className="w-full flex items-center gap-3 px-4 py-3 border-b border-amber-100 last:border-0 text-left active:bg-amber-100/40"
+                >
+                  <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center flex-shrink-0">
+                    <FileText size={14} className="text-amber-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">
+                      {group?.name || '수업'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {s.date} {s.startTime}–{s.endTime}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+            {unfinishedRecordSessions.length > 3 && (
+              <p className="text-[11px] text-amber-600 text-center px-3 py-2 bg-white/40">
+                외 {unfinishedRecordSessions.length - 3}건 더 있어요
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Phase 32 — 내 급여 요약 (이번 달) — 권한 있을 때만 */}
+      <MyPayrollCard
+        role="teacher"
+        myPayroll={myPayroll}
+        myStaffProfile={myTeacher}
+        onOpen={() => setActiveTab('payroll')}
+      />
 
       {/* 클리닉 현황 */}
       {myClinics.length > 0 && (

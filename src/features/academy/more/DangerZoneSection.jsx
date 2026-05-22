@@ -26,7 +26,7 @@ export default function DangerZoneSection() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
-  const memberships = useWorkspaceStore((s) => s.memberships);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const setCurrentAcademyId = useWorkspaceStore((s) => s.setCurrentAcademyId);
 
   // Loaders we'll refresh after server reset

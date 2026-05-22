@@ -112,13 +112,14 @@ export default function StaffInviteWidget({
           text: '가입된 계정을 찾았어요. 앱 초대를 보내면 해당 계정의 “받은 초대” 에 표시됩니다.',
         });
       } else {
-        // RLS 가 다른 사용자 profile 조회를 차단하므로 대부분 여기에 떨어진다.
+        // Post-Phase 32: SQL 007 RPC 적용 후엔 가입한 사용자가 있으면 'found'.
+        // 'unknown' 인 경우는 진짜 아직 가입하지 않은 이메일.
         setSearchResult('unknown');
         setFeedback({
           type: 'info',
           text:
-            '아직 가입하지 않은 이메일이거나 검색이 제한된 이메일이에요. ' +
-            '앱 초대를 만들어두면 해당 이메일로 가입한 뒤 “받은 초대” 에 표시돼요.',
+            '아직 가입하지 않은 이메일이에요. 초대를 만들어두면 해당 이메일로 ' +
+            '가입한 뒤 “받은 초대”에서 수락할 수 있어요.',
         });
       }
     } catch (err) {
@@ -150,6 +151,8 @@ export default function StaffInviteWidget({
         role,
       });
       setExistingInvite(inv);
+      // Phase 33 — 즉시 store 에 반영해서 "대기 중인 초대" 카드가 곧바로 등장.
+      useWorkspaceStore.getState().upsertAcademyInvitationLocal?.(inv);
       setFeedback({
         type: 'success',
         text:

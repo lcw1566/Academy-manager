@@ -6,6 +6,7 @@ import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import Header from '../../../components/Header';
 import { formatMonth } from '../../../utils/date';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
+import { currentUserCan } from '../../../utils/staffPermissions';
 
 const MONTHS_BACK = 5;
 
@@ -91,6 +92,27 @@ export default function PayrollPage() {
   }, [clinicTasks, staffId, selectedMonth, role]);
 
   const getGroupName = (id) => classGroups.find((g) => g.id === id)?.name || '';
+
+  // Phase 31 — 본문에서도 canViewPayroll 가드 (탭 hide 외 직접 navigate 방어)
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const myStaffProfile = useMemo(
+    () => academyStaffProfiles.find((sp) => sp.user_id === authUserId) || null,
+    [academyStaffProfiles, authUserId],
+  );
+  const canViewPayroll = currentUserCan({ role, staffProfile: myStaffProfile }, 'canViewPayroll');
+  if (!canViewPayroll) {
+    return (
+      <div>
+        <Header title="급여" />
+        <div className="pt-14 px-4">
+          <div className="mt-8 bg-white rounded-2xl p-6 text-center shadow-sm">
+            <p className="text-sm text-gray-400">급여 조회 권한이 없어요</p>
+            <p className="text-xs text-gray-300 mt-1">원장에게 권한을 요청해 주세요</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!staffInfo) {
     return (

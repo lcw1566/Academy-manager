@@ -518,6 +518,9 @@ export default function AcademyStudentDetailPage() {
       const patch = nextStatus === 'paid'
         ? { status: 'paid', paidDate: p.paidDate || todayStr }
         : { status: 'unpaid', paidDate: null };
+      // Phase 33 — optimistic. local first, server later. server 성공 후 full
+      // loadServerPayments 는 호출하지 않는다 (local 이 이미 정답이고, 매 토글마다
+      // 전체 reload 는 잡음만 늘림).
       updateAcademyPayment(p.id, patch);
       if (p.serverId && canSyncServer) {
         try {
@@ -525,13 +528,10 @@ export default function AcademyStudentDetailPage() {
             status: patch.status,
             paid_date: patch.paidDate || null,
           });
-          await loadServerPayments();
         } catch (err) {
           console.error('[supabase] updatePayment(status) failed', err);
           showToast(
-            err?.message
-              ? `수납 서버 동기화 실패: ${err.message}`
-              : '수납 기록은 수정되었지만 서버 동기화는 실패했어요.',
+            '변경사항은 저장되었지만 동기화에 실패했어요.',
             'error',
           );
         }
@@ -540,17 +540,15 @@ export default function AcademyStudentDetailPage() {
 
     const handleDeletePayment = async (p) => {
       const serverId = p.serverId || null;
+      // Phase 33 — optimistic delete. 서버 성공 후 reload 안 함.
       deleteAcademyPayment(p.id);
       if (serverId && canSyncServer) {
         try {
           await deleteServerPayment(serverId);
-          await loadServerPayments();
         } catch (err) {
           console.error('[supabase] deletePayment failed', err);
           showToast(
-            err?.message
-              ? `수납 서버 삭제 실패: ${err.message}`
-              : '수납 기록은 삭제되었지만 서버 삭제는 실패했어요.',
+            '수납 기록은 삭제되었지만 동기화에 실패했어요.',
             'error',
           );
         }

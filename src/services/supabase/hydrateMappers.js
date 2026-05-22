@@ -80,6 +80,10 @@ export function mapServerClassSessionToLocal(cs) {
     studentIds: Array.isArray(cs.student_ids) ? cs.student_ids : [],
     status: cs.status ?? 'scheduled',
     memo: cs.memo ?? '',
+    // Phase 30/31 — 대체 강사 (server user_id 그대로 보존).
+    // local academyTeachers 매핑은 사용 시점에 serverUserId 비교로 해결.
+    substituteTeacherUserId: cs.substitute_teacher_user_id ?? null,
+    substituteReason: cs.substitute_reason ?? null,
     createdAt: cs.created_at,
     updatedAt: cs.updated_at,
   };

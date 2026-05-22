@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronDown, ChevronUp, Check } from 'lucide-react';
+import { ChevronLeft, ChevronDown, ChevronUp, Check, UserCheck, X as XIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -10,8 +10,10 @@ import {
   upsertAcademyAttendanceRecordsBulk,
 } from '../../../services/supabase/domainApi';
 import EmptyState from '../../../components/EmptyState';
+import Modal from '../../../components/Modal';
 import { formatDateShort } from '../../../utils/date';
 import { attendanceStatusMap, getTeacherDisplayName } from '../../../utils/format';
+import { currentUserCan } from '../../../utils/staffPermissions';
 
 // ─── 평가 옵션 ──────────────────────────────────────────────────────────────
 const ATTITUDE_OPTIONS = [
@@ -101,7 +103,7 @@ function EvalRow({ label, options, value, onChange }) {
 }
 
 // ─── 학생 카드 ────────────────────────────────────────────────────────────
-function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, onRecordChange, saveCount }) {
+function StudentCard({ student, sessionId, canEdit, canEditAttendance = canEdit, attendance, initialRecord, onRecordChange, saveCount }) {
   const { updateAcademyAttendance } = useAcademyStore();
   const [expanded, setExpanded] = useState(false);
   const [rec, setRec] = useState(() => buildStudentRecord(initialRecord));
@@ -174,7 +176,7 @@ function StudentCard({ student, sessionId, canEdit, attendance, initialRecord, o
         <div style={{ overflow: 'hidden', opacity: expanded ? 1 : 0, transition: 'opacity 0.18s ease' }}>
             <div className="px-4 pb-4 border-t border-gray-50 flex flex-col gap-4 pt-3">
               {/* 출결 */}
-              {canEdit && (
+              {canEditAttendance && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 mb-2">출결</p>
                   <div className="flex gap-2">
@@ -349,8 +351,30 @@ export default function ClassSessionPage() {
   }, []);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [substituteModalOpen, setSubstituteModalOpen] = useState(false);
 
-  const canEdit = role === 'owner' || role === 'teacher';
+  // Phase 31 — 본인 staffProfile 권한으로 게이팅. owner 는 항상 허용.
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const myStaffProfile = useMemo(
+    () => academyStaffProfiles.find((sp) => sp.user_id === useAuthStore.getState().user?.id) || null,
+    [academyStaffProfiles],
+  );
+  const canEditLessonRecords =
+    role === 'owner'
+      ? true
+      : role === 'teacher' && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords');
+  const canEditAttendance =
+    role === 'owner'
+      ? true
+      : role === 'teacher' && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance');
+  // 기존 canEdit (lesson record 입력/저장) → 권한 기반.
+  const canEdit = canEditLessonRecords;
+  const isOwnerRole = role === 'owner';
+
+  const substituteTeacher = useMemo(() => {
+    if (!session?.substituteTeacherId) return null;
+    return academyTeachers.find((t) => t.id === session.substituteTeacherId) || null;
+  }, [session?.substituteTeacherId, academyTeachers]);
   const isCommonDirty = useMemo(() => !recordsEqual(commonRec, savedCommon), [commonRec, savedCommon]);
   const isAnyStudentDirty = Object.values(studentDirtyMap).some(Boolean);
   const isDirty = isCommonDirty || isAnyStudentDirty;
@@ -559,6 +583,45 @@ export default function ClassSessionPage() {
               <InfoChip label="시간" value={`${session.startTime}–${session.endTime}`} />
               <InfoChip label="상태" value={session.status === 'completed' ? '완료' : session.status === 'canceled' ? '취소' : '예정'} />
             </div>
+
+            {/* Phase 30 — 대체 강사 */}
+            {(substituteTeacher || isOwnerRole) && (
+              <div className="mt-3 pt-3 border-t border-gray-50">
+                {substituteTeacher ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0">
+                      <UserCheck size={13} className="text-amber-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-amber-700">
+                        대체 강사: {substituteTeacher.name}
+                      </p>
+                      {session.substituteReason && (
+                        <p className="text-[11px] text-gray-500 truncate">{session.substituteReason}</p>
+                      )}
+                    </div>
+                    {isOwnerRole && (
+                      <button
+                        type="button"
+                        onClick={() => setSubstituteModalOpen(true)}
+                        className="text-[11px] font-semibold text-blue-600 px-2 py-1 rounded-lg active:bg-blue-50"
+                      >
+                        변경
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setSubstituteModalOpen(true)}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-amber-50 text-amber-700 text-xs font-bold active:bg-amber-100"
+                  >
+                    <UserCheck size={12} />
+                    대체 강사 지정
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -608,6 +671,7 @@ export default function ClassSessionPage() {
                     student={student}
                     sessionId={selectedClassSessionId}
                     canEdit={canEdit}
+                    canEditAttendance={canEditAttendance}
                     attendance={att}
                     initialRecord={existingLr}
                     onRecordChange={handleRecordChange}
@@ -619,6 +683,38 @@ export default function ClassSessionPage() {
           </div>
         </div>
       </div>
+
+      {/* Phase 30 — 대체 강사 지정 모달 */}
+      {substituteModalOpen && (
+        <SubstituteTeacherModal
+          session={session}
+          mainTeacherId={session.teacherId || group.teacherId}
+          academyTeachers={academyTeachers}
+          onClose={() => setSubstituteModalOpen(false)}
+          onSave={async ({ substituteTeacherId, substituteReason }) => {
+            updateClassSession(session.id, {
+              substituteTeacherId: substituteTeacherId || null,
+              substituteReason: substituteReason || null,
+            });
+            // Supabase write-through — 안전을 위해 best-effort.
+            if (session.serverId && isAuthenticated && currentAcademyId) {
+              try {
+                const subStaff = substituteTeacherId
+                  ? academyTeachers.find((t) => t.id === substituteTeacherId)
+                  : null;
+                await updateServerClassSession(session.serverId, {
+                  substitute_teacher_user_id: subStaff?.serverUserId || null,
+                  substitute_reason: substituteReason || null,
+                });
+              } catch (err) {
+                console.warn('[supabase] substitute teacher write failed', err);
+              }
+            }
+            setSubstituteModalOpen(false);
+            showToast(substituteTeacherId ? '대체 강사를 지정했어요.' : '대체 강사 지정을 해제했어요.');
+          }}
+        />
+      )}
 
       {/* ── 저장 / 완료 버튼 (fixed) ──────────────────── */}
       {canEdit && (
@@ -707,6 +803,90 @@ function SummaryCell({ label, value, color = 'text-gray-900' }) {
       <p className={`text-2xl font-bold ${color}`}>{value}</p>
       <p className="text-xs text-gray-400 mt-0.5">{label}</p>
     </div>
+  );
+}
+
+// ─── Phase 30 대체 강사 모달 ─────────────────────────────────────────────
+function SubstituteTeacherModal({ session, mainTeacherId, academyTeachers, onClose, onSave }) {
+  const [selectedId, setSelectedId] = useState(session.substituteTeacherId || '');
+  const [reason, setReason] = useState(session.substituteReason || '');
+  const candidates = useMemo(
+    () => academyTeachers.filter((t) => t.id !== mainTeacherId && t.status !== 'inactive'),
+    [academyTeachers, mainTeacherId],
+  );
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="대체 강사 지정"
+      footer={
+        <div className="flex gap-2">
+          {session.substituteTeacherId && (
+            <button
+              type="button"
+              onClick={() => onSave({ substituteTeacherId: null, substituteReason: null })}
+              className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold flex items-center justify-center gap-1.5"
+            >
+              <XIcon size={14} />
+              해제
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onSave({ substituteTeacherId: selectedId, substituteReason: reason })}
+            disabled={!selectedId}
+            className="flex-1 py-3.5 rounded-xl bg-blue-600 text-white text-sm font-bold disabled:opacity-60"
+          >
+            저장
+          </button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">대체 강사 선택</label>
+          {candidates.length === 0 ? (
+            <p className="text-sm text-gray-400 py-3 text-center bg-gray-50 rounded-xl">
+              지정 가능한 다른 강사가 없어요. 먼저 강사를 등록해주세요.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2 max-h-60 overflow-y-auto">
+              {candidates.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setSelectedId(t.id)}
+                  className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 border-2 text-left ${
+                    selectedId === t.id
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-blue-600 flex-shrink-0">
+                    {(t.name || '?').charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{t.name || '(이름 없음)'}</p>
+                    {t.email && <p className="text-[11px] text-gray-400 truncate">{t.email}</p>}
+                  </div>
+                  {selectedId === t.id && <Check size={14} className="text-blue-600 flex-shrink-0" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">사유 (선택)</label>
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="예: 원 강사 휴가"
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+          />
+        </div>
+      </div>
+    </Modal>
   );
 }
 

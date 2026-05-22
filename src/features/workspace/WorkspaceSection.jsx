@@ -39,13 +39,13 @@ export default function WorkspaceSection() {
   const isSupabaseReady = useAuthStore((s) => s.isSupabaseReady);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const profile = useWorkspaceStore((s) => s.profile);
-  const memberships = useWorkspaceStore((s) => s.memberships);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const setCurrentAcademyId = useWorkspaceStore((s) => s.setCurrentAcademyId);
   const createAcademy = useWorkspaceStore((s) => s.createAcademy);
   const isWorkspaceLoading = useWorkspaceStore((s) => s.isWorkspaceLoading);
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
-  const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations);
+  const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
   const isMyPendingInvitationsLoading = useWorkspaceStore((s) => s.isMyPendingInvitationsLoading);
   const loadMyPendingInvitations = useWorkspaceStore((s) => s.loadMyPendingInvitations);
   const acceptInvitation = useWorkspaceStore((s) => s.acceptInvitation);
@@ -90,7 +90,7 @@ export default function WorkspaceSection() {
       return;
     }
     const ok = window.confirm(
-      '서버 데이터를 현재 기기에 불러옵니다. 기존 로컬 전용 데이터는 유지됩니다. 계속할까요?'
+      '최신 데이터를 이 기기로 불러옵니다. 기존 데이터는 유지됩니다. 계속할까요?'
     );
     if (!ok) return;
     setHydrating(true);
@@ -118,11 +118,11 @@ export default function WorkspaceSection() {
         (counts?.classSessions || 0) + (counts?.lessonRecords || 0) +
         (counts?.attendanceRecords || 0) + (counts?.clinicRecords || 0) +
         (counts?.payments || 0) + (counts?.payrolls || 0);
-      showToast(`서버 데이터를 불러왔어요. (${total}개 row)`);
+      showToast(`데이터를 불러왔어요. (${total}개)`);
     } catch (err) {
       console.error('[hydrate] fetchAcademySnapshot failed', err);
       showToast(
-        err?.message ?? '서버 데이터를 불러오지 못했어요.',
+        err?.message ?? '데이터를 불러오지 못했어요.',
         'error',
       );
     } finally {

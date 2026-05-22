@@ -93,6 +93,17 @@ const useAcademyStore = create(
   academyExamResults: [],
   academyConsultations: [],
   academyPayrolls: [],
+  // Phase 30 — 근무표 / 타임카드. 로컬 캐시 + 서버 mirror 예정 (006 SQL 의 academy_staff_shifts).
+  // 각 entry: { id, staffId (local), staffRole, date, scheduledStartTime, scheduledEndTime,
+  //   actualStartTime, actualEndTime, breakMinutes, status, memo, createdAt, updatedAt, serverId? }
+  academyStaffShifts: [],
+
+  // === Account Scoping (Phase 29) ===
+  // localStorage 의 academy-store 는 브라우저 단위라서, 같은 브라우저에서
+  // 다른 사용자가 로그인하면 이전 사용자의 학원 데이터가 그대로 보이는 leak 이
+  // 있었다. 이 필드에 마지막으로 academy 데이터를 쓴 auth.users.id 를 기록해
+  // 두고, 다른 사용자로 로그인되면 academy-scoped 데이터를 모두 비운다.
+  academyDataOwnerUserId: null,
 
   // === Toast ===
   toast: null,
@@ -1362,23 +1373,40 @@ const useAcademyStore = create(
   },
 
   // ─── Academy Payrolls ─────────────────────────────
+  // Phase 30 — 시급 직원은 academy_staff_shifts(=academyStaffShifts) 기반 시간 합계로 계산.
+  //   teacher hourly  : shifts 합산 (대체 강사 배정 세션의 원래 강사는 session 시간을 받지 않음)
+  //   assistant hourly: shifts 합산 (클리닉 수는 더 이상 급여 영향 없음, info 로 유지)
+  //   monthly         : monthlySalary 그대로
+  // 클리닉 카운트(completedClinicCount) 는 보조강사 카드에 참고 정보로만 남는다.
   generatePayrollsForMonth: (month) => {
     const { academyTeachers, academyAssistants, classSessions, clinicTasks } = get();
+    const computeHours = get().computeStaffHoursForMonth;
     const ts = Date.now();
     const payrolls = [];
 
     academyTeachers.forEach((teacher, i) => {
-      const sessions = classSessions.filter(
-        (s) => s.teacherId === teacher.id && s.date?.startsWith(month) && s.status === 'completed'
-      );
-      const totalHours = sessions.reduce((sum, s) => {
-        if (s.startTime && s.endTime) {
-          const [sh, sm] = s.startTime.split(':').map(Number);
-          const [eh, em] = s.endTime.split(':').map(Number);
-          return sum + (eh * 60 + em - sh * 60 - sm) / 60;
-        }
-        return sum;
-      }, 0);
+      // 시급 직원: shift 시간 우선. shift 가 없으면 session-completed 합산 fallback.
+      const shiftHours = computeHours(teacher.id, month);
+      let totalHours = shiftHours;
+      let completedSessionCount = 0;
+      // 대체 강사 배정으로 원래 강사가 빠진 세션은 제외. 본인 담당 또는 본인이 대체로 배정된 세션.
+      const sessions = classSessions.filter((s) => {
+        if (s.status !== 'completed' || !s.date?.startsWith(month)) return false;
+        const isMainAndNoSubstitute = s.teacherId === teacher.id && !s.substituteTeacherId;
+        const isSubstitute = s.substituteTeacherId === teacher.id;
+        return isMainAndNoSubstitute || isSubstitute;
+      });
+      completedSessionCount = sessions.length;
+      if (shiftHours <= 0) {
+        totalHours = sessions.reduce((sum, s) => {
+          if (s.startTime && s.endTime) {
+            const [sh, sm] = s.startTime.split(':').map(Number);
+            const [eh, em] = s.endTime.split(':').map(Number);
+            return sum + (eh * 60 + em - sh * 60 - sm) / 60;
+          }
+          return sum;
+        }, 0);
+      }
       const amount = teacher.wageType === 'hourly'
         ? Math.round((teacher.hourlyWage || 0) * totalHours)
         : (teacher.monthlySalary || teacher.monthlyWage || 0);
@@ -1386,23 +1414,25 @@ const useAcademyStore = create(
         id: `pr${ts}t${i}`, staffType: 'teacher', staffId: teacher.id, month,
         wageType: teacher.wageType || 'monthly', hourlyWage: teacher.hourlyWage || 0,
         monthlySalary: teacher.monthlySalary || 0, totalHours,
-        completedSessionCount: sessions.length, completedClinicCount: 0,
+        completedSessionCount, completedClinicCount: 0,
         amount, status: 'scheduled', paidDate: '', memo: '',
         createdAt: new Date().toISOString(),
       });
     });
 
     academyAssistants.forEach((assistant, i) => {
+      // 클리닉 카운트는 정보 표시 용도로만 유지. 급여 계산 영향 없음.
       const completed = clinicTasks.filter(
         (t) => t.assignedToId === assistant.id && t.status === 'completed' && t.completedAt?.startsWith(month)
       );
+      const totalHours = computeHours(assistant.id, month);
       const amount = assistant.wageType === 'hourly'
-        ? 0 // 시급은 근무시간 입력 필요 — 월급제만 자동계산
+        ? Math.round((assistant.hourlyWage || 0) * totalHours)
         : (assistant.monthlySalary || 0);
       payrolls.push({
         id: `pr${ts}a${i}`, staffType: 'assistant', staffId: assistant.id, month,
         wageType: assistant.wageType || 'monthly', hourlyWage: assistant.hourlyWage || 0,
-        monthlySalary: assistant.monthlySalary || 0, totalHours: 0,
+        monthlySalary: assistant.monthlySalary || 0, totalHours,
         completedSessionCount: 0, completedClinicCount: completed.length,
         amount, status: 'scheduled', paidDate: '', memo: '',
         createdAt: new Date().toISOString(),
@@ -1545,6 +1575,138 @@ const useAcademyStore = create(
       };
     });
     return counts;
+  },
+
+  // ─── Phase 30 — 근무표 / 타임카드 (local only scaffold) ──
+  addAcademyStaffShift: (shift) => {
+    const id = `shift${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const newShift = {
+      id,
+      status: 'scheduled',
+      breakMinutes: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...shift,
+    };
+    set((s) => ({ academyStaffShifts: [...(s.academyStaffShifts || []), newShift] }));
+    get().showToast('근무 일정이 추가되었어요.');
+    return newShift;
+  },
+  updateAcademyStaffShift: (id, updates) => {
+    set((s) => ({
+      academyStaffShifts: (s.academyStaffShifts || []).map((sh) =>
+        sh.id === id ? { ...sh, ...updates, updatedAt: new Date().toISOString() } : sh,
+      ),
+    }));
+  },
+  deleteAcademyStaffShift: (id) => {
+    set((s) => ({
+      academyStaffShifts: (s.academyStaffShifts || []).filter((sh) => sh.id !== id),
+    }));
+    get().showToast('근무 일정이 삭제되었어요.');
+  },
+  // Phase 31 — supabase write-through 후 local shift 에 serverId 주입 (toast 없음).
+  setStaffShiftServerId: (localId, serverId) => {
+    if (!localId || !serverId) return;
+    set((s) => ({
+      academyStaffShifts: (s.academyStaffShifts || []).map((sh) =>
+        sh.id === localId ? { ...sh, serverId } : sh,
+      ),
+    }));
+  },
+  // 서버 shift 목록을 로컬에 mirror — 동일 serverId 가 있으면 patch, 없으면 append.
+  // serverId 가 없는 local-only 항목은 그대로 보존.
+  mirrorServerStaffShifts: (serverShifts = []) => {
+    if (!Array.isArray(serverShifts)) return;
+    set((s) => {
+      const existing = s.academyStaffShifts || [];
+      const next = existing.slice();
+      const indexByServerId = new Map(
+        next.map((sh, i) => [sh.serverId, i]).filter(([id]) => id),
+      );
+      for (const sr of serverShifts) {
+        if (!sr || !sr.id) continue;
+        const mapped = {
+          serverId: sr.id,
+          staffUserId: sr.staff_user_id,
+          staffRole: sr.staff_role,
+          date: sr.date,
+          scheduledStartTime: sr.scheduled_start_time,
+          scheduledEndTime: sr.scheduled_end_time,
+          actualStartTime: sr.actual_start_time,
+          actualEndTime: sr.actual_end_time,
+          breakMinutes: sr.break_minutes || 0,
+          status: sr.status,
+          memo: sr.memo,
+          createdAt: sr.created_at,
+          updatedAt: sr.updated_at,
+        };
+        const idx = indexByServerId.get(sr.id);
+        if (idx !== undefined) {
+          next[idx] = { ...next[idx], ...mapped };
+        } else {
+          next.push({
+            id: `shift_${sr.id.slice(0, 8)}_${Date.now()}`,
+            ...mapped,
+          });
+        }
+      }
+      return { academyStaffShifts: next };
+    });
+  },
+  // staff (local id) 가 한 달에 일한 시급 시간을 합산해 반환.
+  // 우선순위: actual 우선, 없으면 scheduled (status='completed' 만), 그 외 0.
+  computeStaffHoursForMonth: (staffId, month /* YYYY-MM */) => {
+    if (!staffId || !month) return 0;
+    const shifts = (get().academyStaffShifts || []).filter(
+      (sh) => sh.staffId === staffId && sh.date && sh.date.startsWith(month),
+    );
+    let totalMinutes = 0;
+    for (const sh of shifts) {
+      let start = sh.actualStartTime || (sh.status === 'completed' ? sh.scheduledStartTime : null);
+      let end = sh.actualEndTime || (sh.status === 'completed' ? sh.scheduledEndTime : null);
+      if (!start || !end) continue;
+      const [sh1, sm1] = start.split(':').map(Number);
+      const [sh2, sm2] = end.split(':').map(Number);
+      if (Number.isNaN(sh1) || Number.isNaN(sh2)) continue;
+      const minutes = (sh2 * 60 + sm2) - (sh1 * 60 + sm1) - (sh.breakMinutes || 0);
+      if (minutes > 0) totalMinutes += minutes;
+    }
+    return totalMinutes / 60;
+  },
+
+  // ─── Account scoping (Phase 29) ──────────────────────
+  // 로그인된 사용자가 변경되었을 때 academy-scoped 로컬 데이터만 비운다.
+  // tutor / private 데이터는 건드리지 않는다 (사용자가 명시적 fresh 가입한 게
+  // 아니라 로그인만 바뀐 경우라도, 개인 워크스페이스는 그 자체로 격리되도록).
+  // App.jsx 가 인증 직후 호출.
+  ensureAcademyDataOwner: (userId) => {
+    if (!userId) return;
+    const current = get().academyDataOwnerUserId;
+    if (current === userId) return;
+    // 다른 사용자였거나 처음 로그인. academy 데이터를 깨끗하게 리셋.
+    set({
+      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '' },
+      academyStudents: [],
+      classGroups: [],
+      classSessions: [],
+      clinicTasks: [],
+      clinicRecords: [],
+      academyTeachers: [],
+      academyAssistants: [],
+      academyPayments: [],
+      academyLessonRecords: [],
+      academyAttendanceRecords: [],
+      academyStudentEvents: [],
+      academyExamResults: [],
+      academyConsultations: [],
+      academyPayrolls: [],
+      academyStaffShifts: [],
+      selectedClassGroupId: null,
+      selectedClassSessionId: null,
+      selectedAcademyStudentId: null,
+      academyDataOwnerUserId: userId,
+    });
   },
 
   // ─── Academy Reset ────────────────────────────────
@@ -1769,6 +1931,9 @@ const useAcademyStore = create(
         academyExamResults: s.academyExamResults,
         academyConsultations: s.academyConsultations,
         academyPayrolls: s.academyPayrolls,
+        academyStaffShifts: s.academyStaffShifts,
+        // Phase 29 — 학원 데이터 소유자 (cross-account leak 방지용 marker)
+        academyDataOwnerUserId: s.academyDataOwnerUserId,
       }),
       // Migrate persisted profile to add prompt fields if missing
       onRehydrateStorage: () => (state) => {

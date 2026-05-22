@@ -61,9 +61,13 @@ export default function App() {
   const initializeWorkspace = useWorkspaceStore((s) => s.initializeWorkspace);
   const clearWorkspace = useWorkspaceStore((s) => s.clearWorkspace);
   const profile = useWorkspaceStore((s) => s.profile);
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const ensureAcademyDataOwner = useAcademyStore((s) => s.ensureAcademyDataOwner);
   const memberships = useWorkspaceStore((s) => s.memberships);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
+  const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
+  const workspacePicked = useWorkspaceStore((s) => s.workspacePicked);
 
   // server count loaders 완료 여부 — auto-hydrate 진입 가드.
   const serverStudentsLoadedAt = useWorkspaceStore((s) => s.serverStudentsLoadedAt);
@@ -79,6 +83,11 @@ export default function App() {
 
   useEffect(() => {
     if (isAuthenticated) {
+      // Phase 29: 인증된 사용자가 academy-store 의 마지막 소유자와 다르면
+      // 학원 로컬 데이터를 리셋. 같은 브라우저에서 다른 계정이 로그인한 경우
+      // 이전 사용자의 강사/학생 등이 leak 되는 것을 막는다.
+      // (private/tutor 데이터는 건드리지 않는다.)
+      if (authUserId) ensureAcademyDataOwner(authUserId);
       initializeWorkspace();
     } else {
       clearWorkspace();
@@ -88,7 +97,7 @@ export default function App() {
       // Phase 28: 학원 선택 sessionStorage 도 비워서 다음 사용자가 다시 선택할 수 있게.
       clearWorkspacePicked();
     }
-  }, [isAuthenticated, initializeWorkspace, clearWorkspace]);
+  }, [isAuthenticated, authUserId, ensureAcademyDataOwner, initializeWorkspace, clearWorkspace]);
 
   // ─── Phase 25: 자동 역할 진입 ───────────────────────────────
   // 로그인 + workspace ready 이후 currentAcademyId 의 membership.role 을 보고
@@ -178,11 +187,11 @@ export default function App() {
           (counts?.attendanceRecords || 0) + (counts?.clinicRecords || 0) +
           (counts?.payments || 0) + (counts?.payrolls || 0);
         if (total > 0) {
-          showToast(`서버 데이터를 불러왔어요. (${total}개)`);
+          showToast(`데이터를 동기화했어요. (${total}개)`);
         }
       } catch (err) {
         console.error('[auto-hydrate] fetchAcademySnapshot failed', err);
-        showToast('서버 데이터를 불러오지 못했어요.', 'error');
+        showToast('데이터 동기화에 실패했어요.', 'error');
       } finally {
         markAutoHydratedThisSession(currentAcademyId);
         hydratingRef.current = false;
@@ -208,25 +217,29 @@ export default function App() {
       if (!isWorkspaceReady) return <LoadingScreen />;
     }
 
-    // Phase 25 — staff 계정 + 멤버십 없음: 전용 대기 화면.
+    // Phase 25 — staff 계정 + 멤버십 없음 + 받은 초대도 없음: 전용 대기 화면.
+    // (받은 초대가 있으면 WorkspaceSelectionPage 가 처리하므로 분기 안 탐.)
     if (
       isAuthenticated &&
       isWorkspaceReady &&
       profile?.account_type === 'staff' &&
       memberships.length === 0 &&
+      myPendingInvitations.length === 0 &&
       !ACADEMY_ROLES.includes(role)
     ) {
       return <StaffWaitingPage />;
     }
 
-    // Phase 28 — 강사/보조강사가 여러 학원에 속해 있고 이번 세션에 아직 선택 안 함:
-    // 학원 선택 화면. (원장은 보통 1개 학원이므로 이 분기 미적용)
+    // Phase 32 — academy 모드 사용자(owner/teacher/assistant) 는 이번 세션에서
+    // 학원을 한 번도 선택하지 않았다면 학원 선택 화면을 거친다 (membership 수와
+    // 무관). 학원이 0개여도 안내/생성/초대 수락이 이 한 화면에서 모두 처리된다.
+    // store 의 reactive 한 workspacePicked 를 subscribe 해서 mark 직후 즉시
+    // re-render 가 일어나도록 한다.
     if (
       isAuthenticated &&
       isWorkspaceReady &&
-      (role === 'teacher' || role === 'assistant') &&
-      memberships.length > 1 &&
-      !wasWorkspacePicked()
+      ACADEMY_ROLES.includes(role) &&
+      !workspacePicked
     ) {
       return <WorkspaceSelectionPage />;
     }
