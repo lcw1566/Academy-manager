@@ -186,8 +186,8 @@ export default function StaffInviteWidget({
       <div className="rounded-2xl bg-gray-50 px-3 py-3 text-xs text-gray-500 flex items-start gap-2">
         <Info size={14} className="text-gray-400 flex-shrink-0 mt-0.5" />
         <span>
-          서버 계정 연결 후 강사/보조강사 초대를 보낼 수 있어요.
-          상단 “서버 계정” 영역에서 로그인해주세요.
+          로그인하면 강사·보조강사 초대를 보낼 수 있어요.
+          더보기 화면에서 계정 로그인을 먼저 해주세요.
         </span>
       </div>
     );

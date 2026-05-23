@@ -23,7 +23,7 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Pencil, Trash2, Clock, LogIn, LogOut as LogOutIcon, Search,
-  AlertTriangle, ChevronRight, Loader2,
+  AlertTriangle, ChevronRight, Loader2, BookOpen, Coffee,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
@@ -43,6 +43,11 @@ import {
   updateAcademyStaffShift as updateServerStaffShift,
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
+import {
+  buildShiftTimeline,
+  computeLessonHoursForMonth,
+  hhmmToMin,
+} from '../../../utils/shiftCoverage';
 
 const STATUS_LABELS = {
   scheduled: '예정',
@@ -386,6 +391,8 @@ function StaffWorkView() {
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
   const academyTeachers = useAcademyStore((s) => s.academyTeachers) ?? [];
   const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
+  const classSessions = useAcademyStore((s) => s.classSessions) ?? [];
+  const classGroups = useAcademyStore((s) => s.classGroups) ?? [];
   const updateAcademyStaffShift = useAcademyStore((s) => s.updateAcademyStaffShift);
   const computeStaffHoursForMonth = useAcademyStore((s) => s.computeStaffHoursForMonth);
   const showToast = useAcademyStore((s) => s.showToast);
@@ -446,6 +453,43 @@ function StaffWorkView() {
     [computeStaffHoursForMonth, myStaff?.id, currentMonth],
   );
 
+  // 오늘 배정된 본인 lesson 세션들 (취소 제외).
+  const todayMySessions = useMemo(() => {
+    if (!myStaff) return [];
+    return classSessions.filter((s) => {
+      if (s.date !== todayStr || s.status === 'canceled') return false;
+      if (role === 'assistant') {
+        const ids = Array.isArray(s.assistantIds) ? s.assistantIds : [];
+        return ids.includes(myStaff.id) || s.assistantId === myStaff.id;
+      }
+      const isMainAndNoSub = s.teacherId === myStaff.id && !s.substituteTeacherId;
+      const isSub = s.substituteTeacherId === myStaff.id;
+      return isMainAndNoSub || isSub;
+    });
+  }, [classSessions, myStaff, role, todayStr]);
+
+  // Toss-style timeline: shift 안에서 lesson / gap 행으로 분해.
+  const todayTimeline = useMemo(
+    () => buildShiftTimeline(todayShift, todayMySessions),
+    [todayShift, todayMySessions],
+  );
+
+  // 오늘 총 근무/수업/대기 시간 (분 → 시간).
+  const todaySummary = useMemo(() => {
+    let workMin = 0;
+    let lessonMin = 0;
+    if (todayShift) {
+      const s = hhmmToMin(todayShift.scheduledStartTime);
+      const e = hhmmToMin(todayShift.scheduledEndTime);
+      if (s != null && e != null && e > s) workMin = e - s - (todayShift.breakMinutes || 0);
+    }
+    for (const row of todayTimeline) {
+      if (row.type === 'lesson') lessonMin += row.durationMin;
+    }
+    const gapMin = Math.max(0, workMin - lessonMin);
+    return { workMin, lessonMin, gapMin };
+  }, [todayShift, todayTimeline]);
+
   const writeThrough = async (serverId, patch) => {
     if (!serverId || !isAuthenticated || !currentAcademyId) return;
     try {
@@ -482,10 +526,10 @@ function StaffWorkView() {
   return (
     <div>
       <Header title="내 근무" />
-      <div className="pt-14 pb-12">
-        {/* 오늘 근무 + 출/퇴근 */}
+      <div className="pt-14 pb-12 bg-[#F2F4F6] min-h-screen">
+        {/* 오늘 요약 + 출/퇴근 */}
         <div className="px-4 pt-4">
-          <p className="text-sm font-bold text-gray-700 mb-2">오늘 근무 · {formatDateShort(todayStr)}</p>
+          <p className="text-xs font-semibold text-[#8B95A1] mb-2">오늘 · {formatDateShort(todayStr)}</p>
           {!todayShift ? (
             <div className="bg-white rounded-2xl p-5 shadow-sm text-center">
               <Clock size={20} className="text-gray-300 mx-auto mb-2" />
@@ -493,45 +537,76 @@ function StaffWorkView() {
               <p className="text-[11px] text-gray-400 mt-1">원장이 일정을 등록하면 여기에 표시돼요.</p>
             </div>
           ) : (
-            <div className="bg-blue-50 rounded-2xl px-4 py-4 shadow-sm">
-              <div className="flex items-center gap-2 mb-2">
-                <Clock size={14} className="text-blue-600" />
-                <p className="text-sm font-bold text-blue-700">
-                  예정 {todayShift.scheduledStartTime || '-'} ~ {todayShift.scheduledEndTime || '-'}
+            <>
+              <div className="bg-white rounded-2xl px-5 py-5 shadow-sm">
+                <p className="text-xs text-[#4E5968] mb-1">오늘 총 상주</p>
+                <p className="text-3xl font-bold text-[#191F28] leading-tight">
+                  {(todaySummary.workMin / 60).toFixed(1)}
+                  <span className="text-base text-[#8B95A1] font-medium ml-1">시간</span>
                 </p>
-                <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_TONES[todayShift.status]}`}>
-                  {STATUS_LABELS[todayShift.status]}
-                </span>
+                <p className="text-xs text-[#4E5968] mt-2">
+                  수업 <span className="font-semibold text-[#0064FF]">{(todaySummary.lessonMin / 60).toFixed(1)}시간</span>
+                  <span className="mx-1.5 text-[#D1D6DB]">·</span>
+                  공강/대기 <span className="font-semibold text-[#4E5968]">{(todaySummary.gapMin / 60).toFixed(1)}시간</span>
+                </p>
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-[#F2F4F6]">
+                  <Clock size={12} className="text-[#8B95A1]" />
+                  <p className="text-xs text-[#4E5968]">
+                    예정 {todayShift.scheduledStartTime || '-'} ~ {todayShift.scheduledEndTime || '-'}
+                    {todayShift.breakMinutes ? ` · 휴게 ${todayShift.breakMinutes}분` : ''}
+                  </p>
+                  <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_TONES[todayShift.status]}`}>
+                    {STATUS_LABELS[todayShift.status]}
+                  </span>
+                </div>
+                {(clockedIn || clockedOut) && (
+                  <p className="text-xs text-[#4E5968] mt-2">
+                    {clockedIn && `출근 ${todayShift.actualStartTime}`}
+                    {clockedIn && clockedOut && ' · '}
+                    {clockedOut && `퇴근 ${todayShift.actualEndTime}`}
+                  </p>
+                )}
+                <div className="flex gap-2 mt-3">
+                  <button
+                    type="button"
+                    disabled={clockedIn || busy}
+                    onClick={handleClockIn}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-[#0064FF] text-white text-sm font-bold disabled:opacity-50"
+                  >
+                    {busy ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
+                    {clockedIn ? '출근 완료' : '출근'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!clockedIn || clockedOut || busy}
+                    onClick={handleClockOut}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-[#F2F4F6] text-[#191F28] text-sm font-bold disabled:opacity-50"
+                  >
+                    {busy ? <Loader2 size={14} className="animate-spin" /> : <LogOutIcon size={14} />}
+                    {clockedOut ? '퇴근 완료' : '퇴근'}
+                  </button>
+                </div>
               </div>
-              {(clockedIn || clockedOut) && (
-                <p className="text-xs text-gray-600 mb-2">
-                  {clockedIn && `출근 ${todayShift.actualStartTime}`}
-                  {clockedIn && clockedOut && ' · '}
-                  {clockedOut && `퇴근 ${todayShift.actualEndTime}`}
-                </p>
+
+              {/* 오늘 타임라인 (lesson / gap) */}
+              {todayTimeline.length > 0 && (
+                <div className="mt-3 bg-white rounded-2xl shadow-sm overflow-hidden">
+                  <div className="px-5 pt-4 pb-2">
+                    <p className="text-xs font-bold text-[#191F28]">타임라인</p>
+                    <p className="text-[11px] text-[#8B95A1] mt-0.5">수업과 비어 있는 근무 시간을 같이 보여줘요.</p>
+                  </div>
+                  <div className="flex flex-col">
+                    {todayTimeline.map((row, idx) => (
+                      <TimelineRow
+                        key={`${row.startTime}_${idx}`}
+                        row={row}
+                        classGroups={classGroups}
+                      />
+                    ))}
+                  </div>
+                </div>
               )}
-              {todayShift.memo && <p className="text-xs text-gray-500 mb-2">{todayShift.memo}</p>}
-              <div className="flex gap-2 mt-2">
-                <button
-                  type="button"
-                  disabled={clockedIn || busy}
-                  onClick={handleClockIn}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white text-blue-700 text-xs font-bold border border-blue-200 active:bg-blue-100 disabled:opacity-50"
-                >
-                  {busy ? <Loader2 size={12} className="animate-spin" /> : <LogIn size={12} />}
-                  {clockedIn ? '출근 완료' : '출근'}
-                </button>
-                <button
-                  type="button"
-                  disabled={!clockedIn || clockedOut || busy}
-                  onClick={handleClockOut}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white text-emerald-700 text-xs font-bold border border-emerald-200 active:bg-emerald-100 disabled:opacity-50"
-                >
-                  {busy ? <Loader2 size={12} className="animate-spin" /> : <LogOutIcon size={12} />}
-                  {clockedOut ? '퇴근 완료' : '퇴근'}
-                </button>
-              </div>
-            </div>
+            </>
           )}
         </div>
 
@@ -596,6 +671,43 @@ function StaffWorkView() {
         <p className="text-[11px] text-gray-400 leading-relaxed mt-5 px-4">
           시급 계산은 이 근무 합계 시간을 기준으로 해요. actual 시간이 비어 있고 상태가 "완료" 인 경우 예정 시간을 사용해요.
         </p>
+      </div>
+    </div>
+  );
+}
+
+function TimelineRow({ row, classGroups }) {
+  const isLesson = row.type === 'lesson';
+  const hours = (row.durationMin / 60).toFixed(1);
+  const titles = isLesson
+    ? (row.sessions || []).map((s) => classGroups.find((g) => g.id === s.classGroupId)?.name || '수업').join(', ')
+    : '비어 있는 근무 시간';
+  return (
+    <div className={`flex items-center gap-3 px-5 py-3 border-t border-[#F2F4F6] ${isLesson ? '' : 'bg-[#F8F9FA]'}`}>
+      <div className="w-16 flex-shrink-0">
+        <p className="text-xs font-bold text-[#191F28]">{row.startTime}</p>
+        <p className="text-[10px] text-[#8B95A1]">~ {row.endTime}</p>
+      </div>
+      <div className={`w-1 h-10 rounded-full flex-shrink-0 ${isLesson ? 'bg-[#0064FF]' : 'bg-[#D1D6DB]'}`} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          {isLesson ? (
+            <BookOpen size={12} className="text-[#0064FF]" />
+          ) : (
+            <Coffee size={12} className="text-[#8B95A1]" />
+          )}
+          <p className={`text-sm font-bold truncate ${isLesson ? 'text-[#191F28]' : 'text-[#4E5968]'}`}>
+            {titles}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+            isLesson ? 'bg-blue-50 text-[#0064FF]' : 'bg-[#F2F4F6] text-[#8B95A1]'
+          }`}>
+            {isLesson ? '수업' : '대기'}
+          </span>
+          <p className="text-[11px] text-[#8B95A1]">{hours}시간</p>
+        </div>
       </div>
     </div>
   );

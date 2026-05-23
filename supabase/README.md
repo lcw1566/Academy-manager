@@ -15,7 +15,8 @@ supabase/
     ├── 004_profiles_staff_and_delete_policies.sql  (profile.phone + staff_profiles + academies delete)
     ├── 005_accept_invitation_rpc.sql  (초대 수락 RPC hotfix)
     ├── 006_staff_operations.sql    (근무표 + 권한·범위 + 대체 강사)
-    └── 007_profile_search_rpc.sql  (이메일로 profile 검색 RPC)
+    ├── 007_profile_search_rpc.sql  (이메일로 profile 검색 RPC)
+    └── 008_assistant_assignment.sql (반/회차에 보조강사 배정 영속화)
 ```
 
 ## 실행 순서 요약
@@ -29,6 +30,7 @@ supabase/
 | 5 | `005_accept_invitation_rpc.sql` | accept_academy_invitation security definer RPC (academy_members RLS 우회 + 강한 검증) |
 | 6 | `006_staff_operations.sql` | academy_staff_shifts 테이블 + academy_staff_profiles 의 permissions/scope jsonb + class_sessions 의 substitute_teacher_user_id / substitute_reason 컬럼 |
 | 7 | `007_profile_search_rpc.sql` | search_profile_by_email(text) security definer RPC (강사 초대 시 이메일로 profile 조회) |
+| 8 | `008_assistant_assignment.sql` | class_groups.assistant_ids / class_sessions.assistant_ids jsonb 컬럼 추가 (Phase 35) |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -272,7 +274,35 @@ RLS 를 우회하되, 다음 안전 가드를 강제한다:
 
 ---
 
-## STEP 8 — 앱 동작 확인
+## STEP 8 — `008_assistant_assignment.sql` 실행 (Phase 35)
+
+1. Supabase Dashboard → SQL Editor
+2. `supabase/sql/008_assistant_assignment.sql` 내용 전체를 붙여넣고 RUN
+3. 결과 검증 (옵션):
+   ```sql
+   select column_name, data_type
+   from information_schema.columns
+   where table_schema = 'public'
+     and table_name in ('class_groups', 'class_sessions')
+     and column_name = 'assistant_ids';
+   ```
+   두 줄 결과 (둘 다 `jsonb`) 가 나오면 정상.
+
+### 왜 필요한가
+
+Phase 34 에서 보조강사 배정을 추가했지만 로컬에만 저장됐어요. 다른 기기에서
+같은 학원에 로그인하면 배정이 사라져 보이는 문제가 있어, 서버에도 같이 저장하도록 합니다.
+
+### 안전 보장
+
+- `add column if not exists` — 여러 번 실행해도 안전
+- 기본값 `'[]'::jsonb` — 기존 row 는 빈 배열로 자동 채워짐
+- RLS 변경 없음 — 기존 정책이 그대로 적용
+- destructive 명령 없음
+
+---
+
+## STEP 9 — 앱 동작 확인
 
 1. 앱은 별도 변경 없이 계속 정상 동작해야 합니다 (기존 localStorage 모드 유지).
 2. `npm run dev` 로 띄운 뒤 더보기 탭에서:

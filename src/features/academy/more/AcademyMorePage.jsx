@@ -1231,6 +1231,8 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
     email:         initialData?.email || '',
     subjects:      Array.isArray(initialData?.subjects) ? initialData.subjects : [],
     wageType:      initialData?.wageType || 'hourly',
+    // Phase 34 — 시급 정산 기준: shiftHours (학원 머문 시간 · 추천) / lessonHours (수업 시간만)
+    hourlyMode:    initialData?.hourlyMode || 'shiftHours',
     hourlyWage:    initialData?.hourlyWage ? String(initialData.hourlyWage) : '',
     monthlySalary: initialData?.monthlySalary ? String(initialData.monthlySalary) : (initialData?.monthlyWage ? String(initialData.monthlyWage) : ''),
     memo:          initialData?.memo || '',
@@ -1287,7 +1289,13 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
             ))}
           </div>
           {form.wageType === 'hourly' && (
-            <input type="number" value={form.hourlyWage} onChange={(e) => setForm((f) => ({ ...f, hourlyWage: e.target.value }))} placeholder="시급 (원)" className="input mt-2" />
+            <>
+              <input type="number" value={form.hourlyWage} onChange={(e) => setForm((f) => ({ ...f, hourlyWage: e.target.value }))} placeholder="시급 (원)" className="input mt-2" />
+              <HourlyModeChoice
+                value={form.hourlyMode}
+                onChange={(v) => setForm((f) => ({ ...f, hourlyMode: v }))}
+              />
+            </>
           )}
           {form.wageType === 'monthly' && (
             <input type="number" value={form.monthlySalary} onChange={(e) => setForm((f) => ({ ...f, monthlySalary: e.target.value }))} placeholder="월급 (원)" className="input mt-2" />
@@ -1313,6 +1321,54 @@ function TeacherFormModal({ initialData, onClose, onSave }) {
   );
 }
 
+// Phase 34 — 시급 정산 기준 선택 (radio card)
+function HourlyModeChoice({ value, onChange }) {
+  const OPTIONS = [
+    {
+      id: 'shiftHours',
+      title: '학원에 머문 시간 기준',
+      subtitle: '추천 · 수업이 없어도 출퇴근 시간 전체를 정산해요.',
+    },
+    {
+      id: 'lessonHours',
+      title: '수업 시간만 정산',
+      subtitle: '공강을 제외하고 실제 수업한 시간만 정산해요.',
+    },
+  ];
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      <p className="text-[11px] font-semibold text-gray-500">급여 정산 방식</p>
+      {OPTIONS.map((opt) => {
+        const active = value === opt.id;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => onChange(opt.id)}
+            className={`w-full text-left rounded-2xl px-4 py-3 border-2 transition-colors ${
+              active ? 'border-[#0064FF] bg-blue-50' : 'border-gray-200 bg-white'
+            }`}
+          >
+            <div className="flex items-start gap-2">
+              <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 mt-0.5 flex items-center justify-center ${
+                active ? 'border-[#0064FF] bg-[#0064FF]' : 'border-gray-300'
+              }`}>
+                {active && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-bold ${active ? 'text-[#0064FF]' : 'text-gray-800'}`}>
+                  {opt.title}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{opt.subtitle}</p>
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── 보조강사 폼 ─────────────────────────────────────────────────
 function AssistantFormModal({ initialData, onClose, onSave }) {
   const [form, setForm] = useState({
@@ -1321,6 +1377,7 @@ function AssistantFormModal({ initialData, onClose, onSave }) {
     email:         initialData?.email || '',
     subjects:      Array.isArray(initialData?.subjects)  ? initialData.subjects  : [],
     wageType:      initialData?.wageType || 'hourly',
+    hourlyMode:    initialData?.hourlyMode || 'shiftHours',
     hourlyWage:    initialData?.hourlyWage    ? String(initialData.hourlyWage)    : '',
     monthlySalary: initialData?.monthlySalary ? String(initialData.monthlySalary) : '',
     memo:          initialData?.memo || '',
@@ -1377,7 +1434,13 @@ function AssistantFormModal({ initialData, onClose, onSave }) {
             ))}
           </div>
           {form.wageType === 'hourly' && (
-            <input type="number" value={form.hourlyWage} onChange={(e) => setForm((f) => ({ ...f, hourlyWage: e.target.value }))} placeholder="시급 (원)" className="input mt-2" />
+            <>
+              <input type="number" value={form.hourlyWage} onChange={(e) => setForm((f) => ({ ...f, hourlyWage: e.target.value }))} placeholder="시급 (원)" className="input mt-2" />
+              <HourlyModeChoice
+                value={form.hourlyMode}
+                onChange={(v) => setForm((f) => ({ ...f, hourlyMode: v }))}
+              />
+            </>
           )}
           {form.wageType === 'monthly' && (
             <input type="number" value={form.monthlySalary} onChange={(e) => setForm((f) => ({ ...f, monthlySalary: e.target.value }))} placeholder="월급 (원)" className="input mt-2" />

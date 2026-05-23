@@ -14,6 +14,7 @@ import {
   mapServerPaymentToLocal,
   mapServerPayrollToLocal,
 } from '../services/supabase/hydrateMappers';
+import { computeLessonHoursForMonth } from '../utils/shiftCoverage';
 
 const defaultTutorProfile = {
   name: '과외 선생님',
@@ -1385,10 +1386,11 @@ const useAcademyStore = create(
     const payrolls = [];
 
     academyTeachers.forEach((teacher, i) => {
-      // 시급 직원: shift 시간 우선. shift 가 없으면 session-completed 합산 fallback.
+      // Phase 34 — 시급 정산 기준: shiftHours (default) | lessonHours.
       const shiftHours = computeHours(teacher.id, month);
-      let totalHours = shiftHours;
-      let completedSessionCount = 0;
+      const lessonHours = computeLessonHoursForMonth({
+        staffId: teacher.id, staffRole: 'teacher', month, classSessions,
+      });
       // 대체 강사 배정으로 원래 강사가 빠진 세션은 제외. 본인 담당 또는 본인이 대체로 배정된 세션.
       const sessions = classSessions.filter((s) => {
         if (s.status !== 'completed' || !s.date?.startsWith(month)) return false;
@@ -1396,24 +1398,21 @@ const useAcademyStore = create(
         const isSubstitute = s.substituteTeacherId === teacher.id;
         return isMainAndNoSubstitute || isSubstitute;
       });
-      completedSessionCount = sessions.length;
-      if (shiftHours <= 0) {
-        totalHours = sessions.reduce((sum, s) => {
-          if (s.startTime && s.endTime) {
-            const [sh, sm] = s.startTime.split(':').map(Number);
-            const [eh, em] = s.endTime.split(':').map(Number);
-            return sum + (eh * 60 + em - sh * 60 - sm) / 60;
-          }
-          return sum;
-        }, 0);
-      }
+      const completedSessionCount = sessions.length;
+      const hourlyMode = teacher.hourlyMode === 'lessonHours' ? 'lessonHours' : 'shiftHours';
+      // shift 가 없는 학원의 backward-compat fallback: shiftHours==0 이면 lessonHours 사용.
+      const effectiveShiftHours = shiftHours > 0 ? shiftHours : lessonHours;
+      const totalHours = hourlyMode === 'lessonHours' ? lessonHours : effectiveShiftHours;
+      const gapHours = Math.max(0, effectiveShiftHours - lessonHours);
       const amount = teacher.wageType === 'hourly'
         ? Math.round((teacher.hourlyWage || 0) * totalHours)
         : (teacher.monthlySalary || teacher.monthlyWage || 0);
       payrolls.push({
         id: `pr${ts}t${i}`, staffType: 'teacher', staffId: teacher.id, month,
-        wageType: teacher.wageType || 'monthly', hourlyWage: teacher.hourlyWage || 0,
-        monthlySalary: teacher.monthlySalary || 0, totalHours,
+        wageType: teacher.wageType || 'monthly', hourlyMode,
+        hourlyWage: teacher.hourlyWage || 0,
+        monthlySalary: teacher.monthlySalary || 0,
+        totalHours, shiftHours: effectiveShiftHours, lessonHours, gapHours,
         completedSessionCount, completedClinicCount: 0,
         amount, status: 'scheduled', paidDate: '', memo: '',
         createdAt: new Date().toISOString(),
@@ -1425,14 +1424,23 @@ const useAcademyStore = create(
       const completed = clinicTasks.filter(
         (t) => t.assignedToId === assistant.id && t.status === 'completed' && t.completedAt?.startsWith(month)
       );
-      const totalHours = computeHours(assistant.id, month);
+      const shiftHours = computeHours(assistant.id, month);
+      const lessonHours = computeLessonHoursForMonth({
+        staffId: assistant.id, staffRole: 'assistant', month, classSessions,
+      });
+      const hourlyMode = assistant.hourlyMode === 'lessonHours' ? 'lessonHours' : 'shiftHours';
+      const effectiveShiftHours = shiftHours > 0 ? shiftHours : lessonHours;
+      const totalHours = hourlyMode === 'lessonHours' ? lessonHours : effectiveShiftHours;
+      const gapHours = Math.max(0, effectiveShiftHours - lessonHours);
       const amount = assistant.wageType === 'hourly'
         ? Math.round((assistant.hourlyWage || 0) * totalHours)
         : (assistant.monthlySalary || 0);
       payrolls.push({
         id: `pr${ts}a${i}`, staffType: 'assistant', staffId: assistant.id, month,
-        wageType: assistant.wageType || 'monthly', hourlyWage: assistant.hourlyWage || 0,
-        monthlySalary: assistant.monthlySalary || 0, totalHours,
+        wageType: assistant.wageType || 'monthly', hourlyMode,
+        hourlyWage: assistant.hourlyWage || 0,
+        monthlySalary: assistant.monthlySalary || 0,
+        totalHours, shiftHours: effectiveShiftHours, lessonHours, gapHours,
         completedSessionCount: 0, completedClinicCount: completed.length,
         amount, status: 'scheduled', paidDate: '', memo: '',
         createdAt: new Date().toISOString(),
@@ -1533,11 +1541,32 @@ const useAcademyStore = create(
     const newLessonRecords = (snapshot.lessonRecords || []).flatMap(expandServerLessonRecordToLocal);
     const newLrSessionIds = new Set(newLessonRecords.map((lr) => lr.sessionId));
 
+    // Phase 35 — class_groups / class_sessions 의 assistantUserIds (서버 user_id)
+    // 를 로컬 academyAssistants.id 로 변환해 assistantIds 채워두기.
+    // 매핑 실패한 user_id 는 무시 (학원 멤버 mirror 가 아직 도착하지 않은 경우는
+    // 다음 hydrate / sync 에서 재시도된다).
+    const resolveAssistantIds = (rows, assistants) => {
+      const userIdToLocalId = new Map(
+        (assistants || [])
+          .filter((a) => a && a.serverUserId)
+          .map((a) => [a.serverUserId, a.id]),
+      );
+      return rows.map((r) => {
+        if (!Array.isArray(r.assistantUserIds) || r.assistantUserIds.length === 0) return r;
+        const localIds = r.assistantUserIds
+          .map((uid) => userIdToLocalId.get(uid))
+          .filter(Boolean);
+        return { ...r, assistantIds: localIds };
+      });
+    };
+
     let counts = null;
     set((s) => {
+      const resolvedClassGroups = resolveAssistantIds(newClassGroups, s.academyAssistants);
+      const resolvedClassSessions = resolveAssistantIds(newClassSessions, s.academyAssistants);
       const mergedStudents = mergeByIdOrServerId(s.academyStudents, newStudents);
-      const mergedClassGroups = mergeByIdOrServerId(s.classGroups, newClassGroups);
-      const mergedClassSessions = mergeByIdOrServerId(s.classSessions, newClassSessions);
+      const mergedClassGroups = mergeByIdOrServerId(s.classGroups, resolvedClassGroups);
+      const mergedClassSessions = mergeByIdOrServerId(s.classSessions, resolvedClassSessions);
       // lesson_records: server snapshot 에 들어 있는 sessionId 의 local row 들은 전부 교체
       const preservedLr = preserveLocalOnly
         ? (s.academyLessonRecords || []).filter((lr) => !newLrSessionIds.has(lr.sessionId))

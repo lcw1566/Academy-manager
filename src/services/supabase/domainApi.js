@@ -965,6 +965,8 @@ const CLASS_GROUP_ALLOWED_FIELDS = new Set([
   'start_date', 'end_date',
   'billing_mode', 'default_billing', 'student_billings',
   'memo', 'status',
+  // Phase 35 — 보조강사 배정 영속화 (SQL 008)
+  'assistant_ids',
 ]);
 
 function sanitizeClassGroupPayload(input, { strip = [] } = {}) {
@@ -986,6 +988,8 @@ const CLASS_SESSION_ALLOWED_FIELDS = new Set([
   'student_ids', 'status', 'memo',
   // Phase 30 — 대체 강사 (SQL 006 에서 추가됨)
   'substitute_teacher_user_id', 'substitute_reason',
+  // Phase 35 — 보조강사 배정 영속화 (SQL 008)
+  'assistant_ids',
 ]);
 
 function sanitizeClassSessionPayload(input, { strip = [] } = {}) {

@@ -9,6 +9,7 @@ import {
   createAcademyClassSessionsBulk,
 } from '../../../services/supabase/domainApi';
 import { OWNER_TEACHER_ID } from '../../../utils/format';
+import BulkShiftSuggestionSheet from '../work/BulkShiftSuggestionSheet';
 
 function emptyToNull(v) {
   if (v === undefined) return null;
@@ -19,8 +20,10 @@ function emptyToNull(v) {
 // 로컬 반 폼 → Supabase class_groups snake_case payload.
 // student_ids / student_billings 는 academyStudents 에서 serverId 가 있는 학생만
 // 서버 uuid 로 매핑. serverId 없는 학생은 서버 row 에서 제외 (로컬은 그대로 유지).
+// Phase 35 — assistantIds (로컬 ID) → assistant_ids (server user_id) 로 변환.
+//   serverUserId 가 비어 있는 보조강사는 제외 (서버에 매핑할 수 없으므로).
 // id / academy_id / user_id / mode 는 createAcademyClassGroup 에서 자동 주입.
-function mapClassGroupFormToServerPayload(form, academyStudents) {
+function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistants = []) {
   const studentById = new Map(academyStudents.map((s) => [s.id, s]));
 
   const serverStudentIds = (form.studentIds || [])
@@ -35,6 +38,11 @@ function mapClassGroupFormToServerPayload(form, academyStudents) {
     }
   }
 
+  const assistantById = new Map(academyAssistants.map((a) => [a.id, a]));
+  const serverAssistantIds = (form.assistantIds || [])
+    .map((localId) => assistantById.get(localId)?.serverUserId)
+    .filter(Boolean);
+
   const monthlyFee = Number(form.monthlyFee) || 0;
   const defaultBilling = monthlyFee > 0 ? { monthlyFee } : {};
 
@@ -45,6 +53,7 @@ function mapClassGroupFormToServerPayload(form, academyStudents) {
     teacher_id: emptyToNull(form.teacherId),
     teacher_type: form.teacherId === OWNER_TEACHER_ID ? 'owner' : 'teacher',
     student_ids: serverStudentIds,
+    assistant_ids: serverAssistantIds,
     weekdays: Array.isArray(form.weekdays) ? form.weekdays : [],
     start_time: emptyToNull(form.startTime),
     end_time: emptyToNull(form.endTime),
@@ -62,10 +71,15 @@ function mapClassGroupFormToServerPayload(form, academyStudents) {
 // local classSession → Supabase class_sessions snake_case payload.
 // class_group_id 는 호출처에서 (serverGroupId) 로 명시적으로 전달.
 // student_ids 는 학생 serverId 가 있는 항목만 포함.
-function mapClassSessionToServerPayload(localSession, classGroupServerId, academyStudents) {
+// Phase 35 — assistant_ids (server user_id 배열) 도 함께 보냄.
+function mapClassSessionToServerPayload(localSession, classGroupServerId, academyStudents, academyAssistants = []) {
   const studentById = new Map(academyStudents.map((s) => [s.id, s]));
   const serverStudentIds = (localSession.studentIds || [])
     .map((localId) => studentById.get(localId)?.serverId)
+    .filter(Boolean);
+  const assistantById = new Map(academyAssistants.map((a) => [a.id, a]));
+  const serverAssistantIds = (localSession.assistantIds || [])
+    .map((localId) => assistantById.get(localId)?.serverUserId)
     .filter(Boolean);
   const teacherId = localSession.teacherId || null;
   return {
@@ -77,6 +91,7 @@ function mapClassSessionToServerPayload(localSession, classGroupServerId, academ
     teacher_id: teacherId,
     teacher_type: teacherId === OWNER_TEACHER_ID ? 'owner' : 'teacher',
     student_ids: serverStudentIds,
+    assistant_ids: serverAssistantIds,
     status: localSession.status || 'scheduled',
     memo: emptyToNull(localSession.memo),
   };
@@ -104,20 +119,27 @@ const LEVELS = ['초등', '초1', '초2', '초3', '초4', '초5', '초6', '중1'
 export default function ClassGroupFormModal({ editGroup, onClose }) {
   const {
     addClassGroup, updateClassGroup, setClassGroupServerId, setClassSessionServerIds,
-    academyStudents, academyTeachers, academyProfile, showToast,
+    academyStudents, academyTeachers, academyAssistants = [], academyProfile, showToast,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const [submitting, setSubmitting] = useState(false);
+  // Phase 35 — 반 생성/수정 후 근무표 자동 추가 제안 sheet.
+  const [shiftSuggestion, setShiftSuggestion] = useState(null);
   const ownerLabel = academyProfile?.ownerName?.trim() || '원장';
 
+  // Phase 34 — 보조강사 배정 (옵션). UI 는 단일 선택, 내부 저장은 assistantIds 배열.
+  const initialAssistantId = Array.isArray(editGroup?.assistantIds)
+    ? editGroup.assistantIds[0] || ''
+    : editGroup?.assistantId || '';
   const [form, setForm] = useState({
     name: editGroup?.name || '',
     subject: editGroup?.subject || '',
     level: editGroup?.level || '',
     teacherId: editGroup?.teacherId || '',
+    assistantId: initialAssistantId,
     studentIds: editGroup?.studentIds || [],
     weekdays: editGroup?.weekdays || [],
     startTime: editGroup?.startTime || '16:00',
@@ -163,6 +185,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
 
     const data = {
       ...form,
+      // assistantId(단일 UI) → assistantIds 배열로 저장. 기존 데이터와 호환.
+      assistantIds: form.assistantId ? [form.assistantId] : [],
       monthlyFee: Number(form.monthlyFee) || 0,
       studentBillings: Object.fromEntries(
         Object.entries(form.studentBillings).map(([k, v]) => [k, Number(v) || 0])
@@ -181,7 +205,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           try {
             await updateServerClassGroup(
               editGroup.serverId,
-              mapClassGroupFormToServerPayload(data, academyStudents),
+              mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants),
             );
             await loadServerClassGroups();
           } catch (err) {
@@ -201,13 +225,42 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         const localGroup = result.group;
         const localSessions = result.sessions ?? [];
 
+        // Phase 35 — 다음 7일 안에 있는 세션에 대해 강사/보조강사 근무표 제안.
+        // (전체 세션은 너무 많아서 부담. 가까운 1주만 미리 셋업하면 충분.)
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const oneWeekLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+          .toISOString().slice(0, 10);
+        const upcoming = localSessions.filter((s) => s.date >= todayStr && s.date <= oneWeekLater);
+        const lessonsByStaff = new Map();
+        const teacher = data.teacherId && data.teacherId !== OWNER_TEACHER_ID
+          ? academyTeachers.find((t) => t.id === data.teacherId)
+          : null;
+        if (teacher) {
+          lessonsByStaff.set(`teacher_${teacher.id}`, {
+            staff: teacher,
+            staffRole: 'teacher',
+            sessions: upcoming.map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
+          });
+        }
+        const assistantId = data.assistantIds?.[0];
+        const assistant = assistantId
+          ? academyAssistants.find((a) => a.id === assistantId)
+          : null;
+        if (assistant) {
+          lessonsByStaff.set(`assistant_${assistant.id}`, {
+            staff: assistant,
+            staffRole: 'assistant',
+            sessions: upcoming.map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
+          });
+        }
+
         // 2) Supabase write-through — class_groups 먼저, 성공 시 class_sessions bulk
         if (isAuthenticated && currentAcademyId) {
           let serverGroup = null;
           try {
             serverGroup = await createAcademyClassGroup({
               academyId: currentAcademyId,
-              ...mapClassGroupFormToServerPayload(data, academyStudents),
+              ...mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants),
             });
             if (serverGroup?.id && localGroup?.id) {
               setClassGroupServerId(localGroup.id, serverGroup.id);
@@ -227,7 +280,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           if (serverGroup?.id && localSessions.length > 0) {
             try {
               const sessionPayloads = localSessions.map((ls) =>
-                mapClassSessionToServerPayload(ls, serverGroup.id, academyStudents)
+                mapClassSessionToServerPayload(ls, serverGroup.id, academyStudents, academyAssistants)
               );
               const serverSessions = await createAcademyClassSessionsBulk({
                 academyId: currentAcademyId,
@@ -253,6 +306,15 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             // 회차 없는 경우 (요일 미지정 등) — class_group 성공 안내만
             showToast('반이 생성되고 서버에도 저장되었어요.');
           }
+        }
+
+        // Phase 35 — 생성된 회차에 대해 근무표 제안. 영향 받는 강사가 1명 이상이면
+        // 폼 모달을 닫지 않고 BulkShiftSuggestionSheet 를 보여준 뒤, sheet 닫힐 때 모달도 닫는다.
+        const anyAffected = [...lessonsByStaff.values()].some((v) => v.sessions.length > 0);
+        if (anyAffected) {
+          setSubmitting(false);
+          setShiftSuggestion(lessonsByStaff);
+          return; // onClose 는 sheet 가 닫힐 때 호출.
         }
       }
       onClose();
@@ -354,6 +416,17 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           </select>
         </Field>
 
+        {/* Phase 34 — 보조강사 배정 (옵션). 비워둬도 정상. */}
+        <Field label="보조강사 배정 (선택)">
+          <select value={form.assistantId} onChange={(e) => set('assistantId', e.target.value)} className="input">
+            <option value="">필요한 경우에만 선택하세요</option>
+            {academyAssistants.map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+          </select>
+          <p className="text-[11px] text-gray-400 mt-1.5">보조강사 주업무는 클리닉이라 수업 배정은 선택이에요.</p>
+        </Field>
+
         {academyStudents.length > 0 && (
           <Field label={`학생 배정 (${form.studentIds.length}/${academyStudents.length})`}>
             {/* 중첩 스크롤 컨테이너 제거 — Modal 본문 스크롤 흐름을 이어받음 */}
@@ -434,6 +507,18 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           </div>
         )}
       </div>
+
+      {/* Phase 35 — 반 생성 후 근무표 자동 추가 제안 */}
+      {shiftSuggestion && (
+        <BulkShiftSuggestionSheet
+          open={!!shiftSuggestion}
+          lessonsByStaff={shiftSuggestion}
+          onClose={() => {
+            setShiftSuggestion(null);
+            onClose?.();
+          }}
+        />
+      )}
     </Modal>
   );
 }

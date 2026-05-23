@@ -46,6 +46,10 @@ export function mapServerClassGroupToLocal(g) {
     subject: g.subject ?? '',
     level: g.level ?? '',
     teacherId: g.teacher_id ?? '',
+    // Phase 35 — 보조강사 배정. server 는 user_id 배열로 저장 (auth.users.id).
+    // 로컬은 academyAssistants.id (local id) 로 다루므로 사용 시점에 serverUserId 로 매핑.
+    // 일관성을 위해 hydrate 결과는 그대로 user_id 배열을 두고, 호출처가 mapping.
+    assistantUserIds: Array.isArray(g.assistant_ids) ? g.assistant_ids : [],
     studentIds: Array.isArray(g.student_ids) ? g.student_ids : [],
     weekdays: Array.isArray(g.weekdays) ? g.weekdays : [],
     startTime: g.start_time ?? '',
@@ -76,6 +80,8 @@ export function mapServerClassSessionToLocal(cs) {
     endTime: cs.end_time ?? '',
     room: cs.room ?? '',
     teacherId: cs.teacher_id ?? '',
+    // Phase 35 — 보조강사 user_id 배열 (사용 시점에 local academyAssistants.id 로 매핑).
+    assistantUserIds: Array.isArray(cs.assistant_ids) ? cs.assistant_ids : [],
     assistantIds: [],
     studentIds: Array.isArray(cs.student_ids) ? cs.student_ids : [],
     status: cs.status ?? 'scheduled',

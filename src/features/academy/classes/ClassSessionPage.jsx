@@ -14,6 +14,8 @@ import Modal from '../../../components/Modal';
 import { formatDateShort } from '../../../utils/date';
 import { attendanceStatusMap, getTeacherDisplayName } from '../../../utils/format';
 import { currentUserCan } from '../../../utils/staffPermissions';
+import ShiftCoverageSheet from '../work/ShiftCoverageSheet';
+import useEnsureShiftCoverage from '../work/useEnsureShiftCoverage';
 
 // ─── 평가 옵션 ──────────────────────────────────────────────────────────────
 const ATTITUDE_OPTIONS = [
@@ -352,6 +354,9 @@ export default function ClassSessionPage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [substituteModalOpen, setSubstituteModalOpen] = useState(false);
+
+  // Phase 34 — 대체 강사 배정 시 근무 cover 여부 확인 + 자동 추가.
+  const { check: ensureCoverage, sheetProps: coverageSheetProps } = useEnsureShiftCoverage();
 
   // Phase 31 — 본인 staffProfile 권한으로 게이팅. owner 는 항상 허용.
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
@@ -692,6 +697,23 @@ export default function ClassSessionPage() {
           academyTeachers={academyTeachers}
           onClose={() => setSubstituteModalOpen(false)}
           onSave={async ({ substituteTeacherId, substituteReason }) => {
+            // Phase 34 — 대체 강사로 배정될 때 근무 cover 확인 (취소는 substituteTeacherId=null 이므로 스킵).
+            if (substituteTeacherId) {
+              const subStaff = academyTeachers.find((t) => t.id === substituteTeacherId);
+              if (subStaff && session.date && session.startTime && session.endTime) {
+                const ok = await ensureCoverage({
+                  staff: subStaff,
+                  staffRole: 'teacher',
+                  date: session.date,
+                  startTime: session.startTime,
+                  endTime: session.endTime,
+                });
+                if (!ok) {
+                  // 사용자가 취소했다 — 배정 흐름 중단.
+                  return;
+                }
+              }
+            }
             updateClassSession(session.id, {
               substituteTeacherId: substituteTeacherId || null,
               substituteReason: substituteReason || null,
@@ -768,6 +790,9 @@ export default function ClassSessionPage() {
           </div>
         </div>
       )}
+
+      {/* Phase 34 — 근무 cover sheet */}
+      <ShiftCoverageSheet {...coverageSheetProps} />
     </div>
   );
 }

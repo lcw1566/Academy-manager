@@ -176,21 +176,59 @@ export default function PayrollPage() {
         {/* 이번 달 급여 요약 */}
         <div className="px-4 mb-4">
           {myPayroll ? (
-            <div className="bg-blue-600 rounded-2xl p-5 shadow-sm">
-              <p className="text-xs font-semibold text-blue-200 mb-1">{formatMonth(selectedMonth)} 예상 급여</p>
-              <p className="text-3xl font-bold text-white">{(myPayroll.amount || 0).toLocaleString()}원</p>
-              <div className="flex items-center gap-3 mt-3">
-                {role === 'teacher' && (
-                  <span className="text-xs text-blue-200">수업 {myPayroll.completedSessionCount}회 · {formatHours(myPayroll.totalHours)}시간</span>
-                )}
-                {role === 'assistant' && (
-                  <span className="text-xs text-blue-200">완료 클리닉 {myPayroll.completedClinicCount}건</span>
-                )}
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${myPayroll.status === 'completed' ? 'bg-green-400/30 text-green-100' : 'bg-white/20 text-white'}`}>
-                  {myPayroll.status === 'completed' ? `지급완료 ${myPayroll.paidDate}` : '지급 예정'}
-                </span>
+            <>
+              <div className="bg-[#0064FF] rounded-2xl p-5 shadow-sm">
+                <p className="text-xs font-semibold text-blue-100 mb-1">{formatMonth(selectedMonth)} 예상 급여</p>
+                <p className="text-3xl font-bold text-white">{(myPayroll.amount || 0).toLocaleString()}원</p>
+                <div className="flex items-center gap-3 mt-3">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${myPayroll.status === 'completed' ? 'bg-green-400/30 text-green-100' : 'bg-white/20 text-white'}`}>
+                    {myPayroll.status === 'completed' ? `지급완료 ${myPayroll.paidDate}` : '지급 예정'}
+                  </span>
+                </div>
               </div>
-            </div>
+
+              {/* Phase 34 — 시간 breakdown (시급일 때만 의미 있음) */}
+              {staffInfo.wageType === 'hourly' && (
+                <div className="bg-white rounded-2xl p-4 mt-3 shadow-sm">
+                  <p className="text-xs font-bold text-[#191F28] mb-3">시간 내역</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <BreakdownCell
+                      label="총 근무"
+                      value={`${formatHours(myPayroll.shiftHours ?? myPayroll.totalHours)}시간`}
+                    />
+                    <BreakdownCell
+                      label="수업"
+                      value={`${formatHours(myPayroll.lessonHours)}시간`}
+                      tone="primary"
+                    />
+                    <BreakdownCell
+                      label="대기/공강"
+                      value={`${formatHours(myPayroll.gapHours)}시간`}
+                      tone="muted"
+                    />
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-[#F2F4F6] flex items-center justify-between">
+                    <p className="text-xs text-[#4E5968]">
+                      정산 기준 ·{' '}
+                      <span className="font-semibold text-[#191F28]">
+                        {myPayroll.hourlyMode === 'lessonHours' ? '수업 시간' : '학원 머문 시간'}
+                      </span>
+                    </p>
+                    <p className="text-xs text-[#4E5968]">
+                      시급 {(myPayroll.hourlyWage || 0).toLocaleString()}원 × {formatHours(myPayroll.totalHours)}시간
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {(role === 'teacher' || role === 'assistant') && (
+                <p className="text-[11px] text-gray-400 mt-2 px-1">
+                  {role === 'teacher'
+                    ? `수업 ${myPayroll.completedSessionCount}회 완료`
+                    : `클리닉 ${myPayroll.completedClinicCount}건 완료 (정산 영향 없음)`}
+                </p>
+              )}
+            </>
           ) : (
             <div className="bg-white rounded-2xl p-5 shadow-sm text-center">
               <p className="text-sm text-gray-400">이 달 급여 명세가 아직 없어요</p>
@@ -234,7 +272,8 @@ export default function PayrollPage() {
           </div>
         )}
 
-        {/* 클리닉 이력 (보조강사) */}
+        {/* (보조강사) 클리닉 이력은 정산에 영향 없지만 참고 정보로 표시 */}
+{/* Phase 34 — 클리닉 이력 (보조강사) */}
         {role === 'assistant' && (
           <div className="px-4 flex flex-col gap-2">
             <p className="text-xs font-semibold text-gray-400 px-1">{formatMonth(selectedMonth)} 완료 클리닉</p>
@@ -255,6 +294,20 @@ export default function PayrollPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function BreakdownCell({ label, value, tone = 'default' }) {
+  const toneClass = tone === 'primary'
+    ? 'text-[#0064FF]'
+    : tone === 'muted'
+    ? 'text-[#8B95A1]'
+    : 'text-[#191F28]';
+  return (
+    <div className="bg-[#F8F9FA] rounded-xl px-3 py-2.5">
+      <p className="text-[10px] text-[#8B95A1]">{label}</p>
+      <p className={`text-base font-bold mt-0.5 ${toneClass}`}>{value}</p>
     </div>
   );
 }
