@@ -11,7 +11,6 @@ import { WAGE_TYPE_LABELS } from '../../../constants/labels';
 import StaffInviteWidget from './StaffInviteWidget';
 import WorkspaceSection from '../../workspace/WorkspaceSection';
 import ProfileEditModal from '../../workspace/ProfileEditModal';
-import DangerZoneSection from './DangerZoneSection';
 import AcademyStaffMembersSection from './AcademyStaffMembersSection';
 import RekeyStaffModal from './RekeyStaffModal';
 import StaffInviteModal from './StaffInviteModal';
@@ -727,11 +726,6 @@ export default function AcademyMorePage() {
           memberships={memberships}
           showSwitchAcademy={showSwitchAcademy}
           onEditMyProfile={() => setShowUserProfileEdit(true)}
-          onOpenMyShift={() => {
-            const uid = useAuthStore.getState().user?.id;
-            if (!uid) return;
-            openShiftForUser({ userId: uid, role, email: authUserEmail });
-          }}
           onSwitchAcademy={handleSwitchAcademy}
         />
       )}
@@ -913,9 +907,16 @@ function OwnerMoreSections({
       </div>
       <div className="mx-4 mt-2 flex flex-col gap-2">
         <SettingsRow
+          icon={CalendarClock}
+          tone="blue"
+          title="근무 관리"
+          subtitle="오늘 출근·이번 주 근무표·근무 추가"
+          onClick={() => setActiveTab('work')}
+        />
+        <SettingsRow
           icon={Wallet}
           tone="emerald"
-          title="근무·급여 설정"
+          title="정산/급여 설정"
           subtitle="이번 달 급여 명세 생성과 지급 상태"
           onClick={() => setActiveTab('settlement')}
         />
@@ -939,21 +940,11 @@ function OwnerMoreSections({
         )}
       </div>
 
-      {/* C. 계정 */}
+      {/* C. 계정 — 상단 카드에서 이미 프로필 정보를 보여주므로 로그아웃만 노출 */}
       <SectionTitle>계정</SectionTitle>
-      <div className="mx-4 flex flex-col gap-2">
-        <SettingsRow
-          icon={UserCog}
-          title={displayName || '내 프로필'}
-          subtitle={phone || email || '이름·연락처 수정'}
-          onClick={onEditMyProfile}
-        />
+      <div className="mx-4">
         <InlineLogoutButton />
       </div>
-
-      {/* D. 위험 영역 */}
-      <SectionTitle className="text-red-600">위험 영역</SectionTitle>
-      <DangerZoneSection />
     </>
   );
 }
@@ -961,7 +952,7 @@ function OwnerMoreSections({
 // Staff (teacher/assistant) More 메인 layout
 function StaffMoreSections({
   role, academyProfile, displayName, email, phone, memberships = [], showSwitchAcademy,
-  onEditMyProfile, onOpenMyShift, onSwitchAcademy,
+  onEditMyProfile, onSwitchAcademy,
 }) {
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
@@ -1076,7 +1067,7 @@ function StaffMoreSections({
           tone="blue"
           title="내 근무표"
           subtitle="이번 달 일정과 출/퇴근"
-          onClick={onOpenMyShift}
+          onClick={() => setActiveTab('work')}
         />
         <SettingsRow
           icon={Wallet}

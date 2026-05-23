@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Home, BookOpen, Users, MoreHorizontal, Stethoscope, CreditCard, BarChart2 } from 'lucide-react';
+import { Home, BookOpen, Users, MoreHorizontal, Stethoscope, CreditCard, BarChart2, CalendarClock } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -17,6 +17,7 @@ import AcademyStudentDetailPage from './students/AcademyStudentDetailPage';
 import AcademyMorePage from './more/AcademyMorePage';
 import SettlementPage from './settlement/SettlementPage';
 import PayrollPage from './payroll/PayrollPage';
+import WorkSchedulePage from './work/WorkSchedulePage';
 import Sidebar from '../../components/Sidebar';
 
 const pageVariants = {
@@ -25,12 +26,16 @@ const pageVariants = {
   exit:    { opacity: 0, y: -4, transition: { duration: 0.08, ease: 'easeIn' } },
 };
 
+// Pre-Phase 34 — 근무 탭은 PC 좌측 사이드바에서만 노출 (mobileBottomNav=false).
+// 모바일에서는 BottomNav 가 한 줄에 들어가지 않으므로 더보기 안 "내 근무표" / "근무 관리"
+// 카드를 통해 진입한다.
 const TAB_CONFIG = {
   owner: [
     { id: 'home',       label: '홈',    Icon: Home },
     { id: 'classes',    label: '수업',  Icon: BookOpen },
     { id: 'students',   label: '학생',  Icon: Users },
     { id: 'settlement', label: '정산',  Icon: BarChart2 },
+    { id: 'work',       label: '근무',  Icon: CalendarClock, mobileBottomNav: false },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
   teacher: [
@@ -38,6 +43,7 @@ const TAB_CONFIG = {
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
+    { id: 'work',     label: '근무', Icon: CalendarClock, mobileBottomNav: false },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
   assistant: [
@@ -45,6 +51,7 @@ const TAB_CONFIG = {
     { id: 'clinic',   label: '클리닉', Icon: Stethoscope },
     { id: 'students', label: '학생',  Icon: Users },
     { id: 'payroll',  label: '급여',  Icon: CreditCard },
+    { id: 'work',     label: '근무',  Icon: CalendarClock, mobileBottomNav: false },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
 };
@@ -168,6 +175,7 @@ export default function AcademyAppLayout() {
       if (activeTab === 'clinic')     return <ClinicPage />;
       if (activeTab === 'settlement') return <SettlementPage />;
       if (activeTab === 'payroll')    return <PayrollPage />;
+      if (activeTab === 'work')       return <WorkSchedulePage />;
       if (activeTab === 'more')       return <AcademyMorePage />;
 
       // 탭이 유효하지 않을 경우 대시보드 렌더
@@ -210,7 +218,7 @@ export default function AcademyAppLayout() {
       {/* Bottom Nav — 모바일 전용 (md 이상에서는 좌측 사이드바가 대체) */}
       <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
         <div className="max-w-md mx-auto flex pt-2">
-          {tabs.map(({ id, label, Icon }) => {
+          {tabs.filter((t) => t.mobileBottomNav !== false).map(({ id, label, Icon }) => {
             const active = activeTab === id;
             return (
               <motion.button

@@ -11,7 +11,7 @@
 //
 // 본인 식별: staff prop (TeacherDashboard 의 myTeacher, AssistantDashboard 의 myAssistant)
 import { useMemo, useState } from 'react';
-import { Clock, LogIn, LogOut } from 'lucide-react';
+import { Clock, LogIn, LogOut, ChevronRight } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -28,6 +28,7 @@ function nowHHmm() {
 export default function MyTodayShiftCard({ staff, staffRole }) {
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
   const updateAcademyStaffShift = useAcademyStore((s) => s.updateAcademyStaffShift);
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const showToast = useAcademyStore((s) => s.showToast);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
@@ -108,6 +109,13 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
               {myTodayShift.breakMinutes ? ` · 휴게 ${myTodayShift.breakMinutes}분` : ''}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('work')}
+            className="text-[11px] font-semibold text-gray-500 flex items-center gap-0.5 active:opacity-60"
+          >
+            전체 보기 <ChevronRight size={12} />
+          </button>
         </div>
 
         {(clockedIn || clockedOut) && (

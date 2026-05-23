@@ -156,7 +156,7 @@ export default function OwnerDashboard() {
       <div className="px-4 grid grid-cols-2 gap-3 mb-5">
         <SummaryCard label="오늘 수업" value={`${todaySessions.length}개`} onClick={() => setActiveTab('classes')} />
         <SummaryCard label="출석 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('classes')} />
-        <SummaryCard label="오늘 출근 예정" value={`${todayShiftStaffIds.length}명`} onClick={() => setActiveTab('more')} />
+        <SummaryCard label="오늘 출근 예정" value={`${todayShiftStaffIds.length}명`} onClick={() => setActiveTab('work')} />
         <SummaryCard
           label="오늘 클리닉 기록"
           value={`${todayClinicCount}건`}
