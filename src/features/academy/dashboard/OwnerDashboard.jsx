@@ -8,12 +8,20 @@ import { formatCurrency } from '../../../utils/format';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 
 export default function OwnerDashboard() {
-  const {
-    academyStudents, classGroups, classSessions, clinicRecords = [],
-    academyTeachers, academyAssistants = [], academyPayments, academyProfile,
-    academyLessonRecords = [], academyPayrolls = [], academyStaffShifts = [],
-    navigateToClassGroup, navigateToClassSession, setActiveTab,
-  } = useAcademyStore();
+  const academyStudents = useAcademyStore((s) => s.academyStudents);
+  const classGroups = useAcademyStore((s) => s.classGroups);
+  const classSessions = useAcademyStore((s) => s.classSessions);
+  const clinicRecords = useAcademyStore((s) => s.clinicRecords) ?? [];
+  const academyTeachers = useAcademyStore((s) => s.academyTeachers);
+  const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
+  const academyPayments = useAcademyStore((s) => s.academyPayments);
+  const academyProfile = useAcademyStore((s) => s.academyProfile);
+  const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords) ?? [];
+  const academyPayrolls = useAcademyStore((s) => s.academyPayrolls) ?? [];
+  const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
+  const navigateToClassGroup = useAcademyStore((s) => s.navigateToClassGroup);
+  const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
 
   const [selectedDate, setSelectedDate] = useState(today());

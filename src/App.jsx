@@ -253,7 +253,7 @@ export default function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="min-h-screen bg-[#F5F6F8]">
+      <div className="min-h-screen bg-[#F2F4F6]">
         <ErrorBoundary>
           {renderLayout()}
         </ErrorBoundary>
@@ -261,7 +261,7 @@ export default function App() {
             isAuthPanelOpen 으로 모달을 띄울 필요가 없다. 인증된 사용자가
             "다른 계정으로 로그인" 등을 트리거하면 이 패널이 열린다. */}
         {isAuthenticated && isAuthPanelOpen && (
-          <div className="fixed inset-0 z-50 bg-[#F5F6F8] overflow-y-auto">
+          <div className="fixed inset-0 z-50 bg-[#F2F4F6] overflow-y-auto">
             <AuthPage onAuthSuccess={closeAuthPanel} onCancel={closeAuthPanel} />
           </div>
         )}
@@ -275,7 +275,7 @@ export default function App() {
 
 function LoadingScreen() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#F5F6F8] text-gray-400">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#F2F4F6] text-gray-400">
       <Loader2 size={22} className="animate-spin mb-3" />
       <p className="text-xs">불러오는 중…</p>
     </div>

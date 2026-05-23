@@ -28,10 +28,13 @@ const PRIORITY_CONFIG = {
 };
 
 export default function AssistantDashboard() {
-  const {
-    academyStudents, classGroups, clinicTasks, academyAssistants,
-    completeClinicTask, updateClinicTask, setActiveTab,
-  } = useAcademyStore();
+  const academyStudents = useAcademyStore((s) => s.academyStudents);
+  const classGroups = useAcademyStore((s) => s.classGroups);
+  const clinicTasks = useAcademyStore((s) => s.clinicTasks);
+  const academyAssistants = useAcademyStore((s) => s.academyAssistants);
+  const completeClinicTask = useAcademyStore((s) => s.completeClinicTask);
+  const updateClinicTask = useAcademyStore((s) => s.updateClinicTask);
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const academyPayrolls = useAcademyStore((s) => s.academyPayrolls) ?? [];
   const todayStr = today();
   const currentMonth = todayStr.slice(0, 7);

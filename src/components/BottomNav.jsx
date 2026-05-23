@@ -1,5 +1,4 @@
 import { Home, BookOpen, Users, CreditCard, MoreHorizontal } from 'lucide-react';
-import { motion } from 'framer-motion';
 import useAcademyStore from '../store/useAcademyStore';
 
 // 과외 모드 탭 목록. PC Sidebar 도 동일 목록을 재사용한다.
@@ -14,7 +13,9 @@ export const PRIVATE_TABS = [
 const tabs = PRIVATE_TABS;
 
 export default function BottomNav() {
-  const { activeTab, setActiveTab, role } = useAcademyStore();
+  const activeTab = useAcademyStore((s) => s.activeTab);
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
+  const role = useAcademyStore((s) => s.role);
 
   const visibleTabs = role === 'teacher'
     ? tabs.filter((t) => t.id !== 'payments')
@@ -26,12 +27,12 @@ export default function BottomNav() {
         {visibleTabs.map(({ id, label, icon: Icon }) => {
           const active = activeTab === id;
           return (
-            <motion.button
+            <button
               key={id}
               type="button"
               onClick={() => setActiveTab(id)}
-              whileTap={{ scale: 0.97 }}
-              className="flex-1 flex flex-col items-center gap-1 pb-1"
+              aria-current={active ? 'page' : undefined}
+              className="flex-1 flex flex-col items-center gap-1 pb-1 active:scale-[0.98] transition-transform"
             >
               <div className={`flex items-center justify-center w-10 h-7 rounded-2xl transition-colors ${
                 active ? 'bg-blue-50' : ''
@@ -45,7 +46,7 @@ export default function BottomNav() {
               <span className={`text-[10px] font-medium ${active ? 'text-blue-600' : 'text-gray-400'}`}>
                 {label}
               </span>
-            </motion.button>
+            </button>
           );
         })}
       </div>

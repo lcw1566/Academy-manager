@@ -147,7 +147,7 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
   // Supabase 미설정 — 이론상 호출되지 않지만 방어
   if (!isSupabaseReady) {
     return (
-      <div className="relative min-h-screen flex items-center justify-center px-6 bg-[#F5F6F8]">
+      <div className="relative min-h-screen flex items-center justify-center px-6 bg-[#F2F4F6]">
         <CloseButton onClick={onCancel} />
         <div className="w-full max-w-sm bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
           <h2 className="text-lg font-bold text-gray-900 mb-2">서버 연결 준비 중</h2>
@@ -177,7 +177,7 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
     isAuthLoading || (mode === 'signUp' && (!accountType || !displayName.trim()));
 
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center px-6 py-10 bg-[#F5F6F8]">
+    <div className="relative min-h-screen flex flex-col items-center justify-center px-6 py-10 bg-[#F2F4F6]">
       <CloseButton onClick={onCancel} />
 
       <div className="w-full max-w-sm">

@@ -1,5 +1,4 @@
 import { useEffect, useMemo } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { Home, BookOpen, Users, MoreHorizontal, Stethoscope, CreditCard, BarChart2, CalendarClock } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
@@ -19,12 +18,6 @@ import SettlementPage from './settlement/SettlementPage';
 import PayrollPage from './payroll/PayrollPage';
 import WorkSchedulePage from './work/WorkSchedulePage';
 import Sidebar from '../../components/Sidebar';
-
-const pageVariants = {
-  initial: { opacity: 0, y: 8 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.2, ease: [0.22, 1, 0.36, 1] } },
-  exit:    { opacity: 0, y: -4, transition: { duration: 0.08, ease: 'easeIn' } },
-};
 
 // Pre-Phase 34 — 근무 탭은 PC 좌측 사이드바에서만 노출 (mobileBottomNav=false).
 // 모바일에서는 BottomNav 가 한 줄에 들어가지 않으므로 더보기 안 "내 근무표" / "근무 관리"
@@ -57,7 +50,7 @@ const TAB_CONFIG = {
 };
 
 function FallbackScreen() {
-  const { setActiveTab } = useAcademyStore();
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   return (
     <div className="flex flex-col items-center justify-center h-[60vh] px-6 text-center">
       <div className="text-5xl mb-4">😅</div>
@@ -75,20 +68,18 @@ function FallbackScreen() {
 }
 
 export default function AcademyAppLayout() {
-  const {
-    role,
-    activeTab,
-    setActiveTab,
-    selectedClassGroupId,
-    selectedClassSessionId,
-    selectedAcademyStudentId,
-    classGroups,
-    classSessions,
-    academyStudents,
-    goBackFromClassGroup,
-    goBackFromClassSession,
-    goBackFromAcademyStudent,
-  } = useAcademyStore();
+  const role = useAcademyStore((s) => s.role);
+  const activeTab = useAcademyStore((s) => s.activeTab);
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
+  const selectedClassGroupId = useAcademyStore((s) => s.selectedClassGroupId);
+  const selectedClassSessionId = useAcademyStore((s) => s.selectedClassSessionId);
+  const selectedAcademyStudentId = useAcademyStore((s) => s.selectedAcademyStudentId);
+  const classGroups = useAcademyStore((s) => s.classGroups);
+  const classSessions = useAcademyStore((s) => s.classSessions);
+  const academyStudents = useAcademyStore((s) => s.academyStudents);
+  const goBackFromClassGroup = useAcademyStore((s) => s.goBackFromClassGroup);
+  const goBackFromClassSession = useAcademyStore((s) => s.goBackFromClassSession);
+  const goBackFromAcademyStudent = useAcademyStore((s) => s.goBackFromAcademyStudent);
 
   // Phase 31 — 역할별 default 탭 후, staffPermissions 로 일부 탭 (payroll 등) 가린다.
   const authUserId = useAuthStore((s) => s.user?.id);
@@ -190,24 +181,15 @@ export default function AcademyAppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] md:flex">
+    <div className="min-h-screen bg-[#F2F4F6] md:flex">
       {/* PC 사이드바 — md 이상에서만 표시 */}
       <Sidebar tabs={tabs} />
 
       <main className="flex-1 min-w-0">
         <div className="main-content max-w-md mx-auto md:mx-0 md:max-w-none md:px-8 md:py-6 pb-24 md:pb-8">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={pageKey}
-              variants={pageVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              style={{ willChange: 'opacity, transform' }}
-            >
-              {renderContent()}
-            </motion.div>
-          </AnimatePresence>
+          <div key={pageKey}>
+            {renderContent()}
+          </div>
         </div>
       </main>
 
@@ -221,18 +203,18 @@ export default function AcademyAppLayout() {
           {tabs.filter((t) => t.mobileBottomNav !== false).map(({ id, label, Icon }) => {
             const active = activeTab === id;
             return (
-              <motion.button
+              <button
                 key={id}
                 type="button"
                 onClick={() => setActiveTab(id)}
-                whileTap={{ scale: 0.97 }}
-                className="flex-1 flex flex-col items-center gap-1 pb-1"
+                aria-current={active ? 'page' : undefined}
+                className="flex-1 flex flex-col items-center gap-1 pb-1 active:scale-[0.98] transition-transform"
               >
                 <div className={`flex items-center justify-center w-10 h-7 rounded-2xl transition-colors ${active ? 'bg-blue-50' : ''}`}>
                   <Icon size={21} className={active ? 'text-blue-600' : 'text-gray-400'} strokeWidth={active ? 2.5 : 1.8} />
                 </div>
                 <span className={`text-[10px] font-medium ${active ? 'text-blue-600' : 'text-gray-400'}`}>{label}</span>
-              </motion.button>
+              </button>
             );
           })}
         </div>

@@ -1,6 +1,5 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronDown, ChevronUp, Check, UserCheck, X as XIcon } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -105,8 +104,8 @@ function EvalRow({ label, options, value, onChange }) {
 }
 
 // ─── 학생 카드 ────────────────────────────────────────────────────────────
-function StudentCard({ student, sessionId, canEdit, canEditAttendance = canEdit, attendance, initialRecord, onRecordChange, saveCount }) {
-  const { updateAcademyAttendance } = useAcademyStore();
+const StudentCard = memo(function StudentCard({ student, sessionId, canEdit, canEditAttendance = canEdit, attendance, initialRecord, onRecordChange, saveCount }) {
+  const updateAcademyAttendance = useAcademyStore((s) => s.updateAcademyAttendance);
   const [expanded, setExpanded] = useState(false);
   const [rec, setRec] = useState(() => buildStudentRecord(initialRecord));
   const savedRef = useRef(buildStudentRecord(initialRecord));
@@ -186,19 +185,18 @@ function StudentCard({ student, sessionId, canEdit, canEditAttendance = canEdit,
                       const meta = attendanceStatusMap[status];
                       const isActive = attendance?.status === status;
                       return (
-                        <motion.button
+                        <button
                           key={status}
                           type="button"
-                          whileTap={{ scale: 0.95 }}
                           onClick={() => updateAcademyAttendance(sessionId, student.id, status)}
-                          className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors ${
+                          className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors active:scale-[0.98] ${
                             isActive
                               ? `${meta.activeBg} ${meta.activeText} border-transparent`
                               : 'border-gray-200 bg-white text-gray-500'
                           }`}
                         >
                           {meta.label}
-                        </motion.button>
+                        </button>
                       );
                     })}
                   </div>
@@ -238,19 +236,18 @@ function StudentCard({ student, sessionId, canEdit, canEditAttendance = canEdit,
                     {SUPPORT_TAG_TYPES.map(({ type, label }) => {
                       const active = (rec.supportTags || []).includes(type);
                       return (
-                        <motion.button
+                        <button
                           key={type}
                           type="button"
-                          whileTap={{ scale: 0.95 }}
                           onClick={() => toggleSupportTag(type)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition-colors ${
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition-colors active:scale-[0.98] ${
                             active
                               ? 'border-orange-400 bg-orange-50 text-orange-600'
                               : 'border-gray-200 bg-white text-gray-500'
                           }`}
                         >
                           {active && '✓ '}{label}
-                        </motion.button>
+                        </button>
                       );
                     })}
                   </div>
@@ -281,7 +278,7 @@ function StudentCard({ student, sessionId, canEdit, canEditAttendance = canEdit,
       </div>
     </div>
   );
-}
+});
 
 function Chip({ label }) {
   return (
@@ -291,15 +288,20 @@ function Chip({ label }) {
 
 // ─── 메인 컴포넌트 ──────────────────────────────────────────────────────────
 export default function ClassSessionPage() {
-  const {
-    role,
-    selectedClassSessionId,
-    classSessions, classGroups, academyStudents, academyTeachers, academyProfile,
-    academyAttendanceRecords, academyLessonRecords,
-    updateAcademyAttendance, batchSaveSessionRecords, updateClassSession,
-    ensureAttendanceRecordsForSession,
-    goBackFromClassSession, showToast,
-  } = useAcademyStore();
+  const role = useAcademyStore((s) => s.role);
+  const selectedClassSessionId = useAcademyStore((s) => s.selectedClassSessionId);
+  const classSessions = useAcademyStore((s) => s.classSessions);
+  const classGroups = useAcademyStore((s) => s.classGroups);
+  const academyStudents = useAcademyStore((s) => s.academyStudents);
+  const academyTeachers = useAcademyStore((s) => s.academyTeachers);
+  const academyProfile = useAcademyStore((s) => s.academyProfile);
+  const academyAttendanceRecords = useAcademyStore((s) => s.academyAttendanceRecords);
+  const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords);
+  const batchSaveSessionRecords = useAcademyStore((s) => s.batchSaveSessionRecords);
+  const updateClassSession = useAcademyStore((s) => s.updateClassSession);
+  const ensureAttendanceRecordsForSession = useAcademyStore((s) => s.ensureAttendanceRecordsForSession);
+  const goBackFromClassSession = useAcademyStore((s) => s.goBackFromClassSession);
+  const showToast = useAcademyStore((s) => s.showToast);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
@@ -321,15 +323,39 @@ export default function ClassSessionPage() {
       : null,
     [academyTeachers, academyProfile, group]
   );
-  const students = useMemo(
-    () => session ? academyStudents.filter((s) => (session.studentIds || []).includes(s.id)) : [],
-    [academyStudents, session]
+  const sessionStudentIdSet = useMemo(
+    () => new Set(session?.studentIds || []),
+    [session?.studentIds],
   );
+  const students = useMemo(
+    () => session ? academyStudents.filter((s) => sessionStudentIdSet.has(s.id)) : [],
+    [academyStudents, session, sessionStudentIdSet]
+  );
+
+  const attendanceByStudentId = useMemo(() => {
+    const map = new Map();
+    for (const record of academyAttendanceRecords) {
+      if (record.sessionId === selectedClassSessionId) {
+        map.set(record.studentId, record);
+      }
+    }
+    return map;
+  }, [academyAttendanceRecords, selectedClassSessionId]);
+
+  const lessonRecordByStudentId = useMemo(() => {
+    const map = new Map();
+    for (const record of academyLessonRecords) {
+      if (record.sessionId === selectedClassSessionId) {
+        map.set(record.studentId, record);
+      }
+    }
+    return map;
+  }, [academyLessonRecords, selectedClassSessionId]);
 
   // 공통 기록: 저장된 값 로드
   const savedCommonLr = useMemo(
-    () => session ? academyLessonRecords.find((lr) => lr.sessionId === session.id && lr.studentId === '_common_') : null,
-    [academyLessonRecords, session]
+    () => lessonRecordByStudentId.get('_common_') || null,
+    [lessonRecordByStudentId]
   );
 
   const [commonRec, setCommonRec] = useState(() => buildCommonRecord(savedCommonLr));
@@ -342,15 +368,25 @@ export default function ClassSessionPage() {
     setSavedCommon(init);
   }, [selectedClassSessionId]); // eslint-disable-line
 
-  // 학생별 기록 dirty state 관리
-  const [studentDirtyMap, setStudentDirtyMap] = useState({});
+  // 학생별 기록 dirty state 관리. 입력 중에는 부모 리렌더를 최소화하고,
+  // dirty 여부가 바뀔 때만 저장바 상태를 갱신한다.
+  const studentDirtyRef = useRef({});
   const studentRecDraftRef = useRef({});
+  const [dirtyRevision, setDirtyRevision] = useState(0);
   const [saveCount, setSaveCount] = useState(0);
 
   const handleRecordChange = useCallback((studentId, rec, isDirty) => {
     studentRecDraftRef.current[studentId] = rec;
-    setStudentDirtyMap((m) => ({ ...m, [studentId]: isDirty }));
+    if (studentDirtyRef.current[studentId] === isDirty) return;
+    studentDirtyRef.current = { ...studentDirtyRef.current, [studentId]: isDirty };
+    setDirtyRevision((v) => v + 1);
   }, []);
+
+  useEffect(() => {
+    studentRecDraftRef.current = {};
+    studentDirtyRef.current = {};
+    setDirtyRevision((v) => v + 1);
+  }, [selectedClassSessionId]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [substituteModalOpen, setSubstituteModalOpen] = useState(false);
@@ -381,18 +417,25 @@ export default function ClassSessionPage() {
     return academyTeachers.find((t) => t.id === session.substituteTeacherId) || null;
   }, [session?.substituteTeacherId, academyTeachers]);
   const isCommonDirty = useMemo(() => !recordsEqual(commonRec, savedCommon), [commonRec, savedCommon]);
-  const isAnyStudentDirty = Object.values(studentDirtyMap).some(Boolean);
+  const isAnyStudentDirty = useMemo(
+    () => Object.values(studentDirtyRef.current).some(Boolean),
+    [dirtyRevision],
+  );
   const isDirty = isCommonDirty || isAnyStudentDirty;
 
   // 이번 수업의 보완 항목 수
-  const supportCount = useMemo(
-    () => academyLessonRecords.filter(
-      (lr) => lr.sessionId === selectedClassSessionId &&
-        lr.studentId !== '_common_' &&
-        ((lr.supportTags?.length > 0) || lr.supportMemo?.trim())
-    ).length,
-    [academyLessonRecords, selectedClassSessionId]
-  );
+  const supportCount = useMemo(() => {
+    let count = 0;
+    for (const record of lessonRecordByStudentId.values()) {
+      if (
+        record.studentId !== '_common_' &&
+        ((record.supportTags?.length > 0) || record.supportMemo?.trim())
+      ) {
+        count += 1;
+      }
+    }
+    return count;
+  }, [lessonRecordByStudentId]);
 
   const handleSave = useCallback(async () => {
     if (!session || isSaving) return;
@@ -412,7 +455,8 @@ export default function ClassSessionPage() {
       date: session.date,
     });
     setSavedCommon({ ...commonRec });
-    setStudentDirtyMap({});
+    studentDirtyRef.current = {};
+    setDirtyRevision((v) => v + 1);
     setSaveCount((c) => c + 1);
 
     // 2) Supabase write-through — session.serverId / group.serverId 모두 있고 로그인 + 학원 선택 시
@@ -464,11 +508,7 @@ export default function ClassSessionPage() {
       //   - student.serverId 있는 학생만 서버 전송 대상
       try {
         const studentByLocalId = new Map(academyStudents.map((s) => [s.id, s]));
-        const existingForSession = new Map(
-          academyAttendanceRecords
-            .filter((a) => a.sessionId === session.id)
-            .map((a) => [a.studentId, a]),
-        );
+        const existingForSession = attendanceByStudentId;
         const sessionStudents = sessionStudentIds
           .map((sid) => studentByLocalId.get(sid))
           .filter(Boolean);
@@ -519,7 +559,7 @@ export default function ClassSessionPage() {
 
     setIsSaving(false);
   }, [
-    session, group, isSaving, commonRec, academyStudents, academyAttendanceRecords,
+    session, group, isSaving, commonRec, academyStudents, attendanceByStudentId,
     batchSaveSessionRecords, ensureAttendanceRecordsForSession,
     isAuthenticated, currentAcademyId,
     loadServerLessonRecords, loadServerAttendanceRecords, showToast,
@@ -527,9 +567,13 @@ export default function ClassSessionPage() {
 
   const setCommonField = (k, v) => setCommonRec((r) => ({ ...r, [k]: v }));
 
-  const presentCount = academyAttendanceRecords.filter(
-    (a) => a.sessionId === selectedClassSessionId && a.status === 'present'
-  ).length;
+  const presentCount = useMemo(() => {
+    let count = 0;
+    for (const record of attendanceByStudentId.values()) {
+      if (record.status === 'present') count += 1;
+    }
+    return count;
+  }, [attendanceByStudentId]);
 
   if (!session || !group) {
     return (
@@ -664,12 +708,8 @@ export default function ClassSessionPage() {
               </div>
             ) : (
               students.map((student) => {
-                const att = academyAttendanceRecords.find(
-                  (a) => a.sessionId === selectedClassSessionId && a.studentId === student.id
-                );
-                const existingLr = academyLessonRecords.find(
-                  (lr) => lr.sessionId === selectedClassSessionId && lr.studentId === student.id
-                );
+                const att = attendanceByStudentId.get(student.id);
+                const existingLr = lessonRecordByStudentId.get(student.id);
                 return (
                   <StudentCard
                     key={student.id}
@@ -742,23 +782,21 @@ export default function ClassSessionPage() {
       {canEdit && (
         <div className="fixed bottom-0 left-0 right-0 z-20 bg-white/95 border-t border-gray-100 px-4 py-3 pb-safe max-w-md mx-auto">
           <div className="flex gap-2">
-            <motion.button
+            <button
               type="button"
-              whileTap={{ scale: 0.97 }}
               onClick={handleSave}
               disabled={isSaving}
-              className={`flex-1 py-3.5 rounded-2xl font-bold text-sm transition-colors ${
+              className={`flex-1 py-3.5 rounded-2xl font-bold text-sm transition-colors active:scale-[0.98] ${
                 isDirty
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-200'
                   : 'bg-gray-100 text-gray-500'
               }`}
             >
               {isSaving ? '저장 중...' : isDirty ? '기록 저장' : '✓ 저장됨'}
-            </motion.button>
+            </button>
             {session.status !== 'completed' ? (
-              <motion.button
+              <button
                 type="button"
-                whileTap={{ scale: 0.97 }}
                 onClick={async () => {
                   if (isDirty) await handleSave();
                   updateClassSession(session.id, { status: 'completed' });
@@ -778,10 +816,10 @@ export default function ClassSessionPage() {
                     }
                   }
                 }}
-                className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-green-600 text-white shadow-lg shadow-green-200"
+                className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-green-600 text-white shadow-lg shadow-green-200 active:scale-[0.98] transition-transform"
               >
                 수업 완료
-              </motion.button>
+              </button>
             ) : (
               <div className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-green-50 text-green-600 flex items-center justify-center">
                 ✓ 수업 완료됨

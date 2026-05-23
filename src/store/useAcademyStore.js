@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { generateClassDates } from '../utils/recurringClass';
 import { getCurrentMonth, getMonthsBetween } from '../utils/date';
 import { generatePaymentForMonth, groupHasPayment, resolveStudentBilling } from '../utils/billing';
@@ -15,6 +15,85 @@ import {
   mapServerPayrollToLocal,
 } from '../services/supabase/hydrateMappers';
 import { computeLessonHoursForMonth } from '../utils/shiftCoverage';
+
+const noopStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+};
+
+function createDeferredLocalStorage(delay = 250) {
+  if (typeof window === 'undefined') return noopStorage;
+
+  let base;
+  try {
+    base = window.localStorage;
+  } catch {
+    return noopStorage;
+  }
+  if (!base) return noopStorage;
+  const pending = new Map();
+  const handles = new Map();
+
+  const cancel = (handle) => {
+    if (!handle) return;
+    if (handle.type === 'idle' && window.cancelIdleCallback) {
+      window.cancelIdleCallback(handle.id);
+      return;
+    }
+    window.clearTimeout(handle.id);
+  };
+
+  const flush = (name) => {
+    if (!pending.has(name)) return;
+    const value = pending.get(name);
+    pending.delete(name);
+    handles.delete(name);
+    try {
+      base.setItem(name, value);
+    } catch (err) {
+      console.warn('[academy-store] deferred localStorage write failed', err);
+    }
+  };
+
+  const flushAll = () => {
+    for (const name of pending.keys()) {
+      cancel(handles.get(name));
+      flush(name);
+    }
+  };
+
+  const schedule = (name) => {
+    cancel(handles.get(name));
+    const run = () => flush(name);
+    if (window.requestIdleCallback) {
+      const id = window.requestIdleCallback(run, { timeout: 1000 });
+      handles.set(name, { type: 'idle', id });
+      return;
+    }
+    const id = window.setTimeout(run, delay);
+    handles.set(name, { type: 'timeout', id });
+  };
+
+  window.addEventListener('pagehide', flushAll);
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushAll();
+  });
+
+  return {
+    getItem: (name) => base.getItem(name),
+    setItem: (name, value) => {
+      pending.set(name, value);
+      schedule(name);
+    },
+    removeItem: (name) => {
+      cancel(handles.get(name));
+      pending.delete(name);
+      handles.delete(name);
+      base.removeItem(name);
+    },
+  };
+}
 
 const defaultTutorProfile = {
   name: '과외 선생님',
@@ -1926,6 +2005,7 @@ const useAcademyStore = create(
 }),
     {
       name: 'academy-store',
+      storage: createJSONStorage(() => createDeferredLocalStorage()),
       partialize: (s) => ({
         // Auth
         currentMode: s.currentMode,

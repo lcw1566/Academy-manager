@@ -9,22 +9,22 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Segoe UI', sans-serif;
-  background-color: #F5F6F8;
+  background-color: #F2F4F6;
   margin: 0;
   padding: 0;
   overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
   /* 텍스트 렌더링 최적화 */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeSpeed;
 }
 
-/* transform/opacity만 사용하는 framer-motion 요소 GPU 레이어 승격 */
-[data-framer-component-type] {
-  transform: translateZ(0);
-}
-
 textarea {
   resize: none;
+}
+
+button {
+  touch-action: manipulation;
 }
 
 .input {

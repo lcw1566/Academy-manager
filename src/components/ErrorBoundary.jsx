@@ -3,7 +3,7 @@ import useAcademyStore from '../store/useAcademyStore';
 
 // Functional fallback so we can use hooks (store)
 function ErrorFallback({ error, componentStack, onReset }) {
-  const { setActiveTab } = useAcademyStore();
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
 
   const handleGoHome = () => {
     setActiveTab('home');

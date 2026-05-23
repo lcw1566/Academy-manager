@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import useAcademyStore from '../store/useAcademyStore';
 import BottomNav, { PRIVATE_TABS } from './BottomNav';
 import Sidebar from './Sidebar';
@@ -12,28 +11,20 @@ import StudentDetailPage from '../features/students/StudentDetailPage';
 import PaymentsPage from '../features/payments/PaymentsPage';
 import MorePage from '../features/more/MorePage';
 
-const pageVariants = {
-  initial: { opacity: 0, y: 8 },
-  animate: { opacity: 1, y: 0, transition: { duration: 0.2, ease: [0.22, 1, 0.36, 1] } },
-  exit:    { opacity: 0, y: -4, transition: { duration: 0.08, ease: 'easeIn' } },
-};
-
 const PRIVATE_TAB_IDS = ['home', 'classes', 'students', 'payments', 'more'];
 
 export default function AppLayout() {
-  const {
-    activeTab,
-    setActiveTab,
-    selectedClassId,
-    selectedStudentId,
-    selectedRepeatGroupId,
-    students,
-    classes,
-    repeatGroups,
-    goBackFromClass,
-    goBackFromStudent,
-    goBackFromRepeatGroup,
-  } = useAcademyStore();
+  const activeTab = useAcademyStore((s) => s.activeTab);
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
+  const selectedClassId = useAcademyStore((s) => s.selectedClassId);
+  const selectedStudentId = useAcademyStore((s) => s.selectedStudentId);
+  const selectedRepeatGroupId = useAcademyStore((s) => s.selectedRepeatGroupId);
+  const students = useAcademyStore((s) => s.students);
+  const classes = useAcademyStore((s) => s.classes);
+  const repeatGroups = useAcademyStore((s) => s.repeatGroups);
+  const goBackFromClass = useAcademyStore((s) => s.goBackFromClass);
+  const goBackFromStudent = useAcademyStore((s) => s.goBackFromStudent);
+  const goBackFromRepeatGroup = useAcademyStore((s) => s.goBackFromRepeatGroup);
 
   useEffect(() => {
     if (!PRIVATE_TAB_IDS.includes(activeTab)) {
@@ -81,24 +72,15 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] md:flex">
+    <div className="min-h-screen bg-[#F2F4F6] md:flex">
       {/* PC 사이드바 — md 이상에서만 표시 */}
       <Sidebar tabs={PRIVATE_TABS} />
 
       <main className="flex-1 min-w-0">
         <div className="main-content max-w-md mx-auto md:mx-0 md:max-w-none md:px-8 md:py-6 pb-24 md:pb-8">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={pageKey}
-              variants={pageVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              style={{ willChange: 'opacity, transform' }}
-            >
-              {renderContent()}
-            </motion.div>
-          </AnimatePresence>
+          <div key={pageKey}>
+            {renderContent()}
+          </div>
         </div>
       </main>
       <BottomNav />

@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   getTodayYMD,
@@ -34,6 +33,19 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
   const pivot = parseYMD(pivotDate);
   const monthLabel = `${pivot.getFullYear()}년 ${pivot.getMonth() + 1}월`;
 
+  const scheduleTypesByDate = useMemo(() => {
+    const map = new Map();
+    for (const schedule of schedules) {
+      if (!schedule?.date || !schedule?.type) continue;
+      const types = map.get(schedule.date) || [];
+      if (!types.includes(schedule.type) && types.length < 3) {
+        types.push(schedule.type);
+      }
+      map.set(schedule.date, types);
+    }
+    return map;
+  }, [schedules]);
+
   const shift = (delta) => {
     const d = parseYMD(pivotDate);
     if (isExpanded) {
@@ -46,10 +58,7 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
 
   const dotsForDate = (dateStr) => {
     if (!dateStr) return [];
-    const types = [...new Set(
-      schedules.filter((s) => s.date === dateStr).map((s) => s.type)
-    )];
-    return types.slice(0, 3);
+    return scheduleTypesByDate.get(dateStr) || [];
   };
 
   const handleToggle = () => {
@@ -69,15 +78,15 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
     <div className="mx-4 bg-white rounded-3xl shadow-sm overflow-hidden">
       {/* 헤더 */}
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
-        <motion.button whileTap={{ scale: 0.85 }} onClick={() => shift(-1)}
-          className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
+        <button type="button" onClick={() => shift(-1)}
+          className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100 active:scale-95 transition-transform">
           <ChevronLeft size={18} className="text-gray-500" />
-        </motion.button>
+        </button>
         <span className="text-sm font-bold text-gray-900">{monthLabel}</span>
-        <motion.button whileTap={{ scale: 0.85 }} onClick={() => shift(1)}
-          className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
+        <button type="button" onClick={() => shift(1)}
+          className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100 active:scale-95 transition-transform">
           <ChevronRight size={18} className="text-gray-500" />
-        </motion.button>
+        </button>
       </div>
 
       {/* 요일 헤더 */}
@@ -93,70 +102,61 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
 
       {/* 날짜 그리드 — layout 애니메이션 없이 transform/opacity만 사용 */}
       <div className="px-2">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={isExpanded ? `month-${pivotDate.slice(0, 7)}` : `week-${weekDates[0]}`}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
-            className="grid grid-cols-7"
-          >
-            {displayedDates.map((dateStr, i) => {
-              if (!dateStr) return <div key={`empty-${i}`} className="h-11" />;
+        <div className="grid grid-cols-7">
+          {displayedDates.map((dateStr, i) => {
+            if (!dateStr) return <div key={`empty-${i}`} className="h-11" />;
 
-              const d = parseYMD(dateStr);
-              const dow = d.getDay();
-              const isSelected  = dateStr === selectedDate;
-              const isToday     = dateStr === todayStr;
-              const inThisMonth = isSameMonth(dateStr, pivotDate);
-              const dots        = dotsForDate(dateStr);
+            const d = parseYMD(dateStr);
+            const dow = d.getDay();
+            const isSelected  = dateStr === selectedDate;
+            const isToday     = dateStr === todayStr;
+            const inThisMonth = isSameMonth(dateStr, pivotDate);
+            const dots        = dotsForDate(dateStr);
 
-              return (
-                <motion.button
-                  key={dateStr}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => handleSelect(dateStr)}
-                  className="flex flex-col items-center py-1"
-                >
-                  <div className={`w-8 h-8 flex items-center justify-center rounded-full text-sm transition-colors ${
-                    isSelected
-                      ? 'bg-blue-600 text-white font-bold'
-                      : isToday
-                      ? 'bg-blue-50 text-blue-600 font-bold'
-                      : !inThisMonth
-                      ? 'text-gray-300'
-                      : dow === 0
-                      ? 'text-red-400'
-                      : dow === 6
-                      ? 'text-blue-400'
-                      : 'text-gray-800'
-                  }`}>
-                    {d.getDate()}
-                  </div>
-                  <div className="flex gap-0.5 mt-0.5 h-1.5">
-                    {dots.map((type, j) => (
-                      <div key={j} className={`w-1 h-1 rounded-full ${DOT_COLORS[type] || 'bg-gray-300'}`} />
-                    ))}
-                  </div>
-                </motion.button>
-              );
-            })}
-          </motion.div>
-        </AnimatePresence>
+            return (
+              <button
+                key={dateStr}
+                type="button"
+                onClick={() => handleSelect(dateStr)}
+                className="flex flex-col items-center py-1 active:scale-95 transition-transform"
+              >
+                <div className={`w-8 h-8 flex items-center justify-center rounded-full text-sm transition-colors ${
+                  isSelected
+                    ? 'bg-blue-600 text-white font-bold'
+                    : isToday
+                    ? 'bg-blue-50 text-blue-600 font-bold'
+                    : !inThisMonth
+                    ? 'text-gray-300'
+                    : dow === 0
+                    ? 'text-red-400'
+                    : dow === 6
+                    ? 'text-blue-400'
+                    : 'text-gray-800'
+                }`}>
+                  {d.getDate()}
+                </div>
+                <div className="flex gap-0.5 mt-0.5 h-1.5">
+                  {dots.map((type, j) => (
+                    <div key={j} className={`w-1 h-1 rounded-full ${DOT_COLORS[type] || 'bg-gray-300'}`} />
+                  ))}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* 펼치기/접기 버튼 */}
-      <motion.button
-        whileTap={{ scale: 0.97 }}
+      <button
+        type="button"
         onClick={handleToggle}
-        className="w-full flex items-center justify-center gap-1 py-2.5 mt-1 border-t border-gray-50 text-xs text-gray-400 font-medium"
+        className="w-full flex items-center justify-center gap-1 py-2.5 mt-1 border-t border-gray-50 text-xs text-gray-400 font-medium active:scale-[0.99] transition-transform"
       >
         {isExpanded
           ? <><ChevronUp size={13} /> 접기</>
           : <><ChevronDown size={13} /> 펼치기</>
         }
-      </motion.button>
+      </button>
     </div>
   );
 }

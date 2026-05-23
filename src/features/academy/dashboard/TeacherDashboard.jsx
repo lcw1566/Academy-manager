@@ -22,11 +22,16 @@ function parseHHmmToMinutes(hhmm) {
 const SOON_WINDOW_MIN = 10;
 
 export default function TeacherDashboard() {
-  const {
-    academyStudents, classGroups, classSessions, clinicTasks,
-    academyLessonRecords, academyAttendanceRecords,
-    academyTeachers, navigateToClassGroup, navigateToClassSession, setActiveTab,
-  } = useAcademyStore();
+  const academyStudents = useAcademyStore((s) => s.academyStudents);
+  const classGroups = useAcademyStore((s) => s.classGroups);
+  const classSessions = useAcademyStore((s) => s.classSessions);
+  const clinicTasks = useAcademyStore((s) => s.clinicTasks);
+  const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords);
+  const academyAttendanceRecords = useAcademyStore((s) => s.academyAttendanceRecords);
+  const academyTeachers = useAcademyStore((s) => s.academyTeachers);
+  const navigateToClassGroup = useAcademyStore((s) => s.navigateToClassGroup);
+  const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
 
   // Phase 25 — 본인(local academyTeachers) 식별. 서버 멤버십 정보 기반.
   const authUserId = useAuthStore((s) => s.user?.id);
