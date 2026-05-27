@@ -71,7 +71,7 @@ export default function StudentsPage() {
         }
       />
 
-      <div className="pt-14">
+      <div className="pt-14 md:pt-0">
         {/* 검색 */}
         <div className="px-4 pt-4 pb-2">
           <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2.5">

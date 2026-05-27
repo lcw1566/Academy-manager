@@ -11,6 +11,7 @@ import EditClassInstanceModal from './EditClassInstanceModal';
 import { today, formatDateShort } from '../../utils/date';
 import { classTypeColors } from '../../utils/format';
 import { DAY_NAMES } from '../../utils/recurringClass';
+import { tossSpring } from '../../utils/motion';
 
 const formatDaysBullet = (daysOfWeek) =>
   daysOfWeek
@@ -40,7 +41,7 @@ export default function LessonGroupDetailPage() {
 
   if (!group) {
     return (
-      <div className="pt-14 p-4 text-center text-gray-500">
+      <div className="pt-14 md:pt-0 p-4 text-center text-gray-500">
         <p>수업 그룹을 찾을 수 없습니다.</p>
         <button onClick={goBackFromRepeatGroup} className="block mt-4 text-blue-600 mx-auto">
           돌아가기
@@ -98,7 +99,7 @@ export default function LessonGroupDetailPage() {
         }
       />
 
-      <div className="pt-14">
+      <div className="pt-14 md:pt-0">
         {/* 수업 그룹 정보 카드 */}
         <div className="mx-4 mt-4 bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
@@ -162,7 +163,7 @@ export default function LessonGroupDetailPage() {
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
+                transition={tossSpring.soft}
                 className="bg-white rounded-2xl p-8 shadow-sm text-center"
               >
                 <p className="text-3xl mb-3">📅</p>
@@ -177,7 +178,7 @@ export default function LessonGroupDetailPage() {
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.15 }}
+                transition={tossSpring.soft}
               >
                 {/* 회차 정보 */}
                 <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">

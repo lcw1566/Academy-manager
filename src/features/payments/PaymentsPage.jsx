@@ -42,7 +42,7 @@ export default function PaymentsPage() {
     <div>
       <Header title="수납 관리" />
 
-      <div className="pt-14">
+      <div className="pt-14 md:pt-0">
         {/* Month selector */}
         <div className="pt-4 flex items-center justify-center gap-4">
           <button

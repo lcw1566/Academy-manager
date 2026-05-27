@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import { formatDateShort } from '../../utils/date';
+import { fadeTransition, tossSpring } from '../../utils/motion';
 
 const STATUS_OPTIONS = [
   { id: 'scheduled',     label: '예정' },
@@ -67,7 +68,7 @@ export default function EditClassInstanceModal({ cls, onClose }) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.18 }}
+        transition={fadeTransition}
         className="fixed inset-0 bg-black/40 z-50"
         onClick={onClose}
       />
@@ -76,7 +77,7 @@ export default function EditClassInstanceModal({ cls, onClose }) {
         initial={{ y: '100%' }}
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
-        transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+        transition={tossSpring.sheet}
         className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl max-w-md mx-auto"
         onClick={(e) => e.stopPropagation()}
       >

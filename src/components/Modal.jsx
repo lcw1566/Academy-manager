@@ -2,9 +2,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fadeTransition } from '../utils/motion';
-
-const SHEET_EASE = [0.22, 1, 0.36, 1];
+import { fadeTransition, tossSpring } from '../utils/motion';
 
 /**
  * Bottom Sheet Modal
@@ -22,10 +20,21 @@ const SHEET_EASE = [0.22, 1, 0.36, 1];
  * - header: shrink-0 (제목 + drag handle + 닫기)
  * - main: flex-1 **min-h-0** overflow-y-auto  ← min-h-0이 없으면 flex 자식이 content 크기 아래로 안 줄어들어 스크롤이 망가짐
  * - footer: shrink-0 + safe-area-inset-bottom padding
- * - 애니메이션은 transform translateY만 사용 (layout 애니메이션 금지)
- * - drag-to-close 제거: overlay 탭/X 버튼으로 충분, 스크롤 충돌 방지
+ * - 애니메이션은 transform translateY + opacity만 사용
+ * - drag-to-dismiss: y 방향만 허용하고, velocity/offset 기준으로 닫음
  */
-export default function Modal({ isOpen, onClose, title, children, footer }) {
+// size: 'default' (max-w-md md:max-w-[560px]) | 'wide' (max-w-md md:max-w-[760px])
+//   'wide' 는 2-col 폼처럼 데스크톱에서 가로 공간이 더 필요한 모달용. 모바일 폭은 유지.
+export default function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  footer,
+  size = 'default',
+  isLoading = false,
+  loadingLabel = '불러오는 중이에요',
+}) {
   // 배경 스크롤 잠금 — 내부 main 스크롤은 영향 없음
   useEffect(() => {
     if (!isOpen) return;
@@ -36,13 +45,18 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
 
   if (typeof document === 'undefined') return null;
 
+  const handleDragEnd = (_, info) => {
+    const shouldClose = info.offset.y > 110 || info.velocity.y > 720;
+    if (shouldClose) onClose?.();
+  };
+
   return createPortal(
     <AnimatePresence>
       {isOpen && (
         <div className="fixed inset-0 z-50">
           {/* Overlay */}
           <motion.div
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-black/40 transform-gpu"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -55,9 +69,20 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
-            transition={{ duration: 0.32, ease: SHEET_EASE }}
-            className="sheet-shell absolute bottom-0 left-0 right-0 max-w-md md:max-w-[560px] mx-auto bg-white rounded-t-[28px] flex flex-col overflow-hidden shadow-2xl"
-            style={{ willChange: 'transform' }}
+            transition={tossSpring.sheet}
+            drag="y"
+            dragDirectionLock
+            dragElastic={{ top: 0, bottom: 0.18 }}
+            dragConstraints={{ top: 0, bottom: 0 }}
+            onDragEnd={handleDragEnd}
+            className={`sheet-shell absolute bottom-0 left-0 right-0 max-w-md ${
+              size === 'wide' ? 'md:max-w-[760px]' : 'md:max-w-[560px]'
+            } mx-auto bg-white rounded-t-[28px] flex flex-col overflow-hidden shadow-2xl transform-gpu`}
+            style={{
+              willChange: 'transform',
+              WebkitTapHighlightColor: 'transparent',
+              touchAction: 'pan-y',
+            }}
           >
             {/* Header — 항상 shrink-0, 제목 잘림 방지 */}
             <header className="shrink-0 bg-white border-b border-gray-100">
@@ -79,9 +104,13 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
 
             {/* Body — min-h-0이 핵심 (flex-1 + min-h-0가 스크롤 활성화의 조건) */}
             <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain no-scrollbar sheet-content">
-              <div className="px-5 pt-5 pb-6">
-                {children}
-              </div>
+              <motion.div
+                layout="position"
+                transition={tossSpring.layout}
+                className="px-5 pt-5 pb-6"
+              >
+                {isLoading ? <SheetLoadingState label={loadingLabel} /> : children}
+              </motion.div>
             </main>
 
             {/* Footer — main scroll 영역 밖, safe-area 반영 */}
@@ -95,5 +124,19 @@ export default function Modal({ isOpen, onClose, title, children, footer }) {
       )}
     </AnimatePresence>,
     document.body
+  );
+}
+
+function SheetLoadingState({ label }) {
+  return (
+    <div className="py-8">
+      <p className="text-sm font-bold text-[#191F28]">{label}</p>
+      <p className="text-xs text-[#8B95A1] mt-1">데이터가 도착하면 자연스럽게 자리를 잡아요.</p>
+      <div className="mt-5 flex flex-col gap-3">
+        <div className="h-12 rounded-2xl bg-[#F2F4F6]" />
+        <div className="h-12 rounded-2xl bg-[#F2F4F6]" />
+        <div className="h-20 rounded-2xl bg-[#F2F4F6]" />
+      </div>
+    </div>
   );
 }

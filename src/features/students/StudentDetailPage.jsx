@@ -127,7 +127,7 @@ export default function StudentDetailPage() {
         }
       />
 
-      <div className="pt-14">
+      <div className="pt-14 md:pt-0">
         {/* 프로필 카드 */}
         <div className="mx-4 mt-4 bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex items-center gap-4">

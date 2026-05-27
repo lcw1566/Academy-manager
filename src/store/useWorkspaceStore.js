@@ -843,6 +843,7 @@ const useWorkspaceStore = create(
         const academyState = useAcademyStore.getState();
         const upsertTeacher = academyState.upsertLocalTeacherFromServerStaff;
         const upsertAssistant = academyState.upsertLocalAssistantFromServerStaff;
+        const reconcileShiftLocalIds = academyState.reconcileStaffShiftLocalIds;
         if (typeof upsertTeacher !== 'function' || typeof upsertAssistant !== 'function') {
           return { mirrored: 0, skipped: memberProfiles.length };
         }
@@ -871,6 +872,7 @@ const useWorkspaceStore = create(
             wageType: staff.wage_type,
             hourlyWage: staff.hourly_wage,
             monthlySalary: staff.monthly_salary,
+            hourlyMode: staff.scope?.hourlyMode,
             memo: staff.memo,
             status: staff.status,
           };
@@ -884,6 +886,7 @@ const useWorkspaceStore = create(
             skipped += 1;
           }
         });
+        if (typeof reconcileShiftLocalIds === 'function') reconcileShiftLocalIds();
         return { mirrored, skipped };
       },
 

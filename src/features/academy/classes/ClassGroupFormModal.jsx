@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import Modal from '../../../components/Modal';
+import OptionSelectSheet from '../../../components/OptionSelectSheet';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -113,8 +115,58 @@ function matchSessionPairs(localSessions, serverSessions) {
 }
 
 const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
-const SUBJECTS = ['수학', '영어', '국어', '과학', '사회', '물리', '화학', '역사', '기타'];
-const LEVELS = ['초등', '초1', '초2', '초3', '초4', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3', '수능'];
+const SUBJECT_OPTIONS = [
+  { value: '국어', label: '국어' },
+  { value: '영어', label: '영어' },
+  { value: '수학', label: '수학' },
+  { value: '과학', label: '과학' },
+  { value: '사회', label: '사회' },
+  { value: '역사', label: '역사' },
+  { value: '논술', label: '논술' },
+  { value: '한국사', label: '한국사' },
+  { value: '통합과학', label: '통합과학' },
+  { value: '기타', label: '기타' },
+];
+const LEVEL_GROUPS = [
+  {
+    label: '초등',
+    options: [
+      { value: '초1', label: '초1' },
+      { value: '초2', label: '초2' },
+      { value: '초3', label: '초3' },
+      { value: '초4', label: '초4' },
+      { value: '초5', label: '초5' },
+      { value: '초6', label: '초6' },
+    ],
+  },
+  {
+    label: '중등',
+    options: [
+      { value: '중1', label: '중1' },
+      { value: '중2', label: '중2' },
+      { value: '중3', label: '중3' },
+    ],
+  },
+  {
+    label: '고등',
+    options: [
+      { value: '고1', label: '고1' },
+      { value: '고2', label: '고2' },
+      { value: '고3', label: '고3' },
+    ],
+  },
+  {
+    label: '기타',
+    options: [
+      { value: '입문', label: '입문' },
+      { value: '기본', label: '기본' },
+      { value: '심화', label: '심화' },
+      { value: '내신', label: '내신' },
+      { value: '수능', label: '수능' },
+      { value: '기타', label: '기타' },
+    ],
+  },
+];
 
 export default function ClassGroupFormModal({ editGroup, onClose }) {
   const {
@@ -128,12 +180,18 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const [submitting, setSubmitting] = useState(false);
   // Phase 35 — 반 생성/수정 후 근무표 자동 추가 제안 sheet.
   const [shiftSuggestion, setShiftSuggestion] = useState(null);
+  // Phase 37 — 과목/학년 bottom sheet 열림 상태.
+  const [subjectSheetOpen, setSubjectSheetOpen] = useState(false);
+  const [levelSheetOpen, setLevelSheetOpen] = useState(false);
   const ownerLabel = academyProfile?.ownerName?.trim() || '원장';
 
   // Phase 34 — 보조강사 배정 (옵션). UI 는 단일 선택, 내부 저장은 assistantIds 배열.
   const initialAssistantId = Array.isArray(editGroup?.assistantIds)
     ? editGroup.assistantIds[0] || ''
     : editGroup?.assistantId || '';
+  // Phase 38 — 요일별 시간 토글. weekdayTimes 가 명시적으로 들어있으면 OFF 로 시작.
+  const initialUseSameTime = !editGroup?.weekdayTimes
+    || Object.keys(editGroup.weekdayTimes || {}).length === 0;
   const [form, setForm] = useState({
     name: editGroup?.name || '',
     subject: editGroup?.subject || '',
@@ -144,6 +202,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     weekdays: editGroup?.weekdays || [],
     startTime: editGroup?.startTime || '16:00',
     endTime: editGroup?.endTime || '18:00',
+    useSameTime: initialUseSameTime,
+    weekdayTimes: editGroup?.weekdayTimes || {},
     room: editGroup?.room || '',
     startDate: editGroup?.startDate || new Date().toISOString().slice(0, 10),
     endDate: editGroup?.endDate || '',
@@ -157,9 +217,48 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const toggleWeekday = (day) =>
+    setForm((f) => {
+      const has = f.weekdays.includes(day);
+      const weekdays = has ? f.weekdays.filter((d) => d !== day) : [...f.weekdays, day];
+      // 요일을 추가하면 그 요일의 weekdayTimes 항목을 현재 공통 시간으로 시드.
+      // 요일을 빼면 그 요일의 weekdayTimes 항목 제거.
+      const weekdayTimes = { ...f.weekdayTimes };
+      if (has) {
+        delete weekdayTimes[day];
+      } else if (!weekdayTimes[day]) {
+        weekdayTimes[day] = { startTime: f.startTime, endTime: f.endTime };
+      }
+      return { ...f, weekdays, weekdayTimes };
+    });
+
+  // Phase 38 — 같은 시간 토글. ON→OFF 시 현재 공통 시간을 각 요일에 복사,
+  // OFF→ON 시 첫 요일의 시간을 공통 시간으로 끌어올림.
+  const toggleSameTime = () =>
+    setForm((f) => {
+      if (f.useSameTime) {
+        const wt = { ...f.weekdayTimes };
+        for (const day of f.weekdays) {
+          if (!wt[day]) wt[day] = { startTime: f.startTime, endTime: f.endTime };
+        }
+        return { ...f, useSameTime: false, weekdayTimes: wt };
+      }
+      const first = f.weekdays[0];
+      const seed = first ? f.weekdayTimes[first] : null;
+      return {
+        ...f,
+        useSameTime: true,
+        startTime: seed?.startTime || f.startTime,
+        endTime: seed?.endTime || f.endTime,
+      };
+    });
+
+  const setWeekdayTime = (day, key, value) =>
     setForm((f) => ({
       ...f,
-      weekdays: f.weekdays.includes(day) ? f.weekdays.filter((d) => d !== day) : [...f.weekdays, day],
+      weekdayTimes: {
+        ...f.weekdayTimes,
+        [day]: { ...(f.weekdayTimes[day] || {}), [key]: value },
+      },
     }));
 
   const toggleStudent = (id) =>
@@ -183,8 +282,38 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     if (form.weekdays.length === 0) return alert('수업 요일을 선택해주세요.');
     if (!form.startDate) return alert('시작일을 선택해주세요.');
 
+    // Phase 38 — 요일별 시간이 다를 때:
+    //   · weekdayTimes 는 선택된 요일만 남기고 저장.
+    //   · group.startTime / endTime 은 첫 요일의 시간으로 채워 list/detail 의
+    //     기본 표시와 server fallback 을 유지 (cross-device 호환).
+    let savedStartTime = form.startTime;
+    let savedEndTime = form.endTime;
+    let savedWeekdayTimes = undefined;
+    if (!form.useSameTime && form.weekdays.length > 0) {
+      savedWeekdayTimes = {};
+      for (const day of form.weekdays) {
+        const t = form.weekdayTimes[day] || {};
+        savedWeekdayTimes[day] = {
+          startTime: t.startTime || form.startTime,
+          endTime: t.endTime || form.endTime,
+        };
+      }
+      const first = form.weekdays[0];
+      const firstTimes = savedWeekdayTimes[first];
+      if (firstTimes) {
+        savedStartTime = firstTimes.startTime;
+        savedEndTime = firstTimes.endTime;
+      }
+    }
+
+    // form.useSameTime 은 UI 상태일 뿐이므로 저장 데이터에서 제외.
+    // weekdayTimes 의 유무가 source of truth.
+    const { useSameTime: _useSameTime, ...formRest } = form;
     const data = {
-      ...form,
+      ...formRest,
+      startTime: savedStartTime,
+      endTime: savedEndTime,
+      weekdayTimes: savedWeekdayTimes,
       // assistantId(단일 UI) → assistantIds 배열로 저장. 기존 데이터와 호환.
       assistantIds: form.assistantId ? [form.assistantId] : [],
       monthlyFee: Number(form.monthlyFee) || 0,
@@ -325,188 +454,359 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
 
   const selectedStudents = academyStudents.filter((s) => form.studentIds.includes(s.id));
 
+  // Phase 37 — 시간/날짜 inline validation. 종료가 시작보다 빠르면 에러 메시지만 표시
+  // (저장은 막지 않음 — 사용자가 잠시 잘못 입력한 중간 상태를 막으면 UX 가 답답해짐).
+  const timeError = useMemo(() => {
+    if (!form.startTime || !form.endTime) return null;
+    return form.endTime <= form.startTime ? '종료 시간은 시작 시간보다 늦어야 해요.' : null;
+  }, [form.startTime, form.endTime]);
+  const dateError = useMemo(() => {
+    if (!form.startDate || !form.endDate) return null;
+    return form.endDate < form.startDate ? '종료일은 시작일보다 늦어야 해요.' : null;
+  }, [form.startDate, form.endDate]);
+
+  // Phase 38 — 요일별 시간 모드일 때 각 요일 시간 검증.
+  const perDayErrors = useMemo(() => {
+    if (form.useSameTime) return {};
+    const errs = {};
+    for (const day of form.weekdays) {
+      const t = form.weekdayTimes[day] || {};
+      if (t.startTime && t.endTime && t.endTime <= t.startTime) {
+        errs[day] = '종료가 시작보다 늦어야 해요.';
+      }
+    }
+    return errs;
+  }, [form.useSameTime, form.weekdays, form.weekdayTimes]);
+
   return (
     <Modal
       isOpen
       onClose={onClose}
       title={editGroup ? '반 정보 수정' : '반 만들기'}
+      size="wide"
       footer={
         <button
           onClick={handleSave}
           disabled={submitting}
-          className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl disabled:opacity-60"
+          className="w-full bg-[#0064FF] text-white font-bold py-3.5 rounded-xl disabled:opacity-60 active:bg-[#0050cc] transition-colors"
         >
-          {submitting ? '저장 중…' : editGroup ? '저장' : '반 생성'}
+          {submitting ? '저장 중…' : editGroup ? '수정 완료' : '반 만들기'}
         </button>
       }
     >
-      <div className="flex flex-col gap-4">
-        <Field label="반 이름 *">
-          <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="예: 중2 영어 A반" className="input" />
-        </Field>
+      <div className="flex flex-col gap-5 md:grid md:grid-cols-2 md:gap-x-6 md:gap-y-5">
+        {/* ── 좌측 (데스크톱) · 기본 정보 ──────────────────────────── */}
+        <div className="flex flex-col gap-4">
+          <SectionTitle>기본 정보</SectionTitle>
 
-        <Field label="과목">
-          <div className="flex flex-wrap gap-2">
-            {SUBJECTS.map((s) => (
-              <button key={s} type="button" onClick={() => set('subject', s)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
-                  form.subject === s ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'
-                }`}>
-                {s}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        <Field label="학년/레벨">
-          <div className="flex flex-wrap gap-2">
-            {LEVELS.map((l) => (
-              <button key={l} type="button" onClick={() => set('level', l)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
-                  form.level === l ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-gray-600 border-gray-200'
-                }`}>
-                {l}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        <Field label="수업 요일 *">
-          <div className="flex gap-2">
-            {WEEKDAYS.map((day) => (
-              <button key={day} type="button" onClick={() => toggleWeekday(day)}
-                className={`flex-1 py-2 rounded-xl text-sm font-bold border-2 transition-colors ${
-                  form.weekdays.includes(day) ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-500'
-                }`}>
-                {day}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="시작 시간">
-            <input type="time" value={form.startTime} onChange={(e) => set('startTime', e.target.value)} className="input" />
+          <Field label="반 이름 *">
+            <input
+              value={form.name}
+              onChange={(e) => set('name', e.target.value)}
+              placeholder="예: 중2 영어 A반"
+              className="input"
+            />
           </Field>
-          <Field label="종료 시간">
-            <input type="time" value={form.endTime} onChange={(e) => set('endTime', e.target.value)} className="input" />
+
+          <Field label="과목">
+            <SelectRow
+              value={form.subject}
+              placeholder="과목을 선택해주세요"
+              onClick={() => setSubjectSheetOpen(true)}
+            />
+          </Field>
+
+          <Field label="학년/레벨">
+            <SelectRow
+              value={form.level}
+              placeholder="학년 또는 레벨을 선택해주세요"
+              onClick={() => setLevelSheetOpen(true)}
+            />
+          </Field>
+
+          <Field label="담당 강사">
+            <select
+              value={form.teacherId}
+              onChange={(e) => set('teacherId', e.target.value)}
+              className="input"
+            >
+              <option value="">강사 선택</option>
+              <option value={OWNER_TEACHER_ID}>{ownerLabel} (원장 본인)</option>
+              {academyTeachers.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </Field>
+
+          {/* Phase 34 — 보조강사 배정 (옵션). 비워둬도 정상. */}
+          <Field label="보조강사 (선택)">
+            <select
+              value={form.assistantId}
+              onChange={(e) => set('assistantId', e.target.value)}
+              className="input"
+            >
+              <option value="">필요한 경우에만 선택하세요</option>
+              {academyAssistants.map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+            <p className="text-[11px] text-gray-400 mt-1.5">
+              보조강사 주업무는 클리닉이라 수업 배정은 선택이에요.
+            </p>
           </Field>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="시작일 *">
-            <input type="date" value={form.startDate} onChange={(e) => set('startDate', e.target.value)} className="input" />
+        {/* ── 우측 (데스크톱) · 일정 설정 ──────────────────────────── */}
+        <div className="flex flex-col gap-4">
+          <SectionTitle>일정 설정</SectionTitle>
+
+          <Field label="수업 요일 *" hint="여러 요일을 선택할 수 있어요.">
+            <div className="flex gap-1.5 bg-[#F2F4F6] rounded-2xl p-1.5">
+              {WEEKDAYS.map((day) => {
+                const selected = form.weekdays.includes(day);
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => toggleWeekday(day)}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors ${
+                      selected
+                        ? 'bg-[#0064FF] text-white shadow-sm'
+                        : 'bg-transparent text-[#4E5968] active:bg-white/60'
+                    }`}
+                  >
+                    {day}
+                  </button>
+                );
+              })}
+            </div>
           </Field>
-          <Field label="종료일">
-            <input type="date" value={form.endDate} onChange={(e) => set('endDate', e.target.value)} className="input" />
+
+          <Field label="수업 시간">
+            {/* Phase 38 — 같은 시간 토글 */}
+            <button
+              type="button"
+              onClick={toggleSameTime}
+              className="w-full flex items-center justify-between bg-[#F2F4F6] rounded-xl px-4 py-3 mb-2.5"
+            >
+              <span className="text-xs font-semibold text-[#191F28]">요일별 시간이 같아요</span>
+              <span
+                className={`relative inline-flex items-center w-10 h-6 rounded-full transition-colors ${
+                  form.useSameTime ? 'bg-[#0064FF]' : 'bg-[#D1D6DB]'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                    form.useSameTime ? 'translate-x-[18px]' : 'translate-x-0.5'
+                  }`}
+                />
+              </span>
+            </button>
+
+            {form.useSameTime ? (
+              <>
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                  <input
+                    type="time"
+                    value={form.startTime}
+                    onChange={(e) => set('startTime', e.target.value)}
+                    className="input"
+                  />
+                  <span className="text-gray-400 text-sm">~</span>
+                  <input
+                    type="time"
+                    value={form.endTime}
+                    onChange={(e) => set('endTime', e.target.value)}
+                    className="input"
+                  />
+                </div>
+                {timeError && (
+                  <p className="text-[11px] text-red-500 mt-1.5">{timeError}</p>
+                )}
+              </>
+            ) : form.weekdays.length === 0 ? (
+              <p className="text-[11px] text-gray-400 px-1">
+                위에서 수업 요일을 먼저 선택해주세요.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {form.weekdays.map((day) => {
+                  const t = form.weekdayTimes[day] || {};
+                  const err = perDayErrors[day];
+                  return (
+                    <div key={day}>
+                      <div className="grid grid-cols-[44px_1fr_auto_1fr] items-center gap-2">
+                        <span className="text-sm font-bold text-[#191F28]">{day}요일</span>
+                        <input
+                          type="time"
+                          value={t.startTime || ''}
+                          onChange={(e) => setWeekdayTime(day, 'startTime', e.target.value)}
+                          className="input"
+                        />
+                        <span className="text-gray-400 text-sm">~</span>
+                        <input
+                          type="time"
+                          value={t.endTime || ''}
+                          onChange={(e) => setWeekdayTime(day, 'endTime', e.target.value)}
+                          className="input"
+                        />
+                      </div>
+                      {err && (
+                        <p className="text-[11px] text-red-500 mt-1 pl-[52px]">{err}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Field>
+
+          <Field label="수업 기간" hint={form.endDate ? null : '종료일을 비워두면 시작일 기준 3개월치 회차가 만들어져요.'}>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <input
+                type="date"
+                value={form.startDate}
+                onChange={(e) => set('startDate', e.target.value)}
+                className="input"
+              />
+              <span className="text-gray-400 text-sm">~</span>
+              <input
+                type="date"
+                value={form.endDate}
+                onChange={(e) => set('endDate', e.target.value)}
+                className="input"
+              />
+            </div>
+            {dateError && (
+              <p className="text-[11px] text-red-500 mt-1.5">{dateError}</p>
+            )}
+          </Field>
+
+          <Field label="강의실 (선택)">
+            <input
+              value={form.room}
+              onChange={(e) => set('room', e.target.value)}
+              placeholder="예: 1강의실"
+              className="input"
+            />
           </Field>
         </div>
 
-        <Field label="강의실">
-          <input value={form.room} onChange={(e) => set('room', e.target.value)} placeholder="예: 1강의실" className="input" />
-        </Field>
+        {/* ── 하단 · 학생/수강료/메모 (full-width) ─────────────────── */}
+        <div className="md:col-span-2 flex flex-col gap-4">
+          {academyStudents.length > 0 && (
+            <Field label={`학생 배정 (${form.studentIds.length}/${academyStudents.length})`}>
+              <div className="flex flex-col gap-2">
+                {academyStudents.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggleStudent(s.id)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors ${
+                      form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
+                    }`}
+                  >
+                    <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`} />
+                    <span className="text-sm font-medium text-gray-800 flex-1">{(s.name || '?')}</span>
+                    {s.grade && <span className="text-xs text-gray-400">{s.grade}</span>}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
 
-        <Field label="담당 강사">
-          <select value={form.teacherId} onChange={(e) => set('teacherId', e.target.value)} className="input">
-            <option value="">강사 선택</option>
-            <option value={OWNER_TEACHER_ID}>{ownerLabel} (원장 본인)</option>
-            {academyTeachers.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-        </Field>
-
-        {/* Phase 34 — 보조강사 배정 (옵션). 비워둬도 정상. */}
-        <Field label="보조강사 배정 (선택)">
-          <select value={form.assistantId} onChange={(e) => set('assistantId', e.target.value)} className="input">
-            <option value="">필요한 경우에만 선택하세요</option>
-            {academyAssistants.map((a) => (
-              <option key={a.id} value={a.id}>{a.name}</option>
-            ))}
-          </select>
-          <p className="text-[11px] text-gray-400 mt-1.5">보조강사 주업무는 클리닉이라 수업 배정은 선택이에요.</p>
-        </Field>
-
-        {academyStudents.length > 0 && (
-          <Field label={`학생 배정 (${form.studentIds.length}/${academyStudents.length})`}>
-            {/* 중첩 스크롤 컨테이너 제거 — Modal 본문 스크롤 흐름을 이어받음 */}
-            <div className="flex flex-col gap-2">
-              {academyStudents.map((s) => (
-                <button key={s.id} type="button" onClick={() => toggleStudent(s.id)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors ${
-                    form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
-                  }`}>
-                  <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`} />
-                  <span className="text-sm font-medium text-gray-800 flex-1">{(s.name || '?')}</span>
-                  {s.grade && <span className="text-xs text-gray-400">{s.grade}</span>}
+          <Field label="수강료 설정">
+            <div className="flex gap-2 mb-3">
+              {[
+                { value: 'same', label: '동일 수강료' },
+                { value: 'perStudent', label: '학생별 수강료' },
+              ].map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => set('billingMode', value)}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors ${
+                    form.billingMode === value
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 bg-white text-gray-500'
+                  }`}
+                >
+                  {label}
                 </button>
               ))}
             </div>
+
+            {form.billingMode === 'same' ? (
+              <input
+                type="number"
+                value={form.monthlyFee}
+                onChange={(e) => set('monthlyFee', e.target.value)}
+                placeholder="월 수강료 (원)"
+                className="input"
+              />
+            ) : (
+              <div className="flex flex-col gap-2">
+                {selectedStudents.length === 0 ? (
+                  <p className="text-xs text-gray-400 text-center py-2">위에서 학생을 먼저 배정해주세요</p>
+                ) : (
+                  selectedStudents.map((s) => (
+                    <div key={s.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
+                      <span className="text-sm font-medium text-gray-800 flex-1">{s.name}</span>
+                      <input
+                        type="number"
+                        value={form.studentBillings[s.id] ?? ''}
+                        onChange={(e) => setStudentBilling(s.id, e.target.value)}
+                        placeholder="수강료"
+                        className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:border-blue-400"
+                      />
+                      <span className="text-xs text-gray-400">원</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </Field>
-        )}
 
-        {/* 수강료 설정 */}
-        <Field label="수강료 설정">
-          <div className="flex gap-2 mb-3">
-            {[
-              { value: 'same', label: '동일 수강료' },
-              { value: 'perStudent', label: '학생별 수강료' },
-            ].map(({ value, label }) => (
-              <button key={value} type="button" onClick={() => set('billingMode', value)}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors ${
-                  form.billingMode === value
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 bg-white text-gray-500'
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {form.billingMode === 'same' ? (
-            <input
-              type="number"
-              value={form.monthlyFee}
-              onChange={(e) => set('monthlyFee', e.target.value)}
-              placeholder="월 수강료 (원)"
-              className="input"
+          <Field label="메모">
+            <textarea
+              value={form.memo}
+              onChange={(e) => set('memo', e.target.value)}
+              rows={2}
+              placeholder="특이사항 등"
+              className="input resize-none"
             />
-          ) : (
-            <div className="flex flex-col gap-2">
-              {selectedStudents.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-2">위에서 학생을 먼저 배정해주세요</p>
-              ) : (
-                selectedStudents.map((s) => (
-                  <div key={s.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
-                    <span className="text-sm font-medium text-gray-800 flex-1">{s.name}</span>
-                    <input
-                      type="number"
-                      value={form.studentBillings[s.id] ?? ''}
-                      onChange={(e) => setStudentBilling(s.id, e.target.value)}
-                      placeholder="수강료"
-                      className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:border-blue-400"
-                    />
-                    <span className="text-xs text-gray-400">원</span>
-                  </div>
-                ))
-              )}
+          </Field>
+
+          {!editGroup && (
+            <div className="bg-blue-50 rounded-xl px-4 py-3">
+              <p className="text-xs text-blue-700 font-semibold mb-1">수업 회차 자동 생성</p>
+              <p className="text-xs text-blue-600">
+                선택한 요일과 시작일 기준으로 {form.endDate ? '종료일까지' : '3개월치'} 수업 회차가 자동으로 만들어집니다.
+              </p>
             </div>
           )}
-        </Field>
-
-        <Field label="메모">
-          <textarea value={form.memo} onChange={(e) => set('memo', e.target.value)} rows={2} placeholder="특이사항 등" className="input resize-none" />
-        </Field>
-
-        {!editGroup && (
-          <div className="bg-blue-50 rounded-xl px-4 py-3">
-            <p className="text-xs text-blue-700 font-semibold mb-1">수업 회차 자동 생성</p>
-            <p className="text-xs text-blue-600">
-              선택한 요일과 시작일 기준으로 {form.endDate ? '종료일까지' : '3개월치'} 수업 회차가 자동으로 만들어집니다.
-            </p>
-          </div>
-        )}
+        </div>
       </div>
+
+      {/* 과목 선택 sheet */}
+      <OptionSelectSheet
+        open={subjectSheetOpen}
+        onClose={() => setSubjectSheetOpen(false)}
+        title="과목 선택"
+        options={SUBJECT_OPTIONS}
+        value={form.subject}
+        onSelect={(v) => set('subject', v)}
+      />
+
+      {/* 학년/레벨 선택 sheet — 그룹별 */}
+      <OptionSelectSheet
+        open={levelSheetOpen}
+        onClose={() => setLevelSheetOpen(false)}
+        title="학년/레벨 선택"
+        groups={LEVEL_GROUPS}
+        value={form.level}
+        onSelect={(v) => set('level', v)}
+      />
 
       {/* Phase 35 — 반 생성 후 근무표 자동 추가 제안 */}
       {shiftSuggestion && (
@@ -523,11 +823,36 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, hint, children }) {
   return (
     <div>
       <label className="text-xs font-semibold text-gray-600 mb-1.5 block">{label}</label>
       {children}
+      {hint && <p className="text-[11px] text-gray-400 mt-1.5">{hint}</p>}
     </div>
+  );
+}
+
+function SectionTitle({ children }) {
+  return (
+    <div className="hidden md:block text-[11px] font-bold text-gray-400 tracking-wide uppercase">
+      {children}
+    </div>
+  );
+}
+
+function SelectRow({ value, placeholder, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center justify-between border border-gray-200 rounded-xl px-4 bg-white active:bg-gray-50 transition-colors"
+      style={{ minHeight: 48 }}
+    >
+      <span className={`text-sm ${value ? 'font-semibold text-gray-900' : 'text-gray-400'}`}>
+        {value || placeholder}
+      </span>
+      <ChevronRight size={18} className="text-gray-300" />
+    </button>
   );
 }

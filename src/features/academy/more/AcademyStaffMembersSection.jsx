@@ -32,7 +32,10 @@ const ROLE_LABEL = { teacher: '강사', assistant: '보조강사', owner: '원�
 function memberWageLabel(staff) {
   if (!staff) return '학원 설정 미작성';
   if (staff.wage_type === 'monthly') return `월급 ${(staff.monthly_salary || 0).toLocaleString()}원`;
-  if (staff.wage_type === 'hourly') return `시급 ${(staff.hourly_wage || 0).toLocaleString()}원`;
+  if (staff.wage_type === 'hourly') {
+    const modeLabel = staff.scope?.hourlyMode === 'lessonHours' ? '수업시간 기준' : '근무시간 기준';
+    return `시급 ${(staff.hourly_wage || 0).toLocaleString()}원 · ${modeLabel}`;
+  }
   return '급여 미설정';
 }
 

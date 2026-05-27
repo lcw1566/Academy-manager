@@ -314,6 +314,38 @@ export async function addAcademyMemberByUserId({ academyId, userId, role }) {
 }
 
 
+// Phase 39 — 학원 단위 급여/수강료 일자 설정 업데이트 (owner only via RLS).
+// SQL 009 가 1~31 범위 check 제약을 강제하므로, 잘못된 값은 서버에서도 차단된다.
+export async function updateAcademyBillingSettings(academyId, { salaryPaymentDay, tuitionDueDay }) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const patch = {};
+  if (salaryPaymentDay != null) {
+    const n = Number(salaryPaymentDay);
+    if (!Number.isInteger(n) || n < 1 || n > 31) {
+      throw new Error('급여 지급일은 1~31 사이여야 해요.');
+    }
+    patch.salary_payment_day = n;
+  }
+  if (tuitionDueDay != null) {
+    const n = Number(tuitionDueDay);
+    if (!Number.isInteger(n) || n < 1 || n > 31) {
+      throw new Error('수강료 납부일은 1~31 사이여야 해요.');
+    }
+    patch.tuition_due_day = n;
+  }
+  if (Object.keys(patch).length === 0) return null;
+  const { data, error } = await supabase
+    .from('academies')
+    .update(patch)
+    .eq('id', academyId)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+
 // 학원 생성 + 본인을 owner 멤버로 등록 (2-step).
 // 진정한 원자성이 필요해지면 추후 SQL RPC로 옮길 예정.
 export async function createAcademyAsOwner({ name }) {

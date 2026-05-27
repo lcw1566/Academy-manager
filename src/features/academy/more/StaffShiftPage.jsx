@@ -146,8 +146,8 @@ export default function StaffShiftPage({ staff, staffRole, canEdit, onBack }) {
 
   return (
     <div>
-      <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 border-b border-gray-100">
-        <div className="max-w-md mx-auto flex items-center gap-3 px-4 h-14">
+      <div className="fixed md:static top-0 md:top-auto left-0 md:left-auto right-0 md:right-auto z-20 md:z-auto bg-white/95 border-b border-gray-100">
+        <div className="max-w-md md:max-w-none mx-auto md:mx-0 flex items-center gap-3 px-4 md:px-6 h-14">
           <button
             type="button"
             onClick={onBack}
@@ -175,7 +175,7 @@ export default function StaffShiftPage({ staff, staffRole, canEdit, onBack }) {
         </div>
       </div>
 
-      <div className="pt-16 pb-12 px-4 flex flex-col gap-4">
+      <div className="pt-16 md:pt-4 pb-12 px-4 md:px-6 flex flex-col gap-4">
         {/* 월 선택 + 합계 */}
         <div className="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
           <div>

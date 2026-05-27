@@ -16,7 +16,8 @@ supabase/
     ├── 005_accept_invitation_rpc.sql  (초대 수락 RPC hotfix)
     ├── 006_staff_operations.sql    (근무표 + 권한·범위 + 대체 강사)
     ├── 007_profile_search_rpc.sql  (이메일로 profile 검색 RPC)
-    └── 008_assistant_assignment.sql (반/회차에 보조강사 배정 영속화)
+    ├── 008_assistant_assignment.sql (반/회차에 보조강사 배정 영속화)
+    └── 009_academy_billing_settings.sql (학원별 급여/수강료 일자 설정)
 ```
 
 ## 실행 순서 요약
@@ -31,6 +32,7 @@ supabase/
 | 6 | `006_staff_operations.sql` | academy_staff_shifts 테이블 + academy_staff_profiles 의 permissions/scope jsonb + class_sessions 의 substitute_teacher_user_id / substitute_reason 컬럼 |
 | 7 | `007_profile_search_rpc.sql` | search_profile_by_email(text) security definer RPC (강사 초대 시 이메일로 profile 조회) |
 | 8 | `008_assistant_assignment.sql` | class_groups.assistant_ids / class_sessions.assistant_ids jsonb 컬럼 추가 (Phase 35) |
+| 9 | `009_academy_billing_settings.sql` | academies.salary_payment_day / tuition_due_day 컬럼 추가 (Phase 39) |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -302,7 +304,32 @@ Phase 34 에서 보조강사 배정을 추가했지만 로컬에만 저장됐어
 
 ---
 
-## STEP 9 — 앱 동작 확인
+## STEP 9 — `009_academy_billing_settings.sql` 실행 (Phase 39)
+
+1. Supabase Dashboard → SQL Editor
+2. `supabase/sql/009_academy_billing_settings.sql` 내용 전체를 붙여넣고 RUN
+3. 결과 검증 (옵션):
+   ```sql
+   select id, name, salary_payment_day, tuition_due_day
+     from public.academies limit 5;
+   ```
+   두 컬럼이 보이면 정상. 기본값은 각각 10 / 1.
+
+### 왜 필요한가
+
+학원마다 "매월 N일 급여 지급", "매월 M일 수강료 납부 예정" 같은 정책이 다르므로,
+academies 테이블에 직접 보관해서 모든 화면이 같은 값을 참조하도록 합니다.
+
+### 안전 보장
+
+- `add column if not exists` — 여러 번 실행해도 안전
+- check 제약 (1~31) 도 idempotent 추가
+- 기존 academies RLS 가 그대로 적용 (멤버만 select, owner 만 update)
+- destructive 명령 없음
+
+---
+
+## STEP 10 — 앱 동작 확인
 
 1. 앱은 별도 변경 없이 계속 정상 동작해야 합니다 (기존 localStorage 모드 유지).
 2. `npm run dev` 로 띄운 뒤 더보기 탭에서:

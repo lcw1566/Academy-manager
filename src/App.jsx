@@ -14,6 +14,7 @@ import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import { fetchAcademySnapshot } from './services/supabase/hydrateApi';
 import { membershipRoleToAppRole } from './utils/format';
+import { tossSpring } from './utils/motion';
 
 const ACADEMY_ROLES = ['owner', 'teacher', 'assistant'];
 
@@ -252,7 +253,7 @@ export default function App() {
   };
 
   return (
-    <MotionConfig reducedMotion="user">
+    <MotionConfig reducedMotion="user" transition={tossSpring.soft}>
       <div className="min-h-screen bg-[#F2F4F6]">
         <ErrorBoundary>
           {renderLayout()}

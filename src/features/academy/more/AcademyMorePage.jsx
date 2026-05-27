@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import {
-  AlertTriangle, ChevronRight, ChevronLeft, Pencil, CalendarClock, Wallet,
-  RefreshCw, LogOut, BookOpen, Stethoscope, Inbox, Loader2,
+  AlertTriangle, ChevronRight, ChevronLeft, Pencil,
+  RefreshCw, LogOut, Inbox, Loader2,
 } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
@@ -66,8 +66,8 @@ function TeacherDetailPage({ teacher, onBack, onEdit, onDelete, assignmentCounts
   return (
     <div>
       {/* 헤더 – ClassGroupDetailPage와 동일 패턴 */}
-      <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 border-b border-gray-100">
-        <div className="max-w-md mx-auto flex items-center gap-3 px-4 h-14">
+      <div className="fixed md:static top-0 md:top-auto left-0 md:left-auto right-0 md:right-auto z-20 md:z-auto bg-white/95 border-b border-gray-100">
+        <div className="max-w-md md:max-w-none mx-auto md:mx-0 flex items-center gap-3 px-4 md:px-6 h-14">
           <button
             type="button"
             onClick={onBack}
@@ -88,7 +88,7 @@ function TeacherDetailPage({ teacher, onBack, onEdit, onDelete, assignmentCounts
       </div>
 
       {/* 본문 */}
-      <div className="pt-16 pb-24 px-4 flex flex-col gap-4">
+      <div className="pt-16 md:pt-4 pb-24 px-4 md:px-6 flex flex-col gap-4">
         {/* 프로필 카드 */}
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-center gap-4 mb-4">
@@ -228,8 +228,8 @@ function AssistantDetailPage({ assistant, onBack, onEdit, onDelete, taskCount, o
   return (
     <div>
       {/* 헤더 */}
-      <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 border-b border-gray-100">
-        <div className="max-w-md mx-auto flex items-center gap-3 px-4 h-14">
+      <div className="fixed md:static top-0 md:top-auto left-0 md:left-auto right-0 md:right-auto z-20 md:z-auto bg-white/95 border-b border-gray-100">
+        <div className="max-w-md md:max-w-none mx-auto md:mx-0 flex items-center gap-3 px-4 md:px-6 h-14">
           <button
             type="button"
             onClick={onBack}
@@ -250,7 +250,7 @@ function AssistantDetailPage({ assistant, onBack, onEdit, onDelete, taskCount, o
       </div>
 
       {/* 본문 */}
-      <div className="pt-16 pb-24 px-4 flex flex-col gap-4">
+      <div className="pt-16 md:pt-4 pb-24 px-4 md:px-6 flex flex-col gap-4">
         {/* 프로필 카드 */}
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-center gap-4 mb-4">
@@ -690,7 +690,7 @@ export default function AcademyMorePage() {
   return (
     <div>
       <Header title="더보기" />
-      <div className="pt-14 pb-6">
+      <div className="pt-14 md:pt-0 pb-6">
 
       {isOwner ? (
         ownerHasNoAcademy ? (
@@ -850,7 +850,6 @@ function OwnerMoreSections({
   onEditAcademy, onEditMyProfile,
   onOpenTeacherAdd, onOpenAssistantAdd, onOpenShift, onSwitchAcademy,
 }) {
-  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const showToast = useAcademyStore((s) => s.showToast);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -905,21 +904,9 @@ function OwnerMoreSections({
           embedded
         />
       </div>
+      {/* Phase 39 — More 탭에서 운영 탭(근무/정산) 으로의 단축 카드는 제거.
+          각 기능은 해당 탭으로 직접 진입하도록 유도. */}
       <div className="mx-4 mt-2 flex flex-col gap-2">
-        <SettingsRow
-          icon={CalendarClock}
-          tone="blue"
-          title="근무 관리"
-          subtitle="오늘 출근·이번 주 근무표·근무 추가"
-          onClick={() => setActiveTab('work')}
-        />
-        <SettingsRow
-          icon={Wallet}
-          tone="emerald"
-          title="정산/급여 설정"
-          subtitle="이번 달 급여 명세 생성과 지급 상태"
-          onClick={() => setActiveTab('settlement')}
-        />
         <SettingsRow
           icon={RefreshCw}
           title="데이터 관리"
@@ -954,7 +941,6 @@ function StaffMoreSections({
   role, academyProfile, displayName, email, phone, memberships = [], showSwitchAcademy,
   onEditMyProfile, onSwitchAcademy,
 }) {
-  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
   const acceptInvitation = useWorkspaceStore((s) => s.acceptInvitation);
@@ -977,10 +963,6 @@ function StaffMoreSections({
       setAcceptingId(null);
     }
   };
-
-  const workTitle = role === 'assistant' ? '담당 클리닉' : '담당 수업';
-  const workIcon = role === 'assistant' ? Stethoscope : BookOpen;
-  const workTab = role === 'assistant' ? 'clinic' : 'classes';
 
   return (
     <>
@@ -1059,32 +1041,10 @@ function StaffMoreSections({
         )}
       </div>
 
-      {/* C. 내 업무 */}
-      <SectionTitle>내 업무</SectionTitle>
-      <div className="mx-4 flex flex-col gap-2">
-        <SettingsRow
-          icon={CalendarClock}
-          tone="blue"
-          title="내 근무표"
-          subtitle="이번 달 일정과 출/퇴근"
-          onClick={() => setActiveTab('work')}
-        />
-        <SettingsRow
-          icon={Wallet}
-          tone="emerald"
-          title="내 급여"
-          subtitle="이번 달 급여 정보"
-          onClick={() => setActiveTab('payroll')}
-        />
-        <SettingsRow
-          icon={workIcon}
-          title={workTitle}
-          subtitle={role === 'assistant' ? '담당 클리닉으로 이동' : '담당 수업으로 이동'}
-          onClick={() => setActiveTab(workTab)}
-        />
-      </div>
+      {/* Phase 39 — 내 업무 단축 카드 (근무/급여/수업) 제거.
+          각 기능은 해당 탭에서 직접 사용. */}
 
-      {/* D. 계정 */}
+      {/* C. 계정 */}
       <SectionTitle>계정</SectionTitle>
       <div className="mx-4">
         <InlineLogoutButton />

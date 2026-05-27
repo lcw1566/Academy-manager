@@ -60,21 +60,22 @@ export default function ClassGroupsPage() {
   return (
     <div>
       <Header
-        title="수업 관리"
+        title="수업"
         right={
           canManage ? (
             <motion.button
               whileTap={{ scale: 0.97 }}
               onClick={() => setShowForm(true)}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white"
+              className="h-9 w-9 md:w-auto md:px-4 flex items-center justify-center gap-1.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold shadow-sm active:bg-[#0050CC]"
             >
-              <Plus size={18} />
+              <Plus size={14} />
+              <span className="hidden md:inline">수업 추가</span>
             </motion.button>
           ) : null
         }
       />
 
-      <div className="pt-14 pb-6">
+      <div className="pt-14 md:pt-0 pb-6">
         <div className="px-4 pt-4 mb-3">
           <p className="text-sm text-gray-400">반 단위로 수업을 관리해요.</p>
         </div>
@@ -126,7 +127,10 @@ export default function ClassGroupsPage() {
                       </span>
                       <span className="flex items-center gap-1">
                         <Clock size={11} />
-                        {group.weekdays?.join('·')}요일 {group.startTime}
+                        {group.weekdays?.join('·')}요일{' '}
+                        {group.weekdayTimes && Object.keys(group.weekdayTimes).length > 0
+                          ? '요일별 시간 다름'
+                          : group.startTime}
                       </span>
                       {group.room && <span>{group.room}</span>}
                     </div>

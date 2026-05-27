@@ -158,7 +158,7 @@ const useAcademyStore = create(
   examResults: [],
 
   // === Academy Workspace (원장/강사/보조강사 공유) ===
-  academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '' },
+  academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '', salaryPaymentDay: 10, tuitionDueDay: 1 },
   academyStudents: [],
   classGroups: [],
   classSessions: [],
@@ -824,7 +824,7 @@ const useAcademyStore = create(
       tutorProfile: defaultTutorProfile,
       geminiApiKey: '',
       // Academy workspace also reset
-      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '' },
+      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '', salaryPaymentDay: 10, tuitionDueDay: 1 },
       academyStudents: [],
       classGroups: [],
       classSessions: [],
@@ -895,26 +895,38 @@ const useAcademyStore = create(
   },
 
   // ─── Class Groups (반) ────────────────────────────
+  // Phase 38 — group.weekdayTimes (옵션) 가 있으면 각 요일별 시간을 사용한다.
+  //   weekdayTimes 구조: { '월': { startTime: '16:00', endTime: '18:00' }, ... }
+  //   keys 는 한글 요일 문자열 ('월','화','수','목','금','토','일').
+  //   해당 키가 없으면 group.startTime / group.endTime 으로 fallback.
   generateClassSessions: (group) => {
-    const { id: classGroupId, weekdays, startDate, endDate, startTime, endTime, room, teacherId, assistantIds, studentIds } = group;
+    const { id: classGroupId, weekdays, startDate, endDate, startTime, endTime, room, teacherId, assistantIds, studentIds, weekdayTimes } = group;
     const dayNameToNum = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 };
+    const numToDayName = ['일', '월', '화', '수', '목', '금', '토'];
     const daysOfWeek = (weekdays || []).map((d) => dayNameToNum[d]).filter((d) => d !== undefined);
     const dates = generateClassDates({ daysOfWeek, startDate, endDate: endDate || null, repeatType: '매주' });
     const ts = Date.now();
-    return dates.map((date, i) => ({
-      id: `cs${ts}_${i}`,
-      classGroupId,
-      date,
-      startTime,
-      endTime,
-      room: room || '',
-      teacherId: teacherId || '',
-      assistantIds: assistantIds || [],
-      studentIds: studentIds || [],
-      status: 'scheduled',
-      memo: '',
-      createdAt: new Date().toISOString(),
-    }));
+    return dates.map((date, i) => {
+      const [y, m, d] = date.split('-').map(Number);
+      const dayName = numToDayName[new Date(y, m - 1, d).getDay()];
+      const perDay = weekdayTimes?.[dayName];
+      const sessionStart = perDay?.startTime || startTime;
+      const sessionEnd = perDay?.endTime || endTime;
+      return {
+        id: `cs${ts}_${i}`,
+        classGroupId,
+        date,
+        startTime: sessionStart,
+        endTime: sessionEnd,
+        room: room || '',
+        teacherId: teacherId || '',
+        assistantIds: assistantIds || [],
+        studentIds: studentIds || [],
+        status: 'scheduled',
+        memo: '',
+        createdAt: new Date().toISOString(),
+      };
+    });
   },
   addClassGroup: (groupData) => {
     const groupId = `cg${Date.now()}`;
@@ -1201,7 +1213,7 @@ const useAcademyStore = create(
   upsertLocalTeacherFromServerStaff: (payload = {}) => {
     const {
       userId, memberId, email, displayName, phone,
-      subject, subjects, wageType, hourlyWage, monthlySalary, memo, status,
+      subject, subjects, wageType, hourlyWage, monthlySalary, hourlyMode, memo, status,
     } = payload;
     if (!userId) return null;
     const normalizedEmail = (email || '').trim().toLowerCase() || null;
@@ -1235,6 +1247,7 @@ const useAcademyStore = create(
         monthlySalary: monthlySalary !== undefined && monthlySalary !== null
           ? Number(monthlySalary) || 0
           : (existing?.monthlySalary ?? 0),
+        hourlyMode: hourlyMode === 'lessonHours' ? 'lessonHours' : (existing?.hourlyMode || 'shiftHours'),
         memo: memo !== undefined ? memo : (existing?.memo ?? ''),
         status: status || existing?.status || 'active',
         source: 'server',
@@ -1254,7 +1267,7 @@ const useAcademyStore = create(
   upsertLocalAssistantFromServerStaff: (payload = {}) => {
     const {
       userId, memberId, email, displayName, phone,
-      subject, subjects, wageType, hourlyWage, monthlySalary, memo, status,
+      subject, subjects, wageType, hourlyWage, monthlySalary, hourlyMode, memo, status,
     } = payload;
     if (!userId) return null;
     const normalizedEmail = (email || '').trim().toLowerCase() || null;
@@ -1288,6 +1301,7 @@ const useAcademyStore = create(
         monthlySalary: monthlySalary !== undefined && monthlySalary !== null
           ? Number(monthlySalary) || 0
           : (existing?.monthlySalary ?? 0),
+        hourlyMode: hourlyMode === 'lessonHours' ? 'lessonHours' : (existing?.hourlyMode || 'shiftHours'),
         memo: memo !== undefined ? memo : (existing?.memo ?? ''),
         status: status || existing?.status || 'active',
         source: 'server',
@@ -1463,6 +1477,33 @@ const useAcademyStore = create(
     const computeHours = get().computeStaffHoursForMonth;
     const ts = Date.now();
     const payrolls = [];
+    const existingByKey = new Map(
+      (get().academyPayrolls || [])
+        .filter((p) => p.month === month)
+        .map((p) => [`${p.staffType}__${p.staffId}`, p]),
+    );
+
+    const keepLockedFields = (draft) => {
+      const existing = existingByKey.get(`${draft.staffType}__${draft.staffId}`);
+      if (!existing) return draft;
+      if (existing.status === 'completed') {
+        return {
+          ...existing,
+          memo: existing.memo || draft.memo,
+          recalculatedAt: new Date().toISOString(),
+        };
+      }
+      return {
+        ...draft,
+        id: existing.id || draft.id,
+        serverId: existing.serverId || draft.serverId,
+        status: draft.status,
+        paidDate: draft.paidDate,
+        memo: existing.memo || draft.memo,
+        createdAt: existing.createdAt || draft.createdAt,
+        recalculatedAt: new Date().toISOString(),
+      };
+    };
 
     academyTeachers.forEach((teacher, i) => {
       // Phase 34 — 시급 정산 기준: shiftHours (default) | lessonHours.
@@ -1486,7 +1527,7 @@ const useAcademyStore = create(
       const amount = teacher.wageType === 'hourly'
         ? Math.round((teacher.hourlyWage || 0) * totalHours)
         : (teacher.monthlySalary || teacher.monthlyWage || 0);
-      payrolls.push({
+      payrolls.push(keepLockedFields({
         id: `pr${ts}t${i}`, staffType: 'teacher', staffId: teacher.id, month,
         wageType: teacher.wageType || 'monthly', hourlyMode,
         hourlyWage: teacher.hourlyWage || 0,
@@ -1495,7 +1536,7 @@ const useAcademyStore = create(
         completedSessionCount, completedClinicCount: 0,
         amount, status: 'scheduled', paidDate: '', memo: '',
         createdAt: new Date().toISOString(),
-      });
+      }));
     });
 
     academyAssistants.forEach((assistant, i) => {
@@ -1514,7 +1555,7 @@ const useAcademyStore = create(
       const amount = assistant.wageType === 'hourly'
         ? Math.round((assistant.hourlyWage || 0) * totalHours)
         : (assistant.monthlySalary || 0);
-      payrolls.push({
+      payrolls.push(keepLockedFields({
         id: `pr${ts}a${i}`, staffType: 'assistant', staffId: assistant.id, month,
         wageType: assistant.wageType || 'monthly', hourlyMode,
         hourlyWage: assistant.hourlyWage || 0,
@@ -1523,12 +1564,18 @@ const useAcademyStore = create(
         completedSessionCount: 0, completedClinicCount: completed.length,
         amount, status: 'scheduled', paidDate: '', memo: '',
         createdAt: new Date().toISOString(),
-      });
+      }));
     });
+
+    const payrollKeys = new Set(payrolls.map((p) => `${p.staffType}__${p.staffId}`));
+    const lockedPayrollsToKeep = (get().academyPayrolls || []).filter(
+      (p) => p.month === month && p.status === 'completed' && !payrollKeys.has(`${p.staffType}__${p.staffId}`),
+    );
 
     set((s) => ({
       academyPayrolls: [
         ...s.academyPayrolls.filter((p) => p.month !== month),
+        ...lockedPayrollsToKeep,
         ...payrolls,
       ],
     }));
@@ -1729,11 +1776,19 @@ const useAcademyStore = create(
     set((s) => {
       const existing = s.academyStaffShifts || [];
       const next = existing.slice();
+      const localStaffByUserId = new Map();
+      (s.academyTeachers || []).forEach((t) => {
+        if (t.serverUserId) localStaffByUserId.set(`${t.serverUserId}__teacher`, t.id);
+      });
+      (s.academyAssistants || []).forEach((a) => {
+        if (a.serverUserId) localStaffByUserId.set(`${a.serverUserId}__assistant`, a.id);
+      });
       const indexByServerId = new Map(
         next.map((sh, i) => [sh.serverId, i]).filter(([id]) => id),
       );
       for (const sr of serverShifts) {
         if (!sr || !sr.id) continue;
+        const localStaffId = localStaffByUserId.get(`${sr.staff_user_id}__${sr.staff_role}`);
         const mapped = {
           serverId: sr.id,
           staffUserId: sr.staff_user_id,
@@ -1749,6 +1804,7 @@ const useAcademyStore = create(
           createdAt: sr.created_at,
           updatedAt: sr.updated_at,
         };
+        if (localStaffId) mapped.staffId = localStaffId;
         const idx = indexByServerId.get(sr.id);
         if (idx !== undefined) {
           next[idx] = { ...next[idx], ...mapped };
@@ -1760,6 +1816,24 @@ const useAcademyStore = create(
         }
       }
       return { academyStaffShifts: next };
+    });
+  },
+  reconcileStaffShiftLocalIds: () => {
+    set((s) => {
+      const localStaffByUserId = new Map();
+      (s.academyTeachers || []).forEach((t) => {
+        if (t.serverUserId) localStaffByUserId.set(`${t.serverUserId}__teacher`, t.id);
+      });
+      (s.academyAssistants || []).forEach((a) => {
+        if (a.serverUserId) localStaffByUserId.set(`${a.serverUserId}__assistant`, a.id);
+      });
+      return {
+        academyStaffShifts: (s.academyStaffShifts || []).map((sh) => {
+          if (sh.staffId || !sh.staffUserId) return sh;
+          const staffId = localStaffByUserId.get(`${sh.staffUserId}__${sh.staffRole}`);
+          return staffId ? { ...sh, staffId } : sh;
+        }),
+      };
     });
   },
   // staff (local id) 가 한 달에 일한 시급 시간을 합산해 반환.
@@ -1794,7 +1868,7 @@ const useAcademyStore = create(
     if (current === userId) return;
     // 다른 사용자였거나 처음 로그인. academy 데이터를 깨끗하게 리셋.
     set({
-      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '' },
+      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '', salaryPaymentDay: 10, tuitionDueDay: 1 },
       academyStudents: [],
       classGroups: [],
       classSessions: [],
@@ -1820,7 +1894,7 @@ const useAcademyStore = create(
   // ─── Academy Reset ────────────────────────────────
   resetAcademyData: () => {
     set({
-      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '' },
+      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '', salaryPaymentDay: 10, tuitionDueDay: 1 },
       academyStudents: [],
       classGroups: [],
       classSessions: [],

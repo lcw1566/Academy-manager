@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Check, RefreshCw, Plus, X, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Check, RefreshCw, Plus, X, Trash2, Calendar, Wallet, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -12,7 +12,9 @@ import {
   createAcademyPayrollsBulk,
   updatePayroll as updateServerPayroll,
 } from '../../../services/supabase/domainApi';
+import { updateAcademyBillingSettings } from '../../../services/supabase/workspaceApi';
 import Header from '../../../components/Header';
+import Modal from '../../../components/Modal';
 import { formatMonth } from '../../../utils/date';
 
 // local 수납 → server payments 컬럼 매핑. student.serverId 없으면 null 반환.
@@ -50,7 +52,7 @@ function mapLocalPayrollToServerPayload(payroll) {
   };
 }
 
-const MONTHS_BACK = 5;
+const MONTHS_BACK = 11;
 
 function formatHours(h) {
   if (!h) return '0';
@@ -69,10 +71,17 @@ function getRecentMonths() {
   return result;
 }
 
+function addMonth(value, delta) {
+  const [year, month] = value.split('-').map(Number);
+  const d = new Date(year, month - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export default function SettlementPage() {
   const {
     academyStudents, classGroups, academyPayments,
     academyTeachers, academyAssistants, academyPayrolls,
+    academyProfile, setAcademyProfile,
     updateAcademyPayment, addAcademyPayment, deleteAcademyPayment,
     generatePayrollsForMonth, markPayrollPaid,
     generateAcademyPaymentsForMonth, setPaymentServerId,
@@ -83,13 +92,59 @@ export default function SettlementPage() {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
   const loadServerPayrolls = useWorkspaceStore((s) => s.loadServerPayrolls);
+  const loadMemberships = useWorkspaceStore((s) => s.loadMemberships);
+  // Phase 39 — memberships 에 academy:academies(*) 로 fetch 되므로 최신값 우선 사용.
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
+  const myAcademy = useMemo(
+    () => memberships.find((m) => m.academy_id === currentAcademyId)?.academy ?? null,
+    [memberships, currentAcademyId],
+  );
+  const salaryPaymentDay = myAcademy?.salary_payment_day ?? academyProfile?.salaryPaymentDay ?? 10;
+  const tuitionDueDay = myAcademy?.tuition_due_day ?? academyProfile?.tuitionDueDay ?? 1;
 
   const months = getRecentMonths();
   const [selectedMonth, setSelectedMonth] = useState(months[0]);
-  const [segment, setSegment] = useState('payments'); // 'payments' | 'payroll'
+  const [segment, setSegment] = useState('payments'); // 'payments' | 'payroll' | 'settings'
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [addForm, setAddForm] = useState({ studentId: '', classGroupId: '', amount: '' });
+  // Phase 39 — 일자 선택 시트.
+  const [daySheet, setDaySheet] = useState(null); // 'salary' | 'tuition' | null
+  const currentMonth = months[0];
+  const canMoveNextMonth = selectedMonth < currentMonth;
+
+  const moveMonth = (delta) => {
+    const nextMonth = addMonth(selectedMonth, delta);
+    if (nextMonth > currentMonth) return;
+    setSelectedMonth(nextMonth);
+    setMonthPickerOpen(false);
+  };
+
+  // Phase 39 — 일자 저장. 로컬 store 즉시 반영 + (가능하면) 서버 write-through.
+  const saveBillingDay = async (kind, day) => {
+    const patch = kind === 'salary'
+      ? { salaryPaymentDay: day }
+      : { tuitionDueDay: day };
+    setAcademyProfile(patch);
+    setDaySheet(null);
+    if (isAuthenticated && currentAcademyId) {
+      try {
+        await updateAcademyBillingSettings(currentAcademyId, patch);
+        await loadMemberships();
+        showToast(kind === 'salary' ? '급여 지급일을 저장했어요.' : '수강료 납부일을 저장했어요.');
+      } catch (err) {
+        console.warn('[supabase] update billing settings failed', err);
+        showToast(
+          err?.message
+            ? `설정은 저장됐지만 동기화에 실패했어요: ${err.message}`
+            : '설정은 저장됐지만 동기화에 실패했어요.',
+          'error',
+        );
+      }
+    } else {
+      showToast(kind === 'salary' ? '급여 지급일을 저장했어요.' : '수강료 납부일을 저장했어요.');
+    }
+  };
 
   // ─── 수납 계산 ───────────────────────────────────
   const monthPayments = useMemo(
@@ -125,6 +180,7 @@ export default function SettlementPage() {
     return academyAssistants.find((a) => a.id === payroll.staffId)?.name || '보조강사';
   };
   const getStaffTypeLabel = (type) => type === 'teacher' ? '강사' : '보조강사';
+  const getHourlyModeLabel = (mode) => mode === 'lessonHours' ? '수업시간 기준' : '근무시간 기준';
 
   const unpaidStudents = useMemo(
     () => academyStudents.filter((s) => {
@@ -330,22 +386,50 @@ export default function SettlementPage() {
     <div>
       <Header title="정산" />
 
-      <div className="pt-14 pb-6">
+      <div className="pt-14 md:pt-0 pb-6">
         {/* 월 선택 */}
-        <div className="px-4 pt-4 mb-4">
-          <button
-            onClick={() => setMonthPickerOpen(!monthPickerOpen)}
-            className="flex items-center gap-2 bg-white rounded-2xl px-4 py-2.5 shadow-sm"
-          >
-            <ChevronLeft size={16} className="text-gray-400" />
-            <span className="font-bold text-gray-900">{formatMonth(selectedMonth)}</span>
-            <ChevronRight size={16} className="text-gray-400" />
-          </button>
+        <div className="relative px-4 pt-4 md:pt-0 mb-4 flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center overflow-hidden bg-white rounded-2xl border border-[#E5E8EB] shadow-sm">
+            <button
+              type="button"
+              aria-label="이전 달"
+              onClick={() => moveMonth(-1)}
+              className="w-11 h-11 flex items-center justify-center text-[#8B95A1] active:bg-[#F2F4F6] md:hover:bg-[#F8F9FA]"
+            >
+              <ChevronLeft size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMonthPickerOpen(!monthPickerOpen)}
+              className="h-11 min-w-[132px] px-2 flex items-center justify-center gap-1.5 border-x border-[#F2F4F6] active:bg-[#F8F9FA] md:hover:bg-[#F8F9FA]"
+            >
+              <span className="font-extrabold text-[#191F28]">{formatMonth(selectedMonth)}</span>
+              <ChevronDown size={16} className={`text-[#8B95A1] transform-gpu ${monthPickerOpen ? 'rotate-180' : ''}`} />
+            </button>
+            <button
+              type="button"
+              aria-label="다음 달"
+              onClick={() => moveMonth(1)}
+              disabled={!canMoveNextMonth}
+              className="w-11 h-11 flex items-center justify-center text-[#8B95A1] active:bg-[#F2F4F6] md:hover:bg-[#F8F9FA] disabled:text-[#D1D6DB] disabled:bg-white"
+            >
+              <ChevronRight size={18} />
+            </button>
+          </div>
+          {selectedMonth !== currentMonth && (
+            <button
+              type="button"
+              onClick={() => { setSelectedMonth(currentMonth); setMonthPickerOpen(false); }}
+              className="h-11 px-4 rounded-2xl bg-white border border-[#E5E8EB] text-sm font-bold text-[#0064FF] shadow-sm active:bg-blue-50 md:hover:bg-blue-50"
+            >
+              이번 달
+            </button>
+          )}
           {monthPickerOpen && (
-            <div className="mt-2 bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="absolute left-4 top-full z-20 mt-2 w-[280px] bg-white rounded-2xl border border-[#E5E8EB] shadow-lg p-2 grid grid-cols-2 gap-1">
               {months.map((m) => (
                 <button key={m} onClick={() => { setSelectedMonth(m); setMonthPickerOpen(false); }}
-                  className={`w-full text-left px-4 py-3 text-sm border-b border-gray-50 last:border-0 ${m === selectedMonth ? 'font-bold text-blue-600' : 'text-gray-700'}`}>
+                  className={`rounded-xl px-3 py-2.5 text-left text-sm ${m === selectedMonth ? 'font-extrabold text-[#0064FF] bg-blue-50' : 'font-semibold text-[#4E5968] active:bg-[#F8F9FA] md:hover:bg-[#F8F9FA]'}`}>
                   {formatMonth(m)}
                 </button>
               ))}
@@ -354,21 +438,36 @@ export default function SettlementPage() {
         </div>
 
         {/* 요약 카드 */}
-        <div className="px-4 mb-4 grid grid-cols-3 gap-2">
-          <div className="bg-white rounded-2xl p-3 shadow-sm text-center col-span-1">
-            <p className="text-lg font-bold text-blue-600">{paymentSummary.paid.toLocaleString()}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">수납 완료</p>
+        <div className="px-4 mb-4 flex gap-2">
+          <div className="grid grid-cols-3 gap-2 flex-1 min-w-0">
+            <div className="bg-white rounded-2xl p-3 shadow-sm text-center col-span-1">
+              <p className="text-lg font-bold text-blue-600">{paymentSummary.paid.toLocaleString()}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">수납 완료</p>
+            </div>
+            <div className="bg-white rounded-2xl p-3 shadow-sm text-center col-span-1">
+              <p className="text-lg font-bold text-red-500">{paymentSummary.unpaid.toLocaleString()}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">미납</p>
+            </div>
+            <div className={`rounded-2xl p-3 shadow-sm text-center col-span-1 ${netSummary >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+              <p className={`text-lg font-bold ${netSummary >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {netSummary.toLocaleString()}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5">급여 차감 후</p>
+            </div>
           </div>
-          <div className="bg-white rounded-2xl p-3 shadow-sm text-center col-span-1">
-            <p className="text-lg font-bold text-red-500">{paymentSummary.unpaid.toLocaleString()}</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">미납</p>
-          </div>
-          <div className={`rounded-2xl p-3 shadow-sm text-center col-span-1 ${netSummary >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
-            <p className={`text-lg font-bold ${netSummary >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {netSummary.toLocaleString()}
-            </p>
-            <p className="text-[10px] text-gray-400 mt-0.5">급여 차감 후</p>
-          </div>
+          <button
+            type="button"
+            aria-label="정산 설정"
+            title="정산 설정"
+            onClick={() => setSegment('settings')}
+            className={`w-12 flex-shrink-0 rounded-2xl shadow-sm flex items-center justify-center active:scale-95 transform-gpu ${
+              segment === 'settings'
+                ? 'bg-[#0064FF] text-white'
+                : 'bg-white text-[#6B7684] active:bg-[#F2F4F6] md:hover:bg-[#F8F9FA]'
+            }`}
+          >
+            <Settings size={18} />
+          </button>
         </div>
 
         {/* 세그먼트 */}
@@ -383,9 +482,59 @@ export default function SettlementPage() {
           </button>
         </div>
 
+        {/* Phase 39 — 정산 설정 (학원별 급여/수강료 일자) */}
+        {segment === 'settings' && (
+          <div className="px-4 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => setDaySheet('salary')}
+              className="w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-4 shadow-sm active:bg-gray-50 text-left"
+            >
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                <Wallet size={18} className="text-[#0064FF]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-[#191F28]">급여 지급일</p>
+                <p className="text-[11px] text-[#8B95A1] mt-0.5">매월 강사·보조강사 급여 지급 예정일</p>
+              </div>
+              <div className="text-right">
+                <p className="text-base font-bold text-[#0064FF]">매월 {salaryPaymentDay}일</p>
+                <ChevronRight size={12} className="text-gray-300 ml-auto" />
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDaySheet('tuition')}
+              className="w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-4 shadow-sm active:bg-gray-50 text-left"
+            >
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                <Calendar size={18} className="text-emerald-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-[#191F28]">수강료 납부일</p>
+                <p className="text-[11px] text-[#8B95A1] mt-0.5">매월 자동 생성될 수납 항목의 기본 납부 예정일</p>
+              </div>
+              <div className="text-right">
+                <p className="text-base font-bold text-emerald-600">매월 {tuitionDueDay}일</p>
+                <ChevronRight size={12} className="text-gray-300 ml-auto" />
+              </div>
+            </button>
+            <p className="text-[11px] text-[#8B95A1] leading-relaxed mt-2 px-1">
+              저장한 일자는 다른 기기에도 동기화돼요. 1~31 범위 안의 숫자만 선택할 수 있어요.
+            </p>
+          </div>
+        )}
+
         {/* 수납 섹션 */}
         {segment === 'payments' && (
           <div className="px-4 flex flex-col gap-3">
+            {/* Phase 39 — 학원 정책: 매월 납부일 안내 */}
+            <div className="bg-blue-50 rounded-2xl px-4 py-2.5 flex items-center gap-2">
+              <Calendar size={14} className="text-[#0064FF]" />
+              <p className="text-xs text-[#0064FF] font-semibold">
+                수강료 납부일은 매월 <span className="font-bold">{tuitionDueDay}일</span> 이에요
+              </p>
+            </div>
             {/* 액션 버튼 */}
             <div className="flex gap-2">
               <motion.button whileTap={{ scale: 0.97 }}
@@ -479,15 +628,27 @@ export default function SettlementPage() {
         {/* 급여 섹션 */}
         {segment === 'payroll' && (
           <div className="px-4 flex flex-col gap-3">
+            {/* Phase 39 — 학원 정책: 매월 급여 지급일 안내 */}
+            <div className="bg-emerald-50 rounded-2xl px-4 py-2.5 flex items-center gap-2">
+              <Wallet size={14} className="text-emerald-600" />
+              <p className="text-xs text-emerald-700 font-semibold">
+                급여 지급일은 매월 <span className="font-bold">{salaryPaymentDay}일</span> 이에요
+              </p>
+            </div>
             <div className="bg-white rounded-2xl p-4 shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-semibold text-gray-400">급여 요약</p>
                 <motion.button whileTap={{ scale: 0.97 }} onClick={handleAutoGeneratePayrolls}
                   className="flex items-center gap-1 text-xs text-blue-600 font-semibold px-3 py-1.5 bg-blue-50 rounded-xl">
                   <RefreshCw size={12} />
-                  자동 계산
+                  {monthPayrolls.length > 0 ? '다시 계산' : '자동 계산'}
                 </motion.button>
               </div>
+              {monthPayrolls.length > 0 && (
+                <p className="text-[11px] text-[#8B95A1] mb-3 -mt-1">
+                  다시 계산해도 지급 완료된 명세는 바뀌지 않아요.
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div className="text-center">
                   <p className="text-xl font-bold text-gray-900">{payrollSummary.total.toLocaleString()}원</p>
@@ -518,7 +679,7 @@ export default function SettlementPage() {
                       </div>
                       <p className="text-xs text-gray-400 mt-0.5">
                         {pr.wageType === 'hourly'
-                          ? `시급 ${(pr.hourlyWage || 0).toLocaleString()}원 × ${formatHours(pr.totalHours)}시간`
+                          ? `${getHourlyModeLabel(pr.hourlyMode)} · 시급 ${(pr.hourlyWage || 0).toLocaleString()}원 × ${formatHours(pr.totalHours)}시간`
                           : `월급제`
                         }
                         {pr.staffType === 'teacher' && ` · ${pr.completedSessionCount}회 수업`}
@@ -548,6 +709,43 @@ export default function SettlementPage() {
           </div>
         )}
       </div>
+
+      {/* Phase 39 — 일자 선택 시트 (1~31) */}
+      {daySheet && (
+        <Modal
+          isOpen
+          onClose={() => setDaySheet(null)}
+          title={daySheet === 'salary' ? '급여 지급일 선택' : '수강료 납부일 선택'}
+        >
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-[#4E5968] leading-relaxed">
+              {daySheet === 'salary'
+                ? '매월 강사·보조강사에게 급여를 지급하는 날을 선택해주세요. 28~31일은 해당 월에 없을 수 있어요.'
+                : '매월 학생 수강료 납부 기준일을 선택해주세요. 28~31일은 해당 월에 없을 수 있어요.'}
+            </p>
+            <div className="grid grid-cols-7 gap-1.5 max-h-72 overflow-y-auto pb-1">
+              {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => {
+                const cur = daySheet === 'salary' ? salaryPaymentDay : tuitionDueDay;
+                const active = d === cur;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => saveBillingDay(daySheet, d)}
+                    className={`aspect-square rounded-xl text-sm font-bold transition-colors ${
+                      active
+                        ? 'bg-[#0064FF] text-white'
+                        : 'bg-[#F2F4F6] text-[#191F28] active:bg-blue-50'
+                    }`}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

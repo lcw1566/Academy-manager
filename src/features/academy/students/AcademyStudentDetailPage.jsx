@@ -633,8 +633,8 @@ export default function AcademyStudentDetailPage() {
 
   return (
     <div>
-      <div className="fixed top-0 left-0 right-0 z-20 bg-white/95 border-b border-gray-100">
-        <div className="max-w-md mx-auto flex items-center gap-3 px-4 h-14">
+      <div className="fixed md:static top-0 md:top-auto left-0 md:left-auto right-0 md:right-auto z-20 md:z-auto bg-white/95 border-b border-gray-100">
+        <div className="max-w-md md:max-w-none mx-auto md:mx-0 flex items-center gap-3 px-4 md:px-6 h-14">
           <button type="button" onClick={goBackFromAcademyStudent} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
             <ChevronLeft size={20} className="text-gray-700" />
           </button>
@@ -652,7 +652,7 @@ export default function AcademyStudentDetailPage() {
         </div>
       </div>
 
-      <div className="pt-14 pb-6">
+      <div className="pt-14 md:pt-0 pb-6">
         {/* 프로필 */}
         <div className="px-4 pt-4 mb-4 flex items-center gap-4">
           <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-2xl font-bold text-blue-600 flex-shrink-0">

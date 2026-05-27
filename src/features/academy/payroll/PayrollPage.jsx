@@ -7,6 +7,7 @@ import Header from '../../../components/Header';
 import { formatMonth } from '../../../utils/date';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import { currentUserCan } from '../../../utils/staffPermissions';
+import { Wallet } from 'lucide-react';
 
 const MONTHS_BACK = 5;
 
@@ -31,7 +32,7 @@ export default function PayrollPage() {
   const {
     role,
     academyTeachers, academyAssistants, academyPayrolls,
-    classSessions, classGroups, clinicTasks,
+    classSessions, classGroups, clinicTasks, academyProfile,
   } = useAcademyStore();
 
   // Phase 25 — 본인 식별 (auth → local 강사/보조강사 매칭)
@@ -43,6 +44,11 @@ export default function PayrollPage() {
     () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
     [memberships, currentAcademyId],
   );
+  // Phase 39 — 학원 급여 지급일 (서버 > 로컬 profile > 10일 순).
+  const salaryPaymentDay =
+    myMembership?.academy?.salary_payment_day
+    ?? academyProfile?.salaryPaymentDay
+    ?? 10;
 
   const months = getRecentMonths();
   const [selectedMonth, setSelectedMonth] = useState(months[0]);
@@ -79,7 +85,12 @@ export default function PayrollPage() {
   const mySessions = useMemo(() => {
     if (role !== 'teacher') return [];
     return classSessions
-      .filter((s) => s.teacherId === staffId && s.date?.startsWith(selectedMonth))
+      .filter((s) => {
+        if (s.status !== 'completed' || !s.date?.startsWith(selectedMonth)) return false;
+        const isMainAndNoSubstitute = s.teacherId === staffId && !s.substituteTeacherId;
+        const isSubstitute = s.substituteTeacherId === staffId;
+        return isMainAndNoSubstitute || isSubstitute;
+      })
       .sort((a, b) => b.date?.localeCompare(a.date || '') || 0);
   }, [classSessions, staffId, selectedMonth, role]);
 
@@ -104,7 +115,7 @@ export default function PayrollPage() {
     return (
       <div>
         <Header title="급여" />
-        <div className="pt-14 px-4">
+        <div className="pt-14 md:pt-0 px-4">
           <div className="mt-8 bg-white rounded-2xl p-6 text-center shadow-sm">
             <p className="text-sm text-gray-400">급여 조회 권한이 없어요</p>
             <p className="text-xs text-gray-300 mt-1">원장에게 권한을 요청해 주세요</p>
@@ -118,7 +129,7 @@ export default function PayrollPage() {
     return (
       <div>
         <Header title="급여" />
-        <div className="pt-14 px-4">
+        <div className="pt-14 md:pt-0 px-4">
           <div className="mt-8 bg-white rounded-2xl p-6 text-center shadow-sm">
             <p className="text-sm text-gray-400">등록된 강사 정보가 없어요</p>
             <p className="text-xs text-gray-300 mt-1">원장에게 강사 등록을 요청해 주세요</p>
@@ -137,7 +148,7 @@ export default function PayrollPage() {
     <div>
       <Header title="급여" />
 
-      <div className="pt-14 pb-6">
+      <div className="pt-14 md:pt-0 pb-6">
         {/* 월 선택 */}
         <div className="px-4 pt-4 mb-4">
           <button onClick={() => setMonthPickerOpen(!monthPickerOpen)}
@@ -180,10 +191,15 @@ export default function PayrollPage() {
               <div className="bg-[#0064FF] rounded-2xl p-5 shadow-sm">
                 <p className="text-xs font-semibold text-blue-100 mb-1">{formatMonth(selectedMonth)} 예상 급여</p>
                 <p className="text-3xl font-bold text-white">{(myPayroll.amount || 0).toLocaleString()}원</p>
-                <div className="flex items-center gap-3 mt-3">
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${myPayroll.status === 'completed' ? 'bg-green-400/30 text-green-100' : 'bg-white/20 text-white'}`}>
                     {myPayroll.status === 'completed' ? `지급완료 ${myPayroll.paidDate}` : '지급 예정'}
                   </span>
+                  {myPayroll.status !== 'completed' && (
+                    <span className="text-xs font-semibold text-blue-100 inline-flex items-center gap-1">
+                      <Wallet size={11} /> 매월 {salaryPaymentDay}일 지급
+                    </span>
+                  )}
                 </div>
               </div>
 

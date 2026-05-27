@@ -21,9 +21,11 @@
 // 근무 일정은 한 row 로 관리할 수 있다 — "근무 시간 ≠ 수업 시간".
 
 import { useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Plus, Pencil, Trash2, Clock, LogIn, LogOut as LogOutIcon, Search,
-  AlertTriangle, ChevronRight, Loader2, BookOpen, Coffee,
+  AlertTriangle, ChevronRight, Loader2, BookOpen, Coffee, CalendarOff,
+  Users as UsersIcon, Repeat, Calendar as CalendarIcon, Check, Info,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
@@ -45,9 +47,12 @@ import {
 } from '../../../services/supabase/domainApi';
 import {
   buildShiftTimeline,
-  computeLessonHoursForMonth,
   hhmmToMin,
 } from '../../../utils/shiftCoverage';
+import { generateClassDates } from '../../../utils/recurringClass';
+
+const KOREAN_WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
+const KO_TO_DOW = { '일': 0, '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6 };
 
 const STATUS_LABELS = {
   scheduled: '예정',
@@ -77,13 +82,37 @@ function shiftMinutes(sh) {
   return m > 0 ? m : 0;
 }
 
+function validateShiftTime({ startTime, endTime, breakMinutes = 0 } = {}) {
+  if (!startTime || !endTime) return '시작 시간과 종료 시간을 입력해주세요.';
+  const start = hhmmToMin(startTime);
+  const end = hhmmToMin(endTime);
+  if (start == null || end == null) return '근무 시간을 다시 확인해주세요.';
+  if (end <= start) return '종료 시간은 시작 시간보다 늦어야 해요.';
+  const breakMin = Number(breakMinutes) || 0;
+  if (breakMin < 0) return '휴게 시간은 0분 이상이어야 해요.';
+  if (breakMin >= end - start) return '휴게 시간은 전체 근무 시간보다 짧아야 해요.';
+  return '';
+}
+
+function scheduledShiftMinutes(sh) {
+  const start = hhmmToMin(sh?.scheduledStartTime);
+  const end = hhmmToMin(sh?.scheduledEndTime);
+  if (start == null || end == null || end <= start) return 0;
+  return Math.max(0, end - start - (Number(sh.breakMinutes) || 0));
+}
+
+function formatShiftHoursFromMinutes(minutes) {
+  const hours = (Number(minutes) || 0) / 60;
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+}
+
 export default function WorkSchedulePage() {
   const role = useAcademyStore((s) => s.role);
   if (role === 'owner') return <OwnerWorkView />;
   return <StaffWorkView />;
 }
 
-// ─── Owner: 전체 staff 일정 ──────────────────────────────────────
+// ─── Owner: 직원별 근무 관리 ──────────────────────────────────────
 function OwnerWorkView() {
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
   const academyTeachers = useAcademyStore((s) => s.academyTeachers) ?? [];
@@ -100,29 +129,53 @@ function OwnerWorkView() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-
+  const [defaultDate, setDefaultDate] = useState(null);
+  const [defaultStaffId, setDefaultStaffId] = useState(null);
+  const [defaultMode, setDefaultMode] = useState('recurring');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [search, setSearch] = useState('');
   const todayStr = todayDate();
   const weekDates = useMemo(() => getWeekDates(todayStr), [todayStr]);
+  const currentMonth = getCurrentMonth();
+
+  const allStaff = useMemo(() => [
+    ...academyTeachers.map((t) => ({ ...t, _role: 'teacher' })),
+    ...academyAssistants.map((a) => ({ ...a, _role: 'assistant' })),
+  ], [academyTeachers, academyAssistants]);
+
+  const [selectedStaffId, setSelectedStaffId] = useState(() => allStaff[0]?.id || '');
 
   // staffId 로 lookup 하기 위한 map
   const staffMap = useMemo(() => {
     const m = new Map();
-    academyTeachers.forEach((t) => m.set(t.id, { ...t, _role: 'teacher' }));
-    academyAssistants.forEach((a) => m.set(a.id, { ...a, _role: 'assistant' }));
+    allStaff.forEach((s) => m.set(s.id, s));
     return m;
-  }, [academyTeachers, academyAssistants]);
+  }, [allStaff]);
 
-  const todayShifts = useMemo(
-    () => academyStaffShifts
-      .filter((sh) => sh.date === todayStr && sh.status !== 'canceled')
-      .sort((a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || '')),
-    [academyStaffShifts, todayStr],
+  const visibleStaff = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return allStaff.filter((s) => {
+      if (roleFilter !== 'all' && s._role !== roleFilter) return false;
+      if (!q) return true;
+      return (s.name || '').toLowerCase().includes(q)
+        || (s.email || '').toLowerCase().includes(q);
+    });
+  }, [allStaff, roleFilter, search]);
+
+  const selectedStaff = useMemo(
+    () => staffMap.get(selectedStaffId) || visibleStaff[0] || allStaff[0] || null,
+    [staffMap, selectedStaffId, visibleStaff, allStaff],
   );
 
-  const weekShiftsByDate = useMemo(() => {
+  const selectedStaffShifts = useMemo(
+    () => (selectedStaff ? academyStaffShifts.filter((sh) => sh.staffId === selectedStaff.id) : []),
+    [academyStaffShifts, selectedStaff],
+  );
+
+  const selectedWeekShiftsByDate = useMemo(() => {
     const map = new Map();
     weekDates.forEach((d) => map.set(d, []));
-    for (const sh of academyStaffShifts) {
+    for (const sh of selectedStaffShifts) {
       if (!sh.date || !map.has(sh.date)) continue;
       if (sh.status === 'canceled') continue;
       map.get(sh.date).push(sh);
@@ -131,10 +184,173 @@ function OwnerWorkView() {
       map.get(d).sort((a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || ''));
     }
     return map;
-  }, [academyStaffShifts, weekDates]);
+  }, [selectedStaffShifts, weekDates]);
+
+  const selectedSummary = useMemo(() => {
+    let weekPlannedMin = 0;
+    let weekActualMin = 0;
+    let monthActualMin = 0;
+    let completedCount = 0;
+    let missedCount = 0;
+    const nowMin = (() => {
+      const d = new Date();
+      return d.getHours() * 60 + d.getMinutes();
+    })();
+    for (const sh of selectedStaffShifts) {
+      if (sh.status === 'canceled') continue;
+      if (weekDates.includes(sh.date)) weekPlannedMin += scheduledShiftMinutes(sh);
+      if (weekDates.includes(sh.date)) weekActualMin += shiftMinutes(sh);
+      if (sh.date?.startsWith(currentMonth)) monthActualMin += shiftMinutes(sh);
+      if (sh.status === 'completed') completedCount += 1;
+      if (sh.date === todayStr && sh.status === 'scheduled' && !sh.actualStartTime) {
+        const start = hhmmToMin(sh.scheduledStartTime);
+        if (start != null && start < nowMin) missedCount += 1;
+      }
+    }
+    return { weekPlannedMin, weekActualMin, monthActualMin, completedCount, missedCount };
+  }, [selectedStaffShifts, weekDates, currentMonth, todayStr]);
+
+  const staffSummaries = useMemo(() => {
+    const map = new Map();
+    for (const staff of allStaff) {
+      map.set(staff.id, { weekMin: 0, monthMin: 0, todayCount: 0, missedCount: 0 });
+    }
+    const nowMin = (() => {
+      const d = new Date();
+      return d.getHours() * 60 + d.getMinutes();
+    })();
+    for (const sh of academyStaffShifts) {
+      if (!sh.staffId || sh.status === 'canceled') continue;
+      const cur = map.get(sh.staffId);
+      if (!cur) continue;
+      if (weekDates.includes(sh.date)) cur.weekMin += scheduledShiftMinutes(sh);
+      if (sh.date?.startsWith(currentMonth)) cur.monthMin += shiftMinutes(sh);
+      if (sh.date === todayStr) cur.todayCount += 1;
+      if (sh.date === todayStr && sh.status === 'scheduled' && !sh.actualStartTime) {
+        const start = hhmmToMin(sh.scheduledStartTime);
+        if (start != null && start < nowMin) cur.missedCount += 1;
+      }
+    }
+    return map;
+  }, [allStaff, academyStaffShifts, weekDates, currentMonth, todayStr]);
+
+  const weeklyPattern = useMemo(() => {
+    return weekDates
+      .map((date) => {
+        const list = selectedWeekShiftsByDate.get(date) || [];
+        if (list.length === 0) return null;
+        return `${getKoreanWeekdayFromYMD(date)} ${list.map((sh) => `${sh.scheduledStartTime || '-'}~${sh.scheduledEndTime || '-'}`).join(', ')}`;
+      })
+      .filter(Boolean)
+      .join(' · ');
+  }, [selectedWeekShiftsByDate, weekDates]);
+
+  const openAddShift = (dateSeed, staffIdSeed = selectedStaff?.id || null, modeSeed = 'recurring') => {
+    setEditing(null);
+    setDefaultDate(dateSeed || todayStr);
+    setDefaultStaffId(staffIdSeed);
+    setDefaultMode(modeSeed);
+    setFormOpen(true);
+  };
+
+  // Phase 39 — 반복 근무 저장. weekdays + 기간 → 여러 단일 shift 생성, 중복 제외.
+  const handleSaveRecurring = async (data) => {
+    if (!data.staffId || !data.weekdays?.length || !data.startDate) return;
+    const timeError = validateShiftTime({
+      startTime: data.scheduledStartTime,
+      endTime: data.scheduledEndTime,
+      breakMinutes: data.breakMinutes,
+    });
+    if (timeError) {
+      showToast(timeError, 'error');
+      return;
+    }
+    const staff = staffMap.get(data.staffId);
+    if (!staff) return;
+    const staffRole = staff._role;
+    const daysOfWeek = data.weekdays.map((d) => KO_TO_DOW[d]).filter((d) => d !== undefined);
+    if (daysOfWeek.length === 0) return;
+    const dates = generateClassDates({
+      daysOfWeek,
+      startDate: data.startDate,
+      endDate: data.endDate || null,
+      repeatType: '매주',
+    });
+    if (dates.length === 0) return;
+
+    // 중복 회피: 동일 staff·date·예정 시작 시간 이 이미 있으면 skip.
+    const existingKeys = new Set(
+      academyStaffShifts
+        .filter((sh) => sh.staffId === data.staffId && sh.status !== 'canceled')
+        .map((sh) => `${sh.date}__${sh.scheduledStartTime || ''}`),
+    );
+
+    let createdCount = 0;
+    let skippedCount = 0;
+    for (const date of dates) {
+      const key = `${date}__${data.scheduledStartTime || ''}`;
+      if (existingKeys.has(key)) {
+        skippedCount += 1;
+        continue;
+      }
+      existingKeys.add(key);
+      const created = addAcademyStaffShift({
+        staffId: data.staffId,
+        staffRole,
+        date,
+        scheduledStartTime: data.scheduledStartTime || '',
+        scheduledEndTime: data.scheduledEndTime || '',
+        breakMinutes: Number(data.breakMinutes) || 0,
+        memo: data.memo || '',
+        status: 'scheduled',
+      });
+      createdCount += 1;
+      // 서버 write-through (best-effort). user 매핑 있을 때만.
+      if (staff.serverUserId && isAuthenticated && currentAcademyId) {
+        try {
+          const sr = await createAcademyStaffShift({
+            academyId: currentAcademyId,
+            staff_user_id: staff.serverUserId,
+            staff_role: staffRole,
+            date,
+            scheduled_start_time: data.scheduledStartTime || null,
+            scheduled_end_time: data.scheduledEndTime || null,
+            break_minutes: Number(data.breakMinutes) || 0,
+            status: 'scheduled',
+            memo: data.memo || null,
+          });
+          if (sr?.id) setStaffShiftServerId(created.id, sr.id);
+        } catch (err) {
+          console.warn('[supabase] recurring create shift failed', err);
+        }
+      }
+    }
+    if (staff.serverUserId && isAuthenticated && currentAcademyId) {
+      loadServerStaffShifts();
+    }
+    setFormOpen(false);
+    setEditing(null);
+    setDefaultStaffId(null);
+    if (createdCount === 0) {
+      showToast(`이미 등록된 근무 ${skippedCount}건이라 추가하지 않았어요.`, 'error');
+    } else if (skippedCount > 0) {
+      showToast(`근무 ${createdCount}건 추가 · ${skippedCount}건은 중복으로 건너뜀.`);
+    } else {
+      showToast(`근무 ${createdCount}건이 추가됐어요.`);
+    }
+  };
 
   const handleSave = async (data) => {
     if (!data.staffId) return;
+    const timeError = validateShiftTime({
+      startTime: data.scheduledStartTime,
+      endTime: data.scheduledEndTime,
+      breakMinutes: data.breakMinutes,
+    });
+    if (timeError) {
+      showToast(timeError, 'error');
+      return;
+    }
     const staff = staffMap.get(data.staffId);
     if (!staff) return;
     const staffRole = staff._role;
@@ -215,114 +431,208 @@ function OwnerWorkView() {
   };
 
   return (
-    <div>
-      <Header title="근무 관리" />
-      <div className="pt-14 pb-12">
-        {/* 오늘 근무 */}
-        <div className="px-4 pt-4">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-bold text-gray-700">오늘 근무 · {formatDateShort(todayStr)}</p>
-            <button
-              type="button"
-              onClick={() => { setEditing(null); setFormOpen(true); }}
-              className="flex items-center gap-1 text-xs font-bold text-blue-600 px-3 py-1.5 rounded-xl bg-blue-50 active:bg-blue-100"
-            >
-              <Plus size={12} /> 근무 추가
-            </button>
-          </div>
-          {todayShifts.length === 0 ? (
-            <div className="bg-white rounded-2xl p-5 shadow-sm text-center">
-              <Clock size={20} className="text-gray-300 mx-auto mb-2" />
-              <p className="text-sm text-gray-400">오늘 근무 일정이 없어요.</p>
-            </div>
-          ) : (
-            <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-              {todayShifts.map((sh) => (
-                <OwnerShiftRow
-                  key={sh.id}
-                  shift={sh}
-                  staff={staffMap.get(sh.staffId)}
-                  onEdit={() => openEdit(sh)}
-                  onDelete={() => setConfirmDeleteId(sh.id)}
+    <div className="md:bg-[#F2F4F6] md:min-h-screen">
+      <Header
+        title="근무"
+        right={
+          <button
+            type="button"
+            onClick={() => openAddShift(todayStr, selectedStaff?.id || null, 'recurring')}
+            className="hidden md:flex items-center gap-1.5 bg-[#3182F6] text-white text-sm font-bold px-4 py-2 rounded-xl active:bg-[#1B64DA]"
+          >
+            <Plus size={14} /> 근무 추가
+          </button>
+        }
+      />
+      <div className="pt-14 md:pt-0 pb-12 md:pb-8">
+        <div className="px-4 pt-4 md:grid md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] md:gap-6">
+          <aside className="md:sticky md:top-6 md:self-start">
+            <div className="md:bg-white md:rounded-2xl md:p-3 md:shadow-sm">
+              <div className="hidden md:flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#F2F4F6] mb-3">
+                <Search size={14} className="text-[#8B95A1]" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="직원 이름 검색"
+                  className="flex-1 bg-transparent text-sm focus:outline-none"
                 />
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+              <div className="hidden md:grid grid-cols-3 gap-1 bg-[#F2F4F6] rounded-2xl p-1 mb-3">
+                {[
+                  { id: 'all', label: '전체' },
+                  { id: 'teacher', label: '강사' },
+                  { id: 'assistant', label: '보조' },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setRoleFilter(item.id)}
+                    className={`py-2 rounded-xl text-xs font-bold transition-colors ${
+                      roleFilter === item.id ? 'bg-white text-[#3182F6] shadow-sm' : 'text-[#8B95A1]'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
 
-        {/* 이번 주 근무표 */}
-        <div className="px-4 pt-5">
-          <p className="text-sm font-bold text-gray-700 mb-2">이번 주 근무표</p>
-          <div className="flex flex-col gap-2">
-            {weekDates.map((d) => {
-              const shifts = weekShiftsByDate.get(d) || [];
-              const isTodayDate = d === todayStr;
-              return (
-                <div
-                  key={d}
-                  className={`bg-white rounded-2xl px-4 py-3 shadow-sm ${isTodayDate ? 'border border-blue-200' : ''}`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className={`text-xs font-bold ${isTodayDate ? 'text-blue-600' : 'text-gray-700'}`}>
-                      {d.slice(5)} ({getKoreanWeekdayFromYMD(d)})
-                    </p>
-                    {isTodayDate && (
-                      <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">
-                        오늘
-                      </span>
-                    )}
-                    <p className="ml-auto text-[11px] text-gray-400">{shifts.length}건</p>
-                  </div>
-                  {shifts.length === 0 ? (
-                    <p className="text-xs text-gray-300 mt-1">근무 없음</p>
-                  ) : (
-                    <div className="flex flex-col gap-1.5 mt-1">
-                      {shifts.map((sh) => {
-                        const staff = staffMap.get(sh.staffId);
-                        return (
-                          <button
-                            key={sh.id}
-                            type="button"
-                            onClick={() => openEdit(sh)}
-                            className="flex items-center gap-2 text-left active:opacity-70"
-                          >
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                              staff?._role === 'assistant'
-                                ? 'bg-purple-50 text-purple-700'
-                                : 'bg-blue-50 text-blue-700'
-                            }`}>
-                              {staff?.name || '(이름 없음)'}
-                            </span>
-                            <span className="text-xs text-gray-600">
-                              {sh.scheduledStartTime || '-'}~{sh.scheduledEndTime || '-'}
-                            </span>
-                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_TONES[sh.status]}`}>
-                              {STATUS_LABELS[sh.status]}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+              {visibleStaff.length === 0 ? (
+                <div className="py-8 text-center">
+                  <UsersIcon size={20} className="text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-gray-400">표시할 직원이 없어요.</p>
                 </div>
-              );
-            })}
-          </div>
-        </div>
+              ) : (
+                <div className="-mx-4 px-4 md:mx-0 md:px-0 flex md:flex-col gap-2 overflow-x-auto md:overflow-visible pb-2 md:pb-0">
+                  {visibleStaff.map((staff) => (
+                    <StaffRosterCard
+                      key={staff.id}
+                      staff={staff}
+                      active={selectedStaff?.id === staff.id}
+                      summary={staffSummaries.get(staff.id)}
+                      onClick={() => setSelectedStaffId(staff.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </aside>
 
-        <p className="text-[11px] text-gray-400 leading-relaxed mt-5 px-4">
-          근무 일정은 수업 일정과 별도예요. 한 근무 안에 여러 수업이 포함돼도 한 줄로 등록할 수 있어요.
-          시급 직원의 급여는 이 근무 합계 시간을 기준으로 계산해요.
-        </p>
+          <section className="mt-4 md:mt-0 min-w-0">
+            {selectedStaff ? (
+              <>
+                <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-11 h-11 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0 ${
+                          selectedStaff._role === 'assistant' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-[#3182F6]'
+                        }`}>
+                          {(selectedStaff.name || '?').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-lg font-bold text-[#191F28] truncate">{selectedStaff.name || '(이름 없음)'}</p>
+                          <p className="text-xs text-[#8B95A1] mt-0.5">
+                            {selectedStaff._role === 'assistant' ? '보조강사' : '강사'}
+                            {selectedStaff.email ? ` · ${selectedStaff.email}` : ''}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openAddShift(todayStr, selectedStaff.id, 'recurring')}
+                      className="hidden md:inline-flex items-center gap-1.5 bg-[#3182F6] text-white text-sm font-bold px-4 py-2.5 rounded-xl active:bg-[#1B64DA] flex-shrink-0"
+                    >
+                      <Repeat size={14} /> 반복 근무
+                    </button>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 md:flex md:items-start md:gap-8 lg:gap-12">
+                    <MetricCard label="이번 주 예정" value={formatShiftHoursFromMinutes(selectedSummary.weekPlannedMin)} unit="시간" />
+                    <MetricCard label="이번 주 완료" value={formatShiftHoursFromMinutes(selectedSummary.weekActualMin)} unit="시간" tone="blue" />
+                    <MetricCard label="이번 달 완료" value={formatShiftHoursFromMinutes(selectedSummary.monthActualMin)} unit="시간" />
+                    <MetricCard label="미출근" value={`${selectedSummary.missedCount}`} unit="건" tone={selectedSummary.missedCount > 0 ? 'amber' : 'gray'} />
+                  </div>
+
+                  <div className="mt-5 pt-4 border-t border-[#E5E8EB] flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-[#4E5968] mb-1">이번 주 근무 패턴</p>
+                      <p className="text-sm font-semibold text-[#191F28] leading-relaxed">
+                        {weeklyPattern || '아직 등록된 근무가 없어요'}
+                      </p>
+                    </div>
+                    <div className="relative group flex-shrink-0">
+                      <button
+                        type="button"
+                        aria-label="반복 근무 안내"
+                        className="w-9 h-9 flex items-center justify-center rounded-full text-[#8B95A1] active:bg-white md:hover:bg-white"
+                      >
+                        <Info size={16} />
+                      </button>
+                      <div className="pointer-events-none absolute right-0 top-10 z-10 hidden w-64 rounded-2xl bg-[#191F28] px-3 py-2 text-[11px] leading-relaxed text-white shadow-lg group-hover:block">
+                        학원처럼 매주 같은 시간에 근무하는 경우, 반복 근무로 한 번에 등록할 수 있어요.
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => openAddShift(todayStr, selectedStaff.id, 'recurring')}
+                    className="md:hidden w-full min-h-[44px] mt-3 flex items-center justify-center gap-1.5 bg-[#3182F6] text-white text-sm font-bold py-3 rounded-xl active:bg-[#1B64DA]"
+                  >
+                    <Repeat size={14} /> 반복 근무 추가
+                  </button>
+                </div>
+
+                <div className="mt-4 bg-white rounded-2xl shadow-sm overflow-hidden">
+                  <div className="px-4 md:px-5 py-4 border-b border-[#F2F4F6] flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-[#191F28]">요일별 근무</p>
+                      <p className="text-[11px] text-[#8B95A1] mt-0.5">
+                        {formatDateShort(weekDates[0])} ~ {formatDateShort(weekDates[6])}
+                      </p>
+                    </div>
+                    <p className="text-xs font-bold text-[#3182F6]">
+                      월 {formatShiftHoursFromMinutes(selectedSummary.monthActualMin)}시간 완료
+                    </p>
+                  </div>
+                  <div className="divide-y divide-[#F2F4F6]">
+                    {weekDates.map((date) => {
+                      const list = selectedWeekShiftsByDate.get(date) || [];
+                      const isTodayDate = date === todayStr;
+                      return (
+                        <StaffDaySchedule
+                          key={date}
+                          date={date}
+                          isTodayDate={isTodayDate}
+                          shifts={list}
+                          staff={selectedStaff}
+                          onAdd={() => openAddShift(date, selectedStaff.id, 'single')}
+                          onEdit={openEdit}
+                          onDelete={(id) => setConfirmDeleteId(id)}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="bg-white rounded-2xl p-8 md:p-10 shadow-sm text-center">
+                <CalendarOff size={22} className="text-gray-300 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-[#191F28]">등록된 직원이 없어요.</p>
+                <p className="text-xs text-[#8B95A1] mt-1">구성원 관리에서 강사나 보조강사를 먼저 등록해주세요.</p>
+              </div>
+            )}
+            <p className="text-[11px] text-[#8B95A1] leading-relaxed mt-5 px-1">
+              직원별 근무표는 급여 계산의 기준이 돼요. 출퇴근 기록이 없더라도 상태가 완료인 근무는 예정 시간으로 계산돼요.
+            </p>
+          </section>
+        </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => openAddShift(todayStr, selectedStaff?.id || null, 'single')}
+        className="md:hidden fixed right-5 bottom-24 z-20 w-14 h-14 rounded-full bg-[#3182F6] text-white shadow-[0_10px_30px_rgba(49,130,246,0.35)] flex items-center justify-center active:scale-95 transform-gpu"
+        aria-label="근무 추가"
+      >
+        <Plus size={24} />
+      </button>
 
       {formOpen && (
         <ShiftFormModal
           initial={editing}
+          defaultDate={defaultDate || todayStr}
+          defaultStaffId={defaultStaffId}
+          defaultMode={defaultMode}
           teachers={academyTeachers}
           assistants={academyAssistants}
-          onClose={() => { setFormOpen(false); setEditing(null); }}
+          onClose={() => {
+            setFormOpen(false); setEditing(null);
+            setDefaultDate(null); setDefaultStaffId(null); setDefaultMode('recurring');
+          }}
           onSave={handleSave}
+          onSaveRecurring={handleSaveRecurring}
         />
       )}
 
@@ -348,37 +658,374 @@ function OwnerWorkView() {
   );
 }
 
-function OwnerShiftRow({ shift, staff, onEdit, onDelete }) {
-  const tone = staff?._role === 'assistant'
-    ? 'bg-purple-50 text-purple-700'
-    : 'bg-blue-50 text-blue-700';
+// Phase 39 — 강사 필터 bar.
+//   값: 'all' | 'teacher' | 'assistant' | staffId
+//   "전체 / 강사 / 보조강사" 칩 + 개별 강사 검색 시트.
+function StaffFilterBar({ value, onChange, teachers = [], assistants = [] }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const allStaff = useMemo(() => [
+    ...teachers.map((t) => ({ ...t, _role: 'teacher' })),
+    ...assistants.map((a) => ({ ...a, _role: 'assistant' })),
+  ], [teachers, assistants]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allStaff;
+    return allStaff.filter((s) => (s.name || '').toLowerCase().includes(q));
+  }, [allStaff, search]);
+
+  const selectedIndividual = allStaff.find((s) => s.id === value);
+  const isIndividual = !!selectedIndividual;
+  const chips = [
+    { id: 'all', label: '전체' },
+    { id: 'teacher', label: '강사' },
+    { id: 'assistant', label: '보조강사' },
+  ];
+
   return (
-    <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-50 last:border-0">
+    <div className="px-4 pt-3 md:pt-4 flex items-center gap-2 overflow-x-auto">
+      {chips.map((c) => {
+        const active = value === c.id;
+        return (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onChange(c.id)}
+            className={`flex-shrink-0 text-xs md:text-sm font-bold px-3 md:px-4 py-1.5 md:py-2 rounded-full transition-colors ${
+              active ? 'bg-[#3182F6] text-white' : 'bg-white text-[#4E5968] border border-[#E5E8EB]'
+            }`}
+          >
+            {c.label}
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        onClick={() => setPickerOpen(true)}
+        className={`flex-shrink-0 flex items-center gap-1.5 text-xs md:text-sm font-bold px-3 md:px-4 py-1.5 md:py-2 rounded-full transition-colors ${
+          isIndividual ? 'bg-[#3182F6] text-white' : 'bg-white text-[#4E5968] border border-[#E5E8EB]'
+        }`}
+      >
+        <UsersIcon size={12} />
+        {isIndividual ? selectedIndividual.name : '강사 선택'}
+      </button>
+      {isIndividual && (
+        <button
+          type="button"
+          onClick={() => onChange('all')}
+          className="flex-shrink-0 text-[10px] md:text-xs font-semibold text-[#8B95A1] px-2"
+        >
+          해제
+        </button>
+      )}
+
+      {pickerOpen && (
+        <Modal isOpen onClose={() => { setPickerOpen(false); setSearch(''); }} title="강사 선택">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gray-50">
+              <Search size={14} className="text-gray-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="이름으로 검색"
+                className="flex-1 bg-transparent text-sm focus:outline-none"
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto flex flex-col gap-1">
+              {filtered.length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-6">등록된 강사가 없어요.</p>
+              ) : (
+                filtered.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => { onChange(s.id); setPickerOpen(false); setSearch(''); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left active:bg-gray-50"
+                  >
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+                      s._role === 'assistant' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'
+                    }`}>
+                      {(s.name || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-gray-900 truncate">{s.name || '(이름 없음)'}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {s._role === 'assistant' ? '보조강사' : '강사'}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function SelectedStaffSummary({ staff, monthlyMin, weeklyCount, todayScheduled, todayMissed }) {
+  const isAssistant = staff?._role === 'assistant';
+  return (
+    <div className="mx-4 md:mx-6 mt-3 md:mt-4 bg-white rounded-2xl px-4 md:px-5 py-4 shadow-sm flex items-center gap-3">
+      <div className={`w-11 h-11 md:w-12 md:h-12 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0 ${
+        isAssistant ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-[#3182F6]'
+      }`}>
+        {(staff?.name || '?').charAt(0).toUpperCase()}
+      </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${tone}`}>
-            {staff?._role === 'assistant' ? '보조' : '강사'}
-          </span>
-          <p className="text-sm font-bold text-gray-900 truncate">{staff?.name || '(삭제된 강사)'}</p>
+        <p className="text-sm md:text-base font-bold text-[#191F28] truncate">{staff?.name || '(이름 없음)'}</p>
+        <p className="text-[11px] md:text-xs text-[#8B95A1] mt-0.5">
+          {isAssistant ? '보조강사' : '강사'}
+          <span className="mx-1.5 text-[#D1D6DB]">·</span>
+          이번 달 <span className="font-semibold text-[#191F28]">{(monthlyMin / 60).toFixed(1)}시간</span>
+          <span className="mx-1.5 text-[#D1D6DB]">·</span>
+          이번 주 {weeklyCount}건
+        </p>
+      </div>
+      <div className="hidden md:flex flex-col items-end text-[11px] text-[#8B95A1]">
+        <span>오늘 예정 <span className="font-bold text-[#191F28]">{todayScheduled}</span></span>
+        <span>미출근 <span className={`font-bold ${todayMissed > 0 ? 'text-amber-600' : 'text-[#191F28]'}`}>{todayMissed}</span></span>
+      </div>
+    </div>
+  );
+}
+
+function StaffRosterCard({ staff, active, summary, onClick }) {
+  const isAssistant = staff?._role === 'assistant';
+  const weekHours = formatShiftHoursFromMinutes(summary?.weekMin || 0);
+  const monthHours = formatShiftHoursFromMinutes(summary?.monthMin || 0);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex-shrink-0 w-[168px] md:w-full min-h-[72px] text-left rounded-2xl px-3 py-3 bg-white transition-colors ${
+        active ? 'text-[#3182F6]' : 'text-[#191F28] active:bg-[#F8F9FA] md:hover:bg-[#F8F9FA]'
+      }`}
+    >
+      {active && (
+        <span className="hidden md:block absolute left-0 top-3 bottom-3 w-[3px] rounded-full bg-[#3182F6]" />
+      )}
+      <div className="flex items-center gap-3">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+          active
+            ? 'bg-blue-50 text-[#3182F6]'
+            : isAssistant
+            ? 'bg-purple-50 text-purple-600'
+            : 'bg-blue-50 text-[#3182F6]'
+        }`}>
+          {(staff?.name || '?').charAt(0).toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-bold truncate ${active ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+            {staff?.name || '(이름 없음)'}
+          </p>
+          <p className="text-[11px] mt-0.5 text-[#8B95A1]">
+            {isAssistant ? '보조강사' : '강사'} · 이번 주 {weekHours}시간
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between text-[11px] text-[#8B95A1]">
+        <span>오늘 {summary?.todayCount || 0}건</span>
+        <span>월 완료 {monthHours}시간</span>
+      </div>
+      {(summary?.missedCount || 0) > 0 && (
+        <p className="mt-1 text-[11px] font-bold text-amber-600">
+          미출근 {summary.missedCount}건 확인 필요
+        </p>
+      )}
+    </button>
+  );
+}
+
+function StaffDaySchedule({ date, isTodayDate, shifts, staff, onAdd, onEdit, onDelete }) {
+  const [openActionId, setOpenActionId] = useState(null);
+  const canSwipeActions = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+  return (
+    <div className={`group/day px-4 md:px-5 py-3 md:py-4 ${isTodayDate ? 'bg-blue-50/30' : 'bg-white'}`}>
+      <div className="flex items-start gap-3">
+        <div className="w-14 md:w-16 flex-shrink-0 pt-1">
+          <p className={`text-sm font-bold ${isTodayDate ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+            {getKoreanWeekdayFromYMD(date)}
+          </p>
+          <p className="text-[11px] text-[#8B95A1] mt-0.5">{date.slice(5)}</p>
+          {isTodayDate && (
+            <span className="inline-flex mt-1 text-[10px] font-bold bg-blue-50 text-[#3182F6] px-1.5 py-0.5 rounded-full">
+              오늘
+            </span>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          {shifts.length === 0 ? (
+            <div className="min-h-[44px] flex items-center justify-between gap-3">
+              <p className="text-sm text-[#B0B8C1]">근무 없음</p>
+              <button
+                type="button"
+                onClick={onAdd}
+                className="md:hidden w-11 h-11 flex items-center justify-center rounded-full bg-blue-50 text-[#3182F6] active:bg-blue-100"
+                aria-label={`${date} 근무 추가`}
+              >
+                <Plus size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={onAdd}
+                className="hidden md:inline-flex opacity-0 group-hover/day:opacity-100 items-center gap-1 text-xs font-bold text-[#3182F6] px-2 py-2 rounded-lg hover:bg-blue-50"
+              >
+                <Plus size={12} /> 이 요일 근무 추가
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {shifts.map((sh) => (
+                <div key={sh.id} className="relative overflow-hidden rounded-2xl bg-[#F8F9FA] md:bg-white">
+                  <div className="absolute inset-y-0 right-0 flex md:hidden">
+                    <button
+                      type="button"
+                      onClick={() => onEdit(sh)}
+                      className="w-12 h-full bg-blue-50 text-[#3182F6] flex items-center justify-center"
+                      aria-label={`${staff?.name || '직원'} 근무 수정`}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDelete(sh.id)}
+                      className="w-12 h-full bg-red-50 text-red-500 flex items-center justify-center"
+                      aria-label={`${staff?.name || '직원'} 근무 삭제`}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                  <motion.div
+                    drag={canSwipeActions ? 'x' : false}
+                    dragDirectionLock
+                    dragElastic={0.06}
+                    dragConstraints={{ left: -96, right: 0 }}
+                    onDragEnd={(_, info) => canSwipeActions && setOpenActionId(info.offset.x < -44 ? sh.id : null)}
+                    animate={{ x: canSwipeActions && openActionId === sh.id ? -96 : 0 }}
+                    className="rounded-2xl bg-white px-3 py-3 flex items-center gap-3 shadow-none md:shadow-none"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-bold text-[#191F28]">
+                          {sh.scheduledStartTime || '-'} ~ {sh.scheduledEndTime || '-'}
+                        </p>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_TONES[sh.status]}`}>
+                          {STATUS_LABELS[sh.status]}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-[#8B95A1] mt-0.5">
+                        예정 {formatShiftHoursFromMinutes(scheduledShiftMinutes(sh))}시간
+                        {sh.breakMinutes ? ` · 휴게 ${sh.breakMinutes}분` : ''}
+                        {(sh.actualStartTime || sh.actualEndTime) ? ` · 실제 ${sh.actualStartTime || '-'}~${sh.actualEndTime || '-'}` : ''}
+                      </p>
+                      {sh.memo && <p className="text-[11px] text-[#8B95A1] mt-1 truncate">{sh.memo}</p>}
+                    </div>
+                    <div className="hidden md:flex items-center gap-1.5 flex-shrink-0">
+                      <div className="w-16 text-right mr-1">
+                        <p className="text-sm font-bold text-[#191F28]">{formatShiftHoursFromMinutes(scheduledShiftMinutes(sh))}시간</p>
+                        <p className="text-[10px] text-[#8B95A1] mt-0.5">예정</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onEdit(sh)}
+                        className="w-9 h-9 flex items-center justify-center text-[#3182F6] hover:bg-blue-50 rounded-xl"
+                        aria-label={`${staff?.name || '직원'} 근무 수정`}
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(sh.id)}
+                        className="w-9 h-9 flex items-center justify-center text-red-400 hover:bg-red-50 rounded-xl"
+                        aria-label={`${staff?.name || '직원'} 근무 삭제`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={onAdd}
+                className="md:hidden self-start min-h-[44px] inline-flex items-center gap-1.5 text-xs font-bold text-[#3182F6] px-3 rounded-xl bg-blue-50 active:bg-blue-100"
+              >
+                <Plus size={12} /> 같은 요일에 추가
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, unit, tone = 'default' }) {
+  const valueTone =
+    tone === 'amber' ? 'text-amber-600'
+    : tone === 'blue' ? 'text-[#3182F6]'
+    : tone === 'emerald' ? 'text-emerald-600'
+    : tone === 'gray' ? 'text-[#8B95A1]'
+    : 'text-[#191F28]';
+  return (
+    <div className="min-w-0 rounded-2xl bg-[#F8F9FA] md:bg-transparent px-3 py-3 md:px-0 md:py-0">
+      <p className="text-[11px] md:text-xs font-semibold text-[#8B95A1] mb-1">{label}</p>
+      <p className={`text-3xl md:text-[38px] md:leading-[44px] font-extrabold ${valueTone}`}>
+        {value}
+        {unit && <span className="text-xs md:text-sm font-medium text-[#8B95A1] ml-1">{unit}</span>}
+      </p>
+    </div>
+  );
+}
+
+function ShiftCard({ shift, staff, onEdit, onDelete }) {
+  const isAssistant = staff?._role === 'assistant';
+  const roleLabel = isAssistant ? '보조강사' : '강사';
+  const initial = (staff?.name || '?').charAt(0).toUpperCase();
+  return (
+    <div className="bg-white rounded-2xl px-4 md:px-5 py-4 shadow-sm flex items-center gap-3 md:gap-4">
+      <div className={`w-10 h-10 md:w-11 md:h-11 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
+        isAssistant ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-[#3182F6]'
+      }`}>
+        {initial}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <p className="text-sm md:text-base font-bold text-[#191F28] truncate">{staff?.name || '(삭제된 강사)'}</p>
+          <span className="text-[10px] font-semibold text-[#8B95A1]">{roleLabel}</span>
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_TONES[shift.status]}`}>
             {STATUS_LABELS[shift.status]}
           </span>
         </div>
-        <p className="text-xs text-gray-500 mt-0.5">
-          예정 {shift.scheduledStartTime || '-'}~{shift.scheduledEndTime || '-'}
-          {shift.breakMinutes ? ` · 휴게 ${shift.breakMinutes}분` : ''}
+        <p className="text-sm md:text-sm font-semibold text-[#4E5968]">
+          {shift.scheduledStartTime || '-'} ~ {shift.scheduledEndTime || '-'}
+          {shift.breakMinutes ? <span className="text-xs text-[#8B95A1] ml-2 font-normal">휴게 {shift.breakMinutes}분</span> : null}
         </p>
         {(shift.actualStartTime || shift.actualEndTime) && (
           <p className="text-xs text-emerald-600 mt-0.5">
-            실제 {shift.actualStartTime || '-'}~{shift.actualEndTime || '-'}
+            실제 {shift.actualStartTime || '-'} ~ {shift.actualEndTime || '-'}
           </p>
         )}
-        {shift.memo && <p className="text-xs text-gray-400 mt-0.5 truncate">{shift.memo}</p>}
+        {shift.memo && <p className="text-xs text-[#8B95A1] mt-1 truncate">{shift.memo}</p>}
       </div>
-      <button type="button" onClick={onEdit} className="p-2 text-blue-600 active:bg-blue-50 rounded-lg">
+      <button
+        type="button"
+        onClick={onEdit}
+        className="p-2 text-[#3182F6] active:bg-blue-50 rounded-lg flex-shrink-0"
+        aria-label="수정"
+      >
         <Pencil size={14} />
       </button>
-      <button type="button" onClick={onDelete} className="p-2 text-red-500 active:bg-red-50 rounded-lg">
+      <button
+        type="button"
+        onClick={onDelete}
+        className="p-2 text-red-400 active:bg-red-50 rounded-lg flex-shrink-0"
+        aria-label="삭제"
+      >
         <Trash2 size={14} />
       </button>
     </div>
@@ -525,8 +1172,8 @@ function StaffWorkView() {
 
   return (
     <div>
-      <Header title="내 근무" />
-      <div className="pt-14 pb-12 bg-[#F2F4F6] min-h-screen">
+      <Header title="근무" />
+      <div className="pt-14 md:pt-0 pb-12 md:pb-8 bg-[#F2F4F6] min-h-screen">
         {/* 오늘 요약 + 출/퇴근 */}
         <div className="px-4 pt-4">
           <p className="text-xs font-semibold text-[#8B95A1] mb-2">오늘 · {formatDateShort(todayStr)}</p>
@@ -545,7 +1192,7 @@ function StaffWorkView() {
                   <span className="text-base text-[#8B95A1] font-medium ml-1">시간</span>
                 </p>
                 <p className="text-xs text-[#4E5968] mt-2">
-                  수업 <span className="font-semibold text-[#0064FF]">{(todaySummary.lessonMin / 60).toFixed(1)}시간</span>
+                  수업 <span className="font-semibold text-[#3182F6]">{(todaySummary.lessonMin / 60).toFixed(1)}시간</span>
                   <span className="mx-1.5 text-[#D1D6DB]">·</span>
                   공강/대기 <span className="font-semibold text-[#4E5968]">{(todaySummary.gapMin / 60).toFixed(1)}시간</span>
                 </p>
@@ -571,7 +1218,7 @@ function StaffWorkView() {
                     type="button"
                     disabled={clockedIn || busy}
                     onClick={handleClockIn}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-[#0064FF] text-white text-sm font-bold disabled:opacity-50"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-[#3182F6] text-white text-sm font-bold disabled:opacity-50"
                   >
                     {busy ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
                     {clockedIn ? '출근 완료' : '출근'}
@@ -688,11 +1335,11 @@ function TimelineRow({ row, classGroups }) {
         <p className="text-xs font-bold text-[#191F28]">{row.startTime}</p>
         <p className="text-[10px] text-[#8B95A1]">~ {row.endTime}</p>
       </div>
-      <div className={`w-1 h-10 rounded-full flex-shrink-0 ${isLesson ? 'bg-[#0064FF]' : 'bg-[#D1D6DB]'}`} />
+      <div className={`w-1 h-10 rounded-full flex-shrink-0 ${isLesson ? 'bg-[#3182F6]' : 'bg-[#D1D6DB]'}`} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           {isLesson ? (
-            <BookOpen size={12} className="text-[#0064FF]" />
+            <BookOpen size={12} className="text-[#3182F6]" />
           ) : (
             <Coffee size={12} className="text-[#8B95A1]" />
           )}
@@ -702,7 +1349,7 @@ function TimelineRow({ row, classGroups }) {
         </div>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-            isLesson ? 'bg-blue-50 text-[#0064FF]' : 'bg-[#F2F4F6] text-[#8B95A1]'
+            isLesson ? 'bg-blue-50 text-[#3182F6]' : 'bg-[#F2F4F6] text-[#8B95A1]'
           }`}>
             {isLesson ? '수업' : '대기'}
           </span>
@@ -714,17 +1361,35 @@ function TimelineRow({ row, classGroups }) {
 }
 
 // ─── 근무 추가/수정 모달 ─────────────────────────────────────────
-// initial 이 있으면 수정 모드 (staffId 고정), 없으면 신규 모드 (staff 선택 가능)
-function ShiftFormModal({ initial, teachers = [], assistants = [], onClose, onSave }) {
+// initial 이 있으면 수정 모드 (staffId 고정 + 단일 근무 only), 없으면 신규 모드.
+// Phase 39 — 신규 모드는 mode='single' | 'recurring' 선택. 신규 default = 'recurring'.
+function ShiftFormModal({
+  initial, defaultDate, defaultStaffId,
+  defaultMode = 'recurring',
+  teachers = [], assistants = [],
+  onClose, onSave, onSaveRecurring,
+}) {
   const isEdit = !!initial;
+  const [mode, setMode] = useState(isEdit ? 'single' : defaultMode);
   const [form, setForm] = useState({
-    staffId: initial?.staffId || '',
-    date: initial?.date || todayDate(),
+    staffId: initial?.staffId || defaultStaffId || '',
+    // Phase 38 — owner 가 특정 요일 chip 에서 "+근무 추가" 누른 경우 그 날짜로 시드.
+    date: initial?.date || defaultDate || todayDate(),
     scheduledStartTime: initial?.scheduledStartTime || '',
     scheduledEndTime: initial?.scheduledEndTime || '',
     breakMinutes: initial?.breakMinutes ? String(initial.breakMinutes) : '',
     memo: initial?.memo || '',
     status: initial?.status || 'scheduled',
+  });
+  // Phase 39 — 반복 근무 폼.
+  const [recurringForm, setRecurringForm] = useState({
+    weekdays: [],
+    startDate: defaultDate || todayDate(),
+    endDate: '',
+    scheduledStartTime: '',
+    scheduledEndTime: '',
+    breakMinutes: '',
+    memo: '',
   });
   const [staffPickerOpen, setStaffPickerOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -751,10 +1416,85 @@ function ShiftFormModal({ initial, teachers = [], assistants = [], onClose, onSa
     });
   }, [form.scheduledStartTime, form.scheduledEndTime, form.breakMinutes]);
 
-  const canSave = !!form.staffId && !!form.date;
+  const singleTimeError = useMemo(
+    () => validateShiftTime({
+      startTime: form.scheduledStartTime,
+      endTime: form.scheduledEndTime,
+      breakMinutes: form.breakMinutes,
+    }),
+    [form.scheduledStartTime, form.scheduledEndTime, form.breakMinutes],
+  );
+
+  // Phase 39 — 반복 모드 미리보기.
+  const recurringPreview = useMemo(() => {
+    if (mode !== 'recurring') return null;
+    if (!recurringForm.startDate || recurringForm.weekdays.length === 0) {
+      return { dates: [], count: 0 };
+    }
+    const daysOfWeek = recurringForm.weekdays.map((d) => KO_TO_DOW[d]).filter((d) => d !== undefined);
+    if (daysOfWeek.length === 0) return { dates: [], count: 0 };
+    try {
+      const dates = generateClassDates({
+        daysOfWeek,
+        startDate: recurringForm.startDate,
+        endDate: recurringForm.endDate || null,
+        repeatType: '매주',
+      });
+      return { dates: dates.slice(0, 3), count: dates.length };
+    } catch {
+      return { dates: [], count: 0 };
+    }
+  }, [mode, recurringForm.startDate, recurringForm.endDate, recurringForm.weekdays]);
+
+  const recurringTimeError = useMemo(
+    () => validateShiftTime({
+      startTime: recurringForm.scheduledStartTime,
+      endTime: recurringForm.scheduledEndTime,
+      breakMinutes: recurringForm.breakMinutes,
+    }),
+    [recurringForm.scheduledStartTime, recurringForm.scheduledEndTime, recurringForm.breakMinutes],
+  );
+  const showSingleTimeError = !!(form.scheduledStartTime || form.scheduledEndTime || form.breakMinutes) && !!singleTimeError;
+  const showRecurringTimeError = !!(
+    recurringForm.scheduledStartTime ||
+    recurringForm.scheduledEndTime ||
+    recurringForm.breakMinutes
+  ) && !!recurringTimeError;
+
+  const canSaveSingle = !!form.staffId && !!form.date && !singleTimeError;
+  const canSaveRecurring =
+    !!form.staffId
+    && recurringForm.weekdays.length > 0
+    && !!recurringForm.startDate
+    && !!recurringForm.scheduledStartTime
+    && !!recurringForm.scheduledEndTime
+    && !recurringTimeError
+    && (recurringPreview?.count ?? 0) > 0;
+  const canSave = mode === 'single' ? canSaveSingle : canSaveRecurring;
+
+  const toggleRecurringWeekday = (d) => {
+    setRecurringForm((f) => {
+      const has = f.weekdays.includes(d);
+      const next = has ? f.weekdays.filter((x) => x !== d) : [...f.weekdays, d];
+      return { ...f, weekdays: next };
+    });
+  };
 
   const handleSave = () => {
     if (!canSave) return;
+    if (mode === 'recurring') {
+      onSaveRecurring?.({
+        staffId: form.staffId,
+        weekdays: recurringForm.weekdays,
+        startDate: recurringForm.startDate,
+        endDate: recurringForm.endDate || '',
+        scheduledStartTime: recurringForm.scheduledStartTime,
+        scheduledEndTime: recurringForm.scheduledEndTime,
+        breakMinutes: recurringForm.breakMinutes,
+        memo: recurringForm.memo,
+      });
+      return;
+    }
     onSave(form);
   };
 
@@ -762,7 +1502,7 @@ function ShiftFormModal({ initial, teachers = [], assistants = [], onClose, onSa
     <Modal
       isOpen
       onClose={onClose}
-      title={isEdit ? '근무 일정 수정' : '근무 추가'}
+      title={isEdit ? '근무 일정 수정' : (mode === 'recurring' ? '반복 근무 추가' : '단일 근무 추가')}
       footer={
         <button
           type="button"
@@ -770,11 +1510,37 @@ function ShiftFormModal({ initial, teachers = [], assistants = [], onClose, onSa
           disabled={!canSave}
           className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl disabled:opacity-50"
         >
-          저장
+          {mode === 'recurring' && !isEdit
+            ? `${recurringPreview?.count || 0}건 저장`
+            : '저장'}
         </button>
       }
     >
       <div className="flex flex-col gap-4">
+        {/* Phase 39 — 모드 토글 (수정 모드에선 숨김) */}
+        {!isEdit && (
+          <div className="flex gap-1 bg-gray-100 rounded-2xl p-1">
+            <button
+              type="button"
+              onClick={() => setMode('recurring')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-bold transition-colors ${
+                mode === 'recurring' ? 'bg-white text-[#3182F6] shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              <Repeat size={13} /> 반복 근무
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('single')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-bold transition-colors ${
+                mode === 'single' ? 'bg-white text-[#3182F6] shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              <CalendarIcon size={13} /> 단일 근무
+            </button>
+          </div>
+        )}
+
         {/* 강사 선택 */}
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">대상 *</label>
@@ -804,93 +1570,208 @@ function ShiftFormModal({ initial, teachers = [], assistants = [], onClose, onSa
           )}
         </div>
 
-        {/* 날짜 */}
-        <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">날짜 *</label>
-          <input
-            type="date"
-            value={form.date}
-            onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
-            className="input"
-          />
-        </div>
-
-        {/* 시간 */}
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1.5 block">예정 시작</label>
-            <input
-              type="time"
-              value={form.scheduledStartTime}
-              onChange={(e) => setForm((f) => ({ ...f, scheduledStartTime: e.target.value }))}
-              className="input"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1.5 block">예정 종료</label>
-            <input
-              type="time"
-              value={form.scheduledEndTime}
-              onChange={(e) => setForm((f) => ({ ...f, scheduledEndTime: e.target.value }))}
-              className="input"
-            />
-          </div>
-        </div>
-
-        {/* 휴게 + 합계 */}
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1.5 block">휴게(분)</label>
-            <input
-              type="number"
-              value={form.breakMinutes}
-              onChange={(e) => setForm((f) => ({ ...f, breakMinutes: e.target.value }))}
-              placeholder="0"
-              className="input"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1.5 block">근무 시간 (계산)</label>
-            <div className="input flex items-center text-sm text-gray-700">
-              {(computedMinutes / 60).toFixed(1)}시간
+        {/* ─── 단일 근무 폼 ─── */}
+        {mode === 'single' && (
+          <>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">날짜 *</label>
+              <input
+                type="date"
+                value={form.date}
+                onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+                className="input"
+              />
             </div>
-          </div>
-        </div>
-
-        {/* 상태 (수정 모드에서만 변경 가능) */}
-        {isEdit && (
-          <div>
-            <label className="text-xs font-semibold text-gray-600 mb-1.5 block">상태</label>
-            <div className="grid grid-cols-3 gap-2">
-              {Object.entries(STATUS_LABELS).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, status: id }))}
-                  className={`py-2.5 rounded-xl text-sm font-bold border-2 ${
-                    form.status === id
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 bg-white text-gray-500'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">예정 시작</label>
+                <input
+                  type="time"
+                  value={form.scheduledStartTime}
+                  onChange={(e) => setForm((f) => ({ ...f, scheduledStartTime: e.target.value }))}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">예정 종료</label>
+                <input
+                  type="time"
+                  value={form.scheduledEndTime}
+                  onChange={(e) => setForm((f) => ({ ...f, scheduledEndTime: e.target.value }))}
+                  className="input"
+                />
+              </div>
             </div>
-          </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">휴게(분)</label>
+                <input
+                  type="number"
+                  value={form.breakMinutes}
+                  onChange={(e) => setForm((f) => ({ ...f, breakMinutes: e.target.value }))}
+                  placeholder="0"
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">근무 시간 (계산)</label>
+                <div className="input flex items-center text-sm text-gray-700">
+                  {(computedMinutes / 60).toFixed(1)}시간
+                </div>
+              </div>
+            </div>
+            {showSingleTimeError && (
+              <p className="text-[11px] text-red-500 -mt-1">{singleTimeError}</p>
+            )}
+            {isEdit && (
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">상태</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(STATUS_LABELS).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, status: id }))}
+                      className={`py-2.5 rounded-xl text-sm font-bold border-2 ${
+                        form.status === id
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 bg-white text-gray-500'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
+              <textarea
+                value={form.memo}
+                onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))}
+                rows={2}
+                placeholder="관련 수업, 클리닉, 특이사항 등"
+                className="input resize-none"
+              />
+            </div>
+          </>
         )}
 
-        {/* 메모 */}
-        <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
-          <textarea
-            value={form.memo}
-            onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))}
-            rows={2}
-            placeholder="관련 수업, 클리닉, 특이사항 등"
-            className="input resize-none"
-          />
-        </div>
+        {/* ─── 반복 근무 폼 ─── */}
+        {mode === 'recurring' && (
+          <>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">반복 요일 *</label>
+              <div className="grid grid-cols-7 gap-1.5">
+                {KOREAN_WEEKDAYS.map((d) => {
+                  const active = recurringForm.weekdays.includes(d);
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => toggleRecurringWeekday(d)}
+                      className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-colors ${
+                        active
+                          ? 'border-[#3182F6] bg-[#3182F6] text-white'
+                          : 'border-gray-200 bg-white text-gray-500'
+                      }`}
+                    >
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">예정 시작 *</label>
+                <input
+                  type="time"
+                  value={recurringForm.scheduledStartTime}
+                  onChange={(e) => setRecurringForm((f) => ({ ...f, scheduledStartTime: e.target.value }))}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">예정 종료 *</label>
+                <input
+                  type="time"
+                  value={recurringForm.scheduledEndTime}
+                  onChange={(e) => setRecurringForm((f) => ({ ...f, scheduledEndTime: e.target.value }))}
+                  className="input"
+                />
+              </div>
+            </div>
+            {showRecurringTimeError && (
+              <p className="text-[11px] text-red-500 -mt-1">{recurringTimeError}</p>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">시작일 *</label>
+                <input
+                  type="date"
+                  value={recurringForm.startDate}
+                  onChange={(e) => setRecurringForm((f) => ({ ...f, startDate: e.target.value }))}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">종료일</label>
+                <input
+                  type="date"
+                  value={recurringForm.endDate}
+                  onChange={(e) => setRecurringForm((f) => ({ ...f, endDate: e.target.value }))}
+                  className="input"
+                  placeholder="비우면 3개월"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">휴게(분)</label>
+              <input
+                type="number"
+                value={recurringForm.breakMinutes}
+                onChange={(e) => setRecurringForm((f) => ({ ...f, breakMinutes: e.target.value }))}
+                placeholder="0"
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
+              <textarea
+                value={recurringForm.memo}
+                onChange={(e) => setRecurringForm((f) => ({ ...f, memo: e.target.value }))}
+                rows={2}
+                placeholder="관련 수업, 특이사항 등"
+                className="input resize-none"
+              />
+            </div>
+
+            {/* 미리보기 */}
+            {recurringPreview && recurringPreview.count > 0 ? (
+              <div className="bg-blue-50 rounded-2xl px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Check size={14} className="text-[#3182F6]" />
+                  <p className="text-sm font-bold text-[#3182F6]">
+                    총 {recurringPreview.count}개의 근무가 생성돼요
+                  </p>
+                </div>
+                <p className="text-[11px] text-[#4E5968] leading-relaxed">
+                  첫 {Math.min(3, recurringPreview.dates.length)}개:&nbsp;
+                  {recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}
+                  {recurringPreview.count > 3 ? ' …' : ''}
+                </p>
+                <p className="text-[11px] text-[#8B95A1] mt-1">
+                  같은 시작 시간이 이미 있는 날짜는 자동으로 건너뛰어요.
+                </p>
+              </div>
+            ) : (
+              <p className="text-[11px] text-gray-400">
+                요일·시간·기간을 선택하면 생성될 근무 수가 표시돼요.
+              </p>
+            )}
+          </>
+        )}
 
         <p className="text-[11px] text-gray-400 leading-relaxed">
           한 근무 안에 여러 수업이 포함돼도 한 줄로 등록하세요. 시급 직원의 급여는 이 근무 합계로 계산돼요.

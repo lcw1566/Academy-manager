@@ -234,7 +234,7 @@ export default function ClassesPage() {
         }
       />
 
-      <div className="pt-14 pb-6">
+      <div className="pt-14 md:pt-0 pb-6">
         <div className="px-4 pt-5 mb-3">
           <p className="text-sm text-gray-400">등록한 수업을 종류별로 관리해요.</p>
         </div>

@@ -7,6 +7,7 @@ import useAcademyStore from '../../store/useAcademyStore';
 import { getTodayYMD } from '../../utils/date';
 import { DAY_OPTIONS, formatDays, generateClassDates } from '../../utils/recurringClass';
 import { calculateDurationHours, resolveStudentBilling } from '../../utils/billing';
+import { tossSpring } from '../../utils/motion';
 
 export default function EditGroupModal({ groupId, onClose }) {
   const { repeatGroups, students, updateRepeatGroup, updateRepeatGroupFuture } = useAcademyStore();
@@ -584,7 +585,7 @@ export default function EditGroupModal({ groupId, onClose }) {
               initial={{ y: '100%' }}
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
-              transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+              transition={tossSpring.sheet}
               className="fixed bottom-0 left-0 right-0 z-[70] bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />

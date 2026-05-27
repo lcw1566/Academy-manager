@@ -31,14 +31,15 @@ export default function AcademyStudentsPage() {
         right={
           isOwner ? (
             <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowForm(true)}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-600 text-white">
-              <Plus size={18} />
+              className="h-9 w-9 md:w-auto md:px-4 flex items-center justify-center gap-1.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold shadow-sm active:bg-[#0050CC]">
+              <Plus size={14} />
+              <span className="hidden md:inline">학생 추가</span>
             </motion.button>
           ) : null
         }
       />
 
-      <div className="pt-14 pb-6">
+      <div className="pt-14 md:pt-0 pb-6">
         {/* 검색 */}
         <div className="px-4 pt-4 mb-4">
           <div className="flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm">

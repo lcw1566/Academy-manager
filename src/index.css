@@ -25,6 +25,21 @@ textarea {
 
 button {
   touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+a,
+input,
+textarea,
+select,
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.transform-gpu {
+  backface-visibility: hidden;
 }
 
 .input {

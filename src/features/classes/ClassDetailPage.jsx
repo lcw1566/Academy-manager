@@ -24,7 +24,7 @@ export default function ClassDetailPage() {
 
   if (!cls) {
     return (
-      <div className="pt-14 p-4 text-center text-gray-500">
+      <div className="pt-14 md:pt-0 p-4 text-center text-gray-500">
         수업을 찾을 수 없습니다.
         <button onClick={goBackFromClass} className="block mt-4 text-blue-600 mx-auto">돌아가기</button>
       </div>
@@ -58,7 +58,7 @@ export default function ClassDetailPage() {
         }
       />
 
-      <div className="pt-14">
+      <div className="pt-14 md:pt-0">
         {/* 수업 정보 카드 */}
         <div className="mx-4 mt-4 bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">

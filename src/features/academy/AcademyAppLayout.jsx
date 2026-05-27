@@ -19,32 +19,32 @@ import PayrollPage from './payroll/PayrollPage';
 import WorkSchedulePage from './work/WorkSchedulePage';
 import Sidebar from '../../components/Sidebar';
 
-// Pre-Phase 34 — 근무 탭은 PC 좌측 사이드바에서만 노출 (mobileBottomNav=false).
-// 모바일에서는 BottomNav 가 한 줄에 들어가지 않으므로 더보기 안 "내 근무표" / "근무 관리"
-// 카드를 통해 진입한다.
+// Phase 39 — More 탭이 더 이상 단축 hub 역할을 하지 않으므로, 모바일에서도
+// 근무 탭을 BottomNav 에서 직접 진입할 수 있도록 노출. 총 6개 탭이 들어가지만
+// 아이콘 크기를 살짝 줄여 한 줄에 맞춘다.
 const TAB_CONFIG = {
   owner: [
     { id: 'home',       label: '홈',    Icon: Home },
     { id: 'classes',    label: '수업',  Icon: BookOpen },
     { id: 'students',   label: '학생',  Icon: Users },
+    { id: 'work',       label: '근무',  Icon: CalendarClock },
     { id: 'settlement', label: '정산',  Icon: BarChart2 },
-    { id: 'work',       label: '근무',  Icon: CalendarClock, mobileBottomNav: false },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
   teacher: [
     { id: 'home',     label: '홈',   Icon: Home },
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
+    { id: 'work',     label: '근무', Icon: CalendarClock },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
-    { id: 'work',     label: '근무', Icon: CalendarClock, mobileBottomNav: false },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
   assistant: [
     { id: 'home',     label: '홈',    Icon: Home },
     { id: 'clinic',   label: '클리닉', Icon: Stethoscope },
     { id: 'students', label: '학생',  Icon: Users },
+    { id: 'work',     label: '근무',  Icon: CalendarClock },
     { id: 'payroll',  label: '급여',  Icon: CreditCard },
-    { id: 'work',     label: '근무',  Icon: CalendarClock, mobileBottomNav: false },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
 };
@@ -197,7 +197,8 @@ export default function AcademyAppLayout() {
           기본 흐름에서 표시하지 않는다. 수동 새로고침은 더보기 → 학원 워크스페이스 패널의
           "서버 데이터 새로고침/불러오기" 버튼으로 진행. */}
 
-      {/* Bottom Nav — 모바일 전용 (md 이상에서는 좌측 사이드바가 대체) */}
+      {/* Bottom Nav — 모바일 전용 (md 이상에서는 좌측 사이드바가 대체).
+          Phase 39 — 6개 탭이 들어가도록 아이콘/너비 살짝 축소. */}
       <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
         <div className="max-w-md mx-auto flex pt-2">
           {tabs.filter((t) => t.mobileBottomNav !== false).map(({ id, label, Icon }) => {
@@ -208,12 +209,12 @@ export default function AcademyAppLayout() {
                 type="button"
                 onClick={() => setActiveTab(id)}
                 aria-current={active ? 'page' : undefined}
-                className="flex-1 flex flex-col items-center gap-1 pb-1 active:scale-[0.98] transition-transform"
+                className="flex-1 min-w-0 flex flex-col items-center gap-0.5 pb-1 active:scale-[0.98] transition-transform"
               >
-                <div className={`flex items-center justify-center w-10 h-7 rounded-2xl transition-colors ${active ? 'bg-blue-50' : ''}`}>
-                  <Icon size={21} className={active ? 'text-blue-600' : 'text-gray-400'} strokeWidth={active ? 2.5 : 1.8} />
+                <div className={`flex items-center justify-center w-9 h-7 rounded-2xl transition-colors ${active ? 'bg-blue-50' : ''}`}>
+                  <Icon size={19} className={active ? 'text-blue-600' : 'text-gray-400'} strokeWidth={active ? 2.5 : 1.8} />
                 </div>
-                <span className={`text-[10px] font-medium ${active ? 'text-blue-600' : 'text-gray-400'}`}>{label}</span>
+                <span className={`text-[9.5px] font-medium ${active ? 'text-blue-600' : 'text-gray-400'}`}>{label}</span>
               </button>
             );
           })}

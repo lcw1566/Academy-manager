@@ -67,7 +67,7 @@ export default function MorePage() {
     <div>
       <Header title="더보기" />
 
-      <div className="pt-14 pb-6">
+      <div className="pt-14 md:pt-0 pb-6">
         {/* 프로필 카드 */}
         <button
           onClick={() => setShowProfileEdit(true)}
