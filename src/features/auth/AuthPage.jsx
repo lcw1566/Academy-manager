@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, GraduationCap, Building2, Users } from 'lucide-react';
+import { X, Building2, Users } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useAcademyStore from '../../store/useAcademyStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -7,15 +7,6 @@ import { updateMyProfileAccountType, updateMyProfileBasic } from '../../services
 import { formatPhoneNumber } from '../../utils/format';
 
 const ACCOUNT_TYPES = [
-  {
-    id: 'tutor',
-    title: '과외 선생님',
-    desc: '개인 과외 학생, 수업, 수납을 관리해요.',
-    Icon: GraduationCap,
-    iconBg: 'bg-blue-50',
-    iconColor: 'text-blue-600',
-    borderActive: 'border-blue-500 bg-blue-50',
-  },
   {
     id: 'owner',
     title: '학원 원장',
@@ -70,7 +61,7 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
   const [mode, setMode] = useState('signIn'); // 'signIn' | 'signUp'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [accountType, setAccountType] = useState(null); // 'tutor' | 'owner' | 'staff' | null
+  const [accountType, setAccountType] = useState(null); // 'owner' | 'staff' | null
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');
   const [localMessage, setLocalMessage] = useState(null);

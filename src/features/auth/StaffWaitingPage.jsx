@@ -27,7 +27,6 @@ export default function StaffWaitingPage() {
   const loadMyPendingInvitations = useWorkspaceStore((s) => s.loadMyPendingInvitations);
   const acceptInvitation = useWorkspaceStore((s) => s.acceptInvitation);
   const showToast = useAcademyStore((s) => s.showToast);
-  const setRole = useAcademyStore((s) => s.setRole);
 
   const [acceptingId, setAcceptingId] = useState(null);
 
@@ -149,15 +148,7 @@ export default function StaffWaitingPage() {
           )}
         </div>
 
-        {/* 다른 모드 시도 (escape hatch) */}
-        <div className="mt-6 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={() => setRole('tutor')}
-            className="w-full text-center py-2.5 text-xs text-gray-500 hover:text-blue-600"
-          >
-            과외 선생님 모드로 전환
-          </button>
+        <div className="mt-6">
           <button
             type="button"
             onClick={handleSignOut}
