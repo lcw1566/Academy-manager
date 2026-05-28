@@ -46,6 +46,16 @@ const ROLE_TYPES = [
 
 const SUBJECTS = ['수학', '영어', '국어', '과학', '사회', '물리', '화학', '역사', '기타'];
 
+function sanitizeWonInput(value) {
+  return String(value ?? '').replace(/[^\d]/g, '');
+}
+
+function parseWonAmount(value) {
+  const digits = sanitizeWonInput(value);
+  if (!digits) return 0;
+  return Number.parseInt(digits, 10) || 0;
+}
+
 export default function AcademyStaffProfileModal({ userId, defaultRole = 'teacher', onClose }) {
   const memberProfiles = useWorkspaceStore((s) => s.academyMemberProfiles);
   const staffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles);
@@ -118,8 +128,8 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
         role,
         subjects,
         wageType,
-        hourlyWage: Number(hourlyWage) || 0,
-        monthlySalary: Number(monthlySalary) || 0,
+        hourlyWage: parseWonAmount(hourlyWage),
+        monthlySalary: parseWonAmount(monthlySalary),
         memo: memo || null,
         status: 'active',
         permissions, // Phase 30 — jsonb 으로 그대로 전달
@@ -241,9 +251,11 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
           {wageType === 'hourly' && (
             <div className="mt-2 flex flex-col gap-2">
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={hourlyWage}
-                onChange={(e) => setHourlyWage(e.target.value)}
+                onChange={(e) => setHourlyWage(sanitizeWonInput(e.target.value))}
                 placeholder="시급 (원)"
                 className="input"
               />
@@ -276,9 +288,11 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
           )}
           {wageType === 'monthly' && (
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={monthlySalary}
-              onChange={(e) => setMonthlySalary(e.target.value)}
+              onChange={(e) => setMonthlySalary(sanitizeWonInput(e.target.value))}
               placeholder="월급 (원)"
               className="input mt-2"
             />

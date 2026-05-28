@@ -17,7 +17,8 @@ supabase/
     ├── 006_staff_operations.sql    (근무표 + 권한·범위 + 대체 강사)
     ├── 007_profile_search_rpc.sql  (이메일로 profile 검색 RPC)
     ├── 008_assistant_assignment.sql (반/회차에 보조강사 배정 영속화)
-    └── 009_academy_billing_settings.sql (학원별 급여/수강료 일자 설정)
+    ├── 009_academy_billing_settings.sql (학원별 급여/수강료 일자 설정)
+    └── 010_staff_wage_integer_guard.sql (강사 시급/월급 정수 원 단위 보정)
 ```
 
 ## 실행 순서 요약
@@ -33,6 +34,7 @@ supabase/
 | 7 | `007_profile_search_rpc.sql` | search_profile_by_email(text) security definer RPC (강사 초대 시 이메일로 profile 조회) |
 | 8 | `008_assistant_assignment.sql` | class_groups.assistant_ids / class_sessions.assistant_ids jsonb 컬럼 추가 (Phase 35) |
 | 9 | `009_academy_billing_settings.sql` | academies.salary_payment_day / tuition_due_day 컬럼 추가 (Phase 39) |
+| 10 | `010_staff_wage_integer_guard.sql` | academy_staff_profiles.hourly_wage / monthly_salary 정수 원 단위 보정 |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.

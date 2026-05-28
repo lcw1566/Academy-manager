@@ -413,6 +413,11 @@ export async function listAcademyMemberProfiles(academyId) {
 
 function sanitizeStaffProfilePayload(input = {}) {
   const out = {};
+  const toWonInteger = (value) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.round(n));
+  };
   if (input.role !== undefined) out.role = input.role;
   if (input.subject !== undefined) out.subject = input.subject;
   if (input.subjects !== undefined) {
@@ -422,10 +427,10 @@ function sanitizeStaffProfilePayload(input = {}) {
     out.wage_type = input.wageType || null;
   }
   if (input.hourlyWage !== undefined) {
-    out.hourly_wage = Number(input.hourlyWage) || 0;
+    out.hourly_wage = toWonInteger(input.hourlyWage);
   }
   if (input.monthlySalary !== undefined) {
-    out.monthly_salary = Number(input.monthlySalary) || 0;
+    out.monthly_salary = toWonInteger(input.monthlySalary);
   }
   if (input.memo !== undefined) out.memo = input.memo;
   if (input.status !== undefined) out.status = input.status;

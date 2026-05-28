@@ -14,8 +14,8 @@ export default function Header({ title, onBack, right }) {
         ) : (
           <div className="w-7 md:hidden" />
         )}
-        <h1 className="flex-1 text-center md:text-left text-base md:text-[28px] md:leading-9 font-extrabold text-[#191F28]">{title}</h1>
-        <div className="w-7 md:w-auto flex justify-end md:ml-4">
+        <h1 className="flex-1 min-w-0 text-center md:text-left text-base md:text-[28px] md:leading-9 font-extrabold text-[#191F28] truncate">{title}</h1>
+        <div className="min-w-7 shrink-0 flex justify-end md:ml-4">
           {right || null}
         </div>
       </div>

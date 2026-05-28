@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, Pencil, Trash2, CalendarDays } from 'lucide-react';
+import { Pencil, Trash2, CalendarDays } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { deleteClassGroup as deleteServerClassGroup } from '../../../services/supabase/domainApi';
 import EmptyState from '../../../components/EmptyState';
+import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
 import { today, formatDateShort, compareYMD } from '../../../utils/date';
 import { getTeacherDisplayName } from '../../../utils/format';
@@ -141,38 +142,32 @@ export default function ClassGroupDetailPage() {
 
   return (
     <div>
-      {/* Header — 모바일 fixed / 데스크톱 정적 (Sidebar 가리지 않게) */}
-      <div className="fixed md:static top-0 md:top-auto left-0 md:left-auto right-0 md:right-auto z-20 md:z-auto bg-white/95 border-b border-gray-100">
-        <div className="max-w-md md:max-w-none mx-auto md:mx-0 flex items-center gap-3 px-4 md:px-6 h-14">
-          <button type="button" onClick={goBackFromClassGroup} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
-            <ChevronLeft size={20} className="text-gray-700" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-gray-900 truncate">{group.name}</p>
-            <p className="text-xs text-gray-400">{group.subject} · {group.level}</p>
+      <Header
+        title={group.name}
+        onBack={goBackFromClassGroup}
+        right={role === 'owner' ? (
+          <div className="flex items-center gap-1">
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setShowEditForm(true)}
+              aria-label="반 수정"
+              className="w-9 h-9 flex items-center justify-center rounded-full text-gray-500 active:bg-gray-100 md:hover:bg-gray-100"
+            >
+              <Pencil size={17} />
+            </motion.button>
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.97 }}
+              onClick={handleDeleteClassGroup}
+              aria-label="반 삭제"
+              className="w-9 h-9 flex items-center justify-center rounded-full text-red-400 active:bg-red-50 md:hover:bg-red-50"
+            >
+              <Trash2 size={17} />
+            </motion.button>
           </div>
-          {role === 'owner' && (
-            <div className="flex items-center gap-1">
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.97 }}
-                onClick={() => setShowEditForm(true)}
-                className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100"
-              >
-                <Pencil size={16} className="text-gray-500" />
-              </motion.button>
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.97 }}
-                onClick={handleDeleteClassGroup}
-                className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100"
-              >
-                <Trash2 size={16} className="text-red-400" />
-              </motion.button>
-            </div>
-          )}
-        </div>
-      </div>
+        ) : null}
+      />
 
       <div className="pt-14 md:pt-0 pb-6">
         {/* 반 정보 카드 */}

@@ -22,6 +22,12 @@ const noopStorage = {
   removeItem: () => {},
 };
 
+function toWonInteger(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n));
+}
+
 function createDeferredLocalStorage(delay = 250) {
   if (typeof window === 'undefined') return noopStorage;
 
@@ -1242,10 +1248,10 @@ const useAcademyStore = create(
           : (Array.isArray(existing?.subjects) ? existing.subjects : []),
         wageType: wageType || existing?.wageType || 'hourly',
         hourlyWage: hourlyWage !== undefined && hourlyWage !== null
-          ? Number(hourlyWage) || 0
+          ? toWonInteger(hourlyWage)
           : (existing?.hourlyWage ?? 0),
         monthlySalary: monthlySalary !== undefined && monthlySalary !== null
-          ? Number(monthlySalary) || 0
+          ? toWonInteger(monthlySalary)
           : (existing?.monthlySalary ?? 0),
         hourlyMode: hourlyMode === 'lessonHours' ? 'lessonHours' : (existing?.hourlyMode || 'shiftHours'),
         memo: memo !== undefined ? memo : (existing?.memo ?? ''),
@@ -1296,10 +1302,10 @@ const useAcademyStore = create(
           : (Array.isArray(existing?.subjects) ? existing.subjects : []),
         wageType: wageType || existing?.wageType || 'hourly',
         hourlyWage: hourlyWage !== undefined && hourlyWage !== null
-          ? Number(hourlyWage) || 0
+          ? toWonInteger(hourlyWage)
           : (existing?.hourlyWage ?? 0),
         monthlySalary: monthlySalary !== undefined && monthlySalary !== null
-          ? Number(monthlySalary) || 0
+          ? toWonInteger(monthlySalary)
           : (existing?.monthlySalary ?? 0),
         hourlyMode: hourlyMode === 'lessonHours' ? 'lessonHours' : (existing?.hourlyMode || 'shiftHours'),
         memo: memo !== undefined ? memo : (existing?.memo ?? ''),

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { ChevronLeft, Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X } from 'lucide-react';
+import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -13,6 +13,7 @@ import {
 import { formatDateShort, getKoreanWeekdayFromYMD, today } from '../../../utils/date';
 import { attendanceStatusMap } from '../../../utils/format';
 import EmptyState from '../../../components/EmptyState';
+import Header from '../../../components/Header';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
 import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 
@@ -633,24 +634,30 @@ export default function AcademyStudentDetailPage() {
 
   return (
     <div>
-      <div className="fixed md:static top-0 md:top-auto left-0 md:left-auto right-0 md:right-auto z-20 md:z-auto bg-white/95 border-b border-gray-100">
-        <div className="max-w-md md:max-w-none mx-auto md:mx-0 flex items-center gap-3 px-4 md:px-6 h-14">
-          <button type="button" onClick={goBackFromAcademyStudent} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
-            <ChevronLeft size={20} className="text-gray-700" />
-          </button>
-          <p className="flex-1 font-bold text-gray-900 truncate">{student.name}</p>
-          {role === 'owner' && (
-            <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setShowEdit(true)} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
-                <Pencil size={16} className="text-gray-500" />
-              </button>
-              <button type="button" onClick={handleDelete} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
-                <Trash2 size={16} className="text-red-400" />
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <Header
+        title={student.name}
+        onBack={goBackFromAcademyStudent}
+        right={role === 'owner' ? (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowEdit(true)}
+              aria-label="학생 수정"
+              className="w-9 h-9 flex items-center justify-center rounded-full text-gray-500 active:bg-gray-100 md:hover:bg-gray-100"
+            >
+              <Pencil size={17} />
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              aria-label="학생 삭제"
+              className="w-9 h-9 flex items-center justify-center rounded-full text-red-400 active:bg-red-50 md:hover:bg-red-50"
+            >
+              <Trash2 size={17} />
+            </button>
+          </div>
+        ) : null}
+      />
 
       <div className="pt-14 md:pt-0 pb-6">
         {/* 프로필 */}

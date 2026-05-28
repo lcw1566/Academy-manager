@@ -1,5 +1,5 @@
 import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronDown, ChevronUp, Check, UserCheck, X as XIcon } from 'lucide-react';
+import { ChevronDown, ChevronUp, Check, UserCheck, X as XIcon } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -9,6 +9,7 @@ import {
   upsertAcademyAttendanceRecordsBulk,
 } from '../../../services/supabase/domainApi';
 import EmptyState from '../../../components/EmptyState';
+import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
 import { formatDateShort } from '../../../utils/date';
 import { attendanceStatusMap, getTeacherDisplayName } from '../../../utils/format';
@@ -597,25 +598,15 @@ export default function ClassSessionPage() {
 
   return (
     <div>
-      {/* 헤더 — 모바일 fixed / 데스크톱 정적 */}
-      <div className="fixed md:static top-0 md:top-auto left-0 md:left-auto right-0 md:right-auto z-20 md:z-auto bg-white/95 border-b border-gray-100">
-        <div className="max-w-md md:max-w-none mx-auto md:mx-0 flex items-center gap-3 px-4 md:px-6 h-14">
-          <button
-            type="button"
-            onClick={goBackFromClassSession}
-            className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100"
-          >
-            <ChevronLeft size={20} className="text-gray-700" />
-          </button>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-gray-900 truncate">{group.name}</p>
-            <p className="text-xs text-gray-400">{formatDateShort(session.date)} · {session.startTime}–{session.endTime}</p>
-          </div>
-          {isDirty && (
-            <span className="text-xs text-orange-500 font-semibold bg-orange-50 px-2 py-1 rounded-full">미저장</span>
-          )}
-        </div>
-      </div>
+      <Header
+        title={group.name}
+        onBack={goBackFromClassSession}
+        right={isDirty ? (
+          <span className="whitespace-nowrap text-xs text-orange-500 font-semibold bg-orange-50 px-2.5 py-1 rounded-full">
+            미저장
+          </span>
+        ) : null}
+      />
 
       <div className="pt-14 md:pt-0 pb-28">
         {/* 수업 정보 카드 */}

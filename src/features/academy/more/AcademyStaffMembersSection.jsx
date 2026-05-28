@@ -9,7 +9,6 @@
 //
 // 액션:
 //   - 멤버 카드 클릭: 학원-특정 설정 모달 (과목/급여/메모/권한)
-//   - 멤버 카드의 "근무표" 아이콘: 해당 staff 의 근무표
 //   - 대기 초대 카드: 취소
 //   - 헤더 우측: 강사 초대 / 보조강사 초대 버튼 (compact)
 //
@@ -19,8 +18,8 @@
 //   - false (기본) 일 때는 자체 헤더 ("구성원 관리") + 새로고침 버튼을 노출.
 import { useMemo, useState } from 'react';
 import {
-  ChevronRight, GraduationCap, Users, Pencil, Loader2, RefreshCw, Plus,
-  Building2, Clock, X as XIcon, CalendarClock,
+  GraduationCap, Users, Loader2, RefreshCw, Plus,
+  Building2, Clock, X as XIcon,
 } from 'lucide-react';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -39,7 +38,7 @@ function memberWageLabel(staff) {
   return '급여 미설정';
 }
 
-function MemberCard({ m, onClickSettings, onOpenShift, isOwnerOfAcademy }) {
+function MemberCard({ m, onClickSettings }) {
   const tone =
     m.role === 'assistant' ? 'text-purple-600 bg-purple-50' :
     m.role === 'teacher'   ? 'text-blue-600 bg-blue-50'     :
@@ -67,23 +66,7 @@ function MemberCard({ m, onClickSettings, onOpenShift, isOwnerOfAcademy }) {
             <p className="text-[11px] text-gray-500 mt-0.5">{memberWageLabel(m.staff)}</p>
           )}
         </div>
-        {isOwnerOfAcademy && (
-          <div className="flex items-center gap-1 text-xs font-semibold text-blue-600 flex-shrink-0">
-            <Pencil size={11} />
-          </div>
-        )}
       </button>
-      {isOwnerOfAcademy && onOpenShift && m.role && (
-        <button
-          type="button"
-          onClick={() => onOpenShift({ userId: m.userId, role: m.role, email: m.email })}
-          className="px-3 flex flex-col items-center justify-center text-[10px] font-bold text-gray-500 border-l border-gray-50 active:bg-gray-50"
-          title="근무표"
-        >
-          <CalendarClock size={14} className="text-gray-400 mb-0.5" />
-          근무표
-        </button>
-      )}
     </div>
   );
 }
@@ -103,7 +86,7 @@ function MemberGroup({ title, count, children }) {
 }
 
 export default function AcademyStaffMembersSection({
-  onAddTeacher, onAddAssistant, onOpenShift, embedded = false,
+  onAddTeacher, onAddAssistant, embedded = false,
 }) {
   // Phase 29 — store fallback. HMR / 마이그레이션 도중 키가 undefined 로 들어와도 안전.
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
@@ -297,8 +280,6 @@ export default function AcademyStaffMembersSection({
                 key={m.userId}
                 m={m}
                 onClickSettings={() => openSettings(m)}
-                onOpenShift={onOpenShift}
-                isOwnerOfAcademy={isOwner}
               />
             ))}
           </MemberGroup>
@@ -310,8 +291,6 @@ export default function AcademyStaffMembersSection({
                 key={m.userId}
                 m={m}
                 onClickSettings={() => openSettings(m)}
-                onOpenShift={onOpenShift}
-                isOwnerOfAcademy={isOwner}
               />
             ))}
           </MemberGroup>
@@ -323,8 +302,6 @@ export default function AcademyStaffMembersSection({
                 key={m.userId}
                 m={m}
                 onClickSettings={() => openSettings(m)}
-                onOpenShift={null}
-                isOwnerOfAcademy={isOwner}
               />
             ))}
           </MemberGroup>

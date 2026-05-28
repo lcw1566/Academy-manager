@@ -712,7 +712,6 @@ export default function AcademyMorePage() {
             onEditMyProfile={() => setShowUserProfileEdit(true)}
             onOpenTeacherAdd={openTeacherAdd}
             onOpenAssistantAdd={openAssistantAdd}
-            onOpenShift={openShiftForUser}
             onSwitchAcademy={handleSwitchAcademy}
           />
         )
@@ -848,7 +847,7 @@ function OwnerMoreSections({
   academyProfile, academyName, displayName, email, phone, memberships = [], showSwitchAcademy,
   lastSyncedLabel,
   onEditAcademy, onEditMyProfile,
-  onOpenTeacherAdd, onOpenAssistantAdd, onOpenShift, onSwitchAcademy,
+  onOpenTeacherAdd, onOpenAssistantAdd, onSwitchAcademy,
 }) {
   const showToast = useAcademyStore((s) => s.showToast);
   const [refreshing, setRefreshing] = useState(false);
@@ -900,7 +899,6 @@ function OwnerMoreSections({
         <AcademyStaffMembersSection
           onAddTeacher={onOpenTeacherAdd}
           onAddAssistant={onOpenAssistantAdd}
-          onOpenShift={onOpenShift}
           embedded
         />
       </div>
