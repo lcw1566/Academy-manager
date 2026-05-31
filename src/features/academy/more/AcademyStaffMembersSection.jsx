@@ -10,7 +10,7 @@
 // 액션:
 //   - 멤버 카드 클릭: 학원-특정 설정 모달 (과목/급여/메모/권한)
 //   - 대기 초대 카드: 취소
-//   - 헤더 우측: 강사 초대 / 보조강사 초대 버튼 (compact)
+//   - 헤더 우측: 직원 초대 버튼 (compact)
 //
 // embedded prop:
 //   - true 일 때는 자체 `mx-4 mt-5` 외부 마진 / 헤더 타이틀을 줄여 SectionTitle
@@ -203,26 +203,14 @@ export default function AcademyStaffMembersSection({
       {/* 초대 진입점 + 새로고침 (embedded 일 때 상단에 작게) */}
       {isOwner && (onAddTeacher || onAddAssistant) && (
         <div className="flex items-center gap-2 mb-3">
-          {onAddTeacher && (
-            <button
-              type="button"
-              onClick={onAddTeacher}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold active:bg-blue-100"
-            >
-              <Plus size={12} />
-              강사 초대
-            </button>
-          )}
-          {onAddAssistant && (
-            <button
-              type="button"
-              onClick={onAddAssistant}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-purple-50 text-purple-700 text-xs font-bold active:bg-purple-100"
-            >
-              <Plus size={12} />
-              보조강사 초대
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={onAddTeacher || onAddAssistant}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold active:bg-blue-100"
+          >
+            <Plus size={12} />
+            직원 초대
+          </button>
           {embedded && (
             <button
               type="button"
@@ -246,7 +234,7 @@ export default function AcademyStaffMembersSection({
         <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
           <p className="text-sm text-gray-500 text-center">아직 참여 중인 강사·보조강사가 없어요.</p>
           <p className="text-[11px] text-gray-400 text-center mt-1.5 leading-relaxed">
-            위 "강사 초대 / 보조강사 초대" 에서 이메일로 초대를 보낼 수 있어요.
+            위 "직원 초대" 에서 이메일로 초대를 보낼 수 있어요.
           </p>
         </div>
       ) : (

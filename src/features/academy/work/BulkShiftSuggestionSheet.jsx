@@ -118,7 +118,7 @@ export default function BulkShiftSuggestionSheet({
           <OptionRow
             icon={CalendarClock}
             title="근무시간 직접 수정"
-            subtitle="스태프 탭에서 직접 근무 시간을 조정할게요."
+            subtitle="직원 탭에서 직접 근무 시간을 조정할게요."
             onClick={() => { setActiveTab('staff'); onClose?.(); }}
           />
           <OptionRow

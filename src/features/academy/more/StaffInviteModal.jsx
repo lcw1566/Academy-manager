@@ -11,15 +11,17 @@
 // 학원 설정 모달(AcademyStaffProfileModal) 로 과목·급여를 설정한다.
 import Modal from '../../../components/Modal';
 import StaffInviteWidget from './StaffInviteWidget';
+import { useState } from 'react';
 
 const ROLE_LABEL = { teacher: '강사', assistant: '보조강사' };
 
 export default function StaffInviteModal({ role = 'teacher', onClose }) {
+  const [selectedRole, setSelectedRole] = useState(role);
   return (
     <Modal
       isOpen
       onClose={onClose}
-      title={`${ROLE_LABEL[role] || role} 초대`}
+      title="직원 초대"
       footer={
         <button
           type="button"
@@ -33,13 +35,32 @@ export default function StaffInviteModal({ role = 'teacher', onClose }) {
       <div className="flex flex-col gap-4">
         <div className="bg-blue-50 rounded-2xl px-4 py-3">
           <p className="text-xs text-blue-700 leading-relaxed">
-            이메일로 앱 초대를 보냅니다. 상대가 같은 이메일로 로그인하면 앱 안에서
-            초대를 수락할 수 있어요. 이름·연락처는 본인이 자신의 프로필에서 직접
-            등록하며, 과목·급여·메모는 수락 후 구성원 관리에서 설정합니다.
+            직원으로 초대할 이메일을 입력해주세요. 수락 후 직원 정보와 급여 조건을 설정할 수 있어요.
           </p>
         </div>
 
-        <StaffInviteWidget role={role} />
+        <div>
+          <p className="text-xs font-semibold text-gray-600 mb-2">역할</p>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(ROLE_LABEL).map(([id, label]) => {
+              const active = selectedRole === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSelectedRole(id)}
+                  className={`rounded-2xl border px-3 py-3 text-left active:opacity-80 ${
+                    active ? 'border-[#3182F6] bg-blue-50' : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <p className={`text-sm font-bold ${active ? 'text-[#3182F6]' : 'text-gray-900'}`}>{label}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <StaffInviteWidget role={selectedRole} />
       </div>
     </Modal>
   );

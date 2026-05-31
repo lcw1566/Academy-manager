@@ -109,7 +109,7 @@ export default function StaffInviteWidget({
         setSearchResult('found');
         setFeedback({
           type: 'info',
-          text: '가입된 계정을 찾았어요. 앱 초대를 보내면 해당 계정의 “받은 초대” 에 표시됩니다.',
+          text: '가입된 계정을 찾았어요. 직원 초대를 보내면 해당 계정의 “받은 초대” 에 표시됩니다.',
         });
       } else {
         // Post-Phase 32: SQL 007 RPC 적용 후엔 가입한 사용자가 있으면 'found'.
@@ -156,7 +156,7 @@ export default function StaffInviteWidget({
       setFeedback({
         type: 'success',
         text:
-          '앱 초대를 보냈어요. 해당 이메일로 로그인하면 “받은 초대” 에서 학원을 수락할 수 있어요.',
+          '직원 초대를 보냈어요. 해당 이메일로 로그인하면 “받은 초대” 에서 학원을 수락할 수 있어요.',
       });
       onInviteSent?.({ email: cleanedEmail, status: inv.status });
     } catch (err) {
@@ -186,7 +186,7 @@ export default function StaffInviteWidget({
       <div className="rounded-2xl bg-gray-50 px-3 py-3 text-xs text-gray-500 flex items-start gap-2">
         <Info size={14} className="text-gray-400 flex-shrink-0 mt-0.5" />
         <span>
-          로그인하면 강사·보조강사 초대를 보낼 수 있어요.
+          로그인하면 직원 초대를 보낼 수 있어요.
           더보기 화면에서 계정 로그인을 먼저 해주세요.
         </span>
       </div>
@@ -235,7 +235,7 @@ export default function StaffInviteWidget({
           className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-60"
         >
           {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-          앱 초대 보내기
+          직원 초대 보내기
         </button>
       </div>
 
@@ -257,7 +257,7 @@ export default function StaffInviteWidget({
       {!feedback && searchResult === 'found' && (
         <div className="text-xs rounded-xl px-3 py-2.5 bg-blue-50 text-blue-700 flex items-start gap-2">
           <Check size={12} className="mt-0.5 flex-shrink-0" />
-          <span>가입된 계정을 확인했어요. “앱 초대 보내기” 를 눌러 학원에 합류하도록 요청하세요.</span>
+          <span>가입된 계정을 확인했어요. “직원 초대 보내기” 를 눌러 학원에 합류하도록 요청하세요.</span>
         </div>
       )}
 

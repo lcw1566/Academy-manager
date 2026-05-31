@@ -1,10 +1,10 @@
 // StaffPage — Phase 40
 //
-// "스태프" 탭의 진입점. 기존 work 탭(WorkSchedulePage)을 통합한 인사·근무 페이지.
+// "직원" 탭의 진입점. 기존 work 탭(WorkSchedulePage)을 통합한 인사·근무 페이지.
 //
 // 역할별 진입:
 //   - owner : 전체 직원 리스트 + 상세 (4 서브탭: 근무 / 계약 / 권한 / 배정)
-//             초대 진입점 (+ 직원 추가), 대기 중인 초대 카드.
+//             초대 진입점 (+ 직원 초대), 대기 중인 초대 카드.
 //   - teacher / assistant : 본인 근무 + 출퇴근 + 본인 계약/배정 요약.
 //
 // 데이터 모델은 그대로 사용한다 (SQL 변경 없음):
@@ -141,8 +141,8 @@ function OwnerStaffView() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all'); // all | teacher | assistant | pending
   const [selectedKey, setSelectedKey] = useState(null);
-  const [inviteRole, setInviteRole] = useState(null); // null | 'teacher' | 'assistant'
-  const [addRoleSheetOpen, setAddRoleSheetOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteRole, setInviteRole] = useState('teacher'); // 'teacher' | 'assistant'
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   const todayStr = todayDate();
@@ -218,14 +218,14 @@ function OwnerStaffView() {
   return (
     <div className="md:bg-[#F2F4F6] md:min-h-screen">
       <Header
-        title="스태프"
+        title="직원"
         right={
           <button
             type="button"
-            onClick={() => setAddRoleSheetOpen(true)}
+            onClick={() => setInviteOpen(true)}
             className="hidden md:flex items-center gap-1.5 bg-[#3182F6] text-white text-sm font-bold px-4 py-2 rounded-xl active:bg-[#1B64DA]"
           >
-            <Plus size={14} /> 직원 추가
+            <Plus size={14} /> 직원 초대
           </button>
         }
       />
@@ -269,10 +269,10 @@ function OwnerStaffView() {
 
               <button
                 type="button"
-                onClick={() => setAddRoleSheetOpen(true)}
+                onClick={() => setInviteOpen(true)}
                 className="md:hidden w-full flex items-center justify-center gap-1.5 mb-3 py-2.5 rounded-xl bg-[#3182F6] text-white text-sm font-bold active:bg-[#1B64DA]"
               >
-                <Plus size={14} /> 직원 추가
+                <Plus size={14} /> 직원 초대
               </button>
 
               {visibleItems.length === 0 ? (
@@ -316,30 +316,22 @@ function OwnerStaffView() {
                 />
               )
             ) : (
-              <EmptyDetailPanel onAdd={() => setAddRoleSheetOpen(true)} />
+              <EmptyDetailPanel onAdd={() => setInviteOpen(true)} />
             )}
           </section>
         </div>
       </div>
 
-      {/* 직원 추가 — 역할 선택 sheet */}
-      {addRoleSheetOpen && (
-        <AddStaffRoleSheet
-          onClose={() => setAddRoleSheetOpen(false)}
-          onPick={(r) => { setAddRoleSheetOpen(false); setInviteRole(r); }}
-        />
-      )}
-
-      {/* 직원 추가 — 이메일 초대 모달 */}
-      {inviteRole && (
+      {/* 직원 초대 — 이메일 + 역할 선택 */}
+      {inviteOpen && (
         <Modal
           isOpen
-          onClose={() => setInviteRole(null)}
-          title={`${inviteRole === 'assistant' ? '보조강사' : '강사'} 초대`}
+          onClose={() => setInviteOpen(false)}
+          title="직원 초대"
           footer={
             <button
               type="button"
-              onClick={() => setInviteRole(null)}
+              onClick={() => setInviteOpen(false)}
               className="w-full bg-gray-100 text-gray-700 font-bold py-3.5 rounded-xl"
             >
               닫기
@@ -349,10 +341,10 @@ function OwnerStaffView() {
           <div className="flex flex-col gap-4">
             <div className="bg-blue-50 rounded-2xl px-4 py-3">
               <p className="text-xs text-blue-700 leading-relaxed">
-                상대가 같은 이메일로 로그인하면 앱 안에서 초대를 수락할 수 있어요.
-                수락 후에 과목·시급·근무 시간을 설정합니다.
+                직원으로 초대할 이메일을 입력해주세요. 수락 후 직원 정보와 급여 조건을 설정할 수 있어요.
               </p>
             </div>
+            <RoleChoice value={inviteRole} onChange={setInviteRole} />
             <StaffInviteWidget role={inviteRole} />
           </div>
         </Modal>
@@ -448,8 +440,39 @@ function EmptyDetailPanel({ onAdd }) {
         onClick={onAdd}
         className="px-4 py-2.5 rounded-xl bg-[#3182F6] text-white text-sm font-bold"
       >
-        + 직원 추가
+        + 직원 초대
       </button>
+    </div>
+  );
+}
+
+function RoleChoice({ value, onChange }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-600 mb-2">역할</p>
+      <div className="grid grid-cols-2 gap-2">
+        {[
+          { id: 'teacher', label: '강사', desc: '수업을 진행해요.' },
+          { id: 'assistant', label: '보조강사', desc: '클리닉/관리 업무를 맡아요.' },
+        ].map((item) => {
+          const active = value === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onChange(item.id)}
+              className={`rounded-2xl border px-3 py-3 text-left active:opacity-80 ${
+                active ? 'border-[#3182F6] bg-blue-50' : 'border-gray-200 bg-white'
+              }`}
+            >
+              <p className={`text-sm font-bold ${active ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+                {item.label}
+              </p>
+              <p className="text-[11px] text-[#8B95A1] mt-0.5">{item.desc}</p>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -963,12 +986,29 @@ function StaffShiftSection({ staff }) {
 }
 
 // ─── 단일/반복 근무 폼 모달 ────────────────────────────────────────
+function ChoiceCard({ active, title, subtitle, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border px-3 py-2.5 text-left active:opacity-80 ${
+        active ? 'border-[#3182F6] bg-blue-50' : 'border-gray-200 bg-white'
+      }`}
+    >
+      <p className={`text-sm font-bold ${active ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>{title}</p>
+      {subtitle && <p className="text-[11px] text-[#8B95A1] mt-0.5">{subtitle}</p>}
+    </button>
+  );
+}
+
 function ShiftFormModal({
   initial, defaultDate, defaultMode = 'recurring',
   onClose, onSaveSingle, onSaveRecurring,
 }) {
   const isEdit = !!initial;
   const [mode, setMode] = useState(isEdit ? 'single' : defaultMode);
+  const [recurringStartMode, setRecurringStartMode] = useState(isEdit ? 'custom' : 'today');
+  const [recurringEndMode, setRecurringEndMode] = useState(initial?.date ? 'until' : 'forever');
   const [form, setForm] = useState({
     date: initial?.date || defaultDate || todayDate(),
     scheduledStartTime: initial?.scheduledStartTime || '',
@@ -979,7 +1019,7 @@ function ShiftFormModal({
   });
   const [recurring, setRecurring] = useState({
     weekdays: [],
-    startDate: defaultDate || todayDate(),
+    startDate: todayDate(),
     endDate: '',
     scheduledStartTime: '',
     scheduledEndTime: '',
@@ -1018,7 +1058,9 @@ function ShiftFormModal({
 
   const canSaveSingle = !!form.date && !singleTimeError;
   const canSaveRecurring = recurring.weekdays.length > 0 && !!recurring.startDate
-    && !recurringTimeError;
+    && !recurringTimeError
+    && (recurringEndMode !== 'until' || !!recurring.endDate)
+    && !(recurringEndMode === 'until' && recurring.endDate && recurring.endDate < recurring.startDate);
   const canSave = mode === 'single' ? canSaveSingle : canSaveRecurring;
 
   const toggleWeekday = (d) => {
@@ -1034,7 +1076,7 @@ function ShiftFormModal({
       onSaveRecurring?.({
         weekdays: recurring.weekdays,
         startDate: recurring.startDate,
-        endDate: recurring.endDate || '',
+        endDate: recurringEndMode === 'until' ? recurring.endDate : '',
         scheduledStartTime: recurring.scheduledStartTime,
         scheduledEndTime: recurring.scheduledEndTime,
         breakMinutes: recurring.breakMinutes,
@@ -1169,16 +1211,55 @@ function ShiftFormModal({
             {recurring.scheduledStartTime && recurring.scheduledEndTime && recurringTimeError && (
               <p className="text-[11px] text-red-500 -mt-1">{recurringTimeError}</p>
             )}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">시작일 *</label>
-                <input type="date" value={recurring.startDate} onChange={(e) => setRecurring((f) => ({ ...f, startDate: e.target.value }))} className="input" />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">종료일</label>
-                <input type="date" value={recurring.endDate} onChange={(e) => setRecurring((f) => ({ ...f, endDate: e.target.value }))} className="input" />
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">언제부터 적용할까요?</label>
+              <div className="grid grid-cols-2 gap-2">
+                <ChoiceCard
+                  active={recurringStartMode === 'today'}
+                  title="오늘부터"
+                  onClick={() => {
+                    setRecurringStartMode('today');
+                    setRecurring((f) => ({ ...f, startDate: todayDate() }));
+                  }}
+                />
+                <ChoiceCard
+                  active={recurringStartMode === 'custom'}
+                  title="직접 선택"
+                  onClick={() => setRecurringStartMode('custom')}
+                />
               </div>
             </div>
+            {recurringStartMode === 'custom' && (
+              <div>
+                <input type="date" value={recurring.startDate} onChange={(e) => setRecurring((f) => ({ ...f, startDate: e.target.value }))} className="input" />
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">언제까지 반복할까요?</label>
+              <div className="grid grid-cols-2 gap-2">
+                <ChoiceCard
+                  active={recurringEndMode === 'forever'}
+                  title="계속 반복"
+                  onClick={() => {
+                    setRecurringEndMode('forever');
+                    setRecurring((f) => ({ ...f, endDate: '' }));
+                  }}
+                />
+                <ChoiceCard
+                  active={recurringEndMode === 'until'}
+                  title="특정 날짜까지"
+                  onClick={() => setRecurringEndMode('until')}
+                />
+              </div>
+            </div>
+            {recurringEndMode === 'until' && (
+              <div>
+                <input type="date" value={recurring.endDate} onChange={(e) => setRecurring((f) => ({ ...f, endDate: e.target.value }))} className="input" />
+                {recurring.endDate && recurring.endDate < recurring.startDate && (
+                  <p className="text-[11px] text-red-500 mt-1.5">반복을 끝내는 날은 처음 적용되는 날보다 뒤여야 해요.</p>
+                )}
+              </div>
+            )}
             <div>
               <label className="text-xs font-semibold text-gray-600 mb-1.5 block">휴게(분)</label>
               <input type="number" value={recurring.breakMinutes} onChange={(e) => setRecurring((f) => ({ ...f, breakMinutes: e.target.value }))} placeholder="0" className="input" />
@@ -1195,6 +1276,11 @@ function ShiftFormModal({
                 </div>
                 <p className="text-[11px] text-[#4E5968] leading-relaxed">
                   {recurring.weekdays.join(', ')} {formatShiftTimeRange(recurring.scheduledStartTime, recurring.scheduledEndTime)}
+                </p>
+                <p className="text-[11px] text-[#4E5968] mt-1 leading-relaxed">
+                  {recurringEndMode === 'until' && recurring.endDate
+                    ? `${recurring.startDate}부터 ${recurring.endDate}까지 반복해요.`
+                    : `${recurring.startDate}부터 계속 반복해요.`}
                 </p>
                 <p className="text-[11px] text-[#8B95A1] mt-1 leading-relaxed">
                   가까운 14일 기준 {recurringPreview.count}개의 근무만 미리 준비돼요.
@@ -1665,51 +1751,6 @@ function StaffAssignmentSection({ staff }) {
   );
 }
 
-// ─── 직원 추가 — 역할 선택 sheet ─────────────────────────────────
-function AddStaffRoleSheet({ onClose, onPick }) {
-  return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title="어떤 직원을 추가할까요?"
-    >
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={() => onPick('teacher')}
-          className="w-full flex items-center gap-3 rounded-2xl px-4 py-4 text-left bg-blue-50 active:opacity-80"
-        >
-          <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center">
-            <GraduationCap size={18} className="text-[#3182F6]" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-[#191F28]">강사</p>
-            <p className="text-xs text-[#4E5968] mt-0.5">수업을 진행하는 직원이에요.</p>
-          </div>
-          <ChevronRight size={14} className="text-[#8B95A1]" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onPick('assistant')}
-          className="w-full flex items-center gap-3 rounded-2xl px-4 py-4 text-left bg-purple-50 active:opacity-80"
-        >
-          <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center">
-            <UsersIcon size={18} className="text-purple-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-[#191F28]">보조강사</p>
-            <p className="text-xs text-[#4E5968] mt-0.5">클리닉/관리 업무를 맡는 직원이에요.</p>
-          </div>
-          <ChevronRight size={14} className="text-[#8B95A1]" />
-        </button>
-      </div>
-      <p className="text-[11px] text-[#8B95A1] mt-3 leading-relaxed">
-        이메일로 초대를 보내요. 상대가 같은 이메일로 로그인하면 앱 안에서 수락할 수 있어요.
-      </p>
-    </Modal>
-  );
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // 강사/보조강사 본인 뷰
 // ═══════════════════════════════════════════════════════════════════
@@ -1847,7 +1888,7 @@ function MyStaffView() {
 
   return (
     <div>
-      <Header title="스태프" />
+      <Header title="직원" />
       <div className="pt-14 md:pt-0 pb-12 md:pb-8 bg-[#F2F4F6] min-h-screen">
         <div className="px-4 pt-4">
           <p className="text-xs font-semibold text-[#8B95A1] mb-2">오늘 · {formatDateShort(todayStr)}</p>

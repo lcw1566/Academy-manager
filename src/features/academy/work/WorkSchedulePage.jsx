@@ -1409,6 +1409,21 @@ function TimelineRow({ row, classGroups }) {
 // ─── 근무 추가/수정 모달 ─────────────────────────────────────────
 // initial 이 있으면 수정 모드 (staffId 고정 + 단일 근무 only), 없으면 신규 모드.
 // Phase 39 — 신규 모드는 mode='single' | 'recurring' 선택. 신규 default = 'recurring'.
+function ChoiceCard({ active, title, subtitle, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border px-3 py-2.5 text-left active:opacity-80 ${
+        active ? 'border-[#3182F6] bg-blue-50' : 'border-gray-200 bg-white'
+      }`}
+    >
+      <p className={`text-sm font-bold ${active ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>{title}</p>
+      {subtitle && <p className="text-[11px] text-[#8B95A1] mt-0.5">{subtitle}</p>}
+    </button>
+  );
+}
+
 function ShiftFormModal({
   initial, defaultDate, defaultStaffId,
   defaultMode = 'recurring',
@@ -1417,6 +1432,8 @@ function ShiftFormModal({
 }) {
   const isEdit = !!initial;
   const [mode, setMode] = useState(isEdit ? 'single' : defaultMode);
+  const [recurringStartMode, setRecurringStartMode] = useState(isEdit ? 'custom' : 'today');
+  const [recurringEndMode, setRecurringEndMode] = useState('forever');
   const [form, setForm] = useState({
     staffId: initial?.staffId || defaultStaffId || '',
     // Phase 38 — owner 가 특정 요일 chip 에서 "+근무 추가" 누른 경우 그 날짜로 시드.
@@ -1430,7 +1447,7 @@ function ShiftFormModal({
   // Phase 39 — 반복 근무 폼.
   const [recurringForm, setRecurringForm] = useState({
     weekdays: [],
-    startDate: defaultDate || todayDate(),
+    startDate: todayDate(),
     endDate: '',
     scheduledStartTime: '',
     scheduledEndTime: '',
@@ -1514,7 +1531,9 @@ function ShiftFormModal({
     && !!recurringForm.startDate
     && !!recurringForm.scheduledStartTime
     && !!recurringForm.scheduledEndTime
-    && !recurringTimeError;
+    && !recurringTimeError
+    && (recurringEndMode !== 'until' || !!recurringForm.endDate)
+    && !(recurringEndMode === 'until' && recurringForm.endDate && recurringForm.endDate < recurringForm.startDate);
   const canSave = mode === 'single' ? canSaveSingle : canSaveRecurring;
 
   const toggleRecurringWeekday = (d) => {
@@ -1532,7 +1551,7 @@ function ShiftFormModal({
         staffId: form.staffId,
         weekdays: recurringForm.weekdays,
         startDate: recurringForm.startDate,
-        endDate: recurringForm.endDate || '',
+        endDate: recurringEndMode === 'until' ? recurringForm.endDate : '',
         scheduledStartTime: recurringForm.scheduledStartTime,
         scheduledEndTime: recurringForm.scheduledEndTime,
         breakMinutes: recurringForm.breakMinutes,
@@ -1750,27 +1769,63 @@ function ShiftFormModal({
             {showRecurringTimeError && (
               <p className="text-[11px] text-red-500 -mt-1">{recurringTimeError}</p>
             )}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">시작일 *</label>
-                <input
-                  type="date"
-                  value={recurringForm.startDate}
-                  onChange={(e) => setRecurringForm((f) => ({ ...f, startDate: e.target.value }))}
-                  className="input"
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">언제부터 적용할까요?</label>
+              <div className="grid grid-cols-2 gap-2">
+                <ChoiceCard
+                  active={recurringStartMode === 'today'}
+                  title="오늘부터"
+                  onClick={() => {
+                    setRecurringStartMode('today');
+                    setRecurringForm((f) => ({ ...f, startDate: todayDate() }));
+                  }}
+                />
+                <ChoiceCard
+                  active={recurringStartMode === 'custom'}
+                  title="직접 선택"
+                  onClick={() => setRecurringStartMode('custom')}
                 />
               </div>
+            </div>
+            {recurringStartMode === 'custom' && (
+              <input
+                type="date"
+                value={recurringForm.startDate}
+                onChange={(e) => setRecurringForm((f) => ({ ...f, startDate: e.target.value }))}
+                className="input"
+              />
+            )}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">언제까지 반복할까요?</label>
+              <div className="grid grid-cols-2 gap-2">
+                <ChoiceCard
+                  active={recurringEndMode === 'forever'}
+                  title="계속 반복"
+                  onClick={() => {
+                    setRecurringEndMode('forever');
+                    setRecurringForm((f) => ({ ...f, endDate: '' }));
+                  }}
+                />
+                <ChoiceCard
+                  active={recurringEndMode === 'until'}
+                  title="특정 날짜까지"
+                  onClick={() => setRecurringEndMode('until')}
+                />
+              </div>
+            </div>
+            {recurringEndMode === 'until' && (
               <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">종료일</label>
                 <input
                   type="date"
                   value={recurringForm.endDate}
                   onChange={(e) => setRecurringForm((f) => ({ ...f, endDate: e.target.value }))}
                   className="input"
-                  placeholder="비우면 계속"
                 />
+                {recurringForm.endDate && recurringForm.endDate < recurringForm.startDate && (
+                  <p className="text-[11px] text-red-500 mt-1.5">반복을 끝내는 날은 처음 적용되는 날보다 뒤여야 해요.</p>
+                )}
               </div>
-            </div>
+            )}
             <div>
               <label className="text-xs font-semibold text-gray-600 mb-1.5 block">휴게(분)</label>
               <input
@@ -1803,6 +1858,11 @@ function ShiftFormModal({
                 </div>
                 <p className="text-[11px] text-[#4E5968] leading-relaxed">
                   {recurringForm.weekdays.join(', ')} {formatShiftTimeRange(recurringForm.scheduledStartTime, recurringForm.scheduledEndTime)}
+                </p>
+                <p className="text-[11px] text-[#4E5968] mt-1 leading-relaxed">
+                  {recurringEndMode === 'until' && recurringForm.endDate
+                    ? `${recurringForm.startDate}부터 ${recurringForm.endDate}까지 반복해요.`
+                    : `${recurringForm.startDate}부터 계속 반복해요.`}
                 </p>
                 <p className="text-[11px] text-[#8B95A1] mt-1">
                   가까운 14일 기준 {recurringPreview.count}개의 근무만 미리 준비돼요.

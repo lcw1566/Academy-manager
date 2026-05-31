@@ -1,7 +1,7 @@
 // AcademyMorePage — Phase 40
 //
 // "더보기" 탭은 학원 정보·계정·기본 설정만 다룬다. 직원/강사/보조강사·근무·급여
-// 관련 진입점은 모두 "스태프" 탭으로 이동.
+// 관련 진입점은 모두 "직원" 탭으로 이동.
 //
 // 구성:
 //   - Owner : 학원 정보 + 원장 프로필 / 학원 전환 / 데이터 새로고침 / 로그아웃
@@ -274,7 +274,7 @@ function OwnerEmptyState({ displayName, onEditMyProfile }) {
       <div className="mx-4 mt-4 bg-white rounded-2xl p-5 shadow-sm">
         <p className="font-bold text-gray-900 text-base mb-1">학원을 먼저 만들어주세요</p>
         <p className="text-xs text-gray-500 leading-relaxed">
-          학원을 만들면 강사·보조강사 초대와 학생 관리를 시작할 수 있어요.
+          학원을 만들면 직원 초대와 학생 관리를 시작할 수 있어요.
         </p>
       </div>
       <WorkspaceSection />
@@ -395,7 +395,7 @@ function OwnerMoreSections({
       </div>
 
       <p className="text-[11px] text-gray-400 leading-relaxed mt-4 px-5">
-        강사·보조강사 관리와 근무·계약·권한 설정은 "스태프" 탭에서 진행해요.
+        직원 관리와 근무·계약·권한 설정은 "직원" 탭에서 진행해요.
       </p>
     </>
   );

@@ -314,6 +314,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     memo: editGroup?.memo || '',
     status: editGroup?.status || 'active',
   });
+  const [periodStartMode, setPeriodStartMode] = useState(editGroup ? 'custom' : 'today');
+  const [periodEndMode, setPeriodEndMode] = useState(editGroup?.endDate ? 'until' : 'forever');
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -381,7 +383,11 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     if (submitting) return;
     if (!form.name.trim()) return alert('반 이름을 입력해주세요.');
     if (form.weekdays.length === 0) return alert('수업 요일을 선택해주세요.');
-    if (!form.startDate) return alert('시작일을 선택해주세요.');
+    if (!form.startDate) return alert('수업을 언제 시작할지 선택해주세요.');
+    if (periodEndMode === 'until' && !form.endDate) return alert('수업을 언제까지 진행할지 선택해주세요.');
+    if (periodEndMode === 'until' && form.endDate < form.startDate) {
+      return alert('수업을 끝내는 날은 처음 시작하는 날보다 뒤여야 해요.');
+    }
 
     // Phase 38 — 요일별 시간이 다를 때:
     //   · weekdayTimes 는 선택된 요일만 남기고 저장.
@@ -616,9 +622,11 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     return form.endTime <= form.startTime ? '종료 시간은 시작 시간보다 늦어야 해요.' : null;
   }, [form.startTime, form.endTime]);
   const dateError = useMemo(() => {
-    if (!form.startDate || !form.endDate) return null;
-    return form.endDate < form.startDate ? '종료일은 시작일보다 늦어야 해요.' : null;
-  }, [form.startDate, form.endDate]);
+    if (periodEndMode !== 'until') return null;
+    if (!form.endDate) return '수업을 언제까지 진행할지 선택해주세요.';
+    if (!form.startDate) return null;
+    return form.endDate < form.startDate ? '수업을 끝내는 날은 처음 시작하는 날보다 뒤여야 해요.' : null;
+  }, [form.startDate, form.endDate, periodEndMode]);
 
   // Phase 38 — 요일별 시간 모드일 때 각 요일 시간 검증.
   const perDayErrors = useMemo(() => {
@@ -852,22 +860,56 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             )}
           </Field>
 
-          <Field label="수업 기간" hint={form.endDate ? null : '종료일을 비워두면 시작일 기준 3개월치 회차가 만들어져요.'}>
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+          <Field label="수업은 언제 시작하나요?">
+            <div className="grid grid-cols-2 gap-2">
+              <ChoiceCard
+                active={periodStartMode === 'today'}
+                title="오늘부터"
+                onClick={() => {
+                  setPeriodStartMode('today');
+                  set('startDate', new Date().toISOString().slice(0, 10));
+                }}
+              />
+              <ChoiceCard
+                active={periodStartMode === 'custom'}
+                title="직접 선택"
+                onClick={() => setPeriodStartMode('custom')}
+              />
+            </div>
+            {periodStartMode === 'custom' && (
               <input
                 type="date"
                 value={form.startDate}
                 onChange={(e) => set('startDate', e.target.value)}
-                className="input"
+                className="input mt-2"
               />
-              <span className="text-gray-400 text-sm">~</span>
+            )}
+          </Field>
+
+          <Field label="수업은 언제까지 진행하나요?">
+            <div className="grid grid-cols-2 gap-2">
+              <ChoiceCard
+                active={periodEndMode === 'forever'}
+                title="계속 진행"
+                onClick={() => {
+                  setPeriodEndMode('forever');
+                  set('endDate', '');
+                }}
+              />
+              <ChoiceCard
+                active={periodEndMode === 'until'}
+                title="특정 날짜까지"
+                onClick={() => setPeriodEndMode('until')}
+              />
+            </div>
+            {periodEndMode === 'until' && (
               <input
                 type="date"
                 value={form.endDate}
                 onChange={(e) => set('endDate', e.target.value)}
-                className="input"
+                className="input mt-2"
               />
-            </div>
+            )}
             {dateError && (
               <p className="text-[11px] text-red-500 mt-1.5">{dateError}</p>
             )}
@@ -972,7 +1014,11 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             <div className="bg-blue-50 rounded-xl px-4 py-3">
               <p className="text-xs text-blue-700 font-semibold mb-1">수업 회차 자동 생성</p>
               <p className="text-xs text-blue-600">
-                선택한 요일과 시작일 기준으로 {form.endDate ? '종료일까지' : '3개월치'} 수업 회차가 자동으로 만들어집니다.
+                매주 {form.weekdays.join(', ') || '선택한 요일'} {form.useSameTime ? `${form.startTime}~${form.endTime}` : '요일별 시간'} 수업이에요.
+                {' '}
+                {periodEndMode === 'until' && form.endDate
+                  ? `${form.startDate}부터 ${form.endDate}까지 진행해요.`
+                  : `${form.startDate}부터 계속 진행해요.`}
               </p>
             </div>
           )}
@@ -1072,6 +1118,21 @@ function Field({ label, hint, children }) {
       {children}
       {hint && <p className="text-[11px] text-gray-400 mt-1.5">{hint}</p>}
     </div>
+  );
+}
+
+function ChoiceCard({ active, title, subtitle, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border px-3 py-2.5 text-left active:opacity-80 ${
+        active ? 'border-[#0064FF] bg-blue-50' : 'border-gray-200 bg-white'
+      }`}
+    >
+      <p className={`text-sm font-bold ${active ? 'text-[#0064FF]' : 'text-[#191F28]'}`}>{title}</p>
+      {subtitle && <p className="text-[11px] text-gray-400 mt-0.5">{subtitle}</p>}
+    </button>
   );
 }
 
