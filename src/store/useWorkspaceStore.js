@@ -771,6 +771,9 @@ const useWorkspaceStore = create(
         try {
           const list = await listAcademyInvitations(academyId);
           set({ academyInvitations: list });
+          // Hotfix — invitation 캐시가 갱신되면 sync 를 한 번 더 돌려서
+          // staff_profile 미설정 멤버도 invitation.role 로 mirror 가능하도록.
+          try { get().syncLocalStaffFromServerMembers(); } catch { /* ignore */ }
           return list;
         } catch (err) {
           set({
@@ -888,6 +891,9 @@ const useWorkspaceStore = create(
       syncLocalStaffFromServerMembers: () => {
         const memberProfiles = get().academyMemberProfiles || [];
         const staffProfiles = get().academyStaffProfiles || [];
+        // Hotfix (2026-06) — staff_profile 이 비어 있는 신규 수락자도
+        // invitation.role 을 fallback 으로 사용해 스태프 탭에 노출.
+        const academyInvitations = get().academyInvitations || [];
         if (memberProfiles.length === 0) return { mirrored: 0, skipped: 0 };
 
         const academyState = useAcademyStore.getState();
@@ -903,33 +909,44 @@ const useWorkspaceStore = create(
 
         memberProfiles.forEach((profile) => {
           const staff = staffProfiles.find((sp) => sp.user_id === profile.user_id);
-          if (!staff || !staff.role) {
-            // Accepted member but owner hasn't configured their academy
-            // settings (no role decided yet). Skip — they'll show up via
-            // AcademyStaffMembersSection until the owner picks teacher or
-            // assistant in the modal.
+          // Phase 1 — staff_profile.role 우선.
+          let role = staff?.role || null;
+          // Phase 2 (hotfix) — staff_profile 이 없거나 role 이 비어 있으면
+          // academy_invitations 의 role 로 fallback. cancel 된 초대는 제외.
+          if (!role && profile.email) {
+            const target = (profile.email || '').toLowerCase();
+            const inv = academyInvitations.find(
+              (i) => i.role
+                && (i.email || '').toLowerCase() === target
+                && i.status !== 'canceled',
+            );
+            if (inv?.role) role = inv.role;
+          }
+          if (!role) {
+            // 그래도 role 을 결정할 수 없으면 skip — 다음 데이터 fetch 때 다시 시도.
             skipped += 1;
             return;
           }
           const payload = {
             userId: profile.user_id,
-            memberId: staff.member_id || null,
+            memberId: staff?.member_id || null,
             email: profile.email,
             displayName: profile.display_name,
             phone: profile.phone,
-            subject: staff.subject,
-            subjects: staff.subjects,
-            wageType: staff.wage_type,
-            hourlyWage: staff.hourly_wage,
-            monthlySalary: staff.monthly_salary,
-            hourlyMode: staff.scope?.hourlyMode,
-            memo: staff.memo,
-            status: staff.status,
+            // staff_profile 이 없으면 최소 정보만 — 원장이 스태프 탭에서 채울 수 있음.
+            subject: staff?.subject,
+            subjects: staff?.subjects,
+            wageType: staff?.wage_type,
+            hourlyWage: staff?.hourly_wage,
+            monthlySalary: staff?.monthly_salary,
+            hourlyMode: staff?.scope?.hourlyMode,
+            memo: staff?.memo,
+            status: staff?.status || 'active',
           };
-          if (staff.role === 'teacher') {
+          if (role === 'teacher') {
             upsertTeacher(payload);
             mirrored += 1;
-          } else if (staff.role === 'assistant') {
+          } else if (role === 'assistant') {
             upsertAssistant(payload);
             mirrored += 1;
           } else {
