@@ -39,20 +39,15 @@ import {
   updateAcademyStaffShift as updateServerStaffShift,
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
-// Phase 44.6 / Phase B — academy_staff_work_rules write-through.
 import {
-  createStaffWorkRule,
-  listStaffWorkRules,
-  updateStaffWorkRule,
-} from '../../../services/supabase/scheduleRulesApi';
+  buildRecurringStaffWorkPreview,
+  saveRecurringStaffWorkSchedule,
+} from '../../../services/staffWorkScheduleService';
 import {
   buildShiftTimeline,
   hhmmToMin,
 } from '../../../utils/shiftCoverage';
-import { generateClassDates } from '../../../utils/recurringClass';
-// Phase 44.5 / Phase A — 미래 row 사전 생성 14일 cap.
 import {
-  clampGenerationEndDate, isGenerationCapped, FUTURE_GENERATION_WINDOW_DAYS,
   buildPlannedStaffSchedule, mergePlannedAndActualStaffShifts, plannedToStaffShiftShape,
 } from '../../../utils/schedule';
 import {
@@ -612,6 +607,7 @@ function StaffShiftSection({ staff }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
+  const loadStaffWorkRules = useWorkspaceStore((s) => s.loadStaffWorkRules);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -692,127 +688,53 @@ function StaffShiftSection({ staff }) {
   };
 
   const handleSaveRecurring = async (data) => {
-    const timeError = validateShiftTime(data);
+    const timeError = validateShiftTime({
+      startTime: data.scheduledStartTime,
+      endTime: data.scheduledEndTime,
+      breakMinutes: data.breakMinutes,
+    });
     if (timeError) { showToast(timeError, 'error'); return; }
     const daysOfWeek = (data.weekdays || []).map((d) => KO_TO_DOW[d]).filter((d) => d !== undefined);
     if (daysOfWeek.length === 0) return;
-    // Phase 44.5 / Phase A — 사전 생성은 today+14일 까지. data.endDate 자체는 보존.
-    const capped = isGenerationCapped(data.endDate || null, { todayYMD: todayStr });
-    const cappedEndDate = clampGenerationEndDate(data.endDate || null, { todayYMD: todayStr });
-    const dates = generateClassDates({
-      daysOfWeek,
-      startDate: data.startDate,
-      endDate: cappedEndDate,
-      repeatType: '매주',
+    const result = await saveRecurringStaffWorkSchedule({
+      academyId: isAuthenticated ? currentAcademyId : null,
+      staff,
+      weekdays: daysOfWeek,
+      startTime: data.scheduledStartTime,
+      endTime: data.scheduledEndTime,
+      breakMinutes: data.breakMinutes,
+      effectiveStartDate: data.startDate,
+      effectiveEndDate: data.endDate || null,
+      memo: data.memo,
+      todayYMD: todayStr,
+      existingRules: staffWorkRules,
+      existingShifts: academyStaffShifts,
+      addLocalShift: addAcademyStaffShift,
+      setLocalShiftServerId: setStaffShiftServerId,
     });
-    if (dates.length === 0) return;
-    const existingKeys = new Set(
-      academyStaffShifts
-        .filter((sh) => sh.staffId === staff.id && sh.status !== 'canceled')
-        .map((sh) => `${sh.date}__${sh.scheduledStartTime || ''}`),
-    );
-    let created = 0;
-    let skipped = 0;
-    for (const date of dates) {
-      const key = `${date}__${data.scheduledStartTime || ''}`;
-      if (existingKeys.has(key)) { skipped += 1; continue; }
-      existingKeys.add(key);
-      const localShift = addAcademyStaffShift({
-        staffId: staff.id,
-        staffRole: staff._role,
-        date,
-        scheduledStartTime: data.scheduledStartTime || '',
-        scheduledEndTime: data.scheduledEndTime || '',
-        breakMinutes: Number(data.breakMinutes) || 0,
-        memo: data.memo || '',
-        status: 'scheduled',
-      });
-      created += 1;
-      if (staff.serverUserId && isAuthenticated && currentAcademyId) {
-        try {
-          const sr = await createAcademyStaffShift({
-            academyId: currentAcademyId,
-            staff_user_id: staff.serverUserId,
-            staff_role: staff._role,
-            date,
-            scheduled_start_time: data.scheduledStartTime || null,
-            scheduled_end_time: data.scheduledEndTime || null,
-            break_minutes: Number(data.breakMinutes) || 0,
-            status: 'scheduled',
-            memo: data.memo || null,
-          });
-          if (sr?.id) setStaffShiftServerId(localShift.id, sr.id);
-        } catch (err) {
-          console.warn('[supabase] recurring create shift failed', err);
-        }
-      }
-    }
-    if (staff.serverUserId && isAuthenticated && currentAcademyId) loadServerStaffShifts();
-
-    // Phase 44.6 / Phase B — academy_staff_work_rules INSERT (best-effort).
-    // 편집 패턴: 동일 staff_user_id 의 기존 active rule 중에서 day_of_week 가
-    // 새 입력과 겹치는 것들을 deactivate → 새로 INSERT. 효과: 같은 요일을 다시
-    // 등록하면 옛 rule 은 자연스럽게 비활성화되고 새 rule 만 활성 상태로 남는다.
     if (staff.serverUserId && isAuthenticated && currentAcademyId) {
-      try {
-        const newDows = new Set(daysOfWeek);
-        let existing = [];
-        try {
-          existing = await listStaffWorkRules(currentAcademyId);
-        } catch (err) {
-          console.warn('[supabase] listStaffWorkRules failed', err);
-        }
-        const toDeactivate = existing.filter(
-          (r) => r.staff_user_id === staff.serverUserId
-            && r.is_active
-            && newDows.has(r.day_of_week),
-        );
-        for (const r of toDeactivate) {
-          try { await updateStaffWorkRule(r.id, { is_active: false }); }
-          catch (err) { console.warn('[supabase] deactivate work rule failed', err); }
-        }
-        for (const dow of daysOfWeek) {
-          try {
-            await createStaffWorkRule({
-              academyId: currentAcademyId,
-              staff_user_id: staff.serverUserId,
-              staff_role: staff._role,
-              day_of_week: dow,
-              start_time: data.scheduledStartTime || '',
-              end_time: data.scheduledEndTime || '',
-              break_minutes: Number(data.breakMinutes) || 0,
-              effective_start_date: data.startDate,
-              effective_end_date: data.endDate || null,
-              is_active: true,
-              memo: data.memo || null,
-            });
-          } catch (err) {
-            console.warn('[supabase] createStaffWorkRule failed', err);
-          }
-        }
-        try {
-          await useWorkspaceStore.getState().loadStaffWorkRules?.();
-        } catch { /* ignore */ }
-      } catch (err) {
-        console.warn('[supabase] reapply staff work rules failed', err);
-      }
+      loadServerStaffShifts();
+      loadStaffWorkRules?.();
     }
 
     setFormOpen(false);
-    if (created === 0) {
-      showToast(`이미 등록된 ${skipped}건이라 추가하지 않았어요.`, 'error');
-    } else if (capped) {
-      // Phase 44.7 — 룰 기반 렌더가 들어왔으므로 안내 문구 갱신.
+    if (result.shiftsCreated === 0 && result.rulesCreated === 0) {
+      showToast(`이미 등록된 ${result.shiftsSkipped}건이라 추가하지 않았어요.`, 'error');
+    } else if (result.capped) {
       showToast(`근무 규칙이 저장됐어요. 이후 근무는 반복 규칙에 따라 자동으로 표시돼요.`);
-    } else if (skipped > 0) {
-      showToast(`근무 ${created}건 추가 · ${skipped}건은 중복 건너뜀.`);
+    } else if (result.shiftsSkipped > 0) {
+      showToast(`근무 규칙 저장 · 가까운 근무 ${result.shiftsCreated}건 준비 · ${result.shiftsSkipped}건은 중복 건너뜀.`);
     } else {
-      showToast(`근무 ${created}건이 추가됐어요.`);
+      showToast(`근무 규칙 저장 · 가까운 근무 ${result.shiftsCreated}건 준비.`);
     }
   };
 
   const handleSaveSingle = async (data) => {
-    const timeError = validateShiftTime(data);
+    const timeError = validateShiftTime({
+      startTime: data.scheduledStartTime,
+      endTime: data.scheduledEndTime,
+      breakMinutes: data.breakMinutes,
+    });
     if (timeError) { showToast(timeError, 'error'); return; }
     if (editing) {
       updateAcademyStaffShift(editing.id, {
@@ -1071,13 +993,13 @@ function ShiftFormModal({
     const daysOfWeek = recurring.weekdays.map((d) => KO_TO_DOW[d]).filter((d) => d !== undefined);
     if (daysOfWeek.length === 0) return { dates: [], count: 0 };
     try {
-      const dates = generateClassDates({
-        daysOfWeek,
-        startDate: recurring.startDate,
-        endDate: recurring.endDate || null,
-        repeatType: '매주',
+      const preview = buildRecurringStaffWorkPreview({
+        weekdays: daysOfWeek,
+        effectiveStartDate: recurring.startDate,
+        effectiveEndDate: recurring.endDate || null,
+        todayYMD: todayDate(),
       });
-      return { dates: dates.slice(0, 3), count: dates.length };
+      return { ...preview, dates: preview.dates.slice(0, 3) };
     } catch { return { dates: [], count: 0 }; }
   }, [mode, recurring.startDate, recurring.endDate, recurring.weekdays]);
 
@@ -1086,13 +1008,17 @@ function ShiftFormModal({
     [form.scheduledStartTime, form.scheduledEndTime, form.breakMinutes],
   );
   const recurringTimeError = useMemo(
-    () => validateShiftTime(recurring),
+    () => validateShiftTime({
+      startTime: recurring.scheduledStartTime,
+      endTime: recurring.scheduledEndTime,
+      breakMinutes: recurring.breakMinutes,
+    }),
     [recurring.scheduledStartTime, recurring.scheduledEndTime, recurring.breakMinutes],
   );
 
   const canSaveSingle = !!form.date && !singleTimeError;
   const canSaveRecurring = recurring.weekdays.length > 0 && !!recurring.startDate
-    && !recurringTimeError && (recurringPreview?.count ?? 0) > 0;
+    && !recurringTimeError;
   const canSave = mode === 'single' ? canSaveSingle : canSaveRecurring;
 
   const toggleWeekday = (d) => {
@@ -1131,7 +1057,7 @@ function ShiftFormModal({
           disabled={!canSave}
           className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl disabled:opacity-50"
         >
-          {mode === 'recurring' && !isEdit ? `${recurringPreview?.count || 0}건 저장` : '저장'}
+          {mode === 'recurring' && !isEdit ? '근무 규칙 저장' : '저장'}
         </button>
       }
     >
@@ -1261,20 +1187,25 @@ function ShiftFormModal({
               <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
               <textarea value={recurring.memo} onChange={(e) => setRecurring((f) => ({ ...f, memo: e.target.value }))} rows={2} placeholder="특이사항 등" className="input resize-none" />
             </div>
-            {recurringPreview && recurringPreview.count > 0 ? (
+            {recurringPreview ? (
               <div className="bg-blue-50 rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Check size={14} className="text-[#3182F6]" />
-                  <p className="text-sm font-bold text-[#3182F6]">총 {recurringPreview.count}개의 근무가 생성돼요</p>
+                  <p className="text-sm font-bold text-[#3182F6]">반복 근무 규칙이 저장돼요</p>
                 </div>
-                <p className="text-[11px] text-[#4E5968]">
-                  첫 {Math.min(3, recurringPreview.dates.length)}개: {recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}
-                  {recurringPreview.count > 3 ? ' …' : ''}
+                <p className="text-[11px] text-[#4E5968] leading-relaxed">
+                  {recurring.weekdays.join(', ')} {formatShiftTimeRange(recurring.scheduledStartTime, recurring.scheduledEndTime)}
                 </p>
-                <p className="text-[11px] text-[#8B95A1] mt-1">같은 시작 시간이 이미 있는 날짜는 자동으로 건너뛰어요.</p>
+                <p className="text-[11px] text-[#8B95A1] mt-1 leading-relaxed">
+                  가까운 14일 기준 {recurringPreview.count}개의 근무만 미리 준비돼요.
+                  {recurringPreview.dates.length > 0 ? ` 첫 일정: ${recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}` : ''}
+                </p>
+                <p className="text-[11px] text-[#8B95A1] mt-1 leading-relaxed">
+                  이후 근무는 규칙에 따라 자동으로 표시돼요. 실제 급여는 출퇴근 기록을 기준으로 계산돼요.
+                </p>
               </div>
             ) : (
-              <p className="text-[11px] text-gray-400">요일·시간·기간을 선택하면 생성될 근무 수가 표시돼요.</p>
+              <p className="text-[11px] text-gray-400">요일·시간·기간을 선택하면 가까운 14일 준비 일정이 표시돼요.</p>
             )}
           </>
         )}

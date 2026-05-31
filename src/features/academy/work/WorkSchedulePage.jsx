@@ -46,10 +46,18 @@ import {
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
 import {
+  buildRecurringStaffWorkPreview,
+  saveRecurringStaffWorkSchedule,
+} from '../../../services/staffWorkScheduleService';
+import {
   buildShiftTimeline,
   hhmmToMin,
 } from '../../../utils/shiftCoverage';
-import { generateClassDates } from '../../../utils/recurringClass';
+import {
+  buildPlannedStaffSchedule,
+  mergePlannedAndActualStaffShifts,
+  plannedToStaffShiftShape,
+} from '../../../utils/schedule';
 
 const KOREAN_WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const KO_TO_DOW = { '일': 0, '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6 };
@@ -137,6 +145,9 @@ function OwnerWorkView() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
+  const loadStaffWorkRules = useWorkspaceStore((s) => s.loadStaffWorkRules);
+  const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
+  const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -179,10 +190,26 @@ function OwnerWorkView() {
     [staffMap, selectedStaffId, visibleStaff, allStaff],
   );
 
-  const selectedStaffShifts = useMemo(
+  const selectedStaffActualShifts = useMemo(
     () => (selectedStaff ? academyStaffShifts.filter((sh) => sh.staffId === selectedStaff.id) : []),
     [academyStaffShifts, selectedStaff],
   );
+
+  const selectedStaffShifts = useMemo(() => {
+    if (!selectedStaff) return [];
+    const plannedRaw = buildPlannedStaffSchedule({
+      rules: staffWorkRules,
+      exceptions: staffWorkExceptions,
+      fromDate: weekDates[0],
+      toDate: weekDates[weekDates.length - 1],
+      staffUserId: selectedStaff.serverUserId || undefined,
+    });
+    const plannedShaped = plannedToStaffShiftShape(plannedRaw, {
+      academyTeachers,
+      academyAssistants,
+    });
+    return mergePlannedAndActualStaffShifts(plannedShaped, selectedStaffActualShifts);
+  }, [selectedStaff, selectedStaffActualShifts, staffWorkRules, staffWorkExceptions, weekDates, academyTeachers, academyAssistants]);
 
   const selectedWeekShiftsByDate = useMemo(() => {
     const map = new Map();
@@ -212,6 +239,9 @@ function OwnerWorkView() {
       if (sh.status === 'canceled') continue;
       if (weekDates.includes(sh.date)) weekPlannedMin += scheduledShiftMinutes(sh);
       if (weekDates.includes(sh.date)) weekActualMin += shiftMinutes(sh);
+    }
+    for (const sh of selectedStaffActualShifts) {
+      if (sh.status === 'canceled') continue;
       if (sh.date?.startsWith(currentMonth)) monthActualMin += shiftMinutes(sh);
       if (sh.status === 'completed') completedCount += 1;
       if (sh.date === todayStr && sh.status === 'scheduled' && !sh.actualStartTime) {
@@ -220,31 +250,48 @@ function OwnerWorkView() {
       }
     }
     return { weekPlannedMin, weekActualMin, monthActualMin, completedCount, missedCount };
-  }, [selectedStaffShifts, weekDates, currentMonth, todayStr]);
+  }, [selectedStaffShifts, selectedStaffActualShifts, weekDates, currentMonth, todayStr]);
 
   const staffSummaries = useMemo(() => {
     const map = new Map();
     for (const staff of allStaff) {
       map.set(staff.id, { weekMin: 0, monthMin: 0, todayCount: 0, missedCount: 0 });
     }
+    const plannedRaw = buildPlannedStaffSchedule({
+      rules: staffWorkRules,
+      exceptions: staffWorkExceptions,
+      fromDate: weekDates[0],
+      toDate: weekDates[weekDates.length - 1],
+    });
+    const plannedWeekShifts = plannedToStaffShiftShape(plannedRaw, {
+      academyTeachers,
+      academyAssistants,
+    });
+    const actualWeekShifts = academyStaffShifts.filter((sh) => weekDates.includes(sh.date));
+    const weekShifts = mergePlannedAndActualStaffShifts(plannedWeekShifts, actualWeekShifts);
     const nowMin = (() => {
       const d = new Date();
       return d.getHours() * 60 + d.getMinutes();
     })();
-    for (const sh of academyStaffShifts) {
+    for (const sh of weekShifts) {
       if (!sh.staffId || sh.status === 'canceled') continue;
       const cur = map.get(sh.staffId);
       if (!cur) continue;
       if (weekDates.includes(sh.date)) cur.weekMin += scheduledShiftMinutes(sh);
-      if (sh.date?.startsWith(currentMonth)) cur.monthMin += shiftMinutes(sh);
       if (sh.date === todayStr) cur.todayCount += 1;
       if (sh.date === todayStr && sh.status === 'scheduled' && !sh.actualStartTime) {
         const start = hhmmToMin(sh.scheduledStartTime);
         if (start != null && start < nowMin) cur.missedCount += 1;
       }
     }
+    for (const sh of academyStaffShifts) {
+      if (!sh.staffId || sh.status === 'canceled') continue;
+      const cur = map.get(sh.staffId);
+      if (!cur) continue;
+      if (sh.date?.startsWith(currentMonth)) cur.monthMin += shiftMinutes(sh);
+    }
     return map;
-  }, [allStaff, academyStaffShifts, weekDates, currentMonth, todayStr]);
+  }, [allStaff, academyStaffShifts, weekDates, currentMonth, todayStr, staffWorkRules, staffWorkExceptions, academyTeachers, academyAssistants]);
 
   const weeklyPattern = useMemo(() => {
     return weekDates
@@ -265,7 +312,7 @@ function OwnerWorkView() {
     setFormOpen(true);
   };
 
-  // Phase 39 — 반복 근무 저장. weekdays + 기간 → 여러 단일 shift 생성, 중복 제외.
+  // 반복 근무 저장: 주간 규칙을 저장하고, 가까운 14일 근무만 미리 준비한다.
   const handleSaveRecurring = async (data) => {
     if (!data.staffId || !data.weekdays?.length || !data.startDate) return;
     const timeError = validateShiftTime({
@@ -279,76 +326,39 @@ function OwnerWorkView() {
     }
     const staff = staffMap.get(data.staffId);
     if (!staff) return;
-    const staffRole = staff._role;
     const daysOfWeek = data.weekdays.map((d) => KO_TO_DOW[d]).filter((d) => d !== undefined);
     if (daysOfWeek.length === 0) return;
-    const dates = generateClassDates({
-      daysOfWeek,
-      startDate: data.startDate,
-      endDate: data.endDate || null,
-      repeatType: '매주',
+    const result = await saveRecurringStaffWorkSchedule({
+      academyId: isAuthenticated ? currentAcademyId : null,
+      staff,
+      weekdays: daysOfWeek,
+      startTime: data.scheduledStartTime,
+      endTime: data.scheduledEndTime,
+      breakMinutes: data.breakMinutes,
+      effectiveStartDate: data.startDate,
+      effectiveEndDate: data.endDate || null,
+      memo: data.memo,
+      todayYMD: todayStr,
+      existingRules: staffWorkRules,
+      existingShifts: academyStaffShifts,
+      addLocalShift: addAcademyStaffShift,
+      setLocalShiftServerId: setStaffShiftServerId,
     });
-    if (dates.length === 0) return;
-
-    // 중복 회피: 동일 staff·date·예정 시작 시간 이 이미 있으면 skip.
-    const existingKeys = new Set(
-      academyStaffShifts
-        .filter((sh) => sh.staffId === data.staffId && sh.status !== 'canceled')
-        .map((sh) => `${sh.date}__${sh.scheduledStartTime || ''}`),
-    );
-
-    let createdCount = 0;
-    let skippedCount = 0;
-    for (const date of dates) {
-      const key = `${date}__${data.scheduledStartTime || ''}`;
-      if (existingKeys.has(key)) {
-        skippedCount += 1;
-        continue;
-      }
-      existingKeys.add(key);
-      const created = addAcademyStaffShift({
-        staffId: data.staffId,
-        staffRole,
-        date,
-        scheduledStartTime: data.scheduledStartTime || '',
-        scheduledEndTime: data.scheduledEndTime || '',
-        breakMinutes: Number(data.breakMinutes) || 0,
-        memo: data.memo || '',
-        status: 'scheduled',
-      });
-      createdCount += 1;
-      // 서버 write-through (best-effort). user 매핑 있을 때만.
-      if (staff.serverUserId && isAuthenticated && currentAcademyId) {
-        try {
-          const sr = await createAcademyStaffShift({
-            academyId: currentAcademyId,
-            staff_user_id: staff.serverUserId,
-            staff_role: staffRole,
-            date,
-            scheduled_start_time: data.scheduledStartTime || null,
-            scheduled_end_time: data.scheduledEndTime || null,
-            break_minutes: Number(data.breakMinutes) || 0,
-            status: 'scheduled',
-            memo: data.memo || null,
-          });
-          if (sr?.id) setStaffShiftServerId(created.id, sr.id);
-        } catch (err) {
-          console.warn('[supabase] recurring create shift failed', err);
-        }
-      }
-    }
     if (staff.serverUserId && isAuthenticated && currentAcademyId) {
       loadServerStaffShifts();
+      loadStaffWorkRules?.();
     }
     setFormOpen(false);
     setEditing(null);
     setDefaultStaffId(null);
-    if (createdCount === 0) {
-      showToast(`이미 등록된 근무 ${skippedCount}건이라 추가하지 않았어요.`, 'error');
-    } else if (skippedCount > 0) {
-      showToast(`근무 ${createdCount}건 추가 · ${skippedCount}건은 중복으로 건너뜀.`);
+    if (result.shiftsCreated === 0 && result.rulesCreated === 0) {
+      showToast(`이미 등록된 근무 ${result.shiftsSkipped}건이라 추가하지 않았어요.`, 'error');
+    } else if (result.capped) {
+      showToast('근무 규칙이 저장됐어요. 이후 근무는 반복 규칙에 따라 자동으로 표시돼요.');
+    } else if (result.shiftsSkipped > 0) {
+      showToast(`근무 규칙 저장 · 가까운 근무 ${result.shiftsCreated}건 준비 · ${result.shiftsSkipped}건은 중복으로 건너뜀.`);
     } else {
-      showToast(`근무 ${createdCount}건이 추가됐어요.`);
+      showToast(`근무 규칙 저장 · 가까운 근무 ${result.shiftsCreated}건 준비.`);
     }
   };
 
@@ -1075,6 +1085,8 @@ function StaffWorkView() {
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
+  const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
+  const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
   const myMembership = useMemo(
     () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
     [memberships, currentAcademyId],
@@ -1094,10 +1106,19 @@ function StaffWorkView() {
   const currentMonth = getCurrentMonth();
   const weekDates = useMemo(() => getWeekDates(todayStr), [todayStr]);
 
-  const myShifts = useMemo(
-    () => (myStaff ? academyStaffShifts.filter((sh) => sh.staffId === myStaff.id) : []),
-    [academyStaffShifts, myStaff],
-  );
+  const myShifts = useMemo(() => {
+    if (!myStaff) return [];
+    const plannedRaw = buildPlannedStaffSchedule({
+      rules: staffWorkRules,
+      exceptions: staffWorkExceptions,
+      fromDate: weekDates[0],
+      toDate: weekDates[weekDates.length - 1],
+      staffUserId: myStaff.serverUserId || undefined,
+    });
+    const plannedShaped = plannedToStaffShiftShape(plannedRaw, { academyTeachers, academyAssistants });
+    const actualForStaff = academyStaffShifts.filter((sh) => sh.staffId === myStaff.id);
+    return mergePlannedAndActualStaffShifts(plannedShaped, actualForStaff);
+  }, [academyStaffShifts, myStaff, staffWorkRules, staffWorkExceptions, weekDates, academyTeachers, academyAssistants]);
 
   const todayShift = useMemo(() => {
     const list = myShifts
@@ -1459,13 +1480,13 @@ function ShiftFormModal({
     const daysOfWeek = recurringForm.weekdays.map((d) => KO_TO_DOW[d]).filter((d) => d !== undefined);
     if (daysOfWeek.length === 0) return { dates: [], count: 0 };
     try {
-      const dates = generateClassDates({
-        daysOfWeek,
-        startDate: recurringForm.startDate,
-        endDate: recurringForm.endDate || null,
-        repeatType: '매주',
+      const preview = buildRecurringStaffWorkPreview({
+        weekdays: daysOfWeek,
+        effectiveStartDate: recurringForm.startDate,
+        effectiveEndDate: recurringForm.endDate || null,
+        todayYMD: todayDate(),
       });
-      return { dates: dates.slice(0, 3), count: dates.length };
+      return { ...preview, dates: preview.dates.slice(0, 3) };
     } catch {
       return { dates: [], count: 0 };
     }
@@ -1493,8 +1514,7 @@ function ShiftFormModal({
     && !!recurringForm.startDate
     && !!recurringForm.scheduledStartTime
     && !!recurringForm.scheduledEndTime
-    && !recurringTimeError
-    && (recurringPreview?.count ?? 0) > 0;
+    && !recurringTimeError;
   const canSave = mode === 'single' ? canSaveSingle : canSaveRecurring;
 
   const toggleRecurringWeekday = (d) => {
@@ -1536,7 +1556,7 @@ function ShiftFormModal({
           className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl disabled:opacity-50"
         >
           {mode === 'recurring' && !isEdit
-            ? `${recurringPreview?.count || 0}건 저장`
+            ? '근무 규칙 저장'
             : '저장'}
         </button>
       }
@@ -1747,7 +1767,7 @@ function ShiftFormModal({
                   value={recurringForm.endDate}
                   onChange={(e) => setRecurringForm((f) => ({ ...f, endDate: e.target.value }))}
                   className="input"
-                  placeholder="비우면 3개월"
+                  placeholder="비우면 계속"
                 />
               </div>
             </div>
@@ -1773,33 +1793,35 @@ function ShiftFormModal({
             </div>
 
             {/* 미리보기 */}
-            {recurringPreview && recurringPreview.count > 0 ? (
+            {recurringPreview ? (
               <div className="bg-blue-50 rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Check size={14} className="text-[#3182F6]" />
                   <p className="text-sm font-bold text-[#3182F6]">
-                    총 {recurringPreview.count}개의 근무가 생성돼요
+                    반복 근무 규칙이 저장돼요
                   </p>
                 </div>
                 <p className="text-[11px] text-[#4E5968] leading-relaxed">
-                  첫 {Math.min(3, recurringPreview.dates.length)}개:&nbsp;
-                  {recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}
-                  {recurringPreview.count > 3 ? ' …' : ''}
+                  {recurringForm.weekdays.join(', ')} {formatShiftTimeRange(recurringForm.scheduledStartTime, recurringForm.scheduledEndTime)}
                 </p>
                 <p className="text-[11px] text-[#8B95A1] mt-1">
-                  같은 시작 시간이 이미 있는 날짜는 자동으로 건너뛰어요.
+                  가까운 14일 기준 {recurringPreview.count}개의 근무만 미리 준비돼요.
+                  {recurringPreview.dates.length > 0 ? ` 첫 일정: ${recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}` : ''}
+                </p>
+                <p className="text-[11px] text-[#8B95A1] mt-1">
+                  이후 근무는 규칙에 따라 자동으로 표시돼요. 실제 급여는 출퇴근 기록을 기준으로 계산돼요.
                 </p>
               </div>
             ) : (
               <p className="text-[11px] text-gray-400">
-                요일·시간·기간을 선택하면 생성될 근무 수가 표시돼요.
+                요일·시간·기간을 선택하면 가까운 14일 준비 일정이 표시돼요.
               </p>
             )}
           </>
         )}
 
         <p className="text-[11px] text-gray-400 leading-relaxed">
-          한 근무 안에 여러 수업이 포함돼도 한 줄로 등록하세요. 시급 직원의 급여는 이 근무 합계로 계산돼요.
+          한 근무 안에 여러 수업이 포함돼도 한 줄로 등록하세요. 실제 급여는 출퇴근 기록을 기준으로 계산돼요.
         </p>
       </div>
 
