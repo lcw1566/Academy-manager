@@ -19,7 +19,7 @@ export const PERMISSION_DEFAULTS = {
     canViewStudents: true,
     canEditLessonRecords: true,
     canEditAttendance: true,
-    canEditClinicRecords: false,
+    canEditClinicRecords: true,
     canViewPayroll: true,
     canViewPayments: false,
     canManageClasses: false,

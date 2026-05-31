@@ -1232,6 +1232,42 @@ const useAcademyStore = create(
     set((s) => ({ academyAssistants: s.academyAssistants.filter((a) => a.id !== assistantId) }));
     get().showToast('보조강사가 삭제되었습니다.');
   },
+  changeLocalStaffRole: (staffId, fromRole, toRole, updates = {}) => {
+    if (!staffId || fromRole === toRole) return null;
+    const fromKey = fromRole === 'assistant' ? 'academyAssistants' : 'academyTeachers';
+    const toKey = toRole === 'assistant' ? 'academyAssistants' : 'academyTeachers';
+    let moved = null;
+    set((s) => {
+      const source = (s[fromKey] || []).find((staff) => staff.id === staffId);
+      if (!source) return {};
+      const sourceEmail = (source.email || '').trim().toLowerCase();
+      const nextFrom = (s[fromKey] || []).filter((staff) => staff.id !== staffId);
+      const targetIdx = (s[toKey] || []).findIndex((staff) =>
+        staff.id === staffId ||
+        (source.serverUserId && staff.serverUserId === source.serverUserId) ||
+        (source.academyMemberId && staff.academyMemberId === source.academyMemberId) ||
+        (sourceEmail && (staff.email || '').trim().toLowerCase() === sourceEmail)
+      );
+      moved = {
+        ...(targetIdx >= 0 ? s[toKey][targetIdx] : {}),
+        ...source,
+        ...updates,
+        id: source.id,
+        status: updates.status || source.status || 'active',
+      };
+      const nextTo = (s[toKey] || []).slice();
+      if (targetIdx >= 0) nextTo[targetIdx] = moved;
+      else nextTo.push(moved);
+      return {
+        [fromKey]: nextFrom,
+        [toKey]: nextTo,
+        academyStaffShifts: (s.academyStaffShifts || []).map((sh) =>
+          sh.staffId === staffId ? { ...sh, staffRole: toRole } : sh
+        ),
+      };
+    });
+    return moved;
+  },
 
   // ─── Server-mirrored staff upsert ─────────────────────
   // Phase 23: take a payload built from `profiles` + `academy_staff_profiles`

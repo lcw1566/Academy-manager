@@ -14,7 +14,7 @@
 //   - academy_member_profiles (서버 — 이메일/이름/연락처)
 //   - academyStaffShifts     (로컬 근무표)
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Plus, Repeat, ChevronLeft, ChevronRight, Pencil, Trash2,
   Clock, Search, Users as UsersIcon, GraduationCap, Mail, X as XIcon,
@@ -67,6 +67,7 @@ const STATUS_TONES = {
   completed: 'text-emerald-700 bg-emerald-50',
   canceled: 'text-gray-500 bg-gray-100',
 };
+const STAFF_ROLE_LABELS = { teacher: '강사', assistant: '보조강사' };
 
 const SUB_TABS = [
   { id: 'shift',      label: '근무' },
@@ -108,6 +109,10 @@ function shiftMinutes(sh) {
 function formatShiftHoursFromMinutes(minutes) {
   const hours = (Number(minutes) || 0) / 60;
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+}
+function formatTimelineHour(minutes) {
+  const h = Math.floor((Number(minutes) || 0) / 60);
+  return `${String(h).padStart(2, '0')}:00`;
 }
 function validateShiftTime({ startTime, endTime, breakMinutes = 0 } = {}) {
   if (!startTime || !endTime) return '시작 시간과 종료 시간을 입력해주세요.';
@@ -543,6 +548,56 @@ function PendingInvitationDetail({ inv, onBack }) {
 function StaffDetailPanel({ staff, summary, onBack }) {
   const [subTab, setSubTab] = useState('shift');
   const isAssistant = staff?._role === 'assistant';
+  const staffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const saveAcademyStaffProfile = useWorkspaceStore((s) => s.saveAcademyStaffProfile);
+  const changeLocalStaffRole = useAcademyStore((s) => s.changeLocalStaffRole);
+  const showToast = useAcademyStore((s) => s.showToast);
+  const serverProfile = useMemo(
+    () => staff.serverUserId ? staffProfiles.find((p) => p.user_id === staff.serverUserId) : null,
+    [staffProfiles, staff.serverUserId],
+  );
+  const [roleEditing, setRoleEditing] = useState(false);
+  const [roleDraft, setRoleDraft] = useState(staff?._role || 'teacher');
+  const [roleSaving, setRoleSaving] = useState(false);
+
+  useEffect(() => {
+    setRoleDraft(staff?._role || 'teacher');
+    setRoleEditing(false);
+  }, [staff?.id, staff?._role]);
+
+  const handleRoleSave = async () => {
+    if (!staff?.id || roleDraft === staff._role) {
+      setRoleEditing(false);
+      return;
+    }
+    const previousRole = staff._role;
+    setRoleSaving(true);
+    try {
+      changeLocalStaffRole?.(staff.id, previousRole, roleDraft, { source: staff.source || 'server' });
+      if (staff.serverUserId && saveAcademyStaffProfile) {
+        await saveAcademyStaffProfile({
+          userId: staff.serverUserId,
+          role: roleDraft,
+          subjects: serverProfile?.subjects || staff.subjects || [],
+          wageType: serverProfile?.wage_type || staff.wageType || 'hourly',
+          hourlyWage: serverProfile?.hourly_wage ?? staff.hourlyWage ?? 0,
+          monthlySalary: serverProfile?.monthly_salary ?? staff.monthlySalary ?? 0,
+          memo: serverProfile?.memo ?? staff.memo ?? null,
+          status: serverProfile?.status || staff.status || 'active',
+          permissions: serverProfile?.permissions || staff.permissions || {},
+          scope: serverProfile?.scope || staff.scope || {},
+        });
+      }
+      showToast('직급이 저장되었습니다.');
+      setRoleEditing(false);
+    } catch (err) {
+      changeLocalStaffRole?.(staff.id, roleDraft, previousRole, { source: staff.source || 'server' });
+      setRoleDraft(previousRole);
+      showToast(err?.message ?? '직급 저장에 실패했어요.', 'error');
+    } finally {
+      setRoleSaving(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -556,7 +611,7 @@ function StaffDetailPanel({ staff, summary, onBack }) {
 
       {/* 헤더 카드 */}
       <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <div className={`w-12 h-12 rounded-full flex items-center justify-center text-base font-bold flex-shrink-0 ${
             isAssistant ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-[#3182F6]'
           }`}>
@@ -565,10 +620,54 @@ function StaffDetailPanel({ staff, summary, onBack }) {
           <div className="flex-1 min-w-0">
             <p className="text-lg font-bold text-[#191F28] truncate">{staff.name || '(이름 없음)'}</p>
             <p className="text-xs text-[#8B95A1] mt-0.5 truncate">
-              {isAssistant ? '보조강사' : '강사'}
-              {staff.email ? ` · ${staff.email}` : ''}
+              {staff.email || staff.phone ? '' : STAFF_ROLE_LABELS[staff._role]}
+              {staff.email ? staff.email : ''}
               {staff.phone ? ` · ${staff.phone}` : ''}
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-[#8B95A1]">직급</span>
+              {roleEditing ? (
+                <>
+                  <select
+                    value={roleDraft}
+                    onChange={(e) => setRoleDraft(e.target.value)}
+                    disabled={roleSaving}
+                    className="h-8 rounded-lg border border-[#E5E8EB] bg-white px-2 text-xs font-bold text-[#191F28] focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  >
+                    <option value="teacher">강사</option>
+                    <option value="assistant">보조강사</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleRoleSave}
+                    disabled={roleSaving}
+                    className="h-8 px-2.5 rounded-lg bg-[#3182F6] text-white text-xs font-bold flex items-center gap-1 disabled:opacity-60"
+                  >
+                    {roleSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                    저장
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setRoleDraft(staff._role); setRoleEditing(false); }}
+                    disabled={roleSaving}
+                    className="h-8 px-2.5 rounded-lg bg-[#F2F4F6] text-[#4E5968] text-xs font-bold disabled:opacity-60"
+                  >
+                    취소
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRoleEditing(true)}
+                  className={`h-8 rounded-lg px-2.5 text-xs font-bold flex items-center gap-1.5 ${
+                    isAssistant ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'
+                  }`}
+                >
+                  {STAFF_ROLE_LABELS[staff._role] || '강사'}
+                  <Pencil size={11} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
         {summary && (
@@ -690,6 +789,29 @@ function StaffShiftSection({ staff }) {
       })
       .filter(Boolean)
       .join(' · ');
+  }, [weekByDate, weekDates]);
+  const calendarRange = useMemo(() => {
+    const bounds = [];
+    for (const date of weekDates) {
+      for (const sh of weekByDate.get(date) || []) {
+        const start = hhmmToMin(sh.scheduledStartTime);
+        const end = hhmmToMin(sh.scheduledEndTime);
+        if (start != null) bounds.push(start);
+        if (end != null) bounds.push(end);
+      }
+    }
+    const min = bounds.length ? Math.min(...bounds) : 9 * 60;
+    const max = bounds.length ? Math.max(...bounds) : 22 * 60;
+    const startMin = Math.max(0, Math.floor((min - 60) / 60) * 60);
+    const endMin = Math.min(24 * 60, Math.ceil((max + 60) / 60) * 60);
+    const ticks = [];
+    for (let t = startMin; t <= endMin; t += 60) ticks.push(t);
+    return {
+      startMin,
+      endMin,
+      ticks,
+      height: Math.max(360, Math.round((endMin - startMin) * 0.72)),
+    };
   }, [weekByDate, weekDates]);
 
   const openAddRecurring = () => {
@@ -878,75 +1000,126 @@ function StaffShiftSection({ staff }) {
           <p className="text-sm font-bold text-[#191F28]">요일별 근무</p>
           <p className="text-[11px] text-[#8B95A1]">{formatDateShort(weekDates[0])} ~ {formatDateShort(weekDates[6])}</p>
         </div>
-        <div className="divide-y divide-[#F2F4F6]">
-          {weekDates.map((date) => {
-            const list = weekByDate.get(date) || [];
-            const isToday = date === todayStr;
-            return (
-              <div key={date} className={`px-4 md:px-5 py-3 ${isToday ? 'bg-blue-50/30' : ''}`}>
-                <div className="flex items-start gap-3">
-                  <div className="w-14 flex-shrink-0 pt-1">
-                    <p className={`text-sm font-bold ${isToday ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
-                      {getKoreanWeekdayFromYMD(date)}
-                    </p>
-                    <p className="text-[11px] text-[#8B95A1] mt-0.5">{date.slice(5)}</p>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {list.length === 0 ? (
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm text-[#B0B8C1]">근무 없음</p>
-                        <button
-                          type="button"
-                          onClick={() => openAddSingle(date)}
-                          className="text-xs font-bold text-[#3182F6] px-2 py-1.5 rounded-lg active:bg-blue-50"
-                        >
-                          + 추가
-                        </button>
+        <div className="overflow-x-auto">
+          <div className="min-w-[760px]">
+            <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))] border-b border-[#F2F4F6] bg-[#FBFCFD]">
+              <div className="px-2 py-2 text-[10px] font-bold text-[#8B95A1]">시간</div>
+              {weekDates.map((date) => {
+                const isToday = date === todayStr;
+                return (
+                  <div
+                    key={date}
+                    className={`px-2 py-2 border-l border-[#F2F4F6] ${isToday ? 'bg-blue-50/60' : ''}`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <div>
+                        <p className={`text-xs font-extrabold ${isToday ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+                          {getKoreanWeekdayFromYMD(date)}
+                        </p>
+                        <p className="text-[10px] text-[#8B95A1] mt-0.5">{date.slice(5)}</p>
                       </div>
-                    ) : (
-                      <div className="flex flex-col gap-2">
-                        {list.map((sh) => (
-                          <div key={sh.id} className="bg-[#F8F9FA] rounded-xl px-3 py-2.5 flex items-center gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="text-sm font-bold text-[#191F28]">
-                                  {formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)}
-                                </p>
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_TONES[sh.status]}`}>
-                                  {STATUS_LABELS[sh.status]}
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-[#8B95A1] mt-0.5">
-                                {formatShiftHoursFromMinutes(scheduledShiftMinutes(sh))}시간
-                                {sh.breakMinutes ? ` · 휴게 ${sh.breakMinutes}분` : ''}
-                                {sh.memo ? ` · ${sh.memo}` : ''}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => openEdit(sh)}
-                              className="p-2 text-[#3182F6] active:bg-blue-50 rounded-lg"
-                              aria-label="근무 수정"
-                            >
-                              <Pencil size={13} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(sh.id)}
-                              className="p-2 text-red-400 active:bg-red-50 rounded-lg"
-                              aria-label="근무 삭제"
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        ))}
+                      <button
+                        type="button"
+                        onClick={() => openAddSingle(date)}
+                        className="w-7 h-7 rounded-lg bg-white text-[#3182F6] border border-[#E5E8EB] flex items-center justify-center active:bg-blue-50"
+                        aria-label={`${getKoreanWeekdayFromYMD(date)} 근무 추가`}
+                      >
+                        <Plus size={13} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
+              <div className="relative bg-[#FBFCFD] border-r border-[#F2F4F6]" style={{ height: calendarRange.height }}>
+                {calendarRange.ticks.map((tick) => (
+                  <div
+                    key={tick}
+                    className="absolute right-2 -translate-y-1/2 text-[10px] font-medium text-[#8B95A1]"
+                    style={{ top: `${((tick - calendarRange.startMin) / (calendarRange.endMin - calendarRange.startMin)) * 100}%` }}
+                  >
+                    {formatTimelineHour(tick)}
+                  </div>
+                ))}
+              </div>
+              {weekDates.map((date) => {
+                const list = weekByDate.get(date) || [];
+                const isToday = date === todayStr;
+                return (
+                  <div
+                    key={date}
+                    className={`relative border-l border-[#F2F4F6] ${isToday ? 'bg-blue-50/20' : 'bg-white'}`}
+                    style={{ height: calendarRange.height }}
+                  >
+                    {calendarRange.ticks.map((tick) => (
+                      <div
+                        key={tick}
+                        className="absolute left-0 right-0 border-t border-[#F2F4F6]"
+                        style={{ top: `${((tick - calendarRange.startMin) / (calendarRange.endMin - calendarRange.startMin)) * 100}%` }}
+                      />
+                    ))}
+                    {list.length === 0 && (
+                      <div className="absolute inset-x-2 top-3 rounded-xl border border-dashed border-[#E5E8EB] px-2 py-3 text-center">
+                        <p className="text-xs font-bold text-[#B0B8C1]">근무 없음</p>
                       </div>
                     )}
+                    {list.map((sh) => {
+                      const start = hhmmToMin(sh.scheduledStartTime) ?? calendarRange.startMin;
+                      const rawEnd = hhmmToMin(sh.scheduledEndTime) ?? start + 30;
+                      const end = Math.max(start + 30, rawEnd);
+                      const total = calendarRange.endMin - calendarRange.startMin;
+                      const top = ((Math.max(calendarRange.startMin, start) - calendarRange.startMin) / total) * 100;
+                      const height = ((Math.min(calendarRange.endMin, end) - Math.max(calendarRange.startMin, start)) / total) * 100;
+                      return (
+                        <div
+                          key={sh.id}
+                          className="absolute left-1.5 right-1.5 rounded-xl bg-white border border-blue-100 shadow-sm px-2 py-2 overflow-hidden"
+                          style={{ top: `${top}%`, height: `${Math.max(7, height)}%`, minHeight: 54 }}
+                        >
+                          <div className="flex items-start justify-between gap-1">
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-extrabold text-[#191F28] truncate">
+                                {formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)}
+                              </p>
+                              <p className="text-[10px] text-[#8B95A1] mt-0.5 truncate">
+                                {formatShiftHoursFromMinutes(scheduledShiftMinutes(sh))}h
+                                {sh.breakMinutes ? ` · 휴게 ${sh.breakMinutes}분` : ''}
+                              </p>
+                            </div>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${STATUS_TONES[sh.status]}`}>
+                              {sh.isPlanned ? '규칙' : STATUS_LABELS[sh.status]}
+                            </span>
+                          </div>
+                          {sh.memo && <p className="mt-1 text-[10px] text-[#4E5968] truncate">{sh.memo}</p>}
+                          {!sh.isPlanned && (
+                            <div className="mt-1 flex justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openEdit(sh)}
+                                className="w-6 h-6 text-[#3182F6] active:bg-blue-50 rounded-md flex items-center justify-center"
+                                aria-label="근무 수정"
+                              >
+                                <Pencil size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(sh.id)}
+                                className="w-6 h-6 text-red-400 active:bg-red-50 rounded-md flex items-center justify-center"
+                                aria-label="근무 삭제"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-              </div>
-            );
-          })}
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
