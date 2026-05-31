@@ -1,5 +1,5 @@
 import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronUp, Check, UserCheck, X as XIcon } from 'lucide-react';
+import { ChevronDown, ChevronUp, Check, UserCheck, X as XIcon, QrCode, Info } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -16,6 +16,7 @@ import { attendanceStatusMap, getTeacherDisplayName } from '../../../utils/forma
 import { currentUserCan } from '../../../utils/staffPermissions';
 import ShiftCoverageSheet from '../work/ShiftCoverageSheet';
 import useEnsureShiftCoverage from '../work/useEnsureShiftCoverage';
+import { getQrAttendanceHint, readAttendanceSettings } from '../attendance/attendanceHelpers';
 
 // ─── 평가 옵션 ──────────────────────────────────────────────────────────────
 const ATTITUDE_OPTIONS = [
@@ -105,8 +106,25 @@ function EvalRow({ label, options, value, onChange }) {
 }
 
 // ─── 학생 카드 ────────────────────────────────────────────────────────────
-const StudentCard = memo(function StudentCard({ student, sessionId, canEdit, canEditAttendance = canEdit, attendance, initialRecord, onRecordChange, saveCount }) {
+const StudentCard = memo(function StudentCard({
+  student, sessionId, canEdit, canEditAttendance = canEdit,
+  attendance, initialRecord, onRecordChange, saveCount,
+  qrHint, // Phase 42 — { statusHint, checkInTime, checkOutTime } or null
+}) {
   const updateAcademyAttendance = useAcademyStore((s) => s.updateAcademyAttendance);
+  const handleAttendanceClick = useCallback((status) => {
+    // Phase 42 — 선생님이 직접 누른 경우 source='teacher_manual'.
+    updateAcademyAttendance(sessionId, student.id, status, { source: 'teacher_manual' });
+  }, [sessionId, student.id, updateAcademyAttendance]);
+
+  // Phase 42 — source 라벨 + QR 시간 표시용.
+  const sourceBadge = (() => {
+    if (!attendance?.source) return null;
+    if (attendance.source === 'qr') return { label: 'QR 등원', tone: 'bg-indigo-50 text-indigo-700' };
+    if (attendance.source === 'teacher_manual') return { label: '선생님 수정', tone: 'bg-amber-50 text-amber-700' };
+    if (attendance.source === 'manual') return { label: '직접 체크', tone: 'bg-gray-100 text-gray-600' };
+    return null;
+  })();
   const [expanded, setExpanded] = useState(false);
   const [rec, setRec] = useState(() => buildStudentRecord(initialRecord));
   const savedRef = useRef(buildStudentRecord(initialRecord));
@@ -150,10 +168,21 @@ const StudentCard = memo(function StudentCard({ student, sessionId, canEdit, can
           <p className="font-semibold text-gray-900">{student.name}</p>
           {student.grade && <p className="text-xs text-gray-400">{student.grade}</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {supportCount > 0 && (
             <span className="text-xs bg-orange-50 text-orange-500 font-semibold px-2 py-0.5 rounded-full">
               보완 {supportCount}
+            </span>
+          )}
+          {qrHint?.checkInTime && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 inline-flex items-center gap-0.5">
+              <QrCode size={9} /> {qrHint.checkInTime}
+              {qrHint.checkOutTime ? ` ~ ${qrHint.checkOutTime}` : ''}
+            </span>
+          )}
+          {sourceBadge && (
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${sourceBadge.tone}`}>
+              {sourceBadge.label}
             </span>
           )}
           {attendance ? (
@@ -189,7 +218,7 @@ const StudentCard = memo(function StudentCard({ student, sessionId, canEdit, can
                         <button
                           key={status}
                           type="button"
-                          onClick={() => updateAcademyAttendance(sessionId, student.id, status)}
+                          onClick={() => handleAttendanceClick(status)}
                           className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors active:scale-[0.98] ${
                             isActive
                               ? `${meta.activeBg} ${meta.activeText} border-transparent`
@@ -308,6 +337,16 @@ export default function ClassSessionPage() {
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const loadServerLessonRecords = useWorkspaceStore((s) => s.loadServerLessonRecords);
   const loadServerAttendanceRecords = useWorkspaceStore((s) => s.loadServerAttendanceRecords);
+  // Phase 42 — 학생 체크인 이벤트 + 학원 설정 (출결 방식).
+  const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
+  const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
+  const currentAcademy = useMemo(
+    () => memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null,
+    [memberships, currentAcademyId],
+  );
+  const attendanceSettings = useMemo(() => readAttendanceSettings(currentAcademy), [currentAcademy]);
+  const updateAcademyAttendance = useAcademyStore((s) => s.updateAcademyAttendance);
 
   // session/group 탐색 (null이어도 useMemo가 먼저 실행됨)
   const session = useMemo(
@@ -353,6 +392,21 @@ export default function ClassSessionPage() {
     return map;
   }, [academyLessonRecords, selectedClassSessionId]);
 
+  // Phase 42 — QR 이벤트 → 학생별 hint. local studentId 키로 저장.
+  const qrHintByStudentId = useMemo(() => {
+    const map = new Map();
+    if (!session) return map;
+    for (const stu of students) {
+      const serverStudentId = stu.serverId;
+      if (!serverStudentId) continue;
+      const hint = getQrAttendanceHint(serverStudentId, session, studentCheckEvents);
+      if (hint.statusHint || hint.checkInTime || hint.checkOutTime) {
+        map.set(stu.id, hint);
+      }
+    }
+    return map;
+  }, [session, students, studentCheckEvents]);
+
   // 공통 기록: 저장된 값 로드
   const savedCommonLr = useMemo(
     () => lessonRecordByStudentId.get('_common_') || null,
@@ -388,6 +442,40 @@ export default function ClassSessionPage() {
     studentDirtyRef.current = {};
     setDirtyRevision((v) => v + 1);
   }, [selectedClassSessionId]);
+
+  // Phase 42 — 세션을 열 때 학생 체크인 이벤트를 한 번 불러온다 (over-fetch 방지:
+  // 그 session.date 기준 이후 이벤트만). loadStudentCheckEvents 는 store 가
+  // 데이터를 즉시 반영하므로 의존성에 session.date 만 두면 충분.
+  useEffect(() => {
+    if (!session?.date || !currentAcademyId) return;
+    loadStudentCheckEvents({ sinceDateYMD: session.date });
+  }, [session?.date, currentAcademyId, loadStudentCheckEvents]);
+
+  // Phase 42 — QR 이벤트 → 출결 자동 채움. 규칙:
+  //  1) 기존 attendance 가 없으면: QR hint(present/late) 를 적용 (source='qr').
+  //  2) 기존 attendance 의 source==='teacher_manual' 이면 절대 덮어쓰지 않음.
+  //  3) source 가 'qr' 또는 비어있는데 status 가 QR hint 와 다르면 hint 로 갱신.
+  // silent=true 로 토스트 생략.
+  useEffect(() => {
+    if (!session) return;
+    if (qrHintByStudentId.size === 0) return;
+    for (const [studentId, hint] of qrHintByStudentId.entries()) {
+      if (!hint?.statusHint) continue;
+      const existing = attendanceByStudentId.get(studentId);
+      if (existing?.source === 'teacher_manual') continue;
+      const wouldChange = !existing || existing.status !== hint.statusHint || existing.source !== 'qr';
+      if (!wouldChange) continue;
+      updateAcademyAttendance(session.id, studentId, hint.statusHint, {
+        source: 'qr',
+        checkedAt: hint.checkInISO || undefined,
+        silent: true,
+      });
+    }
+    // attendanceByStudentId 는 의존성에서 제외 — 우리가 만든 변경이 다시
+    // effect 를 트리거해 무한 루프가 되는 걸 막는다 (status/source 가 hint 와
+    // 일치하면 wouldChange=false 라 어쨌든 idempotent).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, qrHintByStudentId]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [substituteModalOpen, setSubstituteModalOpen] = useState(false);
@@ -525,6 +613,9 @@ export default function ClassSessionPage() {
             date: local?.date || session.date,
             status: local?.status || 'present',
             memo: local?.memo || null,
+            // Phase 42 — 출결 source / 체크 시각 동기화.
+            source: local?.source || null,
+            checked_at: local?.checkedAt || null,
           };
         });
 
@@ -691,7 +782,22 @@ export default function ClassSessionPage() {
 
         {/* ── 학생별 기록 ───────────────────────────────── */}
         <div className="px-4 mb-4">
-          <p className="text-sm font-bold text-gray-700 mb-3">학생별 기록</p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-gray-700">학생별 기록</p>
+            {attendanceSettings.studentCheckMethod === 'qr' && qrHintByStudentId.size > 0 && (
+              <span className="text-[11px] font-semibold text-indigo-700 flex items-center gap-1">
+                <QrCode size={11} /> QR 등원 {qrHintByStudentId.size}명
+              </span>
+            )}
+          </div>
+          {attendanceSettings.studentCheckMethod === 'qr' && (
+            <div className="mb-3 rounded-2xl bg-indigo-50 px-3 py-2.5 flex items-start gap-2">
+              <Info size={13} className="text-indigo-600 mt-0.5 flex-shrink-0" />
+              <p className="text-[11px] text-indigo-700 leading-relaxed">
+                QR 등원 기록을 기준으로 출석이 자동 표시돼요. 필요하면 선생님이 직접 수정할 수 있어요.
+              </p>
+            </div>
+          )}
           <div className="flex flex-col gap-3">
             {students.length === 0 ? (
               <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
@@ -701,6 +807,7 @@ export default function ClassSessionPage() {
               students.map((student) => {
                 const att = attendanceByStudentId.get(student.id);
                 const existingLr = lessonRecordByStudentId.get(student.id);
+                const qrHint = qrHintByStudentId.get(student.id) || null;
                 return (
                   <StudentCard
                     key={student.id}
@@ -712,6 +819,7 @@ export default function ClassSessionPage() {
                     initialRecord={existingLr}
                     onRecordChange={handleRecordChange}
                     saveCount={saveCount}
+                    qrHint={qrHint}
                   />
                 );
               })

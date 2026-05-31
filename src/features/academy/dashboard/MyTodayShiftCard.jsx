@@ -11,18 +11,31 @@
 //
 // 본인 식별: staff prop (TeacherDashboard 의 myTeacher, AssistantDashboard 의 myAssistant)
 import { useMemo, useState } from 'react';
-import { Clock, LogIn, LogOut, ChevronRight } from 'lucide-react';
+import { Clock, LogIn, LogOut, ChevronRight, QrCode } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { updateAcademyStaffShift as updateServerStaffShift } from '../../../services/supabase/domainApi';
 import { today as todayDate } from '../../../utils/date';
+import QrScanSheet from '../attendance/QrScanSheet';
 
 function nowHHmm() {
   const d = new Date();
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${hh}:${mm}`;
+}
+
+function formatClock(value) {
+  if (!value) return '';
+  return String(value).slice(0, 5);
+}
+
+function formatShiftTimeRange(start, end) {
+  const s = formatClock(start);
+  const e = formatClock(end);
+  if (!s && !e) return '';
+  return `${s || '-'} - ${e || '-'}`;
 }
 
 export default function MyTodayShiftCard({ staff, staffRole }) {
@@ -34,6 +47,7 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
   const [busy, setBusy] = useState(false);
+  const [showQrScan, setShowQrScan] = useState(false);
 
   const todayStr = todayDate();
 
@@ -105,13 +119,13 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
           <div className="flex-1 min-w-0">
             <p className={`text-sm font-bold ${toneByRole.text}`}>오늘 근무</p>
             <p className="text-xs text-gray-600 mt-0.5">
-              예정 {myTodayShift.scheduledStartTime || '-'} ~ {myTodayShift.scheduledEndTime || '-'}
+              예정 {formatShiftTimeRange(myTodayShift.scheduledStartTime, myTodayShift.scheduledEndTime)}
               {myTodayShift.breakMinutes ? ` · 휴게 ${myTodayShift.breakMinutes}분` : ''}
             </p>
           </div>
           <button
             type="button"
-            onClick={() => setActiveTab('work')}
+            onClick={() => setActiveTab('staff')}
             className="text-[11px] font-semibold text-gray-500 flex items-center gap-0.5 active:opacity-60"
           >
             전체 보기 <ChevronRight size={12} />
@@ -120,11 +134,21 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
 
         {(clockedIn || clockedOut) && (
           <p className="text-[11px] text-gray-600 mb-2">
-            {clockedIn && `출근 ${myTodayShift.actualStartTime}`}
+            {clockedIn && `출근 ${formatClock(myTodayShift.actualStartTime)}`}
             {clockedIn && clockedOut && ' · '}
-            {clockedOut && `퇴근 ${myTodayShift.actualEndTime}`}
+            {clockedOut && `퇴근 ${formatClock(myTodayShift.actualEndTime)}`}
           </p>
         )}
+
+        {/* Phase 43 — 출퇴근은 QR 단일 방식 */}
+        <button
+          type="button"
+          onClick={() => setShowQrScan(true)}
+          disabled={clockedOut}
+          className="w-full mb-2 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#191F28] text-white text-xs font-bold disabled:opacity-50"
+        >
+          <QrCode size={12} /> 공용 QR로 체크인
+        </button>
 
         <div className="flex gap-2">
           <button
@@ -147,6 +171,9 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
           </button>
         </div>
       </div>
+      {showQrScan && (
+        <QrScanSheet mode="staff_self" onClose={() => setShowQrScan(false)} />
+      )}
     </div>
   );
 }

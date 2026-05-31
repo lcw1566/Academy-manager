@@ -1,11 +1,25 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, FileText, Users as UsersIcon, AlertCircle } from 'lucide-react';
+import { Clock, FileText, Users as UsersIcon, AlertCircle, CheckSquare, QrCode } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { today, formatDateShort, greetingByTime } from '../../../utils/date';
 import { formatCurrency } from '../../../utils/format';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
+import { classifyShiftStatus, readAttendanceSettings } from '../attendance/attendanceHelpers';
+import QrDisplayPage from '../attendance/QrDisplayPage';
+
+function formatClock(value) {
+  if (!value) return '';
+  return String(value).slice(0, 5);
+}
+
+function formatTimeRange(start, end) {
+  const s = formatClock(start);
+  const e = formatClock(end);
+  if (!s && !e) return '';
+  return `${s || '-'} - ${e || '-'}`;
+}
 
 export default function OwnerDashboard() {
   const academyStudents = useAcademyStore((s) => s.academyStudents);
@@ -23,8 +37,14 @@ export default function OwnerDashboard() {
   const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
+  const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const currentAcademy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
+  const attendance = readAttendanceSettings(currentAcademy);
 
   const [selectedDate, setSelectedDate] = useState(today());
+  const [showQrDisplay, setShowQrDisplay] = useState(false);
   const todayStr = today();
 
   const todaySessions = useMemo(
@@ -110,6 +130,34 @@ export default function OwnerDashboard() {
     [academyInvitations],
   );
 
+  // Phase 41 — 오늘 직원 출결 분류
+  const todayShiftSummary = useMemo(() => {
+    let present = 0, late = 0, absent = 0, completed = 0;
+    for (const sh of todayShifts) {
+      const status = classifyShiftStatus(sh);
+      if (status === 'present') present += 1;
+      else if (status === 'late') late += 1;
+      else if (status === 'absent') absent += 1;
+      else if (status === 'clockedOut') completed += 1;
+    }
+    return { present, late, absent, completed };
+  }, [todayShifts]);
+
+  // Phase 41 — 오늘 학생 등·하원 분류
+  const todayStudentCheckSummary = useMemo(() => {
+    const todayISO = todayStr;
+    const checkedStudentIds = new Set();
+    for (const ev of studentCheckEvents) {
+      if (!ev.event_time) continue;
+      if (!String(ev.event_time).startsWith(todayISO)) continue;
+      if (ev.event_type === 'check_in') checkedStudentIds.add(ev.student_id);
+    }
+    return {
+      checkedIn: checkedStudentIds.size,
+      expected: todayStudentIds.length,
+    };
+  }, [studentCheckEvents, todayStr, todayStudentIds.length]);
+
   const isToday = selectedDate === todayStr;
   const dateLabel = isToday ? '오늘 일정' : formatDateShort(selectedDate);
 
@@ -148,10 +196,10 @@ export default function OwnerDashboard() {
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
                     <span className="font-semibold text-gray-900 text-sm flex-1">{group?.name || '수업'}</span>
-                    <span className="text-xs text-gray-400">{session.startTime}–{session.endTime}</span>
+                    <span className="text-xs text-gray-400">{formatTimeRange(session.startTime, session.endTime)}</span>
                   </div>
                   <p className="text-xs text-gray-400 ml-4">
-                    {session.room || ''} · {session.studentIds?.length || 0}명
+                    {[session.room, `${session.studentIds?.length || 0}명`].filter(Boolean).join(' · ')}
                   </p>
                 </motion.button>
               );
@@ -164,7 +212,7 @@ export default function OwnerDashboard() {
       <div className="px-4 grid grid-cols-2 gap-3 mb-5">
         <SummaryCard label="오늘 수업" value={`${todaySessions.length}개`} onClick={() => setActiveTab('classes')} />
         <SummaryCard label="출석 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('classes')} />
-        <SummaryCard label="오늘 출근 예정" value={`${todayShiftStaffIds.length}명`} onClick={() => setActiveTab('work')} />
+        <SummaryCard label="오늘 출근 예정" value={`${todayShiftStaffIds.length}명`} onClick={() => setActiveTab('staff')} />
         <SummaryCard
           label="오늘 클리닉 기록"
           value={`${todayClinicCount}건`}
@@ -183,6 +231,41 @@ export default function OwnerDashboard() {
         />
       </div>
 
+      {/* Phase 41 — 오늘 출결 요약 카드 */}
+      <div className="px-4 mb-5">
+        <div className="bg-white rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+              <CheckSquare size={14} className="text-emerald-600" />
+              오늘 출결
+            </p>
+            {/* Phase 43 — staff QR 단일 옵션이므로 항상 노출 */}
+            <button
+              type="button"
+              onClick={() => setShowQrDisplay(true)}
+              className="text-[11px] font-bold text-[#3182F6] flex items-center gap-1 px-2 py-1 rounded-lg active:bg-blue-50"
+            >
+              <QrCode size={11} /> 공용 QR 열기
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <AttendanceChip label="정상" value={todayShiftSummary.present} tone="emerald" />
+            <AttendanceChip label="지각" value={todayShiftSummary.late} tone="amber" />
+            <AttendanceChip label="미출근" value={todayShiftSummary.absent} tone="red" />
+            <AttendanceChip label="퇴근" value={todayShiftSummary.completed} tone="gray" />
+          </div>
+          <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between">
+            <span className="text-xs text-gray-500">학생 등원</span>
+            <span className="text-sm font-bold text-gray-900">
+              {todayStudentCheckSummary.checkedIn}
+              <span className="text-xs text-gray-400 font-medium ml-1">
+                / {todayStudentCheckSummary.expected}명
+              </span>
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Phase 30 — 운영 알림 카드 */}
       {(inProgressOrSoonSessions.length > 0
         || unfinishedLessonRecordSessions.length > 0
@@ -195,7 +278,7 @@ export default function OwnerDashboard() {
               title={`진행 중/곧 시작 수업 ${inProgressOrSoonSessions.length}개`}
               detail={inProgressOrSoonSessions
                 .slice(0, 3)
-                .map((s) => `${s.startTime}–${s.endTime} ${classGroups.find((g) => g.id === s.classGroupId)?.name || ''}`)
+                .map((s) => `${formatTimeRange(s.startTime, s.endTime)} ${classGroups.find((g) => g.id === s.classGroupId)?.name || ''}`)
                 .join(' · ')}
               onClick={() => {
                 const first = inProgressOrSoonSessions[0];
@@ -263,6 +346,26 @@ export default function OwnerDashboard() {
           </div>
         </div>
       )}
+
+      {showQrDisplay && (
+        <QrDisplayPage onClose={() => setShowQrDisplay(false)} />
+      )}
+    </div>
+  );
+}
+
+// Phase 41 — 출결 chip
+function AttendanceChip({ label, value, tone = 'gray' }) {
+  const tones = {
+    emerald: 'bg-emerald-50 text-emerald-700',
+    amber:   'bg-amber-50 text-amber-700',
+    red:     'bg-red-50 text-red-600',
+    gray:    'bg-gray-50 text-gray-600',
+  };
+  return (
+    <div className={`rounded-xl px-2 py-2 text-center ${tones[tone] || tones.gray}`}>
+      <p className="text-base font-extrabold leading-tight">{value}</p>
+      <p className="text-[10px] font-semibold mt-0.5">{label}</p>
     </div>
   );
 }

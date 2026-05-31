@@ -1011,26 +1011,45 @@ const useAcademyStore = create(
   },
 
   // ─── Academy Attendance ───────────────────────────
-  updateAcademyAttendance: (sessionId, studentId, status) => {
+  // Phase 42 — source / checkedAt 같이 받음. 선생님이 버튼을 눌러 수정한
+  // 경우 호출자는 source='teacher_manual' 을 명시한다. 비지정 시 기존 row 의
+  // source 를 유지하고, 신규 row 면 'manual' (직접 체크) 로 default.
+  updateAcademyAttendance: (sessionId, studentId, status, { source, checkedAt, silent } = {}) => {
     const existing = get().academyAttendanceRecords.find(
       (a) => a.sessionId === sessionId && a.studentId === studentId
     );
     const session = get().classSessions.find((s) => s.id === sessionId);
+    const now = new Date().toISOString();
     if (existing) {
       set((s) => ({
         academyAttendanceRecords: s.academyAttendanceRecords.map((a) =>
-          a.id === existing.id ? { ...a, status } : a
+          a.id === existing.id
+            ? {
+                ...a,
+                status,
+                source: source ?? a.source ?? 'manual',
+                checkedAt: checkedAt ?? (source ? now : a.checkedAt ?? null),
+              }
+            : a
         ),
       }));
     } else {
       set((s) => ({
         academyAttendanceRecords: [
           ...s.academyAttendanceRecords,
-          { id: `aa${Date.now()}`, sessionId, studentId, date: session?.date || '', status },
+          {
+            id: `aa${Date.now()}`,
+            sessionId,
+            studentId,
+            date: session?.date || '',
+            status,
+            source: source || 'manual',
+            checkedAt: checkedAt || now,
+          },
         ],
       }));
     }
-    get().showToast('출결이 저장되었습니다.');
+    if (!silent) get().showToast('출결이 저장되었습니다.');
   },
 
   // 수업 기록 저장 시 호출 — 출결 버튼을 누르지 않은 학생에 대해 기본 present record 보장.

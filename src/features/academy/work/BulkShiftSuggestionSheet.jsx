@@ -29,7 +29,7 @@
 //   - extend 흐름은 기존 row 1개만 늘리고, 추가 row 생성은 하지 않는다.
 
 import { useMemo, useState } from 'react';
-import { Plus, ChevronRight, Loader2, Clock, AlertTriangle } from 'lucide-react';
+import { Plus, ChevronRight, Loader2, Clock, AlertTriangle, CalendarClock, Check } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -53,6 +53,7 @@ export default function BulkShiftSuggestionSheet({
   onClose,
 }) {
   const [busy, setBusy] = useState(null);
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
 
   // 요약 — 몇 명, 몇 회차에 영향이 있는지.
   const summary = useMemo(() => {
@@ -89,57 +90,54 @@ export default function BulkShiftSuggestionSheet({
   }
 
   return (
-    <Modal isOpen={open} onClose={onClose} title="근무표도 함께 만들까요?">
+    <Modal isOpen={open} onClose={onClose} title="근무 시간 밖 수업이에요">
       <div className="flex flex-col gap-4">
-        <div className="bg-blue-50 rounded-2xl px-4 py-3 flex items-start gap-3">
+        <div className="bg-amber-50 rounded-2xl px-4 py-3 flex items-start gap-3">
           <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center flex-shrink-0">
-            <Clock size={16} className="text-blue-600" />
+            <AlertTriangle size={16} className="text-amber-600" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-gray-900">
               강사·보조강사 {summary.staffCount}명 · 수업 {summary.sessionCount}회
             </p>
-            <p className="text-xs text-gray-600 mt-0.5">
-              방금 만든 수업 시간에 맞춰 근무표를 자동으로 만들 수 있어요.
+            <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
+              이 수업 시간을 근무에 포함할까요? 시급 정산이 정확해지도록 권장해요.
             </p>
           </div>
         </div>
 
-        <p className="text-xs text-gray-500 leading-relaxed">
-          이미 등록된 근무시간은 중복으로 만들지 않아요.
-          일부만 겹치면 기존 근무를 늘려서 수업 전체를 포함해요.
-        </p>
-
         <div className="flex flex-col gap-2">
           <OptionRow
             primary
-            title="수업 시간만 근무로 추가"
-            subtitle="추천 · 수업 시작/끝 시간에 맞춰 근무 일정을 만들어요."
+            icon={Check}
+            title="포함하고 배정"
+            subtitle="추천 · 수업 시간만큼 근무를 자동으로 추가해요."
             onClick={() => handlePick('exact')}
             busy={busy === 'exact'}
           />
           <OptionRow
-            title="앞뒤 30분 여유 포함해서 추가"
-            subtitle="수업 전후 준비/정리 시간까지 근무로 잡아요."
-            onClick={() => handlePick('buffer')}
-            busy={busy === 'buffer'}
+            icon={CalendarClock}
+            title="근무시간 직접 수정"
+            subtitle="스태프 탭에서 직접 근무 시간을 조정할게요."
+            onClick={() => { setActiveTab('staff'); onClose?.(); }}
           />
           <OptionRow
-            title="직접 나중에 설정"
-            subtitle="근무 탭에서 시간을 직접 입력할게요."
+            icon={Plus}
+            title="그냥 배정"
+            subtitle="이번에는 근무를 건드리지 않고 수업만 저장해요."
             onClick={onClose}
           />
         </div>
 
         <p className="text-[11px] text-gray-400 leading-relaxed">
-          보조강사는 필요한 경우에만 배정하세요. 시급 급여는 근무 시간을 기준으로 계산돼요.
+          이미 등록된 근무시간은 중복으로 만들지 않아요. 일부만 겹치면 기존 근무를 늘려서 수업 전체를 포함해요.
         </p>
       </div>
     </Modal>
   );
 }
 
-function OptionRow({ title, subtitle, onClick, primary, busy }) {
+function OptionRow({ title, subtitle, onClick, primary, busy, icon: Icon = Plus }) {
   return (
     <button
       type="button"
@@ -153,7 +151,7 @@ function OptionRow({ title, subtitle, onClick, primary, busy }) {
         {busy ? (
           <Loader2 size={16} className={`animate-spin ${primary ? 'text-white' : 'text-gray-600'}`} />
         ) : (
-          <Plus size={16} className={primary ? 'text-white' : 'text-gray-600'} />
+          <Icon size={16} className={primary ? 'text-white' : 'text-gray-600'} />
         )}
       </div>
       <div className="flex-1 min-w-0">

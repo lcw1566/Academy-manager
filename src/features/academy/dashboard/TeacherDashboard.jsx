@@ -19,6 +19,18 @@ function parseHHmmToMinutes(hhmm) {
   return h * 60 + m;
 }
 
+function formatClock(value) {
+  if (!value) return '';
+  return String(value).slice(0, 5);
+}
+
+function formatTimeRange(start, end) {
+  const s = formatClock(start);
+  const e = formatClock(end);
+  if (!s && !e) return '';
+  return `${s || '-'} - ${e || '-'}`;
+}
+
 const SOON_WINDOW_MIN = 10;
 
 export default function TeacherDashboard() {
@@ -208,7 +220,7 @@ export default function TeacherDashboard() {
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
                     <span className="font-semibold text-gray-900 text-sm flex-1">{group?.name || '수업'}</span>
-                    <span className="text-xs text-blue-600 font-medium">{session.startTime}</span>
+                    <span className="text-xs text-blue-600 font-medium">{formatClock(session.startTime)}</span>
                   </div>
                   <div className="flex items-center gap-3 ml-4 mt-1">
                     <span className="text-xs text-gray-400">{session.studentIds?.length || 0}명</span>
@@ -267,7 +279,7 @@ export default function TeacherDashboard() {
                       {group?.name || '수업'}
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      {s.date} {s.startTime}–{s.endTime}
+                      {s.date} {formatTimeRange(s.startTime, s.endTime)}
                     </p>
                   </div>
                 </button>
@@ -356,7 +368,7 @@ function UpcomingSoonCard({ session, startMin, nowMinutes, classGroups, onClick 
         </div>
         <p className="text-base font-bold leading-tight">{group?.name || '수업'}</p>
         <p className="text-xs text-blue-50 mt-1">
-          {session.startTime}–{session.endTime}
+          {formatTimeRange(session.startTime, session.endTime)}
           {session.room ? ` · ${session.room}` : ''}
           {` · ${session.studentIds?.length || 0}명`}
         </p>

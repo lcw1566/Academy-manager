@@ -71,6 +71,18 @@ function nowHHmm() {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+function formatClock(value) {
+  if (!value) return '';
+  return String(value).slice(0, 5);
+}
+
+function formatShiftTimeRange(start, end) {
+  const s = formatClock(start);
+  const e = formatClock(end);
+  if (!s && !e) return '';
+  return `${s || '-'} - ${e || '-'}`;
+}
+
 function shiftMinutes(sh) {
   const start = sh.actualStartTime || (sh.status === 'completed' ? sh.scheduledStartTime : null);
   const end = sh.actualEndTime || (sh.status === 'completed' ? sh.scheduledEndTime : null);
@@ -239,7 +251,7 @@ function OwnerWorkView() {
       .map((date) => {
         const list = selectedWeekShiftsByDate.get(date) || [];
         if (list.length === 0) return null;
-        return `${getKoreanWeekdayFromYMD(date)} ${list.map((sh) => `${sh.scheduledStartTime || '-'}~${sh.scheduledEndTime || '-'}`).join(', ')}`;
+        return `${getKoreanWeekdayFromYMD(date)} ${list.map((sh) => formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)).join(', ')}`;
       })
       .filter(Boolean)
       .join(' · ');
@@ -537,9 +549,22 @@ function OwnerWorkView() {
                   <div className="mt-5 pt-4 border-t border-[#E5E8EB] flex items-start gap-2">
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-[#4E5968] mb-1">이번 주 근무 패턴</p>
-                      <p className="text-sm font-semibold text-[#191F28] leading-relaxed">
-                        {weeklyPattern || '아직 등록된 근무가 없어요'}
-                      </p>
+                      {weeklyPattern ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {weeklyPattern.split(' · ').map((item) => (
+                            <span
+                              key={item}
+                              className="inline-flex items-center rounded-full bg-[#F2F4F6] px-2.5 py-1 text-xs font-bold text-[#191F28]"
+                            >
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm font-semibold text-[#8B95A1] leading-relaxed">
+                          아직 등록된 근무가 없어요
+                        </p>
+                      )}
                     </div>
                     <div className="relative group flex-shrink-0">
                       <button
@@ -911,7 +936,7 @@ function StaffDaySchedule({ date, isTodayDate, shifts, staff, onAdd, onEdit, onD
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-bold text-[#191F28]">
-                          {sh.scheduledStartTime || '-'} ~ {sh.scheduledEndTime || '-'}
+                          {formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)}
                         </p>
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_TONES[sh.status]}`}>
                           {STATUS_LABELS[sh.status]}
@@ -920,7 +945,7 @@ function StaffDaySchedule({ date, isTodayDate, shifts, staff, onAdd, onEdit, onD
                       <p className="text-[11px] text-[#8B95A1] mt-0.5">
                         예정 {formatShiftHoursFromMinutes(scheduledShiftMinutes(sh))}시간
                         {sh.breakMinutes ? ` · 휴게 ${sh.breakMinutes}분` : ''}
-                        {(sh.actualStartTime || sh.actualEndTime) ? ` · 실제 ${sh.actualStartTime || '-'}~${sh.actualEndTime || '-'}` : ''}
+                        {(sh.actualStartTime || sh.actualEndTime) ? ` · 실제 ${formatShiftTimeRange(sh.actualStartTime, sh.actualEndTime)}` : ''}
                       </p>
                       {sh.memo && <p className="text-[11px] text-[#8B95A1] mt-1 truncate">{sh.memo}</p>}
                     </div>
@@ -1002,12 +1027,12 @@ function ShiftCard({ shift, staff, onEdit, onDelete }) {
           </span>
         </div>
         <p className="text-sm md:text-sm font-semibold text-[#4E5968]">
-          {shift.scheduledStartTime || '-'} ~ {shift.scheduledEndTime || '-'}
+          {formatShiftTimeRange(shift.scheduledStartTime, shift.scheduledEndTime)}
           {shift.breakMinutes ? <span className="text-xs text-[#8B95A1] ml-2 font-normal">휴게 {shift.breakMinutes}분</span> : null}
         </p>
         {(shift.actualStartTime || shift.actualEndTime) && (
           <p className="text-xs text-emerald-600 mt-0.5">
-            실제 {shift.actualStartTime || '-'} ~ {shift.actualEndTime || '-'}
+            실제 {formatShiftTimeRange(shift.actualStartTime, shift.actualEndTime)}
           </p>
         )}
         {shift.memo && <p className="text-xs text-[#8B95A1] mt-1 truncate">{shift.memo}</p>}
@@ -1199,7 +1224,7 @@ function StaffWorkView() {
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-[#F2F4F6]">
                   <Clock size={12} className="text-[#8B95A1]" />
                   <p className="text-xs text-[#4E5968]">
-                    예정 {todayShift.scheduledStartTime || '-'} ~ {todayShift.scheduledEndTime || '-'}
+                    예정 {formatShiftTimeRange(todayShift.scheduledStartTime, todayShift.scheduledEndTime)}
                     {todayShift.breakMinutes ? ` · 휴게 ${todayShift.breakMinutes}분` : ''}
                   </p>
                   <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_TONES[todayShift.status]}`}>
@@ -1208,9 +1233,9 @@ function StaffWorkView() {
                 </div>
                 {(clockedIn || clockedOut) && (
                   <p className="text-xs text-[#4E5968] mt-2">
-                    {clockedIn && `출근 ${todayShift.actualStartTime}`}
+                    {clockedIn && `출근 ${formatClock(todayShift.actualStartTime)}`}
                     {clockedIn && clockedOut && ' · '}
-                    {clockedOut && `퇴근 ${todayShift.actualEndTime}`}
+                    {clockedOut && `퇴근 ${formatClock(todayShift.actualEndTime)}`}
                   </p>
                 )}
                 <div className="flex gap-2 mt-3">
@@ -1282,8 +1307,8 @@ function StaffWorkView() {
                       <div className="flex flex-col gap-0.5">
                         {list.map((sh) => (
                           <p key={sh.id} className="text-xs text-gray-700">
-                            {sh.scheduledStartTime || '-'}~{sh.scheduledEndTime || '-'}
-                            {sh.actualStartTime ? ` · 실제 ${sh.actualStartTime}~${sh.actualEndTime || '-'}` : ''}
+                            {formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)}
+                            {sh.actualStartTime ? ` · 실제 ${formatShiftTimeRange(sh.actualStartTime, sh.actualEndTime)}` : ''}
                           </p>
                         ))}
                       </div>

@@ -30,6 +30,9 @@ import {
   listAcademyMemberProfiles,
   listAcademyStaffProfiles,
   upsertAcademyStaffProfile,
+  updateAcademyAttendanceSettings,
+  listStudentCheckEvents,
+  createStudentCheckEvent,
 } from '../services/supabase/workspaceApi';
 import {
   listAcademyStudents,
@@ -141,6 +144,12 @@ const initialState = {
   isServerStaffShiftsLoading: false,
   serverStaffShiftsError: null,
   serverStaffShiftsLoadedAt: null,
+
+  // Phase 41 — 학생 등·하원 이벤트 (SQL 011 student_check_events).
+  studentCheckEvents: [],
+  isStudentCheckEventsLoading: false,
+  studentCheckEventsError: null,
+  studentCheckEventsLoadedAt: null,
 };
 
 const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type';
@@ -943,6 +952,73 @@ const useWorkspaceStore = create(
         return result;
       },
 
+      // ── Phase 41 — 출결 설정 / 학생 체크인 이벤트 ─────────────────
+      // owner 가 출결 설정을 업데이트. memberships 안 academy row 도 patch.
+      saveAttendanceSettings: async (patch = {}) => {
+        if (!isSupabaseConfigured) {
+          throw new Error('Supabase가 설정되지 않았어요.');
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) throw new Error('학원을 먼저 선택해주세요.');
+        const saved = await updateAcademyAttendanceSettings(academyId, patch);
+        if (saved) {
+          set((s) => ({
+            memberships: (s.memberships || []).map((m) =>
+              m.academy_id === academyId
+                ? { ...m, academy: { ...(m.academy || {}), ...saved } }
+                : m,
+            ),
+          }));
+        }
+        return saved;
+      },
+
+      // 학생 등·하원 이벤트 목록 (read-only). 기본은 오늘 + 최근 200건.
+      loadStudentCheckEvents: async ({ sinceDateYMD, limit } = {}) => {
+        if (!isSupabaseConfigured) {
+          set({ studentCheckEvents: [] });
+          return [];
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) {
+          set({ studentCheckEvents: [], studentCheckEventsError: null });
+          return [];
+        }
+        set({ isStudentCheckEventsLoading: true, studentCheckEventsError: null });
+        try {
+          const list = await listStudentCheckEvents(academyId, { sinceDateYMD, limit });
+          set({
+            studentCheckEvents: list,
+            studentCheckEventsLoadedAt: new Date().toISOString(),
+          });
+          return list;
+        } catch (err) {
+          set({
+            studentCheckEventsError:
+              err?.message ?? '학생 체크인 이벤트를 불러오지 못했어요.',
+          });
+          return [];
+        } finally {
+          set({ isStudentCheckEventsLoading: false });
+        }
+      },
+
+      // 학생 등·하원 이벤트 1건 생성. 로컬 캐시도 즉시 prepend.
+      createStudentCheckEventLocal: async ({ studentId, eventType, source = 'qr', sessionId, eventTime }) => {
+        if (!isSupabaseConfigured) {
+          throw new Error('Supabase가 설정되지 않았어요.');
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) throw new Error('학원을 먼저 선택해주세요.');
+        const created = await createStudentCheckEvent({
+          academyId, studentId, eventType, source, sessionId, eventTime,
+        });
+        if (created) {
+          set((s) => ({ studentCheckEvents: [created, ...(s.studentCheckEvents || [])] }));
+        }
+        return created;
+      },
+
       // 로그인 직후 호출: 모든 서버 데이터 일괄 동기화
       initializeWorkspace: async () => {
         if (!isSupabaseConfigured) return;
@@ -964,6 +1040,7 @@ const useWorkspaceStore = create(
             get().loadAcademyStaffProfiles(),
             get().loadAcademyInvitations(),
             get().loadServerStaffShifts(),
+            get().loadStudentCheckEvents(),
           ]);
           set({ isWorkspaceReady: true });
         } finally {

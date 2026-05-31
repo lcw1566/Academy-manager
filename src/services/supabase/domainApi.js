@@ -1027,6 +1027,8 @@ const ATTENDANCE_ALLOWED_FIELDS = new Set([
   'id', 'academy_id', 'user_id', 'mode',
   'class_group_id', 'class_session_id', 'student_id',
   'date', 'status', 'memo',
+  // Phase 41 — SQL 011 추가 컬럼.
+  'source', 'checked_at',
 ]);
 
 function sanitizeAttendancePayload(input, { strip = [] } = {}) {

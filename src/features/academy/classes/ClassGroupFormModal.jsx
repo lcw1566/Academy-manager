@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, AlertTriangle, Check, Clock } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import OptionSelectSheet from '../../../components/OptionSelectSheet';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -12,6 +12,7 @@ import {
 } from '../../../services/supabase/domainApi';
 import { OWNER_TEACHER_ID } from '../../../utils/format';
 import BulkShiftSuggestionSheet from '../work/BulkShiftSuggestionSheet';
+import { hhmmToMin } from '../../../utils/shiftCoverage';
 
 function emptyToNull(v) {
   if (v === undefined) return null;
@@ -168,11 +169,55 @@ const LEVEL_GROUPS = [
   },
 ];
 
+// Phase 40 — 강사 가용성 분류:
+//   - 'noSchedule' : 근무 일정이 하나도 없음 (취소 제외)
+//   - 'mismatch'   : 일정은 있지만 선택한 요일/시간에 cover 가 없음
+//   - 'covered'    : 선택한 모든 요일·시간이 근무 안에 들어 있음
+function classifyTeacherAvailability({
+  staffId, shifts, weekdays = [], timesByWeekday, fallbackStart, fallbackEnd, useSameTime,
+}) {
+  if (!staffId) return null;
+  const live = (shifts || []).filter((sh) => sh.staffId === staffId && sh.status !== 'canceled');
+  if (live.length === 0) return 'noSchedule';
+  if (weekdays.length === 0) return 'covered';
+  const KO_DOW = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 };
+  const shiftsByDow = new Map();
+  for (const sh of live) {
+    if (!sh.date) continue;
+    const [y, m, d] = sh.date.split('-').map(Number);
+    if (!y || !m || !d) continue;
+    const dow = new Date(y, m - 1, d).getDay();
+    if (!shiftsByDow.has(dow)) shiftsByDow.set(dow, []);
+    shiftsByDow.get(dow).push(sh);
+  }
+  let allCovered = true;
+  for (const day of weekdays) {
+    const dow = KO_DOW[day];
+    if (dow == null) continue;
+    const dayShifts = shiftsByDow.get(dow) || [];
+    if (dayShifts.length === 0) { allCovered = false; continue; }
+    const t = useSameTime ? { startTime: fallbackStart, endTime: fallbackEnd }
+                          : (timesByWeekday?.[day] || { startTime: fallbackStart, endTime: fallbackEnd });
+    const lStart = hhmmToMin(t.startTime);
+    const lEnd = hhmmToMin(t.endTime);
+    if (lStart == null || lEnd == null) { allCovered = false; continue; }
+    const ok = dayShifts.some((sh) => {
+      const sStart = hhmmToMin(sh.scheduledStartTime);
+      const sEnd = hhmmToMin(sh.scheduledEndTime);
+      return sStart != null && sEnd != null && sStart <= lStart && lEnd <= sEnd;
+    });
+    if (!ok) allCovered = false;
+  }
+  return allCovered ? 'covered' : 'mismatch';
+}
+
 export default function ClassGroupFormModal({ editGroup, onClose }) {
   const {
     addClassGroup, updateClassGroup, setClassGroupServerId, setClassSessionServerIds,
     academyStudents, academyTeachers, academyAssistants = [], academyProfile, showToast,
+    setActiveTab,
   } = useAcademyStore();
+  const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
@@ -478,6 +523,40 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     return errs;
   }, [form.useSameTime, form.weekdays, form.weekdayTimes]);
 
+  // Phase 40 — 강사·보조강사 근무 가용성 체크 (인라인 안내용).
+  const teacherAvailability = useMemo(() => {
+    if (!form.teacherId || form.teacherId === OWNER_TEACHER_ID) return null;
+    return classifyTeacherAvailability({
+      staffId: form.teacherId,
+      shifts: academyStaffShifts,
+      weekdays: form.weekdays,
+      timesByWeekday: form.weekdayTimes,
+      fallbackStart: form.startTime,
+      fallbackEnd: form.endTime,
+      useSameTime: form.useSameTime,
+    });
+  }, [form.teacherId, form.weekdays, form.weekdayTimes, form.startTime, form.endTime, form.useSameTime, academyStaffShifts]);
+
+  const assistantAvailability = useMemo(() => {
+    if (!form.assistantId) return null;
+    return classifyTeacherAvailability({
+      staffId: form.assistantId,
+      shifts: academyStaffShifts,
+      weekdays: form.weekdays,
+      timesByWeekday: form.weekdayTimes,
+      fallbackStart: form.startTime,
+      fallbackEnd: form.endTime,
+      useSameTime: form.useSameTime,
+    });
+  }, [form.assistantId, form.weekdays, form.weekdayTimes, form.startTime, form.endTime, form.useSameTime, academyStaffShifts]);
+
+  // 직원 탭으로 이동하여 근무 시간을 설정. 폼은 닫는다 (state 가 사라지더라도
+  // 강사 배정 자체는 직원 일정 등록 후 다시 진행하는 게 자연스러움).
+  const goToStaffSchedule = () => {
+    setActiveTab('staff');
+    onClose?.();
+  };
+
   return (
     <Modal
       isOpen
@@ -536,6 +615,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
+            <AvailabilityBanner status={teacherAvailability} onGoToStaff={goToStaffSchedule} />
           </Field>
 
           {/* Phase 34 — 보조강사 배정 (옵션). 비워둬도 정상. */}
@@ -550,6 +630,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </select>
+            <AvailabilityBanner status={assistantAvailability} onGoToStaff={goToStaffSchedule} />
             <p className="text-[11px] text-gray-400 mt-1.5">
               보조강사 주업무는 클리닉이라 수업 배정은 선택이에요.
             </p>
@@ -820,6 +901,57 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         />
       )}
     </Modal>
+  );
+}
+
+// Phase 40 — 강사 배정 가용성 안내 (인라인 배너).
+//   covered    : 근무 시간 안에서 배정돼요. (성공 톤)
+//   noSchedule : 아직 이 선생님의 정해진 근무 시간이 없어요. → "근무 시간 정하러 가기"
+//   mismatch   : 근무 시간 밖 수업이에요. → 저장 시 BulkShiftSuggestionSheet 가 처리.
+function AvailabilityBanner({ status, onGoToStaff }) {
+  if (!status) return null;
+  if (status === 'covered') {
+    return (
+      <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+        <Check size={11} /> 근무 시간 안에서 배정돼요.
+      </p>
+    );
+  }
+  if (status === 'noSchedule') {
+    return (
+      <div className="mt-2 rounded-2xl bg-amber-50 px-3 py-2.5">
+        <p className="text-xs font-bold text-amber-700 leading-snug">
+          아직 이 선생님의 정해진 근무 시간이 없어요.
+        </p>
+        <p className="text-[11px] text-amber-700/80 mt-0.5 leading-relaxed">
+          수업 시간을 근무로 잡으려면 먼저 주간 근무 시간을 설정해주세요.
+        </p>
+        {onGoToStaff && (
+          <button
+            type="button"
+            onClick={onGoToStaff}
+            className="mt-2 inline-flex items-center gap-1 rounded-lg bg-white px-3 py-1.5 text-[11px] font-bold text-amber-700 active:bg-amber-100"
+          >
+            근무 시간 정하러 가기
+            <ChevronRight size={11} />
+          </button>
+        )}
+      </div>
+    );
+  }
+  // mismatch
+  return (
+    <div className="mt-2 rounded-2xl bg-amber-50 px-3 py-2.5 flex items-start gap-2">
+      <AlertTriangle size={13} className="text-amber-600 flex-shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-bold text-amber-700 leading-snug">
+          근무 시간 밖 수업이에요.
+        </p>
+        <p className="text-[11px] text-amber-700/80 mt-0.5 leading-relaxed">
+          저장하면 "수업 시간을 근무에 포함할지" 물어볼게요.
+        </p>
+      </div>
+    </div>
   );
 }
 

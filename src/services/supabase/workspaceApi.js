@@ -497,3 +497,111 @@ export async function deactivateAcademyStaffProfile({ academyId, userId }) {
   if (error) throw error;
   return data;
 }
+
+
+// ────────────────────────────────────────────────────────────────
+// Phase 41 — 출결·등하원 설정 (academies columns)
+// ────────────────────────────────────────────────────────────────
+
+// Phase 43 — 선생님 출퇴근은 'qr' 단일 옵션. wifi 제거.
+const STAFF_CHECK_METHODS = new Set(['qr']);
+const STUDENT_CHECK_METHODS = new Set(['teacher_manual', 'qr']);
+
+// SQL 011 의 새 컬럼을 한 번에 업데이트. owner 만 update RLS 통과.
+// 전달된 키만 patch 한다 — undefined 는 무시.
+export async function updateAcademyAttendanceSettings(academyId, patch = {}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const dbPatch = {};
+
+  if (patch.staffCheckMethod !== undefined) {
+    if (!STAFF_CHECK_METHODS.has(patch.staffCheckMethod)) {
+      throw new Error("staff_check_method 는 'qr' 이어야 해요.");
+    }
+    dbPatch.staff_check_method = patch.staffCheckMethod;
+  }
+  if (patch.studentCheckMethod !== undefined) {
+    if (!STUDENT_CHECK_METHODS.has(patch.studentCheckMethod)) {
+      throw new Error("student_check_method 는 'teacher_manual' 또는 'qr' 이어야 해요.");
+    }
+    dbPatch.student_check_method = patch.studentCheckMethod;
+  }
+  if (patch.staffManualOverrideEnabled !== undefined) {
+    dbPatch.staff_manual_override_enabled = !!patch.staffManualOverrideEnabled;
+  }
+  if (patch.studentManualOverrideEnabled !== undefined) {
+    dbPatch.student_manual_override_enabled = !!patch.studentManualOverrideEnabled;
+  }
+  if (patch.attendanceQrToken !== undefined) {
+    dbPatch.attendance_qr_token = patch.attendanceQrToken || null;
+    dbPatch.attendance_qr_token_rotated_at = new Date().toISOString();
+  }
+  if (patch.markOnboarded === true) {
+    dbPatch.attendance_onboarded_at = new Date().toISOString();
+  }
+
+  if (Object.keys(dbPatch).length === 0) return null;
+  const { data, error } = await supabase
+    .from('academies')
+    .update(dbPatch)
+    .eq('id', academyId)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+
+// ────────────────────────────────────────────────────────────────
+// Phase 41 — 학생 등·하원 이벤트 (student_check_events)
+// ────────────────────────────────────────────────────────────────
+
+// 학원 단위 student_check_events 목록 조회 (read-only).
+// 옵션:
+//   - sinceDateYMD : 이 날짜(YYYY-MM-DD) 0시 이후 이벤트만 (없으면 전체)
+//   - limit        : 정렬 후 최대 N개 (없으면 200)
+export async function listStudentCheckEvents(academyId, { sinceDateYMD, limit = 200 } = {}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  let query = supabase
+    .from('student_check_events')
+    .select('*')
+    .eq('academy_id', academyId)
+    .order('event_time', { ascending: false });
+  if (sinceDateYMD) {
+    // YMD 를 ISO 변환 (학원이 KST 라면 그대로도 OK — 일치하는 그 날짜 이후 row 만)
+    query = query.gte('event_time', `${sinceDateYMD}T00:00:00`);
+  }
+  if (limit) query = query.limit(limit);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createStudentCheckEvent({
+  academyId, studentId, eventType, source = 'qr', sessionId, eventTime,
+}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!studentId) throw new Error('studentId가 필요해요.');
+  if (!['check_in', 'check_out'].includes(eventType)) {
+    throw new Error("eventType 은 'check_in' 또는 'check_out' 이어야 해요.");
+  }
+  const user = await getCurrentUserOrThrow();
+  const payload = {
+    academy_id: academyId,
+    student_id: studentId,
+    event_type: eventType,
+    source: source || 'qr',
+    session_id: sessionId || null,
+    created_by: user.id,
+  };
+  if (eventTime) payload.event_time = eventTime;
+  const { data, error } = await supabase
+    .from('student_check_events')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}

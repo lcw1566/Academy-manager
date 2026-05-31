@@ -155,6 +155,9 @@ export function mapServerAttendanceRecordToLocal(a) {
     date: a.date,
     status: a.status ?? 'present',
     memo: a.memo ?? null,
+    // Phase 41 — SQL 011 컬럼.
+    source: a.source ?? null,
+    checkedAt: a.checked_at ?? null,
   };
 }
 

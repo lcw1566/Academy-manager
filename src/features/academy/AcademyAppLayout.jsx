@@ -1,9 +1,10 @@
-import { useEffect, useMemo } from 'react';
-import { Home, BookOpen, Users, MoreHorizontal, Stethoscope, CreditCard, BarChart2, CalendarClock } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Home, BookOpen, Users, MoreHorizontal, Stethoscope, CreditCard, BarChart2, UserCog } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
 import { currentUserCan } from '../../utils/staffPermissions';
+import AttendanceSettingsSheet from './attendance/AttendanceSettingsSheet';
 import OwnerDashboard from './dashboard/OwnerDashboard';
 import TeacherDashboard from './dashboard/TeacherDashboard';
 import AssistantDashboard from './dashboard/AssistantDashboard';
@@ -16,18 +17,17 @@ import AcademyStudentDetailPage from './students/AcademyStudentDetailPage';
 import AcademyMorePage from './more/AcademyMorePage';
 import SettlementPage from './settlement/SettlementPage';
 import PayrollPage from './payroll/PayrollPage';
-import WorkSchedulePage from './work/WorkSchedulePage';
+import StaffPage from './staff/StaffPage';
 import Sidebar from '../../components/Sidebar';
 
-// Phase 39 — More 탭이 더 이상 단축 hub 역할을 하지 않으므로, 모바일에서도
-// 근무 탭을 BottomNav 에서 직접 진입할 수 있도록 노출. 총 6개 탭이 들어가지만
-// 아이콘 크기를 살짝 줄여 한 줄에 맞춘다.
+// Phase 40 — 기존 "근무" 탭을 "스태프" 로 통합. 직원 리스트 + 근무 스케줄 +
+// 계약/권한/배정까지 한 탭에서 처리한다. More 탭은 학원·계정 설정만 남긴다.
 const TAB_CONFIG = {
   owner: [
     { id: 'home',       label: '홈',    Icon: Home },
     { id: 'classes',    label: '수업',  Icon: BookOpen },
     { id: 'students',   label: '학생',  Icon: Users },
-    { id: 'work',       label: '근무',  Icon: CalendarClock },
+    { id: 'staff',      label: '스태프', Icon: UserCog },
     { id: 'settlement', label: '정산',  Icon: BarChart2 },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
@@ -35,7 +35,7 @@ const TAB_CONFIG = {
     { id: 'home',     label: '홈',   Icon: Home },
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
-    { id: 'work',     label: '근무', Icon: CalendarClock },
+    { id: 'staff',    label: '스태프', Icon: UserCog },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
@@ -43,7 +43,7 @@ const TAB_CONFIG = {
     { id: 'home',     label: '홈',    Icon: Home },
     { id: 'clinic',   label: '클리닉', Icon: Stethoscope },
     { id: 'students', label: '학생',  Icon: Users },
-    { id: 'work',     label: '근무',  Icon: CalendarClock },
+    { id: 'staff',    label: '스태프', Icon: UserCog },
     { id: 'payroll',  label: '급여',  Icon: CreditCard },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
@@ -81,6 +81,19 @@ export default function AcademyAppLayout() {
   const goBackFromClassSession = useAcademyStore((s) => s.goBackFromClassSession);
   const goBackFromAcademyStudent = useAcademyStore((s) => s.goBackFromAcademyStudent);
 
+  // Phase 41 — owner 가 출결 onboarding 을 마치지 않았으면 1회성 모달 노출.
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
+  const currentAcademy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
+  const needsAttendanceOnboarding = role === 'owner'
+    && isWorkspaceReady
+    && !!currentAcademy
+    && !currentAcademy.attendance_onboarded_at;
+  // 사용자가 이번 세션에서 onboarding 모달을 명시적으로 닫은 경우 다시 띄우지 않음.
+  // (서버 set 이 실패하더라도 무한 루프 회피.)
+  const [attendanceOnboardingDismissed, setAttendanceOnboardingDismissed] = useState(false);
+
   // Phase 31 — 역할별 default 탭 후, staffPermissions 로 일부 탭 (payroll 등) 가린다.
   const authUserId = useAuthStore((s) => s.user?.id);
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
@@ -107,9 +120,14 @@ export default function AcademyAppLayout() {
     });
   }, [baseTabs, role, myStaffProfile]);
 
-  // 역할이 바뀌어 현재 activeTab이 해당 역할 탭 목록에 없으면 첫 번째 탭으로 보정
+  // 역할이 바뀌어 현재 activeTab이 해당 역할 탭 목록에 없으면 첫 번째 탭으로 보정.
+  // Phase 40 호환 — 이전에 저장된 'work' 는 새 'staff' 로 자동 마이그레이션.
   useEffect(() => {
     const validTabIds = tabs.map((t) => t.id);
+    if (activeTab === 'work' && validTabIds.includes('staff')) {
+      setActiveTab('staff');
+      return;
+    }
     if (!validTabIds.includes(activeTab)) {
       setActiveTab(tabs[0]?.id || 'home');
     }
@@ -166,7 +184,9 @@ export default function AcademyAppLayout() {
       if (activeTab === 'clinic')     return <ClinicPage />;
       if (activeTab === 'settlement') return <SettlementPage />;
       if (activeTab === 'payroll')    return <PayrollPage />;
-      if (activeTab === 'work')       return <WorkSchedulePage />;
+      if (activeTab === 'staff')      return <StaffPage />;
+      // Phase 40 호환 — 이전 버전 store 에 'work' 가 저장되어 있어도 staff 로 매핑.
+      if (activeTab === 'work')       return <StaffPage />;
       if (activeTab === 'more')       return <AcademyMorePage />;
 
       // 탭이 유효하지 않을 경우 대시보드 렌더
@@ -196,6 +216,14 @@ export default function AcademyAppLayout() {
       {/* Phase 25 — 자동 hydrate 가 App.jsx 에서 처리되므로 HydratePromptModal 은
           기본 흐름에서 표시하지 않는다. 수동 새로고침은 더보기 → 학원 워크스페이스 패널의
           "서버 데이터 새로고침/불러오기" 버튼으로 진행. */}
+
+      {/* Phase 41 — 출결 onboarding (owner 만, 1회) */}
+      {needsAttendanceOnboarding && !attendanceOnboardingDismissed && (
+        <AttendanceSettingsSheet
+          kind="onboarding"
+          onClose={() => setAttendanceOnboardingDismissed(true)}
+        />
+      )}
 
       {/* Bottom Nav — 모바일 전용 (md 이상에서는 좌측 사이드바가 대체).
           Phase 39 — 6개 탭이 들어가도록 아이콘/너비 살짝 축소. */}
