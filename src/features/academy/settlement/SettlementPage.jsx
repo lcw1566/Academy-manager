@@ -219,7 +219,9 @@ export default function SettlementPage() {
   };
 
   const handleAutoGeneratePayrolls = async () => {
-    const newPayrolls = generatePayrollsForMonth(selectedMonth) || [];
+    // Phase 44.7 / Phase C — approved attendance logs 우선 사용.
+    const attendanceLogs = useWorkspaceStore.getState().staffAttendanceLogs || [];
+    const newPayrolls = generatePayrollsForMonth(selectedMonth, { attendanceLogs }) || [];
     if (newPayrolls.length === 0) return;
     if (!canSyncServer) return;
     try {

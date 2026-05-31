@@ -179,44 +179,84 @@ export default function QrScanSheet({ mode = 'staff_self', onClose }) {
       .filter((sh) => sh.staffId === myStaff.id && sh.date === todayStr && sh.status !== 'canceled')
       .sort((a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || ''));
     const todayShift = todaysShifts[0] || null;
-    if (!todayShift) {
+    const time = nowHHmm();
+
+    // Phase 44.7 / Phase C — 오늘 본인 attendance log SoT.
+    // legacy shift 가 있으면 함께 갱신, 없으면 log 만 사용.
+    const staffAttendanceLogs = useWorkspaceStore.getState().staffAttendanceLogs || [];
+    const existingLog = myStaff.serverUserId
+      ? staffAttendanceLogs.find(
+          (l) => l.staff_user_id === myStaff.serverUserId && l.work_date === todayStr,
+        )
+      : null;
+
+    // 상태 결정 — log 우선, legacy shift 보조.
+    const hasStart = !!(existingLog?.actual_start_time || todayShift?.actualStartTime);
+    const hasEnd = !!(existingLog?.actual_end_time || todayShift?.actualEndTime);
+
+    if (hasEnd) {
       setResult({
-        ok: false,
-        title: '오늘 등록된 근무가 없어요.',
-        detail: '원장에게 근무 일정을 등록해 달라고 요청하거나 스태프 탭에서 임시 근무를 추가해주세요.',
+        ok: true,
+        title: '이미 출퇴근이 모두 기록됐어요.',
+        detail: `${existingLog?.actual_start_time || todayShift?.actualStartTime || ''} 출근, ${existingLog?.actual_end_time || todayShift?.actualEndTime || ''} 퇴근.`,
       });
       return;
     }
-    const time = nowHHmm();
+
+    const fieldKey = hasStart ? 'actual_end_time' : 'actual_start_time';
     const writePatch = {};
-    if (!todayShift.actualStartTime) {
-      writePatch.actualStartTime = time;
-    } else if (!todayShift.actualEndTime) {
-      writePatch.actualEndTime = time;
-      writePatch.status = 'completed';
-    } else {
-      setResult({ ok: true, title: '이미 출퇴근이 모두 기록됐어요.', detail: `오늘 ${todayShift.actualStartTime} 출근, ${todayShift.actualEndTime} 퇴근.` });
-      return;
-    }
-    updateAcademyStaffShift(todayShift.id, writePatch);
-    if (todayShift.serverId) {
+    if (fieldKey === 'actual_start_time') writePatch.actualStartTime = time;
+    else { writePatch.actualEndTime = time; writePatch.status = 'completed'; }
+
+    // 1) staff_attendance_logs upsert.
+    if (myStaff.serverUserId) {
       try {
-        const serverPatch = {};
-        if (writePatch.actualStartTime) serverPatch.actual_start_time = writePatch.actualStartTime;
-        if (writePatch.actualEndTime)   serverPatch.actual_end_time = writePatch.actualEndTime;
-        if (writePatch.status)          serverPatch.status = writePatch.status;
-        await updateServerStaffShift(todayShift.serverId, serverPatch);
-        loadServerStaffShifts();
+        if (existingLog?.id) {
+          await useWorkspaceStore.getState().updateStaffAttendanceLogLocal(
+            existingLog.id,
+            { [fieldKey]: time, ...(fieldKey === 'actual_end_time' ? { status: 'pending' } : {}) },
+          );
+        } else {
+          await useWorkspaceStore.getState().createStaffAttendanceLogLocal({
+            staff_user_id: myStaff.serverUserId,
+            staff_role: myStaff._role || 'teacher',
+            work_date: todayStr,
+            scheduled_start_time: todayShift?.scheduledStartTime || null,
+            scheduled_end_time: todayShift?.scheduledEndTime || null,
+            break_minutes: todayShift?.breakMinutes ?? 0,
+            [fieldKey]: time,
+            source: 'qr',
+            status: 'pending',
+          });
+        }
       } catch (err) {
-        console.warn('[qr] staff shift write failed', err);
+        console.warn('[qr] attendance log upsert failed', err);
       }
     }
-    const status = classifyShiftStatus({ ...todayShift, ...writePatch });
+
+    // 2) legacy academy_staff_shifts (best-effort 호환).
+    if (todayShift) {
+      updateAcademyStaffShift(todayShift.id, writePatch);
+      if (todayShift.serverId) {
+        try {
+          const serverPatch = {};
+          if (writePatch.actualStartTime) serverPatch.actual_start_time = writePatch.actualStartTime;
+          if (writePatch.actualEndTime)   serverPatch.actual_end_time = writePatch.actualEndTime;
+          if (writePatch.status)          serverPatch.status = writePatch.status;
+          await updateServerStaffShift(todayShift.serverId, serverPatch);
+          loadServerStaffShifts();
+        } catch (err) {
+          console.warn('[qr] staff shift write failed', err);
+        }
+      }
+    }
+
+    const status = classifyShiftStatus({ ...(todayShift || {}), ...writePatch });
     showToast('체크인이 기록됐어요.');
     setResult({
       ok: true,
       title: writePatch.actualEndTime ? '퇴근 처리됐어요.' : '출근 처리됐어요.',
-      detail: `${SHIFT_STATUS_LABELS[status] || ''} · ${time}`,
+      detail: `${SHIFT_STATUS_LABELS[status] || ''} · ${time} · 원장 확인 대기`,
     });
   };
 

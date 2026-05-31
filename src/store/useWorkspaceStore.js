@@ -45,6 +45,18 @@ import {
   listAcademyPayrolls,
   listAcademyStaffShifts,
 } from '../services/supabase/domainApi';
+// Phase 44.5 / Phase A — 룰 기반 스케줄 read-only 로더.
+// Phase 44.7 / Phase C — staff_attendance_logs 와 class_session_exceptions CUD 추가.
+import {
+  listStaffWorkRules,
+  listStaffWorkExceptions,
+  listClassScheduleRules,
+  listClassSessionExceptions,
+  listStaffAttendanceLogs,
+  createStaffAttendanceLog,
+  updateStaffAttendanceLog,
+  createClassSessionException,
+} from '../services/supabase/scheduleRulesApi';
 import useAuthStore from './useAuthStore';
 import useAcademyStore from './useAcademyStore';
 
@@ -150,6 +162,35 @@ const initialState = {
   isStudentCheckEventsLoading: false,
   studentCheckEventsError: null,
   studentCheckEventsLoadedAt: null,
+
+  // Phase 44.5 / Phase A — 룰 기반 스케줄 모델 (SQL 014).
+  // 모두 read-only 미리보기. Phase B 에서 ClassGroupFormModal / ShiftFormModal
+  // 가 룰을 INSERT 하기 시작하면 본격적으로 채워진다. 현재는 빈 배열.
+  staffWorkRules: [],
+  isStaffWorkRulesLoading: false,
+  staffWorkRulesError: null,
+  staffWorkRulesLoadedAt: null,
+
+  staffWorkExceptions: [],
+  isStaffWorkExceptionsLoading: false,
+  staffWorkExceptionsError: null,
+  staffWorkExceptionsLoadedAt: null,
+
+  // Phase C 에서 본격 사용. 정의만 보유.
+  staffAttendanceLogs: [],
+  isStaffAttendanceLogsLoading: false,
+  staffAttendanceLogsError: null,
+  staffAttendanceLogsLoadedAt: null,
+
+  classScheduleRules: [],
+  isClassScheduleRulesLoading: false,
+  classScheduleRulesError: null,
+  classScheduleRulesLoadedAt: null,
+
+  classSessionExceptions: [],
+  isClassSessionExceptionsLoading: false,
+  classSessionExceptionsError: null,
+  classSessionExceptionsLoadedAt: null,
 };
 
 const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type';
@@ -973,6 +1014,141 @@ const useWorkspaceStore = create(
         return saved;
       },
 
+      // ──────────────────────────────────────────────────────
+      // Phase 44.5 / Phase A — 룰/예외/실제로그 로더 (read-only)
+      // 호출처는 Phase B 에서 본격 연결. 현재는 initializeWorkspace 가
+      // best-effort 로 호출해 캐시만 채운다 (실패해도 다른 흐름 막지 않음).
+      // ──────────────────────────────────────────────────────
+      loadStaffWorkRules: async () => {
+        if (!isSupabaseConfigured) { set({ staffWorkRules: [] }); return []; }
+        const academyId = get().currentAcademyId;
+        if (!academyId) { set({ staffWorkRules: [], staffWorkRulesError: null }); return []; }
+        set({ isStaffWorkRulesLoading: true, staffWorkRulesError: null });
+        try {
+          const list = await listStaffWorkRules(academyId);
+          set({ staffWorkRules: list, staffWorkRulesLoadedAt: new Date().toISOString() });
+          return list;
+        } catch (err) {
+          set({ staffWorkRulesError: err?.message ?? '근무 규칙을 불러오지 못했어요.' });
+          return [];
+        } finally {
+          set({ isStaffWorkRulesLoading: false });
+        }
+      },
+
+      loadStaffWorkExceptions: async ({ fromDate, toDate } = {}) => {
+        if (!isSupabaseConfigured) { set({ staffWorkExceptions: [] }); return []; }
+        const academyId = get().currentAcademyId;
+        if (!academyId) { set({ staffWorkExceptions: [], staffWorkExceptionsError: null }); return []; }
+        set({ isStaffWorkExceptionsLoading: true, staffWorkExceptionsError: null });
+        try {
+          const list = await listStaffWorkExceptions(academyId, { fromDate, toDate });
+          set({ staffWorkExceptions: list, staffWorkExceptionsLoadedAt: new Date().toISOString() });
+          return list;
+        } catch (err) {
+          set({ staffWorkExceptionsError: err?.message ?? '근무 예외를 불러오지 못했어요.' });
+          return [];
+        } finally {
+          set({ isStaffWorkExceptionsLoading: false });
+        }
+      },
+
+      loadClassScheduleRules: async () => {
+        if (!isSupabaseConfigured) { set({ classScheduleRules: [] }); return []; }
+        const academyId = get().currentAcademyId;
+        if (!academyId) { set({ classScheduleRules: [], classScheduleRulesError: null }); return []; }
+        set({ isClassScheduleRulesLoading: true, classScheduleRulesError: null });
+        try {
+          const list = await listClassScheduleRules(academyId);
+          set({ classScheduleRules: list, classScheduleRulesLoadedAt: new Date().toISOString() });
+          return list;
+        } catch (err) {
+          set({ classScheduleRulesError: err?.message ?? '수업 스케줄 규칙을 불러오지 못했어요.' });
+          return [];
+        } finally {
+          set({ isClassScheduleRulesLoading: false });
+        }
+      },
+
+      loadClassSessionExceptions: async ({ fromDate, toDate } = {}) => {
+        if (!isSupabaseConfigured) { set({ classSessionExceptions: [] }); return []; }
+        const academyId = get().currentAcademyId;
+        if (!academyId) { set({ classSessionExceptions: [], classSessionExceptionsError: null }); return []; }
+        set({ isClassSessionExceptionsLoading: true, classSessionExceptionsError: null });
+        try {
+          const list = await listClassSessionExceptions(academyId, { fromDate, toDate });
+          set({ classSessionExceptions: list, classSessionExceptionsLoadedAt: new Date().toISOString() });
+          return list;
+        } catch (err) {
+          set({ classSessionExceptionsError: err?.message ?? '수업 예외를 불러오지 못했어요.' });
+          return [];
+        } finally {
+          set({ isClassSessionExceptionsLoading: false });
+        }
+      },
+
+      loadStaffAttendanceLogs: async ({ fromDate, toDate, limit } = {}) => {
+        if (!isSupabaseConfigured) { set({ staffAttendanceLogs: [] }); return []; }
+        const academyId = get().currentAcademyId;
+        if (!academyId) { set({ staffAttendanceLogs: [], staffAttendanceLogsError: null }); return []; }
+        set({ isStaffAttendanceLogsLoading: true, staffAttendanceLogsError: null });
+        try {
+          const list = await listStaffAttendanceLogs(academyId, { fromDate, toDate, limit });
+          set({ staffAttendanceLogs: list, staffAttendanceLogsLoadedAt: new Date().toISOString() });
+          return list;
+        } catch (err) {
+          set({ staffAttendanceLogsError: err?.message ?? '실제 출근 로그를 불러오지 못했어요.' });
+          return [];
+        } finally {
+          set({ isStaffAttendanceLogsLoading: false });
+        }
+      },
+
+      // Phase 44.7 / Phase C — 출근 로그 INSERT (clock-in 또는 owner 수동 추가).
+      // 호출자는 staff_user_id, staff_role, work_date, actual_start_time(optional),
+      // scheduled_start_time(optional), source 를 명시.
+      createStaffAttendanceLogLocal: async (payload = {}) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        const academyId = get().currentAcademyId;
+        if (!academyId) throw new Error('학원을 먼저 선택해주세요.');
+        const created = await createStaffAttendanceLog({ academyId, ...payload });
+        if (created) {
+          set((s) => ({
+            staffAttendanceLogs: [created, ...(s.staffAttendanceLogs || [])],
+          }));
+        }
+        return created;
+      },
+
+      // Phase 44.7 / Phase C — 출근 로그 UPDATE (clock-out, 승인, 수정 등).
+      updateStaffAttendanceLogLocal: async (id, patch = {}) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        if (!id) throw new Error('id가 필요해요.');
+        const updated = await updateStaffAttendanceLog(id, patch);
+        if (updated) {
+          set((s) => ({
+            staffAttendanceLogs: (s.staffAttendanceLogs || []).map(
+              (log) => (log.id === id ? updated : log),
+            ),
+          }));
+        }
+        return updated;
+      },
+
+      // Phase 44.7 / Phase C — class_session_exceptions INSERT.
+      createClassSessionExceptionLocal: async (payload = {}) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        const academyId = get().currentAcademyId;
+        if (!academyId) throw new Error('학원을 먼저 선택해주세요.');
+        const created = await createClassSessionException({ academyId, ...payload });
+        if (created) {
+          set((s) => ({
+            classSessionExceptions: [created, ...(s.classSessionExceptions || [])],
+          }));
+        }
+        return created;
+      },
+
       // 학생 등·하원 이벤트 목록 (read-only). 기본은 오늘 + 최근 200건.
       loadStudentCheckEvents: async ({ sinceDateYMD, limit } = {}) => {
         if (!isSupabaseConfigured) {
@@ -1041,6 +1217,14 @@ const useWorkspaceStore = create(
             get().loadAcademyInvitations(),
             get().loadServerStaffShifts(),
             get().loadStudentCheckEvents(),
+            // Phase 44.5 / Phase A — 룰/예외 캐시는 best-effort. 실패해도 워크스페이스
+            // 초기화는 성공으로 처리. staff_attendance_logs 는 Phase C 까지 빈 채로 둠.
+            get().loadStaffWorkRules(),
+            get().loadStaffWorkExceptions(),
+            get().loadClassScheduleRules(),
+            get().loadClassSessionExceptions(),
+            // Phase 44.7 / Phase C — 실제 출근 로그도 best-effort 로드.
+            get().loadStaffAttendanceLogs({ limit: 200 }),
           ]);
           set({ isWorkspaceReady: true });
         } finally {

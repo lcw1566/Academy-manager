@@ -17,6 +17,8 @@ import { currentUserCan } from '../../../utils/staffPermissions';
 import ShiftCoverageSheet from '../work/ShiftCoverageSheet';
 import useEnsureShiftCoverage from '../work/useEnsureShiftCoverage';
 import { getQrAttendanceHint, readAttendanceSettings } from '../attendance/attendanceHelpers';
+// Phase 44.7 / Phase C — 회차 변경 sheet.
+import SessionExceptionSheet from './SessionExceptionSheet';
 
 // ─── 평가 옵션 ──────────────────────────────────────────────────────────────
 const ATTITUDE_OPTIONS = [
@@ -357,12 +359,14 @@ export default function ClassSessionPage() {
     () => (session ? classGroups.find((g) => g.id === session.classGroupId) : null) ?? null,
     [classGroups, session]
   );
-  const teacherName = useMemo(
-    () => (group && group.teacherId)
-      ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile)
-      : null,
-    [academyTeachers, academyProfile, group]
-  );
+  // Phase 44 — session 의 teacherUserId 가 더 신뢰 가능. group 으로 fallback.
+  const teacherName = useMemo(() => {
+    if (!session && !group) return null;
+    const tid = session?.teacherId || group?.teacherId || '';
+    const tuid = session?.teacherUserId || group?.teacherUserId || '';
+    if (!tid && !tuid) return null;
+    return getTeacherDisplayName(tid, academyTeachers, academyProfile, tuid);
+  }, [academyTeachers, academyProfile, group, session]);
   const sessionStudentIdSet = useMemo(
     () => new Set(session?.studentIds || []),
     [session?.studentIds],
@@ -479,24 +483,51 @@ export default function ClassSessionPage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [substituteModalOpen, setSubstituteModalOpen] = useState(false);
+  // Phase 44.7 / Phase C — 회차 변경 sheet.
+  const [exceptionSheetOpen, setExceptionSheetOpen] = useState(false);
 
   // Phase 34 — 대체 강사 배정 시 근무 cover 여부 확인 + 자동 추가.
   const { check: ensureCoverage, sheetProps: coverageSheetProps } = useEnsureShiftCoverage();
 
   // Phase 31 — 본인 staffProfile 권한으로 게이팅. owner 는 항상 허용.
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const authUserId = useAuthStore((s) => s.user?.id);
   const myStaffProfile = useMemo(
-    () => academyStaffProfiles.find((sp) => sp.user_id === useAuthStore.getState().user?.id) || null,
-    [academyStaffProfiles],
+    () => academyStaffProfiles.find((sp) => sp.user_id === authUserId) || null,
+    [academyStaffProfiles, authUserId],
   );
+
+  // Phase 44 — teacher 가 이 세션의 담당인지 (본인 반/세션/대체) 확인.
+  // owner 가 PC 에서 만든 반의 teacher_id 가 다른 단말에서 다를 수 있으므로
+  // server-stable teacher_user_id (auth.users.id) 매칭 우선.
+  const myTeacherLocal = useMemo(
+    () => academyTeachers.find((t) => t?.serverUserId && authUserId && t.serverUserId === authUserId) || null,
+    [academyTeachers, authUserId],
+  );
+  const isMyAssignedSession = useMemo(() => {
+    if (!session) return false;
+    if (session.teacherUserId && authUserId && session.teacherUserId === authUserId) return true;
+    if (myTeacherLocal && session.teacherId === myTeacherLocal.id) return true;
+    if (session.substituteTeacherUserId && authUserId && session.substituteTeacherUserId === authUserId) return true;
+    if (myTeacherLocal && session.substituteTeacherId === myTeacherLocal.id) return true;
+    if (group?.teacherUserId && authUserId && group.teacherUserId === authUserId) return true;
+    if (myTeacherLocal && group?.teacherId === myTeacherLocal.id) return true;
+    return false;
+  }, [session, group, authUserId, myTeacherLocal]);
+
+  // 권한 + 본인 담당 세션이어야 teacher 가 편집 가능. owner 는 항상 허용.
   const canEditLessonRecords =
     role === 'owner'
       ? true
-      : role === 'teacher' && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords');
+      : role === 'teacher'
+        && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
+        && isMyAssignedSession;
   const canEditAttendance =
     role === 'owner'
       ? true
-      : role === 'teacher' && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance');
+      : role === 'teacher'
+        && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance')
+        && isMyAssignedSession;
   // 기존 canEdit (lesson record 입력/저장) → 권한 기반.
   const canEdit = canEditLessonRecords;
   const isOwnerRole = role === 'owner';
@@ -753,6 +784,19 @@ export default function ClassSessionPage() {
                 )}
               </div>
             )}
+
+            {/* Phase 44.7 / Phase C — 회차 변경 (휴강/시간변경/보강) */}
+            {isOwnerRole && (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => setExceptionSheetOpen(true)}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gray-50 text-gray-700 text-xs font-bold active:bg-gray-100"
+                >
+                  회차 변경
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -827,6 +871,15 @@ export default function ClassSessionPage() {
           </div>
         </div>
       </div>
+
+      {/* Phase 44.7 / Phase C — 회차 변경 (휴강/시간변경/보강) */}
+      {exceptionSheetOpen && (
+        <SessionExceptionSheet
+          session={session}
+          group={group}
+          onClose={() => setExceptionSheetOpen(false)}
+        />
+      )}
 
       {/* Phase 30 — 대체 강사 지정 모달 */}
       {substituteModalOpen && (

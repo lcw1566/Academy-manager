@@ -10,6 +10,12 @@ import {
   updateClassGroup as updateServerClassGroup,
   createAcademyClassSessionsBulk,
 } from '../../../services/supabase/domainApi';
+// Phase 44.6 / Phase B — class_schedule_rules write-through.
+import {
+  createClassScheduleRule,
+  listClassScheduleRules,
+  updateClassScheduleRule,
+} from '../../../services/supabase/scheduleRulesApi';
 import { OWNER_TEACHER_ID } from '../../../utils/format';
 import BulkShiftSuggestionSheet from '../work/BulkShiftSuggestionSheet';
 import { hhmmToMin } from '../../../utils/shiftCoverage';
@@ -26,7 +32,18 @@ function emptyToNull(v) {
 // Phase 35 — assistantIds (로컬 ID) → assistant_ids (server user_id) 로 변환.
 //   serverUserId 가 비어 있는 보조강사는 제외 (서버에 매핑할 수 없으므로).
 // id / academy_id / user_id / mode 는 createAcademyClassGroup 에서 자동 주입.
-function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistants = []) {
+// Phase 44 — teacher_user_id (auth.users.id) 를 함께 기록해 cross-device 매칭 가능.
+//   - form.teacherId === OWNER_TEACHER_ID ('owner') 이면 ownerUserId (현재 로그인 user.id)
+//   - 그 외에는 academyTeachers[i].serverUserId 로 매핑
+//   - 매핑 실패 시 null (legacy fallback)
+function resolveTeacherUserId(localTeacherId, academyTeachers, ownerUserId) {
+  if (!localTeacherId) return null;
+  if (localTeacherId === OWNER_TEACHER_ID) return ownerUserId || null;
+  const t = academyTeachers.find((x) => x.id === localTeacherId);
+  return t?.serverUserId || null;
+}
+
+function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistants = [], academyTeachers = [], ownerUserId = null) {
   const studentById = new Map(academyStudents.map((s) => [s.id, s]));
 
   const serverStudentIds = (form.studentIds || [])
@@ -55,6 +72,7 @@ function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistan
     level: emptyToNull(form.level),
     teacher_id: emptyToNull(form.teacherId),
     teacher_type: form.teacherId === OWNER_TEACHER_ID ? 'owner' : 'teacher',
+    teacher_user_id: resolveTeacherUserId(form.teacherId, academyTeachers, ownerUserId),
     student_ids: serverStudentIds,
     assistant_ids: serverAssistantIds,
     weekdays: Array.isArray(form.weekdays) ? form.weekdays : [],
@@ -71,11 +89,46 @@ function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistan
   };
 }
 
+// Phase 44.6 / Phase B — form → class_schedule_rules row 배열.
+//   - weekdayTimes 가 있으면 요일별 시간 별도 사용. 없으면 form.startTime/endTime.
+//   - 요일은 한글 → 0~6 (0=일).
+//   - teacher_user_id 는 resolveTeacherUserId 로 매핑.
+//   - assistant_ids 는 academyAssistants.id → serverUserId 매핑한 배열.
+const DOW_KO_TO_NUM = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 };
+
+function buildClassScheduleRulePayloads(form, academyTeachers, academyAssistants, ownerUserId) {
+  const teacherUserId = resolveTeacherUserId(form.teacherId, academyTeachers, ownerUserId);
+  const assistantById = new Map(academyAssistants.map((a) => [a.id, a]));
+  const assistantUserIds = (form.assistantIds || [])
+    .map((localId) => assistantById.get(localId)?.serverUserId)
+    .filter(Boolean);
+  const weekdayList = Array.isArray(form.weekdays) ? form.weekdays : [];
+  const rows = [];
+  for (const ko of weekdayList) {
+    const dow = DOW_KO_TO_NUM[ko];
+    if (dow === undefined) continue;
+    const perDay = form.weekdayTimes?.[ko];
+    const startTime = perDay?.startTime || form.startTime || '';
+    const endTime = perDay?.endTime || form.endTime || '';
+    if (!startTime || !endTime) continue;
+    rows.push({
+      day_of_week: dow,
+      start_time: startTime,
+      end_time: endTime,
+      teacher_user_id: teacherUserId || null,
+      assistant_ids: assistantUserIds,
+      room: emptyToNull(form.room),
+      is_active: true,
+    });
+  }
+  return rows;
+}
+
 // local classSession → Supabase class_sessions snake_case payload.
 // class_group_id 는 호출처에서 (serverGroupId) 로 명시적으로 전달.
 // student_ids 는 학생 serverId 가 있는 항목만 포함.
 // Phase 35 — assistant_ids (server user_id 배열) 도 함께 보냄.
-function mapClassSessionToServerPayload(localSession, classGroupServerId, academyStudents, academyAssistants = []) {
+function mapClassSessionToServerPayload(localSession, classGroupServerId, academyStudents, academyAssistants = [], academyTeachers = [], ownerUserId = null) {
   const studentById = new Map(academyStudents.map((s) => [s.id, s]));
   const serverStudentIds = (localSession.studentIds || [])
     .map((localId) => studentById.get(localId)?.serverId)
@@ -93,6 +146,8 @@ function mapClassSessionToServerPayload(localSession, classGroupServerId, academ
     room: emptyToNull(localSession.room),
     teacher_id: teacherId,
     teacher_type: teacherId === OWNER_TEACHER_ID ? 'owner' : 'teacher',
+    // Phase 44 — server-stable 매칭 키.
+    teacher_user_id: resolveTeacherUserId(teacherId, academyTeachers, ownerUserId),
     student_ids: serverStudentIds,
     assistant_ids: serverAssistantIds,
     status: localSession.status || 'scheduled',
@@ -219,6 +274,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   } = useAcademyStore();
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authUserId = useAuthStore((s) => s.user?.id);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
@@ -354,11 +410,15 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     // form.useSameTime 은 UI 상태일 뿐이므로 저장 데이터에서 제외.
     // weekdayTimes 의 유무가 source of truth.
     const { useSameTime: _useSameTime, ...formRest } = form;
+    // Phase 44 — server-stable user id 를 로컬에도 함께 저장하여, 학원장 본인 단말의
+    // 즉시 매칭(다른 단말 hydrate 전)도 정상 동작하도록 한다.
+    const teacherUserIdForData = resolveTeacherUserId(form.teacherId, academyTeachers, authUserId);
     const data = {
       ...formRest,
       startTime: savedStartTime,
       endTime: savedEndTime,
       weekdayTimes: savedWeekdayTimes,
+      teacherUserId: teacherUserIdForData || '',
       // assistantId(단일 UI) → assistantIds 배열로 저장. 기존 데이터와 호환.
       assistantIds: form.assistantId ? [form.assistantId] : [],
       monthlyFee: Number(form.monthlyFee) || 0,
@@ -379,7 +439,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           try {
             await updateServerClassGroup(
               editGroup.serverId,
-              mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants),
+              mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants, academyTeachers, authUserId),
             );
             await loadServerClassGroups();
           } catch (err) {
@@ -390,6 +450,35 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
                 : '반 정보는 수정되었지만 서버 동기화는 실패했어요.',
               'error',
             );
+          }
+
+          // Phase 44.6 / Phase B — class_schedule_rules 재정의 (best-effort).
+          // 안전한 패턴: 기존 active rule 들 deactivate → 새 rule INSERT.
+          // 기존 lesson_records / attendance_records 는 별도 테이블이므로 영향 없음.
+          try {
+            const existingRules = await listClassScheduleRules(currentAcademyId);
+            const groupRules = existingRules.filter(
+              (r) => r.class_group_id === editGroup.serverId && r.is_active,
+            );
+            for (const r of groupRules) {
+              try { await updateClassScheduleRule(r.id, { is_active: false }); }
+              catch (err) { console.warn('[supabase] deactivate rule failed', err); }
+            }
+            const rulePayloads = buildClassScheduleRulePayloads(data, academyTeachers, academyAssistants, authUserId);
+            for (const rp of rulePayloads) {
+              try {
+                await createClassScheduleRule({
+                  academyId: currentAcademyId,
+                  class_group_id: editGroup.serverId,
+                  ...rp,
+                });
+              } catch (err) {
+                console.warn('[supabase] createClassScheduleRule (edit) failed', err);
+              }
+            }
+            await useWorkspaceStore.getState().loadClassScheduleRules?.();
+          } catch (err) {
+            console.warn('[supabase] reapply class rules failed', err);
           }
         }
       } else {
@@ -434,7 +523,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           try {
             serverGroup = await createAcademyClassGroup({
               academyId: currentAcademyId,
-              ...mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants),
+              ...mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants, academyTeachers, authUserId),
             });
             if (serverGroup?.id && localGroup?.id) {
               setClassGroupServerId(localGroup.id, serverGroup.id);
@@ -454,7 +543,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           if (serverGroup?.id && localSessions.length > 0) {
             try {
               const sessionPayloads = localSessions.map((ls) =>
-                mapClassSessionToServerPayload(ls, serverGroup.id, academyStudents, academyAssistants)
+                mapClassSessionToServerPayload(ls, serverGroup.id, academyStudents, academyAssistants, academyTeachers, authUserId)
               );
               const serverSessions = await createAcademyClassSessionsBulk({
                 academyId: currentAcademyId,
@@ -479,6 +568,27 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           } else if (serverGroup?.id && localSessions.length === 0) {
             // 회차 없는 경우 (요일 미지정 등) — class_group 성공 안내만
             showToast('반이 생성되고 서버에도 저장되었어요.');
+          }
+
+          // Phase 44.6 / Phase B — class_schedule_rules INSERT (best-effort).
+          // 룰 저장이 실패해도 사용자 흐름은 막지 않음 (legacy class_sessions 가 fallback).
+          if (serverGroup?.id) {
+            const rulePayloads = buildClassScheduleRulePayloads(data, academyTeachers, academyAssistants, authUserId);
+            for (const rp of rulePayloads) {
+              try {
+                await createClassScheduleRule({
+                  academyId: currentAcademyId,
+                  class_group_id: serverGroup.id,
+                  ...rp,
+                });
+              } catch (err) {
+                console.warn('[supabase] createClassScheduleRule failed', err);
+              }
+            }
+            // 캐시 갱신 (best-effort).
+            try {
+              await useWorkspaceStore.getState().loadClassScheduleRules?.();
+            } catch { /* ignore */ }
           }
         }
 

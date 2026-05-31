@@ -79,13 +79,24 @@ export function normalizePhoneNumber(value) {
 // 원장도 담당 강사로 배정 가능. teacherId === 'owner'면 원장 이름 사용.
 export const OWNER_TEACHER_ID = 'owner';
 
-export function getTeacherDisplayName(teacherId, teachers, academyProfile) {
-  if (!teacherId) return '담당 강사 없음';
+// Phase 44 — 4번째 옵션 teacherUserId (auth.users.id) 추가.
+//   - 우선순위: OWNER_TEACHER_ID > teacherUserId 매칭 > local teacherId 매칭.
+//   - cross-device 에서 학원장이 만든 반을 강사 폰이 hydrate 했을 때,
+//     local academyTeachers 가 동일 user 를 다른 id 로 가질 수 있으므로
+//     serverUserId 우선 매칭이 안정적.
+export function getTeacherDisplayName(teacherId, teachers, academyProfile, teacherUserId = null) {
   if (teacherId === OWNER_TEACHER_ID) {
     return academyProfile?.ownerName?.trim() || '원장';
   }
-  const teacher = teachers?.find((t) => t.id === teacherId);
-  return teacher?.name || '담당 강사 없음';
+  if (teacherUserId && Array.isArray(teachers)) {
+    const t = teachers.find((x) => x?.serverUserId === teacherUserId);
+    if (t?.name) return t.name;
+  }
+  if (teacherId && Array.isArray(teachers)) {
+    const t = teachers.find((x) => x?.id === teacherId);
+    if (t?.name) return t.name;
+  }
+  return '담당 강사 없음';
 }
 
 // ─── Membership ↔ App role mapping ──────────────────────────────

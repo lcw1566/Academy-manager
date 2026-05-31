@@ -10,6 +10,12 @@ import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
 import { FileText } from 'lucide-react';
+// Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
+import {
+  buildPlannedClassSessions,
+  mergePlannedAndActualClassSessions,
+  plannedToClassSessionShape,
+} from '../../../utils/schedule';
 
 // "HH:mm" 문자열을 분 단위로 변환 (00:00 기준)
 function parseHHmmToMinutes(hhmm) {
@@ -50,6 +56,9 @@ export default function TeacherDashboard() {
   const authUserEmail = useAuthStore((s) => s.user?.email);
   const memberships = useWorkspaceStore((s) => s.memberships);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  // Phase 44.6 / Phase B — 룰/예외 데이터.
+  const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
+  const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
   const myMembership = useMemo(
     () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
     [memberships, currentAcademyId],
@@ -73,32 +82,63 @@ export default function TeacherDashboard() {
     return () => clearInterval(t);
   }, []);
 
-  // 본인 담당 반 — local 강사 id 가 매칭될 때만 필터. 매칭 실패 시 빈 배열.
+  // Phase 44 — 본인 담당 반 매칭. server-stable auth.users.id (teacherUserId)
+  // 우선, 없으면 local teacherId 동등성으로 fallback. 두 경로를 OR 로 묶어
+  // cross-device 에서 학원장이 PC 에서 만든 반을 강사 폰에서도 인식하도록 한다.
   const myGroupIds = useMemo(() => {
-    if (!myTeacher) return new Set();
-    return new Set(classGroups.filter((g) => g.teacherId === myTeacher.id).map((g) => g.id));
-  }, [classGroups, myTeacher]);
+    if (!myTeacher && !authUserId) return new Set();
+    return new Set(
+      classGroups
+        .filter((g) => {
+          if (g.teacherUserId && authUserId && g.teacherUserId === authUserId) return true;
+          if (myTeacher && g.teacherId === myTeacher.id) return true;
+          return false;
+        })
+        .map((g) => g.id),
+    );
+  }, [classGroups, myTeacher, authUserId]);
 
-  // 본인 담당 세션 — teacherId / 본인 담당 반 / Phase 30 대체 강사 배정.
+  // Phase 44.6 / Phase B — 룰 기반 planned 세션 + 기존 classSessions 머지.
+  // 향후 60일 윈도우. teacher_user_id 매칭이 있는 rule 도 자동으로 포함된다.
+  const mergedClassSessions = useMemo(() => {
+    const from = todayStr;
+    const to = (() => {
+      const d = new Date(todayStr);
+      d.setDate(d.getDate() + 60);
+      return d.toISOString().slice(0, 10);
+    })();
+    const plannedRaw = buildPlannedClassSessions({
+      rules: classScheduleRules,
+      exceptions: classSessionExceptions,
+      fromDate: from,
+      toDate: to,
+    });
+    const plannedShaped = plannedToClassSessionShape(plannedRaw, classGroups);
+    return mergePlannedAndActualClassSessions(plannedShaped, classSessions);
+  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr]);
+
+  // 본인 담당 세션 — teacherId / teacherUserId / 본인 담당 반 / Phase 30 대체 강사.
   // 대체 강사로 배정된 세션은 원래 강사 대신 본인이 담당이므로 그대로 노출한다.
   // substitute 매칭: local id (substituteTeacherId) 우선, server user_id (substituteTeacherUserId) fallback.
   const mySessions = useMemo(() => {
-    if (!myTeacher) return [];
+    if (!myTeacher && !authUserId) return [];
     const subMatchesMe = (s) => {
-      if (s.substituteTeacherId && s.substituteTeacherId === myTeacher.id) return true;
+      if (s.substituteTeacherId && myTeacher && s.substituteTeacherId === myTeacher.id) return true;
       if (s.substituteTeacherUserId && authUserId && s.substituteTeacherUserId === authUserId) return true;
       return false;
     };
-    return classSessions.filter((s) => {
+    return mergedClassSessions.filter((s) => {
       if (s.status === 'canceled') return false;
       const hasSubstitute = !!(s.substituteTeacherId || s.substituteTeacherUserId);
       if (hasSubstitute) {
         // 대체 강사 배정 — 그 사람이 본인이면 노출, 원 강사면 제외.
         return subMatchesMe(s);
       }
-      return s.teacherId === myTeacher.id || myGroupIds.has(s.classGroupId);
+      if (s.teacherUserId && authUserId && s.teacherUserId === authUserId) return true;
+      if (myTeacher && s.teacherId === myTeacher.id) return true;
+      return myGroupIds.has(s.classGroupId);
     });
-  }, [classSessions, myTeacher, myGroupIds, authUserId]);
+  }, [mergedClassSessions, myTeacher, myGroupIds, authUserId]);
 
   const todaySessions = useMemo(
     () => mySessions.filter((s) => s.date === todayStr).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),

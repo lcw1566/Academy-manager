@@ -11,6 +11,12 @@ import { today, formatDateShort } from '../../../utils/date';
 import { getTeacherDisplayName, OWNER_TEACHER_ID } from '../../../utils/format';
 import { useState } from 'react';
 import { currentUserCan } from '../../../utils/staffPermissions';
+// Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
+import {
+  buildPlannedClassSessions,
+  mergePlannedAndActualClassSessions,
+  plannedToClassSessionShape,
+} from '../../../utils/schedule';
 
 const STATUS_MAP = {
   active:   { label: '운영 중', color: 'bg-green-50 text-green-700' },
@@ -39,14 +45,34 @@ export default function ClassGroupsPage() {
   );
   const canManage = currentUserCan({ role, staffProfile: myStaffProfile }, 'canManageClasses');
 
+  // Phase 44.6 / Phase B — 룰 기반 planned + 기존 classSessions 머지로 nextSession 산출.
+  const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
+  const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
+  const mergedClassSessions = useMemo(() => {
+    const from = todayStr;
+    const to = (() => {
+      const d = new Date(todayStr);
+      d.setDate(d.getDate() + 60);
+      return d.toISOString().slice(0, 10);
+    })();
+    const plannedRaw = buildPlannedClassSessions({
+      rules: classScheduleRules,
+      exceptions: classSessionExceptions,
+      fromDate: from,
+      toDate: to,
+    });
+    const plannedShaped = plannedToClassSessionShape(plannedRaw, classGroups);
+    return mergePlannedAndActualClassSessions(plannedShaped, classSessions);
+  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr]);
+
   const enriched = useMemo(() =>
     classGroups.map((group) => {
-      const sessions = classSessions.filter((s) => s.classGroupId === group.id);
+      const sessions = mergedClassSessions.filter((s) => s.classGroupId === group.id);
       const nextSession = sessions.filter((s) => s.date >= todayStr && s.status !== 'canceled')
         .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
       const studentCount = (group.studentIds || []).length;
-      const teacherName = group.teacherId
-        ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile)
+      const teacherName = (group.teacherId || group.teacherUserId)
+        ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile, group.teacherUserId)
         : null;
       return { ...group, sessions, nextSession, studentCount, teacherName };
     }).sort((a, b) => {
@@ -54,7 +80,7 @@ export default function ClassGroupsPage() {
       const bd = b.nextSession?.date || '9999';
       return ad.localeCompare(bd);
     }),
-    [classGroups, classSessions, academyTeachers, academyProfile, todayStr]
+    [classGroups, mergedClassSessions, academyTeachers, academyProfile, todayStr]
   );
 
   return (

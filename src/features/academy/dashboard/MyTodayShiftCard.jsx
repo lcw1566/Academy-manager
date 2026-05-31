@@ -11,13 +11,19 @@
 //
 // 본인 식별: staff prop (TeacherDashboard 의 myTeacher, AssistantDashboard 의 myAssistant)
 import { useMemo, useState } from 'react';
-import { Clock, LogIn, LogOut, ChevronRight, QrCode } from 'lucide-react';
+import { Clock, LogIn, LogOut, QrCode } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { updateAcademyStaffShift as updateServerStaffShift } from '../../../services/supabase/domainApi';
 import { today as todayDate } from '../../../utils/date';
 import QrScanSheet from '../attendance/QrScanSheet';
+// Phase 44.6 / Phase B — 룰 기반 예정 근무 머지.
+import {
+  buildPlannedStaffSchedule,
+  mergePlannedAndActualStaffShifts,
+  plannedToStaffShiftShape,
+} from '../../../utils/schedule';
 
 function nowHHmm() {
   const d = new Date();
@@ -40,68 +46,137 @@ function formatShiftTimeRange(start, end) {
 
 export default function MyTodayShiftCard({ staff, staffRole }) {
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
+  const academyTeachers = useAcademyStore((s) => s.academyTeachers) ?? [];
+  const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
   const updateAcademyStaffShift = useAcademyStore((s) => s.updateAcademyStaffShift);
-  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const showToast = useAcademyStore((s) => s.showToast);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
+  // Phase 44.6 / Phase B — 룰/예외 데이터.
+  const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
+  const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
+  // Phase 44.7 / Phase C — 실제 출근 로그.
+  const staffAttendanceLogs = useWorkspaceStore((s) => s.staffAttendanceLogs) ?? [];
+  const createStaffAttendanceLogLocal = useWorkspaceStore((s) => s.createStaffAttendanceLogLocal);
+  const updateStaffAttendanceLogLocal = useWorkspaceStore((s) => s.updateStaffAttendanceLogLocal);
   const [busy, setBusy] = useState(false);
   const [showQrScan, setShowQrScan] = useState(false);
 
   const todayStr = todayDate();
 
-  // 오늘의 본인 shift. staff.id 가 local 이고 serverUserId 매핑으로 본인.
+  // Phase 44.6 / Phase B — 본인 오늘 shift: 룰 기반 planned + 기존 shift 머지에서 1건.
   const myTodayShift = useMemo(() => {
     if (!staff?.id) return null;
-    const candidates = academyStaffShifts.filter(
+    const plannedRaw = buildPlannedStaffSchedule({
+      rules: staffWorkRules,
+      exceptions: staffWorkExceptions,
+      fromDate: todayStr,
+      toDate: todayStr,
+      staffUserId: staff.serverUserId || undefined,
+    });
+    const plannedShaped = plannedToStaffShiftShape(plannedRaw, { academyTeachers, academyAssistants });
+    const actualToday = academyStaffShifts.filter(
       (sh) => sh.staffId === staff.id && sh.date === todayStr && sh.status !== 'canceled',
     );
+    const merged = mergePlannedAndActualStaffShifts(plannedShaped, actualToday);
     // 시작 시간이 가장 빠른 것 우선
-    return candidates.sort((a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || ''))[0] || null;
-  }, [academyStaffShifts, staff?.id, todayStr]);
+    return merged.sort(
+      (a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || ''),
+    )[0] || null;
+  }, [academyStaffShifts, staff?.id, staff?.serverUserId, staffWorkRules, staffWorkExceptions, academyTeachers, academyAssistants, todayStr]);
+
+  // Phase 44.7 / Phase C — 오늘 본인 attendance log 1건. log 가 SoT 가 된다.
+  // legacy academy_staff_shifts.actual_* 는 호환을 위해 동시에 업데이트.
+  // hook 순서 유지를 위해 myTodayShift early-return 보다 위에서 호출.
+  const myTodayLog = useMemo(() => {
+    if (!staff?.serverUserId) return null;
+    return (staffAttendanceLogs || []).find(
+      (l) => l.staff_user_id === staff.serverUserId && l.work_date === todayStr,
+    ) || null;
+  }, [staffAttendanceLogs, staff?.serverUserId, todayStr]);
 
   if (!myTodayShift) return null;
 
-  const clockedIn = !!myTodayShift.actualStartTime;
-  const clockedOut = !!myTodayShift.actualEndTime;
+  // clock 상태: log 우선, 없으면 legacy shift.
+  const clockedIn = !!(myTodayLog?.actual_start_time || myTodayShift.actualStartTime);
+  const clockedOut = !!(myTodayLog?.actual_end_time || myTodayShift.actualEndTime);
+  // serverUserId 없는 staff (계정 미연동) → 로그 INSERT 불가. legacy shift 만 사용.
+  // staff_attendance_logs 가 SQL 014 미적용일 수도 있으므로 best-effort.
+  const canUseLogs = !!staff?.serverUserId;
+  // log 가 있으면 isPlanned 여도 출퇴근 가능. log 와 legacy 둘 다 없는 경우만 비활성.
+  const isCheckinDisabled = myTodayShift.isPlanned && !canUseLogs;
+
+  // 공용 helper — 오늘 로그 upsert.
+  const upsertTodayLog = async (fields, { source = 'manual' } = {}) => {
+    if (!canUseLogs) return null;
+    try {
+      if (myTodayLog?.id) {
+        return await updateStaffAttendanceLogLocal(myTodayLog.id, { ...fields });
+      }
+      return await createStaffAttendanceLogLocal({
+        staff_user_id: staff.serverUserId,
+        staff_role: staffRole || staff._role || 'teacher',
+        work_date: todayStr,
+        scheduled_start_time: myTodayShift.scheduledStartTime || null,
+        scheduled_end_time: myTodayShift.scheduledEndTime || null,
+        break_minutes: myTodayShift.breakMinutes ?? 0,
+        source,
+        status: 'pending',
+        ...fields,
+      });
+    } catch (err) {
+      console.warn('[supabase] upsert attendance log failed', err);
+      return null;
+    }
+  };
 
   const handleClockIn = async () => {
     if (busy) return;
     setBusy(true);
-    const patch = { actualStartTime: nowHHmm() };
-    updateAcademyStaffShift(myTodayShift.id, patch);
-    showToast('출근 시간을 기록했어요.');
-    if (myTodayShift.serverId && isAuthenticated && currentAcademyId) {
-      try {
-        await updateServerStaffShift(myTodayShift.serverId, {
-          actual_start_time: patch.actualStartTime,
-        });
-        loadServerStaffShifts();
-      } catch (err) {
-        console.warn('[supabase] clock-in failed', err);
+    const time = nowHHmm();
+    // 1) staff_attendance_logs upsert — Phase C 의 새 source of truth.
+    await upsertTodayLog({ actual_start_time: time }, { source: 'manual' });
+    // 2) legacy academy_staff_shifts update (있을 때만). 호환을 위해 유지.
+    if (myTodayShift && !myTodayShift.isPlanned) {
+      const patch = { actualStartTime: time };
+      updateAcademyStaffShift(myTodayShift.id, patch);
+      if (myTodayShift.serverId && isAuthenticated && currentAcademyId) {
+        try {
+          await updateServerStaffShift(myTodayShift.serverId, {
+            actual_start_time: patch.actualStartTime,
+          });
+          loadServerStaffShifts();
+        } catch (err) {
+          console.warn('[supabase] legacy clock-in failed', err);
+        }
       }
     }
+    showToast('출근 시간을 기록했어요. 원장 확인 후 정산에 반영돼요.');
     setBusy(false);
   };
 
   const handleClockOut = async () => {
     if (busy) return;
     setBusy(true);
-    const patch = { actualEndTime: nowHHmm(), status: 'completed' };
-    updateAcademyStaffShift(myTodayShift.id, patch);
-    showToast('퇴근 시간을 기록했어요.');
-    if (myTodayShift.serverId && isAuthenticated && currentAcademyId) {
-      try {
-        await updateServerStaffShift(myTodayShift.serverId, {
-          actual_end_time: patch.actualEndTime,
-          status: 'completed',
-        });
-        loadServerStaffShifts();
-      } catch (err) {
-        console.warn('[supabase] clock-out failed', err);
+    const time = nowHHmm();
+    await upsertTodayLog({ actual_end_time: time }, { source: 'manual' });
+    if (myTodayShift && !myTodayShift.isPlanned) {
+      const patch = { actualEndTime: time, status: 'completed' };
+      updateAcademyStaffShift(myTodayShift.id, patch);
+      if (myTodayShift.serverId && isAuthenticated && currentAcademyId) {
+        try {
+          await updateServerStaffShift(myTodayShift.serverId, {
+            actual_end_time: patch.actualEndTime,
+            status: 'completed',
+          });
+          loadServerStaffShifts();
+        } catch (err) {
+          console.warn('[supabase] legacy clock-out failed', err);
+        }
       }
     }
+    showToast('퇴근 시간을 기록했어요. 원장 확인 후 정산에 반영돼요.');
     setBusy(false);
   };
 
@@ -123,13 +198,7 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
               {myTodayShift.breakMinutes ? ` · 휴게 ${myTodayShift.breakMinutes}분` : ''}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setActiveTab('staff')}
-            className="text-[11px] font-semibold text-gray-500 flex items-center gap-0.5 active:opacity-60"
-          >
-            전체 보기 <ChevronRight size={12} />
-          </button>
+          {/* Phase 44 — teacher/assistant 는 스태프 탭이 없으므로 "전체 보기" 제거. */}
         </div>
 
         {(clockedIn || clockedOut) && (
@@ -153,7 +222,7 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
         <div className="flex gap-2">
           <button
             type="button"
-            disabled={clockedIn || busy}
+            disabled={clockedIn || busy || isCheckinDisabled}
             onClick={handleClockIn}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white text-blue-700 text-xs font-bold border border-blue-200 active:bg-blue-100 disabled:opacity-50"
           >
@@ -162,7 +231,7 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
           </button>
           <button
             type="button"
-            disabled={!clockedIn || clockedOut || busy}
+            disabled={!clockedIn || clockedOut || busy || isCheckinDisabled}
             onClick={handleClockOut}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white text-emerald-700 text-xs font-bold border border-emerald-200 active:bg-emerald-100 disabled:opacity-50"
           >

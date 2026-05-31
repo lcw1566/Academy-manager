@@ -39,11 +39,22 @@ import {
   updateAcademyStaffShift as updateServerStaffShift,
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
+// Phase 44.6 / Phase B — academy_staff_work_rules write-through.
+import {
+  createStaffWorkRule,
+  listStaffWorkRules,
+  updateStaffWorkRule,
+} from '../../../services/supabase/scheduleRulesApi';
 import {
   buildShiftTimeline,
   hhmmToMin,
 } from '../../../utils/shiftCoverage';
 import { generateClassDates } from '../../../utils/recurringClass';
+// Phase 44.5 / Phase A — 미래 row 사전 생성 14일 cap.
+import {
+  clampGenerationEndDate, isGenerationCapped, FUTURE_GENERATION_WINDOW_DAYS,
+  buildPlannedStaffSchedule, mergePlannedAndActualStaffShifts, plannedToStaffShiftShape,
+} from '../../../utils/schedule';
 import {
   PERMISSION_DEFAULTS,
   PERMISSION_LABELS,
@@ -611,10 +622,30 @@ function StaffShiftSection({ staff }) {
   const todayStr = todayDate();
   const weekDates = useMemo(() => getWeekDates(todayStr), [todayStr]);
 
-  const staffShifts = useMemo(
-    () => academyStaffShifts.filter((sh) => sh.staffId === staff.id),
-    [academyStaffShifts, staff.id],
-  );
+  // Phase 44.6 / Phase B — 룰 기반 planned + 기존 shift 머지. 14일 너머 주간 패턴도
+  // 보이게. 본인 staff 한 명에 한정.
+  const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
+  const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
+  const academyTeachersAll = useAcademyStore((s) => s.academyTeachers) ?? [];
+  const academyAssistantsAll = useAcademyStore((s) => s.academyAssistants) ?? [];
+
+  const staffShifts = useMemo(() => {
+    const weekFrom = weekDates[0];
+    const weekTo = weekDates[weekDates.length - 1];
+    const plannedRaw = buildPlannedStaffSchedule({
+      rules: staffWorkRules,
+      exceptions: staffWorkExceptions,
+      fromDate: weekFrom,
+      toDate: weekTo,
+      staffUserId: staff.serverUserId || undefined,
+    });
+    const plannedShaped = plannedToStaffShiftShape(plannedRaw, {
+      academyTeachers: academyTeachersAll,
+      academyAssistants: academyAssistantsAll,
+    });
+    const actualForStaff = academyStaffShifts.filter((sh) => sh.staffId === staff.id);
+    return mergePlannedAndActualStaffShifts(plannedShaped, actualForStaff);
+  }, [academyStaffShifts, staff.id, staff.serverUserId, staffWorkRules, staffWorkExceptions, academyTeachersAll, academyAssistantsAll, weekDates]);
   const hasAnyShift = staffShifts.some((sh) => sh.status !== 'canceled');
 
   const weekByDate = useMemo(() => {
@@ -665,10 +696,13 @@ function StaffShiftSection({ staff }) {
     if (timeError) { showToast(timeError, 'error'); return; }
     const daysOfWeek = (data.weekdays || []).map((d) => KO_TO_DOW[d]).filter((d) => d !== undefined);
     if (daysOfWeek.length === 0) return;
+    // Phase 44.5 / Phase A — 사전 생성은 today+14일 까지. data.endDate 자체는 보존.
+    const capped = isGenerationCapped(data.endDate || null, { todayYMD: todayStr });
+    const cappedEndDate = clampGenerationEndDate(data.endDate || null, { todayYMD: todayStr });
     const dates = generateClassDates({
       daysOfWeek,
       startDate: data.startDate,
-      endDate: data.endDate || null,
+      endDate: cappedEndDate,
       repeatType: '매주',
     });
     if (dates.length === 0) return;
@@ -714,10 +748,67 @@ function StaffShiftSection({ staff }) {
       }
     }
     if (staff.serverUserId && isAuthenticated && currentAcademyId) loadServerStaffShifts();
+
+    // Phase 44.6 / Phase B — academy_staff_work_rules INSERT (best-effort).
+    // 편집 패턴: 동일 staff_user_id 의 기존 active rule 중에서 day_of_week 가
+    // 새 입력과 겹치는 것들을 deactivate → 새로 INSERT. 효과: 같은 요일을 다시
+    // 등록하면 옛 rule 은 자연스럽게 비활성화되고 새 rule 만 활성 상태로 남는다.
+    if (staff.serverUserId && isAuthenticated && currentAcademyId) {
+      try {
+        const newDows = new Set(daysOfWeek);
+        let existing = [];
+        try {
+          existing = await listStaffWorkRules(currentAcademyId);
+        } catch (err) {
+          console.warn('[supabase] listStaffWorkRules failed', err);
+        }
+        const toDeactivate = existing.filter(
+          (r) => r.staff_user_id === staff.serverUserId
+            && r.is_active
+            && newDows.has(r.day_of_week),
+        );
+        for (const r of toDeactivate) {
+          try { await updateStaffWorkRule(r.id, { is_active: false }); }
+          catch (err) { console.warn('[supabase] deactivate work rule failed', err); }
+        }
+        for (const dow of daysOfWeek) {
+          try {
+            await createStaffWorkRule({
+              academyId: currentAcademyId,
+              staff_user_id: staff.serverUserId,
+              staff_role: staff._role,
+              day_of_week: dow,
+              start_time: data.scheduledStartTime || '',
+              end_time: data.scheduledEndTime || '',
+              break_minutes: Number(data.breakMinutes) || 0,
+              effective_start_date: data.startDate,
+              effective_end_date: data.endDate || null,
+              is_active: true,
+              memo: data.memo || null,
+            });
+          } catch (err) {
+            console.warn('[supabase] createStaffWorkRule failed', err);
+          }
+        }
+        try {
+          await useWorkspaceStore.getState().loadStaffWorkRules?.();
+        } catch { /* ignore */ }
+      } catch (err) {
+        console.warn('[supabase] reapply staff work rules failed', err);
+      }
+    }
+
     setFormOpen(false);
-    if (created === 0) showToast(`이미 등록된 ${skipped}건이라 추가하지 않았어요.`, 'error');
-    else if (skipped > 0) showToast(`근무 ${created}건 추가 · ${skipped}건은 중복 건너뜀.`);
-    else showToast(`근무 ${created}건이 추가됐어요.`);
+    if (created === 0) {
+      showToast(`이미 등록된 ${skipped}건이라 추가하지 않았어요.`, 'error');
+    } else if (capped) {
+      // Phase 44.7 — 룰 기반 렌더가 들어왔으므로 안내 문구 갱신.
+      showToast(`근무 규칙이 저장됐어요. 이후 근무는 반복 규칙에 따라 자동으로 표시돼요.`);
+    } else if (skipped > 0) {
+      showToast(`근무 ${created}건 추가 · ${skipped}건은 중복 건너뜀.`);
+    } else {
+      showToast(`근무 ${created}건이 추가됐어요.`);
+    }
   };
 
   const handleSaveSingle = async (data) => {

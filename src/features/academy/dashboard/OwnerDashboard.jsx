@@ -8,6 +8,17 @@ import { formatCurrency } from '../../../utils/format';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import { classifyShiftStatus, readAttendanceSettings } from '../attendance/attendanceHelpers';
 import QrDisplayPage from '../attendance/QrDisplayPage';
+// Phase 44.7 / Phase C — 근퇴 승인 sheet.
+import StaffAttendanceApprovalSheet from '../attendance/StaffAttendanceApprovalSheet';
+// Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
+import {
+  buildPlannedClassSessions,
+  buildPlannedStaffSchedule,
+  mergePlannedAndActualClassSessions,
+  mergePlannedAndActualStaffShifts,
+  plannedToClassSessionShape,
+  plannedToStaffShiftShape,
+} from '../../../utils/schedule';
 
 function formatClock(value) {
   if (!value) return '';
@@ -38,28 +49,59 @@ export default function OwnerDashboard() {
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
   const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
+  const staffAttendanceLogs = useWorkspaceStore((s) => s.staffAttendanceLogs) ?? [];
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const currentAcademy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
   const attendance = readAttendanceSettings(currentAcademy);
+  // Phase 44.6 / Phase B — 룰 기반 예정 세션 데이터.
+  const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
+  const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
+  const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
+  const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
 
   const [selectedDate, setSelectedDate] = useState(today());
   const [showQrDisplay, setShowQrDisplay] = useState(false);
+  // Phase 44.7 / Phase C — 근퇴 승인 sheet.
+  const [showApprovalSheet, setShowApprovalSheet] = useState(false);
+  const pendingApprovalCount = useMemo(
+    () => (staffAttendanceLogs || []).filter((l) => l.status === 'pending').length,
+    [staffAttendanceLogs],
+  );
   const todayStr = today();
 
+  // Phase 44.6 / Phase B — 향후 60일 윈도우 안에서 룰+예외로 planned 세션 산출 후
+  // 기존 classSessions 와 머지. 14일 너머에도 자연스럽게 예정 세션이 노출됨.
+  const mergedClassSessions = useMemo(() => {
+    const from = todayStr;
+    const to = (() => {
+      const d = new Date(todayStr);
+      d.setDate(d.getDate() + 60);
+      return d.toISOString().slice(0, 10);
+    })();
+    const plannedRaw = buildPlannedClassSessions({
+      rules: classScheduleRules,
+      exceptions: classSessionExceptions,
+      fromDate: from,
+      toDate: to,
+    });
+    const plannedShaped = plannedToClassSessionShape(plannedRaw, classGroups);
+    return mergePlannedAndActualClassSessions(plannedShaped, classSessions);
+  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr]);
+
   const todaySessions = useMemo(
-    () => classSessions.filter((s) => s.date === todayStr && s.status !== 'canceled'),
-    [classSessions, todayStr]
+    () => mergedClassSessions.filter((s) => s.date === todayStr && s.status !== 'canceled'),
+    [mergedClassSessions, todayStr]
   );
 
   const schedules = useMemo(() => [
-    ...classSessions.filter((s) => s.status !== 'canceled').map((s) => ({ date: s.date, type: 'class' })),
-  ], [classSessions]);
+    ...mergedClassSessions.filter((s) => s.status !== 'canceled').map((s) => ({ date: s.date, type: 'class' })),
+  ], [mergedClassSessions]);
 
   const daySessions = useMemo(
-    () => classSessions.filter((s) => s.date === selectedDate && s.status !== 'canceled')
+    () => mergedClassSessions.filter((s) => s.date === selectedDate && s.status !== 'canceled')
       .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
-    [classSessions, selectedDate]
+    [mergedClassSessions, selectedDate]
   );
 
   const todayClinicCount = useMemo(
@@ -80,11 +122,25 @@ export default function OwnerDashboard() {
   );
 
   // Phase 30 운영 메트릭
-  // 오늘 출근 예정 staff (shift 가 오늘이고 status != canceled)
-  const todayShifts = useMemo(
-    () => academyStaffShifts.filter((sh) => sh.date === todayStr && sh.status !== 'canceled'),
-    [academyStaffShifts, todayStr],
-  );
+  // Phase 44.6 / Phase B — 오늘 출근 예정 staff: 룰 기반 planned + 기존 shift 머지.
+  // 14일 너머 oncall 도 본 카드에 반영된다.
+  const mergedTodayShifts = useMemo(() => {
+    const plannedRaw = buildPlannedStaffSchedule({
+      rules: staffWorkRules,
+      exceptions: staffWorkExceptions,
+      fromDate: todayStr,
+      toDate: todayStr,
+    });
+    const plannedShaped = plannedToStaffShiftShape(plannedRaw, {
+      academyTeachers,
+      academyAssistants,
+    });
+    const actualToday = academyStaffShifts.filter(
+      (sh) => sh.date === todayStr && sh.status !== 'canceled',
+    );
+    return mergePlannedAndActualStaffShifts(plannedShaped, actualToday);
+  }, [staffWorkRules, staffWorkExceptions, academyStaffShifts, academyTeachers, academyAssistants, todayStr]);
+  const todayShifts = mergedTodayShifts;
   const todayShiftStaffIds = useMemo(
     () => [...new Set(todayShifts.map((sh) => sh.staffId).filter(Boolean))],
     [todayShifts],
@@ -269,8 +325,19 @@ export default function OwnerDashboard() {
       {/* Phase 30 — 운영 알림 카드 */}
       {(inProgressOrSoonSessions.length > 0
         || unfinishedLessonRecordSessions.length > 0
-        || pendingInvitations.length > 0) && (
+        || pendingInvitations.length > 0
+        || pendingApprovalCount > 0) && (
         <div className="px-4 mb-5 flex flex-col gap-2">
+          {/* Phase 44.7 / Phase C — 근퇴 확인 필요 */}
+          {pendingApprovalCount > 0 && (
+            <OpsCard
+              icon={CheckSquare}
+              tone="amber"
+              title={`근퇴 확인 필요 ${pendingApprovalCount}건`}
+              detail="강사 출근 기록을 검토하고 정산에 반영해주세요."
+              onClick={() => setShowApprovalSheet(true)}
+            />
+          )}
           {inProgressOrSoonSessions.length > 0 && (
             <OpsCard
               icon={Clock}
@@ -349,6 +416,9 @@ export default function OwnerDashboard() {
 
       {showQrDisplay && (
         <QrDisplayPage onClose={() => setShowQrDisplay(false)} />
+      )}
+      {showApprovalSheet && (
+        <StaffAttendanceApprovalSheet onClose={() => setShowApprovalSheet(false)} />
       )}
     </div>
   );

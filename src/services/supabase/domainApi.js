@@ -960,6 +960,8 @@ const CLASS_GROUP_ALLOWED_FIELDS = new Set([
   'id', 'academy_id', 'user_id', 'mode',
   'name', 'subject', 'level',
   'teacher_id', 'teacher_type',
+  // Phase 44 — server-stable auth.users.id 매칭용 (SQL 013)
+  'teacher_user_id',
   'student_ids', 'weekdays',
   'start_time', 'end_time', 'room',
   'start_date', 'end_date',
@@ -985,6 +987,8 @@ const CLASS_SESSION_ALLOWED_FIELDS = new Set([
   'class_group_id', 'date',
   'start_time', 'end_time', 'room',
   'teacher_id', 'teacher_type',
+  // Phase 44 — server-stable auth.users.id 매칭용 (SQL 013)
+  'teacher_user_id',
   'student_ids', 'status', 'memo',
   // Phase 30 — 대체 강사 (SQL 006 에서 추가됨)
   'substitute_teacher_user_id', 'substitute_reason',

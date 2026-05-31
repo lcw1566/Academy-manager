@@ -8,6 +8,12 @@ import { deleteClassGroup as deleteServerClassGroup } from '../../../services/su
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
+// Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
+import {
+  buildPlannedClassSessions,
+  mergePlannedAndActualClassSessions,
+  plannedToClassSessionShape,
+} from '../../../utils/schedule';
 import { today, formatDateShort, compareYMD } from '../../../utils/date';
 import { getTeacherDisplayName } from '../../../utils/format';
 import ClassGroupFormModal from './ClassGroupFormModal';
@@ -63,14 +69,37 @@ export default function ClassGroupDetailPage() {
 
   const group = classGroups.find((g) => g.id === selectedClassGroupId) ?? null;
 
+  // Phase 44.6 / Phase B — 룰 기반 planned 세션 + 기존 classSessions 머지.
+  const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
+  const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
+  const mergedClassSessions = useMemo(() => {
+    if (!group) return [];
+    const from = todayStr;
+    const to = (() => {
+      const d = new Date(todayStr);
+      d.setDate(d.getDate() + 60);
+      return d.toISOString().slice(0, 10);
+    })();
+    const plannedRaw = buildPlannedClassSessions({
+      rules: classScheduleRules,
+      exceptions: classSessionExceptions,
+      fromDate: from,
+      toDate: to,
+      // 룰 row 의 class_group_id 는 server uuid 이므로 group.serverId 로 필터.
+      classGroupId: group.serverId || null,
+    });
+    const plannedShaped = plannedToClassSessionShape(plannedRaw, classGroups);
+    const groupActual = classSessions.filter((s) => s.classGroupId === selectedClassGroupId);
+    return mergePlannedAndActualClassSessions(plannedShaped, groupActual);
+  }, [group, classSessions, classScheduleRules, classSessionExceptions, classGroups, selectedClassGroupId, todayStr]);
+
   const sessions = useMemo(
     () => group
-      ? classSessions
-          .filter((s) => s.classGroupId === selectedClassGroupId)
+      ? mergedClassSessions
           .slice()
           .sort((a, b) => compareYMD(a.date || '', b.date || '') || (a.startTime || '').localeCompare(b.startTime || ''))
       : [],
-    [classSessions, selectedClassGroupId, group]
+    [mergedClassSessions, group]
   );
 
   const students = useMemo(
@@ -108,8 +137,8 @@ export default function ClassGroupDetailPage() {
     );
   }
 
-  const teacherName = group.teacherId
-    ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile)
+  const teacherName = (group.teacherId || group.teacherUserId)
+    ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile, group.teacherUserId)
     : null;
 
   const handleDeleteClassGroup = async () => {

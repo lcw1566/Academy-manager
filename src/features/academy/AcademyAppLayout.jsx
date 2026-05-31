@@ -22,6 +22,9 @@ import Sidebar from '../../components/Sidebar';
 
 // Phase 40 — 기존 "근무" 탭을 "스태프" 로 통합. 직원 리스트 + 근무 스케줄 +
 // 계약/권한/배정까지 한 탭에서 처리한다. More 탭은 학원·계정 설정만 남긴다.
+//
+// Phase 44 (Pilot Hotfix) — 스태프 탭은 owner 전용. teacher/assistant 는 본인
+// 출퇴근만 Home 카드에서 처리하므로 별도 탭 불필요.
 const TAB_CONFIG = {
   owner: [
     { id: 'home',       label: '홈',    Icon: Home },
@@ -35,7 +38,6 @@ const TAB_CONFIG = {
     { id: 'home',     label: '홈',   Icon: Home },
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
-    { id: 'staff',    label: '스태프', Icon: UserCog },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
@@ -43,7 +45,6 @@ const TAB_CONFIG = {
     { id: 'home',     label: '홈',    Icon: Home },
     { id: 'clinic',   label: '클리닉', Icon: Stethoscope },
     { id: 'students', label: '학생',  Icon: Users },
-    { id: 'staff',    label: '스태프', Icon: UserCog },
     { id: 'payroll',  label: '급여',  Icon: CreditCard },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],

@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { generateClassDates } from '../utils/recurringClass';
-import { getCurrentMonth, getMonthsBetween } from '../utils/date';
+import { getCurrentMonth, getMonthsBetween, today as getTodayYMD } from '../utils/date';
+// Phase 44.5 / Phase A — 미래 row 사전 생성을 14일로 cap.
+import { clampGenerationEndDate, isGenerationCapped, FUTURE_GENERATION_WINDOW_DAYS } from '../utils/schedule';
 import { generatePaymentForMonth, groupHasPayment, resolveStudentBilling } from '../utils/billing';
 import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../constants/aiPrompts';
 import {
@@ -906,11 +908,15 @@ const useAcademyStore = create(
   //   keys 는 한글 요일 문자열 ('월','화','수','목','금','토','일').
   //   해당 키가 없으면 group.startTime / group.endTime 으로 fallback.
   generateClassSessions: (group) => {
-    const { id: classGroupId, weekdays, startDate, endDate, startTime, endTime, room, teacherId, assistantIds, studentIds, weekdayTimes } = group;
+    const { id: classGroupId, weekdays, startDate, endDate, startTime, endTime, room, teacherId, teacherUserId, assistantIds, studentIds, weekdayTimes } = group;
     const dayNameToNum = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 };
     const numToDayName = ['일', '월', '화', '수', '목', '금', '토'];
     const daysOfWeek = (weekdays || []).map((d) => dayNameToNum[d]).filter((d) => d !== undefined);
-    const dates = generateClassDates({ daysOfWeek, startDate, endDate: endDate || null, repeatType: '매주' });
+    // Phase 44.5 / Phase A — 사전 생성은 today+14일 까지만. 학원장이 endDate 를
+    // 6개월 뒤로 잡아도 14일 윈도우만 만들어진다. 나머지 회차는 Phase B 에서
+    // class_schedule_rules 기반으로 런타임 렌더 예정. group.endDate 자체는 보존.
+    const cappedEndDate = clampGenerationEndDate(endDate || null, { todayYMD: getTodayYMD() });
+    const dates = generateClassDates({ daysOfWeek, startDate, endDate: cappedEndDate, repeatType: '매주' });
     const ts = Date.now();
     return dates.map((date, i) => {
       const [y, m, d] = date.split('-').map(Number);
@@ -926,6 +932,8 @@ const useAcademyStore = create(
         endTime: sessionEnd,
         room: room || '',
         teacherId: teacherId || '',
+        // Phase 44 — server-stable user id (cross-device 매칭)
+        teacherUserId: teacherUserId || '',
         assistantIds: assistantIds || [],
         studentIds: studentIds || [],
         status: 'scheduled',
@@ -942,7 +950,16 @@ const useAcademyStore = create(
       classGroups: [...s.classGroups, newGroup],
       classSessions: [...s.classSessions, ...sessions],
     }));
-    get().showToast(`반이 생성되었습니다. 수업 회차 ${sessions.length}개가 만들어졌어요.`);
+    // Phase 44.5 / Phase A — 사전 생성이 14일 cap 으로 잘렸으면 안내 toast.
+    // Phase 44.7 — 룰 기반 렌더가 들어왔으므로 "수업 규칙에 따라" 로 문구 갱신.
+    const capped = isGenerationCapped(groupData.endDate || null, { todayYMD: getTodayYMD() });
+    if (capped) {
+      get().showToast(
+        `반이 생성되었어요. 이후 일정은 수업 규칙에 따라 자동으로 표시돼요.`,
+      );
+    } else {
+      get().showToast(`반이 생성되었습니다. 수업 회차 ${sessions.length}개가 만들어졌어요.`);
+    }
     // 10단계: write-through 호출처가 생성된 sessions 에 serverId 매핑할 수 있도록
     // group 과 sessions 를 함께 반환. 기존 caller 는 newGroup.id / .name 등으로
     // 사용 중이라 group 을 그대로 spread 한다 (호환).
@@ -1497,9 +1514,13 @@ const useAcademyStore = create(
   //   assistant hourly: shifts 합산 (클리닉 수는 더 이상 급여 영향 없음, info 로 유지)
   //   monthly         : monthlySalary 그대로
   // 클리닉 카운트(completedClinicCount) 는 보조강사 카드에 참고 정보로만 남는다.
-  generatePayrollsForMonth: (month) => {
+  // Phase 44.7 / Phase C — opts.attendanceLogs 가 주어지면 approved logs 우선 사용.
+  // 비어 있거나 없으면 legacy academy_staff_shifts (computeStaffHoursForMonth) 로 fallback.
+  generatePayrollsForMonth: (month, opts = {}) => {
     const { academyTeachers, academyAssistants, classSessions, clinicTasks } = get();
     const computeHours = get().computeStaffHoursForMonth;
+    const computeFromLogs = get().computeStaffHoursFromLogs;
+    const attendanceLogs = Array.isArray(opts?.attendanceLogs) ? opts.attendanceLogs : [];
     const ts = Date.now();
     const payrolls = [];
     const existingByKey = new Map(
@@ -1532,11 +1553,15 @@ const useAcademyStore = create(
 
     academyTeachers.forEach((teacher, i) => {
       // Phase 34 — 시급 정산 기준: shiftHours (default) | lessonHours.
-      const shiftHours = computeHours(teacher.id, month);
+      // Phase 44.7 / Phase C — approved logs 가 있으면 그 시간을 우선 사용.
+      const legacyShiftHours = computeHours(teacher.id, month);
+      const approvedLogHours = computeFromLogs(teacher.serverUserId, month, attendanceLogs, { approvedOnly: true });
+      const pendingLogHours = computeFromLogs(teacher.serverUserId, month, attendanceLogs, { approvedOnly: false }) - approvedLogHours;
+      // approved logs 가 0 이면 legacy fallback. 그 외엔 approved logs 가 정산 기준.
+      const shiftHours = approvedLogHours > 0 ? approvedLogHours : legacyShiftHours;
       const lessonHours = computeLessonHoursForMonth({
         staffId: teacher.id, staffRole: 'teacher', month, classSessions,
       });
-      // 대체 강사 배정으로 원래 강사가 빠진 세션은 제외. 본인 담당 또는 본인이 대체로 배정된 세션.
       const sessions = classSessions.filter((s) => {
         if (s.status !== 'completed' || !s.date?.startsWith(month)) return false;
         const isMainAndNoSubstitute = s.teacherId === teacher.id && !s.substituteTeacherId;
@@ -1545,7 +1570,6 @@ const useAcademyStore = create(
       });
       const completedSessionCount = sessions.length;
       const hourlyMode = teacher.hourlyMode === 'lessonHours' ? 'lessonHours' : 'shiftHours';
-      // shift 가 없는 학원의 backward-compat fallback: shiftHours==0 이면 lessonHours 사용.
       const effectiveShiftHours = shiftHours > 0 ? shiftHours : lessonHours;
       const totalHours = hourlyMode === 'lessonHours' ? lessonHours : effectiveShiftHours;
       const gapHours = Math.max(0, effectiveShiftHours - lessonHours);
@@ -1559,17 +1583,20 @@ const useAcademyStore = create(
         monthlySalary: teacher.monthlySalary || 0,
         totalHours, shiftHours: effectiveShiftHours, lessonHours, gapHours,
         completedSessionCount, completedClinicCount: 0,
+        approvedLogHours, pendingLogHours,
         amount, status: 'scheduled', paidDate: '', memo: '',
         createdAt: new Date().toISOString(),
       }));
     });
 
     academyAssistants.forEach((assistant, i) => {
-      // 클리닉 카운트는 정보 표시 용도로만 유지. 급여 계산 영향 없음.
       const completed = clinicTasks.filter(
         (t) => t.assignedToId === assistant.id && t.status === 'completed' && t.completedAt?.startsWith(month)
       );
-      const shiftHours = computeHours(assistant.id, month);
+      const legacyShiftHours = computeHours(assistant.id, month);
+      const approvedLogHours = computeFromLogs(assistant.serverUserId, month, attendanceLogs, { approvedOnly: true });
+      const pendingLogHours = computeFromLogs(assistant.serverUserId, month, attendanceLogs, { approvedOnly: false }) - approvedLogHours;
+      const shiftHours = approvedLogHours > 0 ? approvedLogHours : legacyShiftHours;
       const lessonHours = computeLessonHoursForMonth({
         staffId: assistant.id, staffRole: 'assistant', month, classSessions,
       });
@@ -1587,6 +1614,7 @@ const useAcademyStore = create(
         monthlySalary: assistant.monthlySalary || 0,
         totalHours, shiftHours: effectiveShiftHours, lessonHours, gapHours,
         completedSessionCount: 0, completedClinicCount: completed.length,
+        approvedLogHours, pendingLogHours,
         amount, status: 'scheduled', paidDate: '', memo: '',
         createdAt: new Date().toISOString(),
       }));
@@ -1877,6 +1905,29 @@ const useAcademyStore = create(
       const [sh2, sm2] = end.split(':').map(Number);
       if (Number.isNaN(sh1) || Number.isNaN(sh2)) continue;
       const minutes = (sh2 * 60 + sm2) - (sh1 * 60 + sm1) - (sh.breakMinutes || 0);
+      if (minutes > 0) totalMinutes += minutes;
+    }
+    return totalMinutes / 60;
+  },
+
+  // Phase 44.7 / Phase C — staff_attendance_logs 기반 시간 계산.
+  // logs 배열은 호출처가 주입 (useWorkspaceStore.getState().staffAttendanceLogs).
+  // approved 만 합산. pending/rejected 제외.
+  computeStaffHoursFromLogs: (staffUserId, month, logs = [], { approvedOnly = true } = {}) => {
+    if (!staffUserId || !month) return 0;
+    let totalMinutes = 0;
+    for (const log of logs) {
+      if (!log) continue;
+      if (log.staff_user_id !== staffUserId) continue;
+      if (!log.work_date?.startsWith(month)) continue;
+      if (approvedOnly && log.status !== 'approved') continue;
+      const start = log.actual_start_time;
+      const end = log.actual_end_time;
+      if (!start || !end) continue;
+      const [sh1, sm1] = String(start).slice(0, 5).split(':').map(Number);
+      const [sh2, sm2] = String(end).slice(0, 5).split(':').map(Number);
+      if (Number.isNaN(sh1) || Number.isNaN(sh2)) continue;
+      const minutes = (sh2 * 60 + sm2) - (sh1 * 60 + sm1) - (log.break_minutes || 0);
       if (minutes > 0) totalMinutes += minutes;
     }
     return totalMinutes / 60;
