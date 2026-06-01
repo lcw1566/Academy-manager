@@ -77,6 +77,15 @@ function addMonth(value, delta) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function getMonthDateRange(month) {
+  const [year, monthNum] = month.split('-').map(Number);
+  const last = new Date(year, monthNum, 0);
+  return {
+    fromDate: `${month}-01`,
+    toDate: `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`,
+  };
+}
+
 export default function SettlementPage() {
   const {
     academyStudents, classGroups, academyPayments,
@@ -93,6 +102,7 @@ export default function SettlementPage() {
   const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
   const loadServerPayrolls = useWorkspaceStore((s) => s.loadServerPayrolls);
   const loadMemberships = useWorkspaceStore((s) => s.loadMemberships);
+  const loadStaffAttendanceLogs = useWorkspaceStore((s) => s.loadStaffAttendanceLogs);
   // Phase 39 — memberships 에 academy:academies(*) 로 fetch 되므로 최신값 우선 사용.
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const myAcademy = useMemo(
@@ -180,7 +190,7 @@ export default function SettlementPage() {
     return academyAssistants.find((a) => a.id === payroll.staffId)?.name || '보조강사';
   };
   const getStaffTypeLabel = (type) => type === 'teacher' ? '강사' : '보조강사';
-  const getHourlyModeLabel = (mode) => mode === 'lessonHours' ? '수업시간 기준' : '근무시간 기준';
+  const getHourlyModeLabel = () => '실제 근퇴 기준';
 
   const unpaidStudents = useMemo(
     () => academyStudents.filter((s) => {
@@ -220,7 +230,11 @@ export default function SettlementPage() {
 
   const handleAutoGeneratePayrolls = async () => {
     // Phase 44.7 / Phase C — approved attendance logs 우선 사용.
-    const attendanceLogs = useWorkspaceStore.getState().staffAttendanceLogs || [];
+    let attendanceLogs = useWorkspaceStore.getState().staffAttendanceLogs || [];
+    if (canSyncServer && loadStaffAttendanceLogs) {
+      const range = getMonthDateRange(selectedMonth);
+      attendanceLogs = await loadStaffAttendanceLogs(range);
+    }
     const newPayrolls = generatePayrollsForMonth(selectedMonth, { attendanceLogs }) || [];
     if (newPayrolls.length === 0) return;
     if (!canSyncServer) return;
@@ -687,6 +701,11 @@ export default function SettlementPage() {
                         {pr.staffType === 'teacher' && ` · ${pr.completedSessionCount}회 수업`}
                         {pr.staffType === 'assistant' && ` · 클리닉 ${pr.completedClinicCount}건`}
                       </p>
+                      {pr.wageType === 'hourly' && pr.pendingLogHours > 0 && (
+                        <p className="text-[11px] text-amber-600 mt-1">
+                          승인 대기 근퇴 {formatHours(pr.pendingLogHours)}시간은 미반영
+                        </p>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="font-bold text-gray-900">{(pr.amount || 0).toLocaleString()}원</p>

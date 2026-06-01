@@ -29,6 +29,7 @@ import {
   buildShiftDraftFromLesson,
   extendShiftToCoverLesson,
 } from '../../../utils/shiftCoverage';
+import { buildEffectiveStaffShifts } from '../../../utils/staffShiftCoverage';
 
 const ROLE_LABEL = { teacher: '강사', assistant: '보조강사' };
 
@@ -117,6 +118,45 @@ export default function useEnsureShiftCoverage() {
       return;
     }
 
+    if (mode === 'partial' && option === 'extend' && overlappingShift?.isPlanned) {
+      const patch = extendShiftToCoverLesson(overlappingShift, startTime, endTime);
+      const draft = {
+        staffId: staff?.id,
+        staffRole,
+        date,
+        scheduledStartTime: patch?.scheduledStartTime || overlappingShift.scheduledStartTime,
+        scheduledEndTime: patch?.scheduledEndTime || overlappingShift.scheduledEndTime,
+        breakMinutes: overlappingShift.breakMinutes || 0,
+        status: 'scheduled',
+        memo: overlappingShift.memo || '',
+      };
+      const created = addAcademyStaffShift(draft);
+      if (staff?.serverUserId && isAuthenticated && currentAcademyId) {
+        try {
+          const sr = await createAcademyStaffShift({
+            academyId: currentAcademyId,
+            staff_user_id: staff.serverUserId,
+            staff_role: staffRole,
+            date,
+            scheduled_start_time: draft.scheduledStartTime || null,
+            scheduled_end_time: draft.scheduledEndTime || null,
+            break_minutes: draft.breakMinutes || 0,
+            status: 'scheduled',
+            memo: draft.memo || null,
+          });
+          if (sr?.id) setStaffShiftServerId(created.id, sr.id);
+          loadServerStaffShifts();
+        } catch (err) {
+          console.warn('[supabase] auto shift create from planned failed', err);
+          showToast('근무는 추가됐지만 서버 동기화는 실패했어요.', 'error');
+        }
+      }
+      showToast('근무 시간을 자동으로 늘렸어요.');
+      resolve?.(true);
+      ctxRef.current = null;
+      return;
+    }
+
     if (mode === 'partial' && option === 'extend' && overlappingShift) {
       const patch = extendShiftToCoverLesson(overlappingShift, startTime, endTime);
       if (!patch) {
@@ -158,14 +198,26 @@ export default function useEnsureShiftCoverage() {
         return;
       }
       const shifts = useAcademyStore.getState().academyStaffShifts || [];
-      const status = classifyCoverage(shifts, staff.id, date, startTime, endTime);
+      const academyState = useAcademyStore.getState();
+      const wsState = useWorkspaceStore.getState();
+      const effectiveShifts = buildEffectiveStaffShifts({
+        actualShifts: shifts,
+        rules: wsState.staffWorkRules || [],
+        exceptions: wsState.staffWorkExceptions || [],
+        fromDate: date,
+        toDate: date,
+        academyTeachers: academyState.academyTeachers || [],
+        academyAssistants: academyState.academyAssistants || [],
+        staffUserId: staff.serverUserId || undefined,
+      });
+      const status = classifyCoverage(effectiveShifts, staff.id, date, startTime, endTime);
       if (status === 'covered') {
         resolve(true);
         return;
       }
       pendingRef.current = resolve;
       const overlapping = status === 'partial'
-        ? findOverlappingShift(shifts, staff.id, date, startTime, endTime)
+        ? findOverlappingShift(effectiveShifts, staff.id, date, startTime, endTime)
         : null;
       ctxRef.current = {
         staff, staffRole, date, startTime, endTime,

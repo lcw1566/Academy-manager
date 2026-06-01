@@ -26,19 +26,6 @@ const WAGE_TYPES = [
   { id: 'monthly', label: '월급' },
 ];
 
-const HOURLY_MODES = [
-  {
-    id: 'shiftHours',
-    label: '근무시간 기준',
-    description: '출퇴근/근무표에 기록된 학원 체류 시간을 기준으로 계산해요.',
-  },
-  {
-    id: 'lessonHours',
-    label: '수업시간 기준',
-    description: '완료된 수업 시간만 기준으로 계산해요.',
-  },
-];
-
 const ROLE_TYPES = [
   { id: 'teacher',   label: '강사' },
   { id: 'assistant', label: '보조강사' },
@@ -82,9 +69,6 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
   const [monthlySalary, setMonthlySalary] = useState(
     existing?.monthly_salary ? String(existing.monthly_salary) : '',
   );
-  const [hourlyMode, setHourlyMode] = useState(
-    existing?.scope?.hourlyMode === 'lessonHours' ? 'lessonHours' : 'shiftHours',
-  );
   const [memo, setMemo] = useState(existing?.memo || '');
   const [saving, setSaving] = useState(false);
   // Phase 30 — 권한 토글. 빈 객체면 default 사용.
@@ -102,7 +86,6 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
     setWageType(existing?.wage_type || 'hourly');
     setHourlyWage(existing?.hourly_wage ? String(existing.hourly_wage) : '');
     setMonthlySalary(existing?.monthly_salary ? String(existing.monthly_salary) : '');
-    setHourlyMode(existing?.scope?.hourlyMode === 'lessonHours' ? 'lessonHours' : 'shiftHours');
     setMemo(existing?.memo || '');
     setPermissions(
       existing?.permissions && typeof existing.permissions === 'object' && Object.keys(existing.permissions).length > 0
@@ -135,7 +118,7 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
         permissions, // Phase 30 — jsonb 으로 그대로 전달
         scope: {
           ...(existing?.scope && typeof existing.scope === 'object' ? existing.scope : {}),
-          hourlyMode,
+          hourlyMode: 'actualAttendance',
         },
       });
       showToast('학원 설정이 저장되었습니다.');
@@ -261,27 +244,11 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
               />
               <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1.5 block">급여 계산 기준</label>
-                <div className="flex flex-col gap-2">
-                  {HOURLY_MODES.map((mode) => {
-                    const active = hourlyMode === mode.id;
-                    return (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        onClick={() => setHourlyMode(mode.id)}
-                        className={`w-full text-left rounded-2xl border px-4 py-3 transition-colors ${
-                          active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
-                        }`}
-                      >
-                        <p className={`text-sm font-bold ${active ? 'text-blue-700' : 'text-gray-800'}`}>
-                          {mode.label}
-                        </p>
-                        <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-                          {mode.description}
-                        </p>
-                      </button>
-                    );
-                  })}
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
+                  <p className="text-sm font-bold text-blue-700">승인된 실제 근퇴 기록</p>
+                  <p className="text-[11px] text-blue-700/80 mt-0.5 leading-relaxed">
+                    직원이 기록한 출근/퇴근 시간을 원장이 승인하면 시급 계산에 반영돼요.
+                  </p>
                 </div>
               </div>
             </div>

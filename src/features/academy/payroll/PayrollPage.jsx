@@ -141,7 +141,7 @@ export default function PayrollPage() {
 
   const wageTypeLabel = staffInfo.wageType === 'hourly' ? '시급제' : '월급제';
   const wageDetail = staffInfo.wageType === 'hourly'
-    ? `시간당 ${(staffInfo.hourlyWage || 0).toLocaleString()}원`
+    ? `시간당 ${(staffInfo.hourlyWage || 0).toLocaleString()}원 · 실제 근퇴 기준`
     : `월 ${(staffInfo.monthlySalary || 0).toLocaleString()}원`;
 
   return (
@@ -209,25 +209,30 @@ export default function PayrollPage() {
                   <p className="text-xs font-bold text-[#191F28] mb-3">시간 내역</p>
                   <div className="grid grid-cols-3 gap-2">
                     <BreakdownCell
-                      label="총 근무"
+                      label="승인 근퇴"
                       value={`${formatHours(myPayroll.shiftHours ?? myPayroll.totalHours)}시간`}
                     />
                     <BreakdownCell
-                      label="수업"
+                      label="수업 참고"
                       value={`${formatHours(myPayroll.lessonHours)}시간`}
                       tone="primary"
                     />
                     <BreakdownCell
-                      label="대기/공강"
+                      label="수업 외"
                       value={`${formatHours(myPayroll.gapHours)}시간`}
                       tone="muted"
                     />
                   </div>
+                  {myPayroll.pendingLogHours > 0 && (
+                    <p className="mt-2 text-[11px] text-amber-600">
+                      승인 대기 근퇴 {formatHours(myPayroll.pendingLogHours)}시간은 급여에 아직 반영되지 않았어요.
+                    </p>
+                  )}
                   <div className="mt-3 pt-3 border-t border-[#F2F4F6] flex items-center justify-between">
                     <p className="text-xs text-[#4E5968]">
                       정산 기준 ·{' '}
                       <span className="font-semibold text-[#191F28]">
-                        {myPayroll.hourlyMode === 'lessonHours' ? '수업 시간' : '학원 머문 시간'}
+                        승인된 실제 근퇴 기록
                       </span>
                     </p>
                     <p className="text-xs text-[#4E5968]">
@@ -277,9 +282,7 @@ export default function PayrollPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-semibold text-gray-700">{formatHours(hours)}시간</p>
-                      {staffInfo.wageType === 'hourly' && (
-                        <p className="text-xs text-blue-600">{Math.round((staffInfo.hourlyWage || 0) * hours).toLocaleString()}원</p>
-                      )}
+                      {staffInfo.wageType === 'hourly' && <p className="text-xs text-gray-400">수업 참고</p>}
                     </div>
                   </div>
                 );

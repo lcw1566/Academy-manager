@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Pencil, Trash2, CalendarDays } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -14,7 +14,10 @@ import {
   mergePlannedAndActualClassSessions,
   plannedToClassSessionShape,
 } from '../../../utils/schedule';
-import { today, formatDateShort, compareYMD } from '../../../utils/date';
+import {
+  today, addDaysYMD, formatDateShort, compareYMD, getKoreanWeekdayFromYMD, getWeekDates,
+} from '../../../utils/date';
+import { hhmmToMin } from '../../../utils/shiftCoverage';
 import { getTeacherDisplayName } from '../../../utils/format';
 import ClassGroupFormModal from './ClassGroupFormModal';
 
@@ -24,6 +27,15 @@ const SESSION_STATUS = {
   canceled:    { label: '취소',  color: 'bg-gray-100 text-gray-400' },
   rescheduled: { label: '변경',  color: 'bg-yellow-50 text-yellow-600' },
 };
+
+function formatTimelineHour(minutes) {
+  const h = Math.floor((Number(minutes) || 0) / 60);
+  return `${String(h).padStart(2, '0')}:00`;
+}
+
+function formatSessionTimeRange(start, end) {
+  return `${String(start || '').slice(0, 5)}-${String(end || '').slice(0, 5)}`;
+}
 
 // 오늘/지난/다음 수업을 3개씩 미리보기로 나누어 반환.
 // 원본 sessions 배열을 mutate하지 않음.
@@ -65,6 +77,7 @@ export default function ClassGroupDetailPage() {
 
   const [showEditForm, setShowEditForm] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
+  const [weekAnchor, setWeekAnchor] = useState(today());
   const todayStr = today();
 
   const group = classGroups.find((g) => g.id === selectedClassGroupId) ?? null;
@@ -110,11 +123,6 @@ export default function ClassGroupDetailPage() {
   const groupClinicRecords = useMemo(
     () => (clinicRecords || []).filter((r) => r.classGroupId === selectedClassGroupId),
     [clinicRecords, selectedClassGroupId]
-  );
-
-  const preview = useMemo(
-    () => getSessionPreviewGroups({ sessions, todayYMD: todayStr, limit: 3 }),
-    [sessions, todayStr]
   );
 
   if (!group) {
@@ -255,39 +263,22 @@ export default function ClassGroupDetailPage() {
           </div>
         )}
 
-        {/* 오늘 수업 */}
-        {preview.todaySessions.length > 0 && (
-          <SessionSection
-            title="오늘 수업"
-            count={preview.todayTotal}
-            sessions={preview.todaySessions}
-            students={students}
-            attendanceRecords={academyAttendanceRecords}
-            onSessionClick={(id) => navigateToClassSession(id)}
-            highlightToday
-          />
-        )}
-
-        {/* 다음 수업 */}
-        <SessionSection
-          title="다음 수업"
-          count={preview.nextTotal}
-          sessions={preview.nextSessions}
+        <ClassGroupWeekCalendar
+          sessions={sessions}
           students={students}
           attendanceRecords={academyAttendanceRecords}
-          onSessionClick={(id) => navigateToClassSession(id)}
-          emptyText="예정된 수업이 없어요"
-        />
-
-        {/* 지난 수업 */}
-        <SessionSection
-          title="지난 수업"
-          count={preview.pastTotal}
-          sessions={preview.pastSessions}
-          students={students}
-          attendanceRecords={academyAttendanceRecords}
-          onSessionClick={(id) => navigateToClassSession(id)}
-          isPast
+          weekAnchor={weekAnchor}
+          todayYMD={todayStr}
+          onPrevWeek={() => setWeekAnchor((d) => addDaysYMD(d, -7))}
+          onNextWeek={() => setWeekAnchor((d) => addDaysYMD(d, 7))}
+          onToday={() => setWeekAnchor(today())}
+          onSessionClick={(session) => {
+            if (session.isPlanned) {
+              showToast('아직 실제 회차로 저장되지 않은 예정 수업이에요. 기록을 시작할 때 회차를 생성하도록 바꾸는 게 좋아요.', 'info');
+              return;
+            }
+            navigateToClassSession(session.id);
+          }}
         />
 
         {/* 전체 수업일 보기 */}
@@ -319,7 +310,14 @@ export default function ClassGroupDetailPage() {
           students={students}
           attendanceRecords={academyAttendanceRecords}
           todayYMD={todayStr}
-          onSessionClick={(id) => { setShowAllSessions(false); navigateToClassSession(id); }}
+          onSessionClick={(session) => {
+            if (session.isPlanned) {
+              showToast('아직 실제 회차로 저장되지 않은 예정 수업이에요. 기록을 시작할 때 회차를 생성하도록 바꾸는 게 좋아요.', 'info');
+              return;
+            }
+            setShowAllSessions(false);
+            navigateToClassSession(session.id);
+          }}
           onClose={() => setShowAllSessions(false)}
         />
       )}
@@ -327,33 +325,175 @@ export default function ClassGroupDetailPage() {
   );
 }
 
-function SessionSection({ title, count, sessions, students, attendanceRecords, onSessionClick, isPast, highlightToday, emptyText }) {
+function ClassGroupWeekCalendar({
+  sessions, students, attendanceRecords, weekAnchor, todayYMD,
+  onPrevWeek, onNextWeek, onSessionClick,
+}) {
+  const weekDates = useMemo(() => getWeekDates(weekAnchor), [weekAnchor]);
+  const sessionsByDate = useMemo(() => {
+    const map = new Map();
+    weekDates.forEach((date) => map.set(date, []));
+    for (const session of sessions || []) {
+      if (!session.date || !map.has(session.date) || session.status === 'canceled') continue;
+      map.get(session.date).push(session);
+    }
+    for (const date of weekDates) {
+      map.get(date).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+    }
+    return map;
+  }, [sessions, weekDates]);
+
+  const calendarRange = useMemo(() => {
+    const bounds = [];
+    for (const date of weekDates) {
+      for (const session of sessionsByDate.get(date) || []) {
+        const start = hhmmToMin(session.startTime);
+        const end = hhmmToMin(session.endTime);
+        if (start != null) bounds.push(start);
+        if (end != null) bounds.push(end);
+      }
+    }
+    const min = bounds.length ? Math.min(...bounds) : 9 * 60;
+    const max = bounds.length ? Math.max(...bounds) : 22 * 60;
+    const startMin = Math.max(0, Math.floor((min - 60) / 60) * 60);
+    const endMin = Math.min(24 * 60, Math.ceil((max + 60) / 60) * 60);
+    const ticks = [];
+    for (let t = startMin; t <= endMin; t += 60) ticks.push(t);
+    return {
+      startMin,
+      endMin,
+      ticks,
+      height: Math.max(360, Math.round((endMin - startMin) * 0.72)),
+    };
+  }, [sessionsByDate, weekDates]);
+
+  const weekLabel = `${formatDateShort(weekDates[0])} - ${formatDateShort(weekDates[6])}`;
+  const weekCount = weekDates.reduce((sum, date) => sum + (sessionsByDate.get(date)?.length || 0), 0);
+  const totalRange = calendarRange.endMin - calendarRange.startMin || 1;
+
   return (
     <div className="px-4 mb-5">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-bold text-gray-700">
-          {title}
-          {highlightToday && <span className="ml-1.5 text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full align-middle">오늘</span>}
-        </p>
-        <span className="text-xs text-gray-400">{count}회</span>
-      </div>
-      {sessions.length === 0 ? (
-        emptyText ? (
-          <div className="bg-white rounded-2xl p-4 shadow-sm text-center">
-            <p className="text-sm text-gray-400">{emptyText}</p>
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-4 md:px-5 py-3 border-b border-[#F2F4F6] flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-[#191F28]">주간 수업표</p>
+            <p className="text-[11px] text-[#8B95A1] mt-0.5 truncate">
+              {weekLabel} · {weekCount}회
+            </p>
           </div>
-        ) : null
-      ) : (
-        <div className="flex flex-col gap-2">
-          {sessions.map((session) => (
-            <SessionCard key={session.id} session={session} students={students}
-              attendanceRecords={attendanceRecords}
-              onClick={() => onSessionClick(session.id)}
-              isPast={isPast}
-            />
-          ))}
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={onPrevWeek} className="w-8 h-8 rounded-lg text-[#4E5968] active:bg-[#F2F4F6] flex items-center justify-center" aria-label="이전 주">
+              <ChevronLeft size={16} />
+            </button>
+            <button type="button" onClick={onNextWeek} className="w-8 h-8 rounded-lg text-[#4E5968] active:bg-[#F2F4F6] flex items-center justify-center" aria-label="다음 주">
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
-      )}
+        <div className="overflow-x-auto">
+          <div className="min-w-[760px]">
+            <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))] border-b border-[#F2F4F6] bg-[#FBFCFD]">
+              <div className="px-2 py-2 text-[10px] font-bold text-[#8B95A1]">시간</div>
+              {weekDates.map((date) => {
+                const isTodayCell = date === todayYMD;
+                return (
+                  <div key={date} className="px-2 py-2 border-l border-[#F2F4F6]">
+                    <p className={`text-xs font-extrabold ${isTodayCell ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+                      {getKoreanWeekdayFromYMD(date)}
+                      <span className="ml-1 text-[10px] font-bold text-[#8B95A1]">{date.slice(5).replace('-', '.')}</span>
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
+              <div className="relative bg-[#FBFCFD] border-r border-[#F2F4F6]" style={{ height: calendarRange.height }}>
+                {calendarRange.ticks.map((tick) => (
+                  <div
+                    key={tick}
+                    className="absolute right-2 text-[10px] font-medium text-[#8B95A1]"
+                    style={{
+                      top: `clamp(10px, ${((tick - calendarRange.startMin) / totalRange) * 100}%, calc(100% - 16px))`,
+                      transform: 'translateY(-50%)',
+                    }}
+                  >
+                    {formatTimelineHour(tick)}
+                  </div>
+                ))}
+              </div>
+              {weekDates.map((date) => {
+                const daySessions = sessionsByDate.get(date) || [];
+                const isTodayColumn = date === todayYMD;
+                return (
+                  <div
+                    key={date}
+                    className={`relative border-l border-[#F2F4F6] ${isTodayColumn ? 'bg-blue-50/20' : 'bg-white'}`}
+                    style={{ height: calendarRange.height }}
+                  >
+                    {calendarRange.ticks.map((tick) => (
+                      <div
+                        key={tick}
+                        className="absolute left-0 right-0 border-t border-[#F2F4F6]"
+                        style={{ top: `${((tick - calendarRange.startMin) / totalRange) * 100}%` }}
+                      />
+                    ))}
+                    {daySessions.length === 0 && (
+                      <div className="absolute inset-x-2 top-4 rounded-xl border border-dashed border-[#F2F4F6] px-2 py-3 text-center text-[11px] font-semibold text-[#B0B8C1]">
+                        수업 없음
+                      </div>
+                    )}
+                    {daySessions.map((session) => {
+                      const start = hhmmToMin(session.startTime) ?? calendarRange.startMin;
+                      const rawEnd = hhmmToMin(session.endTime) ?? start + 30;
+                      const end = Math.max(start + 30, rawEnd);
+                      const top = ((Math.max(calendarRange.startMin, start) - calendarRange.startMin) / totalRange) * 100;
+                      const height = ((Math.min(calendarRange.endMin, end) - Math.max(calendarRange.startMin, start)) / totalRange) * 100;
+                      const statusInfo = SESSION_STATUS[session.status] || SESSION_STATUS.scheduled;
+                      const attendedCount = attendanceRecords.filter((a) => a.sessionId === session.id && a.status === 'present').length;
+                      const isTodaySession = session.date === todayYMD;
+                      const title = [
+                        formatSessionTimeRange(session.startTime, session.endTime),
+                        session.room || '',
+                        `${students.length}명`,
+                        session.isPlanned ? '규칙 예정' : statusInfo.label,
+                      ].filter(Boolean).join(' · ');
+                      return (
+                        <button
+                          key={session.id}
+                          type="button"
+                          title={title}
+                          aria-label={title}
+                          onClick={() => onSessionClick(session)}
+                          className={`absolute left-2 right-2 rounded-xl border px-2 py-2 text-left overflow-hidden active:scale-[0.99] ${
+                            isTodaySession
+                              ? 'border-[#3182F6] bg-blue-100 shadow-[0_8px_20px_rgba(49,130,246,0.18)] ring-2 ring-blue-100'
+                              : 'border-blue-200 bg-blue-50/80 shadow-sm'
+                          }`}
+                          style={{ top: `${top}%`, height: `${Math.max(5, height)}%`, minHeight: 48, zIndex: isTodaySession ? 12 : 8 }}
+                        >
+                          <div className="flex items-start justify-between gap-1.5">
+                            <p className={`min-w-0 truncate text-xs font-extrabold ${isTodaySession ? 'text-[#0054C8]' : 'text-[#191F28]'}`}>
+                              {isTodaySession ? '오늘 수업' : '수업'}
+                            </p>
+                            <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${session.isPlanned ? 'bg-indigo-50 text-indigo-600' : statusInfo.color}`}>
+                              {session.isPlanned ? '규칙' : statusInfo.label}
+                            </span>
+                          </div>
+                          <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold text-[#8B95A1]">
+                            {session.room && <span className="truncate">{session.room}</span>}
+                            <span>{students.length}명</span>
+                            {attendedCount > 0 && <span className="text-green-600">출석 {attendedCount}</span>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -416,7 +556,7 @@ function AllSessionsModal({ sessions, students, attendanceRecords, todayYMD, onS
               return (
                 <SessionCard key={session.id} session={session} students={students}
                   attendanceRecords={attendanceRecords}
-                  onClick={() => onSessionClick(session.id)}
+                  onClick={() => onSessionClick(session)}
                   isPast={isPast}
                 />
               );

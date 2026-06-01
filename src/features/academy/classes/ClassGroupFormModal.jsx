@@ -19,11 +19,22 @@ import {
 import { OWNER_TEACHER_ID } from '../../../utils/format';
 import BulkShiftSuggestionSheet from '../work/BulkShiftSuggestionSheet';
 import { hhmmToMin } from '../../../utils/shiftCoverage';
+import {
+  buildEffectiveStaffShifts,
+  getUncoveredStaffSessions,
+} from '../../../utils/staffShiftCoverage';
 
 function emptyToNull(v) {
   if (v === undefined) return null;
   if (typeof v === 'string' && v.trim() === '') return null;
   return v;
+}
+
+function addDaysYMD(ymd, days) {
+  const base = ymd ? new Date(`${ymd}T00:00:00`) : new Date();
+  if (Number.isNaN(base.getTime())) return new Date().toISOString().slice(0, 10);
+  base.setDate(base.getDate() + days);
+  return base.toISOString().slice(0, 10);
 }
 
 // 로컬 반 폼 → Supabase class_groups snake_case payload.
@@ -278,6 +289,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
+  const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
+  const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
   const [submitting, setSubmitting] = useState(false);
   // Phase 35 — 반 생성/수정 후 근무표 자동 추가 제안 sheet.
   const [shiftSuggestion, setShiftSuggestion] = useState(null);
@@ -318,6 +331,28 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const [periodEndMode, setPeriodEndMode] = useState(editGroup?.endDate ? 'until' : 'forever');
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const coverageRange = useMemo(() => {
+    const fromDate = form.startDate || new Date().toISOString().slice(0, 10);
+    return { fromDate, toDate: addDaysYMD(fromDate, 56) };
+  }, [form.startDate]);
+
+  const effectiveCoverageShifts = useMemo(() => buildEffectiveStaffShifts({
+    actualShifts: academyStaffShifts,
+    rules: staffWorkRules,
+    exceptions: staffWorkExceptions,
+    fromDate: coverageRange.fromDate,
+    toDate: coverageRange.toDate,
+    academyTeachers,
+    academyAssistants,
+  }), [
+    academyStaffShifts,
+    staffWorkRules,
+    staffWorkExceptions,
+    coverageRange,
+    academyTeachers,
+    academyAssistants,
+  ]);
 
   const toggleWeekday = (day) =>
     setForm((f) => {
@@ -505,10 +540,15 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           ? academyTeachers.find((t) => t.id === data.teacherId)
           : null;
         if (teacher) {
+          const teacherSessions = getUncoveredStaffSessions({
+            shifts: effectiveCoverageShifts,
+            staffId: teacher.id,
+            sessions: upcoming.map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
+          });
           lessonsByStaff.set(`teacher_${teacher.id}`, {
             staff: teacher,
             staffRole: 'teacher',
-            sessions: upcoming.map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
+            sessions: teacherSessions,
           });
         }
         const assistantId = data.assistantIds?.[0];
@@ -516,86 +556,88 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           ? academyAssistants.find((a) => a.id === assistantId)
           : null;
         if (assistant) {
+          const assistantSessions = getUncoveredStaffSessions({
+            shifts: effectiveCoverageShifts,
+            staffId: assistant.id,
+            sessions: upcoming.map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
+          });
           lessonsByStaff.set(`assistant_${assistant.id}`, {
             staff: assistant,
             staffRole: 'assistant',
-            sessions: upcoming.map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
+            sessions: assistantSessions,
           });
         }
 
-        // 2) Supabase write-through — class_groups 먼저, 성공 시 class_sessions bulk
+        // 2) Supabase write-through — 화면은 로컬 저장 직후 닫고, 서버 동기화는 백그라운드 처리.
         if (isAuthenticated && currentAcademyId) {
-          let serverGroup = null;
-          try {
-            serverGroup = await createAcademyClassGroup({
-              academyId: currentAcademyId,
-              ...mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants, academyTeachers, authUserId),
-            });
-            if (serverGroup?.id && localGroup?.id) {
-              setClassGroupServerId(localGroup.id, serverGroup.id);
-            }
-            await loadServerClassGroups();
-          } catch (err) {
-            console.error('[supabase] createAcademyClassGroup failed', err);
-            showToast(
-              err?.message
-                ? `서버 저장 실패: ${err.message}`
-                : '반은 생성되었지만 서버 저장은 실패했어요.',
-              'error',
-            );
-          }
-
-          // class_group 서버 저장 성공 시 sessions bulk insert 시도
-          if (serverGroup?.id && localSessions.length > 0) {
+          void (async () => {
+            let serverGroup = null;
             try {
-              const sessionPayloads = localSessions.map((ls) =>
-                mapClassSessionToServerPayload(ls, serverGroup.id, academyStudents, academyAssistants, academyTeachers, authUserId)
-              );
-              const serverSessions = await createAcademyClassSessionsBulk({
+              serverGroup = await createAcademyClassGroup({
                 academyId: currentAcademyId,
-                sessions: sessionPayloads,
+                ...mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants, academyTeachers, authUserId),
               });
-              // local ↔ server 매칭 (date + start_time 기준)
-              const pairs = matchSessionPairs(localSessions, serverSessions);
-              setClassSessionServerIds(pairs);
-              await loadServerClassSessions();
-              showToast(
-                `반이 생성되고 서버에도 저장되었어요 · 수업 회차 ${serverSessions.length}개`,
-              );
+              if (serverGroup?.id && localGroup?.id) {
+                setClassGroupServerId(localGroup.id, serverGroup.id);
+              }
+              await loadServerClassGroups();
             } catch (err) {
-              console.error('[supabase] createAcademyClassSessionsBulk failed', err);
+              console.error('[supabase] createAcademyClassGroup failed', err);
               showToast(
                 err?.message
-                  ? `수업 회차 서버 저장 실패: ${err.message}`
-                  : '반은 서버에 저장되었지만 수업 회차 서버 저장은 실패했어요.',
+                  ? `반은 저장됐지만 서버 동기화에 실패했어요: ${err.message}`
+                  : '반은 저장됐지만 서버 동기화에 실패했어요.',
                 'error',
               );
+              return;
             }
-          } else if (serverGroup?.id && localSessions.length === 0) {
-            // 회차 없는 경우 (요일 미지정 등) — class_group 성공 안내만
-            showToast('반이 생성되고 서버에도 저장되었어요.');
-          }
 
-          // Phase 44.6 / Phase B — class_schedule_rules INSERT (best-effort).
-          // 룰 저장이 실패해도 사용자 흐름은 막지 않음 (legacy class_sessions 가 fallback).
-          if (serverGroup?.id) {
-            const rulePayloads = buildClassScheduleRulePayloads(data, academyTeachers, academyAssistants, authUserId);
-            for (const rp of rulePayloads) {
+            // class_group 서버 저장 성공 시 sessions bulk insert 시도
+            if (serverGroup?.id && localSessions.length > 0) {
               try {
-                await createClassScheduleRule({
+                const sessionPayloads = localSessions.map((ls) =>
+                  mapClassSessionToServerPayload(ls, serverGroup.id, academyStudents, academyAssistants, academyTeachers, authUserId)
+                );
+                const serverSessions = await createAcademyClassSessionsBulk({
                   academyId: currentAcademyId,
-                  class_group_id: serverGroup.id,
-                  ...rp,
+                  sessions: sessionPayloads,
                 });
+                // local ↔ server 매칭 (date + start_time 기준)
+                const pairs = matchSessionPairs(localSessions, serverSessions);
+                setClassSessionServerIds(pairs);
+                await loadServerClassSessions();
               } catch (err) {
-                console.warn('[supabase] createClassScheduleRule failed', err);
+                console.error('[supabase] createAcademyClassSessionsBulk failed', err);
+                showToast(
+                  err?.message
+                    ? `수업은 저장됐지만 서버 동기화에 실패했어요: ${err.message}`
+                    : '수업은 저장됐지만 서버 동기화에 실패했어요.',
+                  'error',
+                );
               }
             }
-            // 캐시 갱신 (best-effort).
-            try {
-              await useWorkspaceStore.getState().loadClassScheduleRules?.();
-            } catch { /* ignore */ }
-          }
+
+            // Phase 44.6 / Phase B — class_schedule_rules INSERT (best-effort).
+            // 룰 저장이 실패해도 사용자 흐름은 막지 않음 (legacy class_sessions 가 fallback).
+            if (serverGroup?.id) {
+              const rulePayloads = buildClassScheduleRulePayloads(data, academyTeachers, academyAssistants, authUserId);
+              for (const rp of rulePayloads) {
+                try {
+                  await createClassScheduleRule({
+                    academyId: currentAcademyId,
+                    class_group_id: serverGroup.id,
+                    ...rp,
+                  });
+                } catch (err) {
+                  console.warn('[supabase] createClassScheduleRule failed', err);
+                }
+              }
+              // 캐시 갱신 (best-effort).
+              try {
+                await useWorkspaceStore.getState().loadClassScheduleRules?.();
+              } catch { /* ignore */ }
+            }
+          })();
         }
 
         // Phase 35 — 생성된 회차에 대해 근무표 제안. 영향 받는 강사가 1명 이상이면
@@ -646,27 +688,27 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     if (!form.teacherId || form.teacherId === OWNER_TEACHER_ID) return null;
     return classifyTeacherAvailability({
       staffId: form.teacherId,
-      shifts: academyStaffShifts,
+      shifts: effectiveCoverageShifts,
       weekdays: form.weekdays,
       timesByWeekday: form.weekdayTimes,
       fallbackStart: form.startTime,
       fallbackEnd: form.endTime,
       useSameTime: form.useSameTime,
     });
-  }, [form.teacherId, form.weekdays, form.weekdayTimes, form.startTime, form.endTime, form.useSameTime, academyStaffShifts]);
+  }, [form.teacherId, form.weekdays, form.weekdayTimes, form.startTime, form.endTime, form.useSameTime, effectiveCoverageShifts]);
 
   const assistantAvailability = useMemo(() => {
     if (!form.assistantId) return null;
     return classifyTeacherAvailability({
       staffId: form.assistantId,
-      shifts: academyStaffShifts,
+      shifts: effectiveCoverageShifts,
       weekdays: form.weekdays,
       timesByWeekday: form.weekdayTimes,
       fallbackStart: form.startTime,
       fallbackEnd: form.endTime,
       useSameTime: form.useSameTime,
     });
-  }, [form.assistantId, form.weekdays, form.weekdayTimes, form.startTime, form.endTime, form.useSameTime, academyStaffShifts]);
+  }, [form.assistantId, form.weekdays, form.weekdayTimes, form.startTime, form.endTime, form.useSameTime, effectiveCoverageShifts]);
 
   // 직원 탭으로 이동하여 근무 시간을 설정. 폼은 닫는다 (state 가 사라지더라도
   // 강사 배정 자체는 직원 일정 등록 후 다시 진행하는 게 자연스러움).

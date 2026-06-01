@@ -3,7 +3,7 @@
 // "직원" 탭의 진입점. 기존 work 탭(WorkSchedulePage)을 통합한 인사·근무 페이지.
 //
 // 역할별 진입:
-//   - owner : 전체 직원 리스트 + 상세 (4 서브탭: 근무 / 계약 / 권한 / 배정)
+//   - owner : 전체 직원 리스트 + 상세 (3 서브탭: 근무 / 계약 / 권한)
 //             초대 진입점 (+ 직원 초대), 대기 중인 초대 카드.
 //   - teacher / assistant : 본인 근무 + 출퇴근 + 본인 계약/배정 요약.
 //
@@ -14,11 +14,11 @@
 //   - academy_member_profiles (서버 — 이메일/이름/연락처)
 //   - academyStaffShifts     (로컬 근무표)
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Repeat, ChevronLeft, ChevronRight, Pencil, Trash2,
   Clock, Search, Users as UsersIcon, GraduationCap, Mail, X as XIcon,
-  CalendarOff, Loader2, Check, BookOpen, Coffee, AlertTriangle,
+  Loader2, Check, BookOpen, Coffee, AlertTriangle,
   LogIn, LogOut as LogOutIcon, ShieldCheck,
 } from 'lucide-react';
 import Header from '../../../components/Header';
@@ -39,12 +39,14 @@ import {
   updateAcademyStaffShift as updateServerStaffShift,
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
+import { updateStaffWorkRule } from '../../../services/supabase/scheduleRulesApi';
 import {
   buildRecurringStaffWorkPreview,
   saveRecurringStaffWorkSchedule,
 } from '../../../services/staffWorkScheduleService';
 import {
   buildShiftTimeline,
+  findShiftCoveringTime,
   hhmmToMin,
 } from '../../../utils/shiftCoverage';
 import {
@@ -73,7 +75,6 @@ const SUB_TABS = [
   { id: 'shift',      label: '근무' },
   { id: 'contract',   label: '계약' },
   { id: 'permission', label: '권한' },
-  { id: 'assignment', label: '배정' },
 ];
 
 function formatClock(value) {
@@ -702,7 +703,6 @@ function StaffDetailPanel({ staff, summary, onBack }) {
       {subTab === 'shift'      && <StaffShiftSection staff={staff} />}
       {subTab === 'contract'   && <StaffContractSection staff={staff} />}
       {subTab === 'permission' && <StaffPermissionSection staff={staff} />}
-      {subTab === 'assignment' && <StaffAssignmentSection staff={staff} />}
     </div>
   );
 }
@@ -730,12 +730,17 @@ function StaffShiftSection({ staff }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
   const loadStaffWorkRules = useWorkspaceStore((s) => s.loadStaffWorkRules);
+  const classSessions = useAcademyStore((s) => s.classSessions) ?? [];
+  const classGroups = useAcademyStore((s) => s.classGroups) ?? [];
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [defaultMode, setDefaultMode] = useState('recurring');
   const [defaultDate, setDefaultDate] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [draggingShiftId, setDraggingShiftId] = useState(null);
+  const dragPayloadRef = useRef(null);
+  const dropLockRef = useRef(false);
 
   const todayStr = todayDate();
   const weekDates = useMemo(() => getWeekDates(todayStr), [todayStr]);
@@ -780,22 +785,38 @@ function StaffShiftSection({ staff }) {
     return map;
   }, [staffShifts, weekDates]);
 
-  const weeklyPattern = useMemo(() => {
-    return weekDates
-      .map((date) => {
-        const list = weekByDate.get(date) || [];
-        if (list.length === 0) return null;
-        return `${getKoreanWeekdayFromYMD(date)} ${list.map((sh) => formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)).join(', ')}`;
-      })
-      .filter(Boolean)
-      .join(' · ');
-  }, [weekByDate, weekDates]);
+  const classGroupById = useMemo(
+    () => new Map((classGroups || []).map((group) => [group.id, group])),
+    [classGroups],
+  );
+  const classesByDate = useMemo(() => {
+    const map = new Map();
+    weekDates.forEach((d) => map.set(d, []));
+    for (const session of classSessions || []) {
+      if (!session.date || !map.has(session.date) || session.status === 'canceled') continue;
+      const isAssigned = staff._role === 'assistant'
+        ? ((Array.isArray(session.assistantIds) ? session.assistantIds : []).includes(staff.id) || session.assistantId === staff.id)
+        : ((session.teacherId === staff.id && !session.substituteTeacherId) || session.substituteTeacherId === staff.id);
+      if (!isAssigned) continue;
+      map.get(session.date).push(session);
+    }
+    for (const d of weekDates) {
+      map.get(d).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+    }
+    return map;
+  }, [classSessions, staff.id, staff._role, weekDates]);
   const calendarRange = useMemo(() => {
     const bounds = [];
     for (const date of weekDates) {
       for (const sh of weekByDate.get(date) || []) {
         const start = hhmmToMin(sh.scheduledStartTime);
         const end = hhmmToMin(sh.scheduledEndTime);
+        if (start != null) bounds.push(start);
+        if (end != null) bounds.push(end);
+      }
+      for (const session of classesByDate.get(date) || []) {
+        const start = hhmmToMin(session.startTime);
+        const end = hhmmToMin(session.endTime);
         if (start != null) bounds.push(start);
         if (end != null) bounds.push(end);
       }
@@ -812,7 +833,7 @@ function StaffShiftSection({ staff }) {
       ticks,
       height: Math.max(360, Math.round((endMin - startMin) * 0.72)),
     };
-  }, [weekByDate, weekDates]);
+  }, [classesByDate, weekByDate, weekDates]);
 
   const openAddRecurring = () => {
     setEditing(null);
@@ -830,6 +851,80 @@ function StaffShiftSection({ staff }) {
     setEditing(sh);
     setDefaultMode('single');
     setFormOpen(true);
+  };
+
+  const getRuleIdFromPlannedShift = (shift) => {
+    if (!shift?.isPlanned) return null;
+    if (shift.ruleId) return shift.ruleId;
+    const parts = String(shift.id || '').split(':');
+    return parts[0] === 'rule' ? parts[1] : null;
+  };
+
+  const findMatchingRuleForShift = (shift) => {
+    if (!shift?.date || !staff.serverUserId) return null;
+    const dow = KO_TO_DOW[getKoreanWeekdayFromYMD(shift.date)];
+    return (staffWorkRules || []).find((rule) =>
+      rule.is_active
+      && rule.staff_user_id === staff.serverUserId
+      && rule.day_of_week === dow
+      && (rule.start_time || '').slice(0, 5) === (shift.scheduledStartTime || '').slice(0, 5)
+      && (rule.end_time || '').slice(0, 5) === (shift.scheduledEndTime || '').slice(0, 5)
+      && Number(rule.break_minutes || 0) === Number(shift.breakMinutes || 0)
+    ) || null;
+  };
+
+  const applyLocalRuleDay = (ruleId, nextDow) => {
+    if (!ruleId) return;
+    useWorkspaceStore.setState((s) => ({
+      staffWorkRules: (s.staffWorkRules || []).map((rule) =>
+        rule.id === ruleId ? { ...rule, day_of_week: nextDow } : rule
+      ),
+    }));
+  };
+
+  const handleDropShift = async (shiftId, targetDate) => {
+    if (dropLockRef.current) return;
+    dropLockRef.current = true;
+    const targetDow = KO_TO_DOW[getKoreanWeekdayFromYMD(targetDate)];
+    const shift = staffShifts.find((sh) => sh.id === shiftId);
+    setDraggingShiftId(null);
+    dragPayloadRef.current = null;
+    window.setTimeout(() => { dropLockRef.current = false; }, 0);
+    if (!shift || !targetDate || shift.date === targetDate || targetDow == null) return;
+
+    const matchingRule = shift.isPlanned ? null : findMatchingRuleForShift(shift);
+    const ruleId = shift.isPlanned ? getRuleIdFromPlannedShift(shift) : matchingRule?.id;
+
+    if (ruleId) {
+      const prevDow = matchingRule?.day_of_week ?? KO_TO_DOW[getKoreanWeekdayFromYMD(shift.date)];
+      applyLocalRuleDay(ruleId, targetDow);
+      if (!shift.isPlanned) updateAcademyStaffShift(shift.id, { date: targetDate });
+      try {
+        await updateStaffWorkRule(ruleId, { day_of_week: targetDow });
+        if (!shift.isPlanned && shift.serverId && isAuthenticated && currentAcademyId) {
+          await updateServerStaffShift(shift.serverId, { date: targetDate });
+          loadServerStaffShifts();
+        }
+        loadStaffWorkRules?.();
+        showToast(`${getKoreanWeekdayFromYMD(targetDate)}요일로 옮겼어요.`);
+      } catch (err) {
+        applyLocalRuleDay(ruleId, prevDow);
+        if (!shift.isPlanned) updateAcademyStaffShift(shift.id, { date: shift.date });
+        showToast(err?.message ?? '근무 요일 변경에 실패했어요.', 'error');
+      }
+      return;
+    }
+
+    updateAcademyStaffShift(shift.id, { date: targetDate });
+    if (shift.serverId && isAuthenticated && currentAcademyId) {
+      try {
+        await updateServerStaffShift(shift.serverId, { date: targetDate });
+        loadServerStaffShifts();
+      } catch (err) {
+        console.warn('[supabase] move shift failed', err);
+        showToast('요일은 옮겼지만 서버 동기화는 실패했어요.', 'error');
+      }
+    }
   };
 
   const handleSaveRecurring = async (data) => {
@@ -966,67 +1061,41 @@ function StaffShiftSection({ staff }) {
         </div>
       )}
 
-      {hasAnyShift && (
-        <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-bold text-[#191F28]">이번 주 근무 패턴</p>
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-4 md:px-5 py-3 border-b border-[#F2F4F6] flex items-center justify-between">
+          <div>
+            <p className="text-sm font-bold text-[#191F28]">요일별 근무표</p>
+            <p className="text-[11px] text-[#8B95A1] mt-0.5">반복 근무 패턴과 이번 주 배정 수업을 같이 확인해요.</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => openAddSingle(todayStr)}
+              className="text-xs font-bold text-[#3182F6] flex items-center gap-1 px-2 py-1.5 rounded-lg active:bg-blue-50"
+            >
+              <Plus size={11} /> 근무 추가
+            </button>
             <button
               type="button"
               onClick={openAddRecurring}
-              className="text-xs font-bold text-[#3182F6] flex items-center gap-1 px-2 py-1 rounded-lg active:bg-blue-50"
+              className="text-xs font-bold text-[#3182F6] flex items-center gap-1 px-2 py-1.5 rounded-lg active:bg-blue-50"
             >
               <Repeat size={11} /> 반복 추가
             </button>
           </div>
-          {weeklyPattern ? (
-            <div className="flex flex-wrap gap-1.5">
-              {weeklyPattern.split(' · ').map((item) => (
-                <span
-                  key={item}
-                  className="inline-flex items-center rounded-full bg-[#F2F4F6] px-2.5 py-1 text-xs font-bold text-[#191F28]"
-                >
-                  {item}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-[#8B95A1]">이번 주 등록된 근무가 없어요.</p>
-          )}
-        </div>
-      )}
-
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-4 md:px-5 py-3 border-b border-[#F2F4F6] flex items-center justify-between">
-          <p className="text-sm font-bold text-[#191F28]">요일별 근무</p>
-          <p className="text-[11px] text-[#8B95A1]">{formatDateShort(weekDates[0])} ~ {formatDateShort(weekDates[6])}</p>
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">
             <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))] border-b border-[#F2F4F6] bg-[#FBFCFD]">
               <div className="px-2 py-2 text-[10px] font-bold text-[#8B95A1]">시간</div>
               {weekDates.map((date) => {
-                const isToday = date === todayStr;
+                const day = getKoreanWeekdayFromYMD(date);
                 return (
                   <div
                     key={date}
-                    className={`px-2 py-2 border-l border-[#F2F4F6] ${isToday ? 'bg-blue-50/60' : ''}`}
+                    className="px-2 py-2 border-l border-[#F2F4F6]"
                   >
-                    <div className="flex items-center justify-between gap-1">
-                      <div>
-                        <p className={`text-xs font-extrabold ${isToday ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
-                          {getKoreanWeekdayFromYMD(date)}
-                        </p>
-                        <p className="text-[10px] text-[#8B95A1] mt-0.5">{date.slice(5)}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => openAddSingle(date)}
-                        className="w-7 h-7 rounded-lg bg-white text-[#3182F6] border border-[#E5E8EB] flex items-center justify-center active:bg-blue-50"
-                        aria-label={`${getKoreanWeekdayFromYMD(date)} 근무 추가`}
-                      >
-                        <Plus size={13} />
-                      </button>
-                    </div>
+                    <p className="text-xs font-extrabold text-[#191F28]">{day}</p>
                   </div>
                 );
               })}
@@ -1044,73 +1113,141 @@ function StaffShiftSection({ staff }) {
                 ))}
               </div>
               {weekDates.map((date) => {
-                const list = weekByDate.get(date) || [];
-                const isToday = date === todayStr;
+                const shifts = weekByDate.get(date) || [];
+                const sessions = classesByDate.get(date) || [];
+                const positionedSessions = sessions.map((session) => ({
+                  session,
+                  coveringShift: findShiftCoveringTime(shifts, staff.id, date, session.startTime, session.endTime),
+                }));
+                const totalRange = calendarRange.endMin - calendarRange.startMin;
                 return (
                   <div
                     key={date}
-                    className={`relative border-l border-[#F2F4F6] ${isToday ? 'bg-blue-50/20' : 'bg-white'}`}
+                    className={`relative border-l border-[#F2F4F6] bg-white ${draggingShiftId ? 'bg-blue-50/10' : ''}`}
                     style={{ height: calendarRange.height }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const shiftId = e.dataTransfer.getData('application/x-staff-shift')
+                        || e.dataTransfer.getData('text/plain')
+                        || dragPayloadRef.current?.shiftId;
+                      if (shiftId) handleDropShift(shiftId, date);
+                    }}
                   >
                     {calendarRange.ticks.map((tick) => (
                       <div
                         key={tick}
                         className="absolute left-0 right-0 border-t border-[#F2F4F6]"
-                        style={{ top: `${((tick - calendarRange.startMin) / (calendarRange.endMin - calendarRange.startMin)) * 100}%` }}
+                        style={{ top: `${((tick - calendarRange.startMin) / totalRange) * 100}%` }}
                       />
                     ))}
-                    {list.length === 0 && (
-                      <div className="absolute inset-x-2 top-3 rounded-xl border border-dashed border-[#E5E8EB] px-2 py-3 text-center">
-                        <p className="text-xs font-bold text-[#B0B8C1]">근무 없음</p>
+                    {shifts.length === 0 && sessions.length === 0 && (
+                      <div className="absolute inset-x-2 top-4 rounded-xl border border-dashed border-[#F2F4F6] px-2 py-3 text-center text-[11px] font-semibold text-[#B0B8C1]">
+                        근무 없음
                       </div>
                     )}
-                    {list.map((sh) => {
+                    {shifts.map((sh) => {
                       const start = hhmmToMin(sh.scheduledStartTime) ?? calendarRange.startMin;
                       const rawEnd = hhmmToMin(sh.scheduledEndTime) ?? start + 30;
                       const end = Math.max(start + 30, rawEnd);
-                      const total = calendarRange.endMin - calendarRange.startMin;
-                      const top = ((Math.max(calendarRange.startMin, start) - calendarRange.startMin) / total) * 100;
-                      const height = ((Math.min(calendarRange.endMin, end) - Math.max(calendarRange.startMin, start)) / total) * 100;
+                      const top = ((Math.max(calendarRange.startMin, start) - calendarRange.startMin) / totalRange) * 100;
+                      const height = ((Math.min(calendarRange.endMin, end) - Math.max(calendarRange.startMin, start)) / totalRange) * 100;
+                      const shiftTitle = [
+                        `근무 ${formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)}`,
+                        `${formatShiftHoursFromMinutes(scheduledShiftMinutes(sh))}h`,
+                        sh.breakMinutes ? `휴게 ${sh.breakMinutes}분` : '',
+                        sh.memo || '',
+                      ].filter(Boolean).join(' · ');
                       return (
                         <div
                           key={sh.id}
-                          className="absolute left-1.5 right-1.5 rounded-xl bg-white border border-blue-100 shadow-sm px-2 py-2 overflow-hidden"
-                          style={{ top: `${top}%`, height: `${Math.max(7, height)}%`, minHeight: 54 }}
+                          title={shiftTitle}
+                          draggable
+                          onDragStart={(e) => {
+                            dragPayloadRef.current = { shiftId: sh.id, sourceDate: date };
+                            e.dataTransfer.setData('application/x-staff-shift', sh.id);
+                            e.dataTransfer.setData('text/plain', sh.id);
+                            e.dataTransfer.effectAllowed = 'move';
+                            setDraggingShiftId(sh.id);
+                          }}
+                          onDragEnd={() => {
+                            setDraggingShiftId(null);
+                            dragPayloadRef.current = null;
+                          }}
+                          className={`absolute left-1.5 right-1.5 rounded-xl border border-blue-200 bg-blue-50/70 shadow-sm px-2 py-2 overflow-hidden cursor-grab active:cursor-grabbing ${
+                            draggingShiftId === sh.id ? 'opacity-50' : ''
+                          }`}
+                          style={{ top: `${top}%`, height: `${Math.max(8, height)}%`, minHeight: 96, zIndex: 5 }}
                         >
-                          <div className="flex items-start justify-between gap-1">
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-extrabold text-[#191F28] truncate">
-                                {formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)}
-                              </p>
-                              <p className="text-[10px] text-[#8B95A1] mt-0.5 truncate">
-                                {formatShiftHoursFromMinutes(scheduledShiftMinutes(sh))}h
-                                {sh.breakMinutes ? ` · 휴게 ${sh.breakMinutes}분` : ''}
-                              </p>
-                            </div>
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${STATUS_TONES[sh.status]}`}>
+                          <button
+                            type="button"
+                            onClick={() => (sh.isPlanned ? null : openEdit(sh))}
+                            className="absolute inset-0"
+                            aria-label={shiftTitle}
+                          />
+                          <div className="absolute left-2 top-2 z-10 flex items-center gap-1">
+                            <span className="rounded-full bg-white/75 px-2 py-0.5 text-[10px] font-bold text-blue-700 shadow-sm">
+                              근무
+                            </span>
+                            {sh.memo && (
+                              <span className="max-w-[80px] truncate rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-[#4E5968] shadow-sm">
+                                {sh.memo}
+                              </span>
+                            )}
+                          </div>
+                          <div className="absolute right-1.5 top-1.5 z-20 flex items-center gap-1">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap bg-blue-100 text-blue-700">
                               {sh.isPlanned ? '규칙' : STATUS_LABELS[sh.status]}
                             </span>
-                          </div>
-                          {sh.memo && <p className="mt-1 text-[10px] text-[#4E5968] truncate">{sh.memo}</p>}
-                          {!sh.isPlanned && (
-                            <div className="mt-1 flex justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() => openEdit(sh)}
-                                className="w-6 h-6 text-[#3182F6] active:bg-blue-50 rounded-md flex items-center justify-center"
-                                aria-label="근무 수정"
-                              >
-                                <Pencil size={12} />
-                              </button>
+                            {!sh.isPlanned && (
                               <button
                                 type="button"
                                 onClick={() => setConfirmDeleteId(sh.id)}
-                                className="w-6 h-6 text-red-400 active:bg-red-50 rounded-md flex items-center justify-center"
+                                className="w-5 h-5 text-red-400 bg-white/75 active:bg-red-50 rounded-md flex items-center justify-center"
                                 aria-label="근무 삭제"
                               >
-                                <Trash2 size={12} />
+                                <Trash2 size={11} />
                               </button>
-                            </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {positionedSessions.map(({ session, coveringShift }) => {
+                      const start = hhmmToMin(session.startTime) ?? calendarRange.startMin;
+                      const rawEnd = hhmmToMin(session.endTime) ?? start + 30;
+                      const end = Math.max(start + 30, rawEnd);
+                      const top = ((Math.max(calendarRange.startMin, start) - calendarRange.startMin) / totalRange) * 100;
+                      const height = ((Math.min(calendarRange.endMin, end) - Math.max(calendarRange.startMin, start)) / totalRange) * 100;
+                      const group = classGroupById.get(session.classGroupId);
+                      const covered = !!coveringShift;
+                      const verticalInset = covered ? 8 : 0;
+                      const visualTop = verticalInset ? `calc(${top}% + ${verticalInset}px)` : `${top}%`;
+                      const visualHeight = verticalInset ? `calc(${Math.max(5, height)}% - ${verticalInset * 2}px)` : `${Math.max(5, height)}%`;
+                      const lessonTitle = [
+                        `${group?.name || '수업'} ${formatShiftTimeRange(session.startTime, session.endTime)}`,
+                        covered ? '근무 시간 내' : '근무 시간 외',
+                      ].join(' · ');
+                      return (
+                        <div
+                          key={session.id}
+                          title={lessonTitle}
+                          aria-label={lessonTitle}
+                          className={`absolute rounded-lg border px-2 py-1 shadow-sm overflow-hidden ${
+                            covered
+                              ? 'left-3 right-3 border-emerald-200 bg-white/95'
+                              : 'left-2 right-2 border-amber-200 bg-amber-50'
+                          }`}
+                          style={{ top: visualTop, height: visualHeight, minHeight: 30, zIndex: 12 }}
+                        >
+                          <p className={`text-[10px] font-extrabold truncate ${covered ? 'text-emerald-700' : 'text-amber-700'}`}>
+                            {group?.name || '수업'}
+                          </p>
+                          {!covered && (
+                            <p className="mt-0.5 text-[9px] font-semibold text-amber-600 truncate">
+                              근무 외
+                            </p>
                           )}
                         </div>
                       );
@@ -1123,8 +1260,10 @@ function StaffShiftSection({ staff }) {
         </div>
       </div>
 
+      <StaffAssignmentSummary staff={staff} />
+
       <p className="text-[11px] text-[#8B95A1] leading-relaxed px-1">
-        시급 정산은 이 근무 합계 시간을 기준으로 해요. 한 근무 안에 여러 수업이 들어 있어도 한 줄로 등록하세요.
+        근무표는 배정 가능 시간 확인용이에요. 시급 정산은 승인된 실제 근퇴 기록을 기준으로 계산돼요.
       </p>
 
       {formOpen && (
@@ -1479,11 +1618,12 @@ function ShiftFormModal({
 function StaffContractSection({ staff }) {
   const staffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const memberProfiles = useWorkspaceStore((s) => s.academyMemberProfiles) ?? [];
+  const staffAttendanceLogs = useWorkspaceStore((s) => s.staffAttendanceLogs) ?? [];
   const saveAcademyStaffProfile = useWorkspaceStore((s) => s.saveAcademyStaffProfile);
   const showToast = useAcademyStore((s) => s.showToast);
-  const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
   const classSessions = useAcademyStore((s) => s.classSessions) ?? [];
-  const computeStaffHoursForMonth = useAcademyStore((s) => s.computeStaffHoursForMonth);
+  const computeStaffActualHoursForMonth = useAcademyStore((s) => s.computeStaffActualHoursForMonth);
+  const computeStaffHoursFromLogs = useAcademyStore((s) => s.computeStaffHoursFromLogs);
   const updateTeacher = useAcademyStore((s) => s.updateTeacher);
   const updateAssistant = useAcademyStore((s) => s.updateAssistant);
 
@@ -1500,22 +1640,27 @@ function StaffContractSection({ staff }) {
   const initialWageType = serverProfile?.wage_type || staff.wageType || 'hourly';
   const initialHourlyWage = serverProfile?.hourly_wage ?? staff.hourlyWage ?? 0;
   const initialMonthlySalary = serverProfile?.monthly_salary ?? staff.monthlySalary ?? 0;
-  const initialHourlyMode = serverProfile?.scope?.hourlyMode === 'lessonHours' ? 'lessonHours'
-    : (staff.hourlyMode === 'lessonHours' ? 'lessonHours' : 'shiftHours');
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     wageType: initialWageType,
     hourlyWage: String(initialHourlyWage || ''),
     monthlySalary: String(initialMonthlySalary || ''),
-    hourlyMode: initialHourlyMode,
   });
   const [saving, setSaving] = useState(false);
 
   const currentMonth = getCurrentMonth();
-  const shiftHours = useMemo(
-    () => computeStaffHoursForMonth(staff.id, currentMonth),
-    [computeStaffHoursForMonth, staff.id, currentMonth],
+  const approvedActualHours = useMemo(
+    () => staff.serverUserId
+      ? computeStaffHoursFromLogs(staff.serverUserId, currentMonth, staffAttendanceLogs, { approvedOnly: true })
+      : computeStaffActualHoursForMonth(staff.id, currentMonth),
+    [computeStaffActualHoursForMonth, computeStaffHoursFromLogs, staff.id, staff.serverUserId, currentMonth, staffAttendanceLogs],
+  );
+  const pendingActualHours = useMemo(
+    () => staff.serverUserId
+      ? computeStaffHoursFromLogs(staff.serverUserId, currentMonth, staffAttendanceLogs, { approvedOnly: false })
+      : 0,
+    [computeStaffHoursFromLogs, staff.serverUserId, currentMonth, staffAttendanceLogs],
   );
   const lessonMinutes = useMemo(() => {
     let m = 0;
@@ -1538,16 +1683,15 @@ function StaffContractSection({ staff }) {
     return m;
   }, [classSessions, staff.id, staff._role, currentMonth]);
   const lessonHours = lessonMinutes / 60;
-  const gapHours = Math.max(0, shiftHours - lessonHours);
+  const nonLessonHours = Math.max(0, approvedActualHours - lessonHours);
 
   const hourlyWageNum = Number(form.hourlyWage) || 0;
   const monthlySalaryNum = Number(form.monthlySalary) || 0;
 
   const estimatedPay = useMemo(() => {
     if (form.wageType === 'monthly') return monthlySalaryNum;
-    const basis = form.hourlyMode === 'lessonHours' ? lessonHours : shiftHours;
-    return Math.round(basis * hourlyWageNum);
-  }, [form.wageType, form.hourlyMode, hourlyWageNum, monthlySalaryNum, lessonHours, shiftHours]);
+    return Math.round(approvedActualHours * hourlyWageNum);
+  }, [form.wageType, hourlyWageNum, monthlySalaryNum, approvedActualHours]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -1557,7 +1701,7 @@ function StaffContractSection({ staff }) {
         wageType: form.wageType,
         hourlyWage: hourlyWageNum,
         monthlySalary: monthlySalaryNum,
-        hourlyMode: form.hourlyMode,
+        hourlyMode: 'actualAttendance',
       };
       if (staff._role === 'assistant') updateAssistant(staff.id, localPatch);
       else updateTeacher(staff.id, localPatch);
@@ -1576,7 +1720,7 @@ function StaffContractSection({ staff }) {
           permissions: serverProfile?.permissions || {},
           scope: {
             ...(serverProfile?.scope && typeof serverProfile.scope === 'object' ? serverProfile.scope : {}),
-            hourlyMode: form.hourlyMode,
+            hourlyMode: 'actualAttendance',
           },
         });
       }
@@ -1619,7 +1763,7 @@ function StaffContractSection({ staff }) {
             {form.wageType === 'hourly' && (
               <>
                 <Row label="시급" value={`${hourlyWageNum.toLocaleString()}원`} />
-                <Row label="정산 기준" value={form.hourlyMode === 'lessonHours' ? '수업 시간 기준' : '근무 시간 기준'} />
+                <Row label="정산 기준" value="승인된 실제 근퇴 기록" />
               </>
             )}
             {form.wageType === 'monthly' && (
@@ -1655,26 +1799,11 @@ function StaffContractSection({ staff }) {
                   placeholder="시급 (원)"
                   className="input"
                 />
-                <div className="flex flex-col gap-2">
-                  {[
-                    { id: 'shiftHours', label: '근무 시간 기준', desc: '학원 머무는 시간 전체로 정산해요.' },
-                    { id: 'lessonHours', label: '수업 시간 기준', desc: '완료된 수업 시간만 정산해요.' },
-                  ].map((opt) => {
-                    const active = form.hourlyMode === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setForm((f) => ({ ...f, hourlyMode: opt.id }))}
-                        className={`w-full text-left rounded-2xl border px-3 py-2.5 ${
-                          active ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
-                        }`}
-                      >
-                        <p className={`text-sm font-bold ${active ? 'text-blue-700' : 'text-gray-800'}`}>{opt.label}</p>
-                        <p className="text-[11px] text-gray-500 mt-0.5">{opt.desc}</p>
-                      </button>
-                    );
-                  })}
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-3 py-2.5">
+                  <p className="text-sm font-bold text-blue-700">승인된 실제 근퇴 기록 기준</p>
+                  <p className="text-[11px] text-blue-700/80 mt-0.5 leading-relaxed">
+                    출근/퇴근 기록을 원장이 승인한 시간만 급여에 반영돼요.
+                  </p>
                 </div>
               </>
             ) : (
@@ -1697,16 +1826,15 @@ function StaffContractSection({ staff }) {
           {estimatedPay.toLocaleString()}<span className="text-base text-[#8B95A1] font-medium ml-1">원</span>
         </p>
         <div className="flex flex-col gap-2 pt-3 border-t border-[#F2F4F6]">
-          <Row label="총 근무시간" value={`${shiftHours.toFixed(1)}시간`} />
+          <Row label="승인된 근퇴 시간" value={`${approvedActualHours.toFixed(1)}시간`} />
+          {pendingActualHours > 0 && <Row label="승인 대기 근퇴" value={`${pendingActualHours.toFixed(1)}시간`} />}
           <Row label="수업 시간" value={`${lessonHours.toFixed(1)}시간`} />
-          <Row label="대기/공강" value={`${gapHours.toFixed(1)}시간`} />
+          <Row label="수업 외 체류" value={`${nonLessonHours.toFixed(1)}시간`} />
         </div>
         <p className="text-[11px] text-[#8B95A1] mt-3 leading-relaxed">
           {form.wageType === 'monthly'
             ? '월급은 근무 시간과 무관하게 고정 지급돼요.'
-            : form.hourlyMode === 'lessonHours'
-              ? '수업 시간 기준으로 시급이 적용돼요.'
-              : '근무 시간 기준으로 시급이 적용돼요.'}
+            : '시급은 승인된 실제 출근·퇴근 기록 시간에 적용돼요. 수업 시간은 업무 참고용이에요.'}
         </p>
       </div>
 
@@ -1826,15 +1954,13 @@ function StaffPermissionSection({ staff }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Sub-tab: 배정 (assignment)
+// 근무 탭 안에서 함께 보여주는 배정 요약
 // ═══════════════════════════════════════════════════════════════════
-function StaffAssignmentSection({ staff }) {
+function StaffAssignmentSummary({ staff }) {
   const classGroups = useAcademyStore((s) => s.classGroups) ?? [];
-  const classSessions = useAcademyStore((s) => s.classSessions) ?? [];
   const clinicTasks = useAcademyStore((s) => s.clinicTasks) ?? [];
 
   const isAssistant = staff._role === 'assistant';
-  const todayStr = todayDate();
 
   const myGroups = useMemo(() => {
     if (isAssistant) {
@@ -1843,83 +1969,55 @@ function StaffAssignmentSection({ staff }) {
     return classGroups.filter((g) => g.teacherId === staff.id);
   }, [classGroups, staff.id, isAssistant]);
 
-  const upcomingSessions = useMemo(() => {
-    return classSessions
-      .filter((s) => {
-        if (s.status === 'canceled') return false;
-        if (!s.date || s.date < todayStr) return false;
-        if (isAssistant) {
-          const ids = Array.isArray(s.assistantIds) ? s.assistantIds : [];
-          return ids.includes(staff.id) || s.assistantId === staff.id;
-        }
-        const isMain = s.teacherId === staff.id && !s.substituteTeacherId;
-        const isSub = s.substituteTeacherId === staff.id;
-        return isMain || isSub;
-      })
-      .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.startTime || '').localeCompare(b.startTime || ''))
-      .slice(0, 8);
-  }, [classSessions, staff.id, isAssistant, todayStr]);
-
   const myClinicTasks = useMemo(() => {
     if (!isAssistant) return [];
     return clinicTasks.filter((t) => t.assignedToId === staff.id);
   }, [clinicTasks, staff.id, isAssistant]);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm">
-        <p className="text-sm font-bold text-[#191F28] mb-3">
-          {isAssistant ? '담당 클리닉/수업' : '맡고 있는 반'}
-        </p>
-        {isAssistant ? (
-          <p className="text-2xl font-extrabold text-[#3182F6]">{myClinicTasks.length}
-            <span className="text-sm text-[#8B95A1] ml-1 font-medium">개 클리닉</span>
+    <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-bold text-[#191F28]">
+            {isAssistant ? '담당 클리닉/수업' : '맡고 있는 반'}
           </p>
-        ) : (
-          <p className="text-2xl font-extrabold text-[#3182F6]">{myGroups.length}
-            <span className="text-sm text-[#8B95A1] ml-1 font-medium">개 반</span>
+          <p className="text-[11px] text-[#8B95A1] mt-1">
+            배정 정보는 근무표와 함께 확인해요.
           </p>
-        )}
-        {myGroups.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {myGroups.map((g) => (
-              <span key={g.id} className="text-xs font-semibold bg-[#F2F4F6] text-[#191F28] px-2.5 py-1 rounded-full">
-                {g.name}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-4 md:px-5 py-3 border-b border-[#F2F4F6] flex items-center justify-between">
-          <p className="text-sm font-bold text-[#191F28]">예정된 수업</p>
-          <p className="text-[11px] text-[#8B95A1]">최근 8건</p>
         </div>
-        {upcomingSessions.length === 0 ? (
-          <div className="px-4 md:px-5 py-6 text-center">
-            <CalendarOff size={18} className="text-gray-300 mx-auto mb-1" />
-            <p className="text-xs text-[#8B95A1]">예정된 수업이 없어요.</p>
-          </div>
+        {isAssistant ? (
+          <p className="text-2xl font-extrabold text-[#3182F6] whitespace-nowrap">{myClinicTasks.length}
+            <span className="text-sm text-[#8B95A1] ml-1 font-medium">개</span>
+          </p>
         ) : (
-          <div className="divide-y divide-[#F2F4F6]">
-            {upcomingSessions.map((s) => {
-              const g = classGroups.find((cg) => cg.id === s.classGroupId);
-              return (
-                <div key={s.id} className="px-4 md:px-5 py-3 flex items-center gap-3">
-                  <BookOpen size={14} className="text-[#3182F6]" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-[#191F28] truncate">{g?.name || '수업'}</p>
-                    <p className="text-[11px] text-[#8B95A1]">
-                      {s.date} · {formatShiftTimeRange(s.startTime, s.endTime)}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <p className="text-2xl font-extrabold text-[#3182F6] whitespace-nowrap">{myGroups.length}
+            <span className="text-sm text-[#8B95A1] ml-1 font-medium">개</span>
+          </p>
         )}
       </div>
+      {myGroups.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {myGroups.map((g) => (
+            <span key={g.id} className="text-xs font-semibold bg-[#F2F4F6] text-[#191F28] px-2.5 py-1 rounded-full">
+              {g.name}
+            </span>
+          ))}
+        </div>
+      )}
+      {isAssistant && myClinicTasks.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {myClinicTasks.slice(0, 8).map((task) => (
+            <span key={task.id} className="text-xs font-semibold bg-[#F2F4F6] text-[#191F28] px-2.5 py-1 rounded-full">
+              {task.title || task.studentName || '클리닉'}
+            </span>
+          ))}
+          {myClinicTasks.length > 8 && (
+            <span className="text-xs font-semibold bg-[#F2F4F6] text-[#8B95A1] px-2.5 py-1 rounded-full">
+              +{myClinicTasks.length - 8}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

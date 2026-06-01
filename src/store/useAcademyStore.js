@@ -955,10 +955,10 @@ const useAcademyStore = create(
     const capped = isGenerationCapped(groupData.endDate || null, { todayYMD: getTodayYMD() });
     if (capped) {
       get().showToast(
-        `반이 생성되었어요. 이후 일정은 수업 규칙에 따라 자동으로 표시돼요.`,
+        '반이 생성되었어요. 이후 일정은 수업 규칙에 따라 표시돼요.',
       );
     } else {
-      get().showToast(`반이 생성되었습니다. 수업 회차 ${sessions.length}개가 만들어졌어요.`);
+      get().showToast('반이 생성되었어요.');
     }
     // 10단계: write-through 호출처가 생성된 sessions 에 serverId 매핑할 수 있도록
     // group 과 sessions 를 함께 반환. 기존 caller 는 newGroup.id / .name 등으로
@@ -1325,7 +1325,7 @@ const useAcademyStore = create(
         monthlySalary: monthlySalary !== undefined && monthlySalary !== null
           ? toWonInteger(monthlySalary)
           : (existing?.monthlySalary ?? 0),
-        hourlyMode: hourlyMode === 'lessonHours' ? 'lessonHours' : (existing?.hourlyMode || 'shiftHours'),
+        hourlyMode: 'actualAttendance',
         memo: memo !== undefined ? memo : (existing?.memo ?? ''),
         status: status || existing?.status || 'active',
         source: 'server',
@@ -1379,7 +1379,7 @@ const useAcademyStore = create(
         monthlySalary: monthlySalary !== undefined && monthlySalary !== null
           ? toWonInteger(monthlySalary)
           : (existing?.monthlySalary ?? 0),
-        hourlyMode: hourlyMode === 'lessonHours' ? 'lessonHours' : (existing?.hourlyMode || 'shiftHours'),
+        hourlyMode: 'actualAttendance',
         memo: memo !== undefined ? memo : (existing?.memo ?? ''),
         status: status || existing?.status || 'active',
         source: 'server',
@@ -1545,16 +1545,16 @@ const useAcademyStore = create(
   },
 
   // ─── Academy Payrolls ─────────────────────────────
-  // Phase 30 — 시급 직원은 academy_staff_shifts(=academyStaffShifts) 기반 시간 합계로 계산.
-  //   teacher hourly  : shifts 합산 (대체 강사 배정 세션의 원래 강사는 session 시간을 받지 않음)
-  //   assistant hourly: shifts 합산 (클리닉 수는 더 이상 급여 영향 없음, info 로 유지)
+  // Phase 30 — 급여 자동 계산.
+  //   hourly          : 승인된 실제 근퇴 기록 합계로 계산
+  //   teacher lessons : 급여에는 영향 없이 업무 참고 정보로 유지
+  //   assistant clinic: 급여에는 영향 없이 업무 참고 정보로 유지
   //   monthly         : monthlySalary 그대로
   // 클리닉 카운트(completedClinicCount) 는 보조강사 카드에 참고 정보로만 남는다.
-  // Phase 44.7 / Phase C — opts.attendanceLogs 가 주어지면 approved logs 우선 사용.
-  // 비어 있거나 없으면 legacy academy_staff_shifts (computeStaffHoursForMonth) 로 fallback.
+  // Phase 44.7 / Phase C — staff_attendance_logs 의 approved 실제 시간만 시급제 금액에 반영.
   generatePayrollsForMonth: (month, opts = {}) => {
     const { academyTeachers, academyAssistants, classSessions, clinicTasks } = get();
-    const computeHours = get().computeStaffHoursForMonth;
+    const computeActualShiftHours = get().computeStaffActualHoursForMonth;
     const computeFromLogs = get().computeStaffHoursFromLogs;
     const attendanceLogs = Array.isArray(opts?.attendanceLogs) ? opts.attendanceLogs : [];
     const ts = Date.now();
@@ -1588,13 +1588,11 @@ const useAcademyStore = create(
     };
 
     academyTeachers.forEach((teacher, i) => {
-      // Phase 34 — 시급 정산 기준: shiftHours (default) | lessonHours.
-      // Phase 44.7 / Phase C — approved logs 가 있으면 그 시간을 우선 사용.
-      const legacyShiftHours = computeHours(teacher.id, month);
+      // 시급제 급여는 승인된 실제 근퇴 기록만 기준으로 한다.
       const approvedLogHours = computeFromLogs(teacher.serverUserId, month, attendanceLogs, { approvedOnly: true });
-      const pendingLogHours = computeFromLogs(teacher.serverUserId, month, attendanceLogs, { approvedOnly: false }) - approvedLogHours;
-      // approved logs 가 0 이면 legacy fallback. 그 외엔 approved logs 가 정산 기준.
-      const shiftHours = approvedLogHours > 0 ? approvedLogHours : legacyShiftHours;
+      const pendingLogHours = computeFromLogs(teacher.serverUserId, month, attendanceLogs, { approvedOnly: false });
+      const localActualHours = teacher.serverUserId ? 0 : computeActualShiftHours(teacher.id, month);
+      const payableHours = teacher.serverUserId ? approvedLogHours : localActualHours;
       const lessonHours = computeLessonHoursForMonth({
         staffId: teacher.id, staffRole: 'teacher', month, classSessions,
       });
@@ -1605,19 +1603,17 @@ const useAcademyStore = create(
         return isMainAndNoSubstitute || isSubstitute;
       });
       const completedSessionCount = sessions.length;
-      const hourlyMode = teacher.hourlyMode === 'lessonHours' ? 'lessonHours' : 'shiftHours';
-      const effectiveShiftHours = shiftHours > 0 ? shiftHours : lessonHours;
-      const totalHours = hourlyMode === 'lessonHours' ? lessonHours : effectiveShiftHours;
-      const gapHours = Math.max(0, effectiveShiftHours - lessonHours);
+      const actualHours = payableHours;
+      const gapHours = Math.max(0, actualHours - lessonHours);
       const amount = teacher.wageType === 'hourly'
-        ? Math.round((teacher.hourlyWage || 0) * totalHours)
+        ? Math.round((teacher.hourlyWage || 0) * actualHours)
         : (teacher.monthlySalary || teacher.monthlyWage || 0);
       payrolls.push(keepLockedFields({
         id: `pr${ts}t${i}`, staffType: 'teacher', staffId: teacher.id, month,
-        wageType: teacher.wageType || 'monthly', hourlyMode,
+        wageType: teacher.wageType || 'monthly', hourlyMode: 'actualAttendance',
         hourlyWage: teacher.hourlyWage || 0,
         monthlySalary: teacher.monthlySalary || 0,
-        totalHours, shiftHours: effectiveShiftHours, lessonHours, gapHours,
+        totalHours: actualHours, shiftHours: actualHours, lessonHours, gapHours,
         completedSessionCount, completedClinicCount: 0,
         approvedLogHours, pendingLogHours,
         amount, status: 'scheduled', paidDate: '', memo: '',
@@ -1629,26 +1625,24 @@ const useAcademyStore = create(
       const completed = clinicTasks.filter(
         (t) => t.assignedToId === assistant.id && t.status === 'completed' && t.completedAt?.startsWith(month)
       );
-      const legacyShiftHours = computeHours(assistant.id, month);
       const approvedLogHours = computeFromLogs(assistant.serverUserId, month, attendanceLogs, { approvedOnly: true });
-      const pendingLogHours = computeFromLogs(assistant.serverUserId, month, attendanceLogs, { approvedOnly: false }) - approvedLogHours;
-      const shiftHours = approvedLogHours > 0 ? approvedLogHours : legacyShiftHours;
+      const pendingLogHours = computeFromLogs(assistant.serverUserId, month, attendanceLogs, { approvedOnly: false });
+      const localActualHours = assistant.serverUserId ? 0 : computeActualShiftHours(assistant.id, month);
+      const payableHours = assistant.serverUserId ? approvedLogHours : localActualHours;
       const lessonHours = computeLessonHoursForMonth({
         staffId: assistant.id, staffRole: 'assistant', month, classSessions,
       });
-      const hourlyMode = assistant.hourlyMode === 'lessonHours' ? 'lessonHours' : 'shiftHours';
-      const effectiveShiftHours = shiftHours > 0 ? shiftHours : lessonHours;
-      const totalHours = hourlyMode === 'lessonHours' ? lessonHours : effectiveShiftHours;
-      const gapHours = Math.max(0, effectiveShiftHours - lessonHours);
+      const actualHours = payableHours;
+      const gapHours = Math.max(0, actualHours - lessonHours);
       const amount = assistant.wageType === 'hourly'
-        ? Math.round((assistant.hourlyWage || 0) * totalHours)
+        ? Math.round((assistant.hourlyWage || 0) * actualHours)
         : (assistant.monthlySalary || 0);
       payrolls.push(keepLockedFields({
         id: `pr${ts}a${i}`, staffType: 'assistant', staffId: assistant.id, month,
-        wageType: assistant.wageType || 'monthly', hourlyMode,
+        wageType: assistant.wageType || 'monthly', hourlyMode: 'actualAttendance',
         hourlyWage: assistant.hourlyWage || 0,
         monthlySalary: assistant.monthlySalary || 0,
-        totalHours, shiftHours: effectiveShiftHours, lessonHours, gapHours,
+        totalHours: actualHours, shiftHours: actualHours, lessonHours, gapHours,
         completedSessionCount: 0, completedClinicCount: completed.length,
         approvedLogHours, pendingLogHours,
         amount, status: 'scheduled', paidDate: '', memo: '',
@@ -1946,9 +1940,30 @@ const useAcademyStore = create(
     return totalMinutes / 60;
   },
 
+  // 실제 출퇴근 시간이 명시된 legacy/local shift 만 합산한다.
+  // 예정 시간 fallback 은 급여 산정 원칙과 다르므로 여기서는 사용하지 않는다.
+  computeStaffActualHoursForMonth: (staffId, month /* YYYY-MM */) => {
+    if (!staffId || !month) return 0;
+    const shifts = (get().academyStaffShifts || []).filter(
+      (sh) => sh.staffId === staffId && sh.date && sh.date.startsWith(month),
+    );
+    let totalMinutes = 0;
+    for (const sh of shifts) {
+      const start = sh.actualStartTime;
+      const end = sh.actualEndTime;
+      if (!start || !end) continue;
+      const [sh1, sm1] = start.split(':').map(Number);
+      const [sh2, sm2] = end.split(':').map(Number);
+      if (Number.isNaN(sh1) || Number.isNaN(sh2)) continue;
+      const minutes = (sh2 * 60 + sm2) - (sh1 * 60 + sm1) - (sh.breakMinutes || 0);
+      if (minutes > 0) totalMinutes += minutes;
+    }
+    return totalMinutes / 60;
+  },
+
   // Phase 44.7 / Phase C — staff_attendance_logs 기반 시간 계산.
   // logs 배열은 호출처가 주입 (useWorkspaceStore.getState().staffAttendanceLogs).
-  // approved 만 합산. pending/rejected 제외.
+  // approvedOnly=true 면 approved 만 합산. false 면 아직 정산 반영 전인 pending/completed 만 합산.
   computeStaffHoursFromLogs: (staffUserId, month, logs = [], { approvedOnly = true } = {}) => {
     if (!staffUserId || !month) return 0;
     let totalMinutes = 0;
@@ -1957,6 +1972,7 @@ const useAcademyStore = create(
       if (log.staff_user_id !== staffUserId) continue;
       if (!log.work_date?.startsWith(month)) continue;
       if (approvedOnly && log.status !== 'approved') continue;
+      if (!approvedOnly && !['pending', 'completed'].includes(log.status)) continue;
       const start = log.actual_start_time;
       const end = log.actual_end_time;
       if (!start || !end) continue;

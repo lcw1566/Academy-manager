@@ -44,6 +44,7 @@ import {
   planShiftForDraft,
   extendShiftToCoverLesson,
 } from '../../../utils/shiftCoverage';
+import { buildEffectiveStaffShifts } from '../../../utils/staffShiftCoverage';
 
 const ROLE_LABEL = { teacher: '강사', assistant: '보조강사' };
 
@@ -204,13 +205,23 @@ async function applyBulkShiftCreation({ lessonsByStaff, option }) {
 
     // 3) 기존 shift 와 비교 → skip / extend / create
     for (const draft of merged) {
-      const existingShifts = useAcademyStore.getState().academyStaffShifts || [];
+      const storeNow = useAcademyStore.getState();
+      const existingShifts = buildEffectiveStaffShifts({
+        actualShifts: storeNow.academyStaffShifts || [],
+        rules: wsState.staffWorkRules || [],
+        exceptions: wsState.staffWorkExceptions || [],
+        fromDate: draft.date,
+        toDate: draft.date,
+        academyTeachers: storeNow.academyTeachers || [],
+        academyAssistants: storeNow.academyAssistants || [],
+        staffUserId: staff.serverUserId || undefined,
+      });
       const plan = planShiftForDraft(existingShifts, draft);
       if (plan.action === 'skip') {
         skippedCount += 1;
         continue;
       }
-      if (plan.action === 'extend' && plan.existing) {
+      if (plan.action === 'extend' && plan.existing && !plan.existing.isPlanned) {
         const patch = extendShiftToCoverLesson(
           plan.existing,
           draft.scheduledStartTime,
