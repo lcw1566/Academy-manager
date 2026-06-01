@@ -1,7 +1,7 @@
 // MyTodayShiftCard — Phase 31
 //
 // 강사/보조강사 홈에 노출되는 "오늘 근무" 카드.
-// - 오늘 shift 가 있으면: 예정/실제 시간 + 출근/퇴근 버튼
+// - 오늘 shift 가 있으면: 예정/실제 시간 + 수동 출근/퇴근 보조 버튼
 // - 없으면: 카드 자체를 렌더하지 않음 (null 리턴)
 //
 // 출근/퇴근:
@@ -11,13 +11,12 @@
 //
 // 본인 식별: staff prop (TeacherDashboard 의 myTeacher, AssistantDashboard 의 myAssistant)
 import { useMemo, useState } from 'react';
-import { Clock, LogIn, LogOut, QrCode } from 'lucide-react';
+import { Clock, LogIn, LogOut } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { updateAcademyStaffShift as updateServerStaffShift } from '../../../services/supabase/domainApi';
 import { today as todayDate } from '../../../utils/date';
-import QrScanSheet from '../attendance/QrScanSheet';
 // Phase 44.6 / Phase B — 룰 기반 예정 근무 머지.
 import {
   buildPlannedStaffSchedule,
@@ -61,7 +60,6 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
   const createStaffAttendanceLogLocal = useWorkspaceStore((s) => s.createStaffAttendanceLogLocal);
   const updateStaffAttendanceLogLocal = useWorkspaceStore((s) => s.updateStaffAttendanceLogLocal);
   const [busy, setBusy] = useState(false);
-  const [showQrScan, setShowQrScan] = useState(false);
 
   const todayStr = todayDate();
 
@@ -209,16 +207,6 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
           </p>
         )}
 
-        {/* Phase 43 — 출퇴근은 QR 단일 방식 */}
-        <button
-          type="button"
-          onClick={() => setShowQrScan(true)}
-          disabled={clockedOut}
-          className="w-full mb-2 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-[#191F28] text-white text-xs font-bold disabled:opacity-50"
-        >
-          <QrCode size={12} /> 공용 QR로 체크인
-        </button>
-
         <div className="flex gap-2">
           <button
             type="button"
@@ -240,9 +228,6 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
           </button>
         </div>
       </div>
-      {showQrScan && (
-        <QrScanSheet mode="staff_self" onClose={() => setShowQrScan(false)} />
-      )}
     </div>
   );
 }

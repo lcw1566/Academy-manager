@@ -9,6 +9,7 @@ import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpanda
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
+import StaffHomeQrButton from './StaffHomeQrButton';
 import { FileText } from 'lucide-react';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
 import {
@@ -215,9 +216,14 @@ export default function TeacherDashboard() {
   return (
     <div className="pt-6 pb-4">
       <div className="px-5 mb-5">
-        <p className="text-gray-500 text-sm">{greetingByTime()}</p>
-        <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 내 수업</h2>
-        <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-gray-500 text-sm">{greetingByTime()}</p>
+            <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 내 수업</h2>
+            <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
+          </div>
+          <StaffHomeQrButton staff={myTeacher} />
+        </div>
       </div>
 
       <div className="mb-5">

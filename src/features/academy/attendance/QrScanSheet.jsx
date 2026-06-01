@@ -38,7 +38,7 @@ function nowHHmm() {
 const hasBarcodeDetector = typeof globalThis !== 'undefined'
   && typeof globalThis.BarcodeDetector === 'function';
 
-export default function QrScanSheet({ mode = 'staff_self', onClose }) {
+export default function QrScanSheet({ mode = 'staff_self', autoStartCamera = false, onClose }) {
   const role = useAcademyStore((s) => s.role);
   const academyTeachers = useAcademyStore((s) => s.academyTeachers) ?? [];
   const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
@@ -123,7 +123,10 @@ export default function QrScanSheet({ mode = 'staff_self', onClose }) {
     cameraRef.current = { stream: null, raf: 0 };
     setCameraOn(false);
   };
-  useEffect(() => () => stopCamera(), []); // 언마운트 시 정리
+  useEffect(() => {
+    if (autoStartCamera && hasBarcodeDetector) startCamera();
+    return () => stopCamera();
+  }, []); // 언마운트 시 정리
 
   const processPayload = async (raw) => {
     if (busy) return;

@@ -7,6 +7,7 @@ import { today, formatDateShort, greetingByTime, getDDay } from '../../../utils/
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
+import StaffHomeQrButton from './StaffHomeQrButton';
 
 const CLINIC_TYPE_LABELS = {
   homework: '숙제', wrong_answer: '오답', vocabulary: '단어', reading: '본문',
@@ -102,9 +103,14 @@ export default function AssistantDashboard() {
   return (
     <div className="pt-6 pb-4">
       <div className="px-5 mb-5">
-        <p className="text-gray-500 text-sm">{greetingByTime()}</p>
-        <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 클리닉</h2>
-        <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-gray-500 text-sm">{greetingByTime()}</p>
+            <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 클리닉</h2>
+            <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
+          </div>
+          <StaffHomeQrButton staff={myAssistant} />
+        </div>
       </div>
 
       {/* Phase 31 — 오늘 근무 카드 + 출/퇴근 */}

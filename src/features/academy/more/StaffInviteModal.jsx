@@ -35,7 +35,7 @@ export default function StaffInviteModal({ role = 'teacher', onClose }) {
       <div className="flex flex-col gap-4">
         <div className="bg-blue-50 rounded-2xl px-4 py-3">
           <p className="text-xs text-blue-700 leading-relaxed">
-            직원으로 초대할 이메일을 입력해주세요. 수락 후 직원 정보와 급여 조건을 설정할 수 있어요.
+            직원으로 초대할 이메일을 입력해주세요. 수락 후 역할과 급여 조건을 바로 설정할 수 있어요.
           </p>
         </div>
 

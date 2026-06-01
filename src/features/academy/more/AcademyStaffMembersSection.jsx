@@ -37,7 +37,7 @@ function memberWageLabel(staff) {
   return '급여 미설정';
 }
 
-function MemberCard({ m, onClickSettings }) {
+function MemberCard({ m, onClickSettings, setupRequired = false }) {
   const tone =
     m.role === 'assistant' ? 'text-purple-600 bg-purple-50' :
     m.role === 'teacher'   ? 'text-blue-600 bg-blue-50'     :
@@ -64,7 +64,17 @@ function MemberCard({ m, onClickSettings }) {
           {m.role && (
             <p className="text-[11px] text-gray-500 mt-0.5">{memberWageLabel(m.staff)}</p>
           )}
+          {setupRequired && (
+            <p className="text-[11px] font-semibold text-amber-600 mt-0.5">
+              초대 수락 완료 · 역할/급여 설정 필요
+            </p>
+          )}
         </div>
+        {setupRequired && (
+          <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg flex-shrink-0">
+            설정
+          </span>
+        )}
       </button>
     </div>
   );
@@ -118,6 +128,9 @@ export default function AcademyStaffMembersSection({
     if (!currentAcademyId) return [];
     return memberProfiles.map((p) => {
       const staff = staffProfiles.find((sp) => sp.user_id === p.user_id);
+      const acceptedInvite = (academyInvitations || []).find(
+        (inv) => inv.status === 'accepted' && inv.accepted_user_id === p.user_id,
+      );
       return {
         userId: p.user_id,
         displayName: p.display_name,
@@ -125,10 +138,11 @@ export default function AcademyStaffMembersSection({
         phone: p.phone,
         accountType: p.account_type,
         role: staff?.role || null,
+        inviteRole: acceptedInvite?.role || null,
         staff,
       };
     });
-  }, [currentAcademyId, memberProfiles, staffProfiles]);
+  }, [currentAcademyId, memberProfiles, staffProfiles, academyInvitations]);
 
   const teachers = useMemo(
     () => allMembers.filter((m) => m.userId !== myUserId && m.role === 'teacher'),
@@ -178,7 +192,7 @@ export default function AcademyStaffMembersSection({
   const openSettings = (m) => {
     if (!isOwner) return; // staff 는 클릭해도 모달 안 열림
     setEditingUserId(m.userId);
-    setEditingRole(m.role || 'teacher');
+    setEditingRole(m.role || m.inviteRole || 'teacher');
   };
 
   return (
@@ -282,12 +296,13 @@ export default function AcademyStaffMembersSection({
             ))}
           </MemberGroup>
 
-          {/* 4) 미지정 */}
-          <MemberGroup title="역할 미지정" count={unassigned.length}>
+          {/* 4) 초대 수락 후 설정 필요 */}
+          <MemberGroup title="설정 필요" count={unassigned.length}>
             {unassigned.map((m) => (
               <MemberCard
                 key={m.userId}
                 m={m}
+                setupRequired
                 onClickSettings={() => openSettings(m)}
               />
             ))}
@@ -340,7 +355,7 @@ export default function AcademyStaffMembersSection({
       )}
 
       <p className="text-[11px] text-gray-400 mt-2 leading-relaxed px-1">
-        이름·연락처는 본인이 "내 프로필"에서 등록해요. 과목·급여·메모·권한은 카드를 눌러 설정합니다.
+        이름·연락처는 본인이 "내 프로필"에서 등록해요. 초대를 수락한 직원은 카드를 눌러 역할·급여·권한을 바로 설정합니다.
       </p>
 
       {editingUserId && (

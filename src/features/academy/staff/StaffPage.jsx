@@ -347,7 +347,7 @@ function OwnerStaffView() {
           <div className="flex flex-col gap-4">
             <div className="bg-blue-50 rounded-2xl px-4 py-3">
               <p className="text-xs text-blue-700 leading-relaxed">
-                직원으로 초대할 이메일을 입력해주세요. 수락 후 직원 정보와 급여 조건을 설정할 수 있어요.
+                직원으로 초대할 이메일을 입력해주세요. 수락 후 역할과 급여 조건을 바로 설정할 수 있어요.
               </p>
             </div>
             <RoleChoice value={inviteRole} onChange={setInviteRole} />
@@ -544,7 +544,7 @@ function PendingInvitationDetail({ inv, onBack }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 직원 상세 패널 (sub-tabs: 근무/계약/권한/배정)
+// 직원 상세 패널 (sub-tabs: 근무/계약/권한)
 // ═══════════════════════════════════════════════════════════════════
 function StaffDetailPanel({ staff, summary, onBack }) {
   const [subTab, setSubTab] = useState('shift');
@@ -589,12 +589,12 @@ function StaffDetailPanel({ staff, summary, onBack }) {
           scope: serverProfile?.scope || staff.scope || {},
         });
       }
-      showToast('직급이 저장되었습니다.');
+      showToast('역할이 저장되었습니다.');
       setRoleEditing(false);
     } catch (err) {
       changeLocalStaffRole?.(staff.id, roleDraft, previousRole, { source: staff.source || 'server' });
       setRoleDraft(previousRole);
-      showToast(err?.message ?? '직급 저장에 실패했어요.', 'error');
+      showToast(err?.message ?? '역할 저장에 실패했어요.', 'error');
     } finally {
       setRoleSaving(false);
     }
@@ -626,7 +626,7 @@ function StaffDetailPanel({ staff, summary, onBack }) {
               {staff.phone ? ` · ${staff.phone}` : ''}
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="text-[11px] font-bold text-[#8B95A1]">직급</span>
+              <span className="text-[11px] font-bold text-[#8B95A1]">역할</span>
               {roleEditing ? (
                 <>
                   <select

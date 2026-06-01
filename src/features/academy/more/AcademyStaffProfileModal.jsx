@@ -134,7 +134,7 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
     <Modal
       isOpen
       onClose={onClose}
-      title="학원 강사 설정"
+      title="직원 역할/급여 설정"
       footer={
         <button
           type="button"
