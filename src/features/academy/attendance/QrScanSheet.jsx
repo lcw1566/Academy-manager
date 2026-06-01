@@ -38,7 +38,7 @@ function nowHHmm() {
 const hasBarcodeDetector = typeof globalThis !== 'undefined'
   && typeof globalThis.BarcodeDetector === 'function';
 
-export default function QrScanSheet({ mode = 'staff_self', autoStartCamera = false, onClose }) {
+export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, autoStartCamera = false, onClose }) {
   const role = useAcademyStore((s) => s.role);
   const academyTeachers = useAcademyStore((s) => s.academyTeachers) ?? [];
   const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
@@ -173,23 +173,27 @@ export default function QrScanSheet({ mode = 'staff_self', autoStartCamera = fal
   };
 
   const handleStaffCheckin = async () => {
-    if (!myStaff) {
-      setResult({ ok: false, title: '연결된 강사 정보를 찾을 수 없어요.', detail: '원장에게 계정 연결을 요청해주세요.' });
+    const staffUserId = myStaff?.serverUserId || authUserId;
+    const staffRoleForLog = myStaff?._role || staffRoleFallback || (role === 'assistant' ? 'assistant' : 'teacher');
+    if (!staffUserId) {
+      setResult({ ok: false, title: '로그인 정보를 확인할 수 없어요.', detail: '다시 로그인한 뒤 시도해주세요.' });
       return;
     }
     const todayStr = todayDate();
-    const todaysShifts = academyStaffShifts
-      .filter((sh) => sh.staffId === myStaff.id && sh.date === todayStr && sh.status !== 'canceled')
-      .sort((a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || ''));
+    const todaysShifts = myStaff?.id
+      ? academyStaffShifts
+          .filter((sh) => sh.staffId === myStaff.id && sh.date === todayStr && sh.status !== 'canceled')
+          .sort((a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || ''))
+      : [];
     const todayShift = todaysShifts[0] || null;
     const time = nowHHmm();
 
     // Phase 44.7 / Phase C — 오늘 본인 attendance log SoT.
     // legacy shift 가 있으면 함께 갱신, 없으면 log 만 사용.
     const staffAttendanceLogs = useWorkspaceStore.getState().staffAttendanceLogs || [];
-    const existingLog = myStaff.serverUserId
+    const existingLog = staffUserId
       ? staffAttendanceLogs.find(
-          (l) => l.staff_user_id === myStaff.serverUserId && l.work_date === todayStr,
+          (l) => l.staff_user_id === staffUserId && l.work_date === todayStr,
         )
       : null;
 
@@ -212,7 +216,7 @@ export default function QrScanSheet({ mode = 'staff_self', autoStartCamera = fal
     else { writePatch.actualEndTime = time; writePatch.status = 'completed'; }
 
     // 1) staff_attendance_logs upsert.
-    if (myStaff.serverUserId) {
+    if (staffUserId) {
       try {
         if (existingLog?.id) {
           await useWorkspaceStore.getState().updateStaffAttendanceLogLocal(
@@ -221,8 +225,8 @@ export default function QrScanSheet({ mode = 'staff_self', autoStartCamera = fal
           );
         } else {
           await useWorkspaceStore.getState().createStaffAttendanceLogLocal({
-            staff_user_id: myStaff.serverUserId,
-            staff_role: myStaff._role || 'teacher',
+            staff_user_id: staffUserId,
+            staff_role: staffRoleForLog,
             work_date: todayStr,
             scheduled_start_time: todayShift?.scheduledStartTime || null,
             scheduled_end_time: todayShift?.scheduledEndTime || null,

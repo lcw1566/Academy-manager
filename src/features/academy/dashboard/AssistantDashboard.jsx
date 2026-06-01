@@ -109,7 +109,7 @@ export default function AssistantDashboard() {
             <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 클리닉</h2>
             <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
           </div>
-          <StaffHomeQrButton staff={myAssistant} />
+          <StaffHomeQrButton staff={myAssistant} staffRole="assistant" />
         </div>
       </div>
 
