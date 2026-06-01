@@ -1,8 +1,8 @@
 // HydratePromptModal
 //
 // Phase 17 — 로그인 후 새 기기/빈 localStorage 감지 시 표시되는 안내 모달.
-// 자동 hydrate 는 하지 않는다. 사용자가 "서버 데이터 불러오기" 버튼을 명시적으로
-// 눌러야만 fetchAcademySnapshot → hydrateAcademyFromServerSnapshot 가 실행된다.
+// 사용자가 "서버 데이터 불러오기" 버튼을 명시적으로 누르면
+// fetchAcademySnapshot → hydrateAcademyFromServerSnapshot 가 실행된다.
 //
 // 표시 조건 (모두 만족):
 //   1) isAuthenticated
@@ -142,7 +142,7 @@ export default function HydratePromptModal() {
       const snapshot = await fetchAcademySnapshot(currentAcademyId);
       const counts = hydrateAcademyFromServerSnapshot(snapshot, {
         strategy: 'serverWins',
-        preserveLocalOnly: true,
+        preserveLocalOnly: false,
       });
       await Promise.all([
         loadServerStudents(),
@@ -159,7 +159,7 @@ export default function HydratePromptModal() {
         (counts?.classSessions || 0) + (counts?.lessonRecords || 0) +
         (counts?.attendanceRecords || 0) + (counts?.clinicRecords || 0) +
         (counts?.payments || 0) + (counts?.payrolls || 0);
-      showToast(`서버 데이터를 불러왔어요. (${total}개 row)`);
+      showToast(`서버 기준으로 데이터를 맞췄어요. (${total}개 row)`);
       handleDismiss();
     } catch (err) {
       console.error('[hydrate prompt] fetchAcademySnapshot failed', err);

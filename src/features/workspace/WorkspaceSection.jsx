@@ -90,17 +90,17 @@ export default function WorkspaceSection() {
       return;
     }
     const ok = window.confirm(
-      '최신 데이터를 이 기기로 불러옵니다. 기존 데이터는 유지됩니다. 계속할까요?'
+      'Supabase의 최신 데이터를 기준으로 이 기기 데이터를 새로 맞춥니다. 로컬에만 남아 있던 중복 데이터는 사라질 수 있어요. 계속할까요?'
     );
     if (!ok) return;
     setHydrating(true);
     try {
       // 1) snapshot fetch — 어느 한 테이블이라도 실패하면 throw → hydrate 시도하지 않음
       const snapshot = await fetchAcademySnapshot(currentAcademyId);
-      // 2) localStorage 반영 (serverWins + preserveLocalOnly)
+      // 2) localStorage 반영. Supabase 를 원본으로 보고 로컬-only row 는 제거한다.
       const counts = hydrateAcademyFromServerSnapshot(snapshot, {
         strategy: 'serverWins',
-        preserveLocalOnly: true,
+        preserveLocalOnly: false,
       });
       // 3) 서버 카운트도 재조회 (snapshot fetch 직후라 사실상 동일하지만 일관성 유지)
       await Promise.all([
@@ -118,7 +118,7 @@ export default function WorkspaceSection() {
         (counts?.classSessions || 0) + (counts?.lessonRecords || 0) +
         (counts?.attendanceRecords || 0) + (counts?.clinicRecords || 0) +
         (counts?.payments || 0) + (counts?.payrolls || 0);
-      showToast(`데이터를 불러왔어요. (${total}개)`);
+      showToast(`서버 기준으로 데이터를 맞췄어요. (${total}개)`);
     } catch (err) {
       console.error('[hydrate] fetchAcademySnapshot failed', err);
       showToast(

@@ -46,9 +46,6 @@ export default function App() {
   const role = useAcademyStore((s) => s.role);
   const setRole = useAcademyStore((s) => s.setRole);
   const toast = useAcademyStore((s) => s.toast);
-  const academyStudentsCount = useAcademyStore((s) => s.academyStudents.length);
-  const classGroupsCount = useAcademyStore((s) => s.classGroups.length);
-  const classSessionsCount = useAcademyStore((s) => s.classSessions.length);
   const hydrateAcademyFromServerSnapshot = useAcademyStore((s) => s.hydrateAcademyFromServerSnapshot);
   const showToast = useAcademyStore((s) => s.showToast);
 
@@ -147,11 +144,12 @@ export default function App() {
   // 조건:
   //   - 인증됨, currentAcademyId 있음
   //   - 핵심 server count 3개 (학생/반/회차) 로드 완료
-  //   - local 학원 도메인 데이터 비어 있음
   //   - 같은 세션에서 자동 hydrate 한 적 없음
   //
   // 학원 단위 sessionStorage 키 ('auto-hydrated-<academyId>') 로 중복 실행 차단.
-  // 실패해도 키를 표시해 같은 세션 내 반복 시도를 막는다 (앱은 로컬 데이터로 동작).
+  // Supabase 연결 환경에서는 서버 snapshot 을 원본으로 삼아 localStorage 를 교체한다.
+  // 이렇게 해야 localhost / Vercel 처럼 origin 이 달라도 로컬 찌꺼기가 중복 표시되지 않는다.
+  // 실패해도 키를 표시해 같은 세션 내 반복 시도를 막는다 (앱은 현재 로컬 데이터로 동작).
   const hydratingRef = useRef(false);
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -166,21 +164,13 @@ export default function App() {
     if (!hasInitialServerLoad) return;
     if (isServerStudentsLoading || isServerClassGroupsLoading || isServerClassSessionsLoading) return;
 
-    const localEmpty =
-      academyStudentsCount === 0 && classGroupsCount === 0 && classSessionsCount === 0;
-    if (!localEmpty) {
-      // 데이터 있음 → 사용자가 이미 사용 중. 수동 새로고침 버튼으로 갱신 가능.
-      markAutoHydratedThisSession(currentAcademyId);
-      return;
-    }
-
     hydratingRef.current = true;
     (async () => {
       try {
         const snapshot = await fetchAcademySnapshot(currentAcademyId);
         const counts = hydrateAcademyFromServerSnapshot(snapshot, {
           strategy: 'serverWins',
-          preserveLocalOnly: true,
+          preserveLocalOnly: false,
         });
         const total =
           (counts?.students || 0) + (counts?.classGroups || 0) +
@@ -188,7 +178,7 @@ export default function App() {
           (counts?.attendanceRecords || 0) + (counts?.clinicRecords || 0) +
           (counts?.payments || 0) + (counts?.payrolls || 0);
         if (total > 0) {
-          showToast(`데이터를 동기화했어요. (${total}개)`);
+          showToast(`서버 기준으로 동기화했어요. (${total}개)`);
         }
       } catch (err) {
         console.error('[auto-hydrate] fetchAcademySnapshot failed', err);
@@ -202,7 +192,6 @@ export default function App() {
     isAuthenticated, currentAcademyId,
     serverStudentsLoadedAt, serverClassGroupsLoadedAt, serverClassSessionsLoadedAt,
     isServerStudentsLoading, isServerClassGroupsLoading, isServerClassSessionsLoading,
-    academyStudentsCount, classGroupsCount, classSessionsCount,
     hydrateAcademyFromServerSnapshot, showToast,
   ]);
 

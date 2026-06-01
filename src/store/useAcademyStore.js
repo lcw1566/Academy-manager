@@ -1695,7 +1695,9 @@ const useAcademyStore = create(
   // 정책:
   //   - strategy='serverWins' — 동일 식별자를 가진 row 는 server 값으로 덮어쓴다
   //   - preserveLocalOnly=true — server snapshot 과 매칭되지 않는 local row 는 유지
-  //   - 자연키(이름, month 등) 단순 일치로 merge 하지 않는다 (중복 risk 는 인지된 한계)
+  //   - preserveLocalOnly=false — Supabase snapshot 을 원본으로 보고 local-only row 는 제거
+  //   - 자연키(이름, month 등) 단순 일치로 merge 하지 않는다. Supabase 연결 환경에서는
+  //     preserveLocalOnly=false 로 로컬 찌꺼기를 제거해 origin 간 중복 표시를 막는다.
   //
   // 매칭 키:
   //   - students / class_groups / class_sessions / clinic_records / payments / payrolls:
