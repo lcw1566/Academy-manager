@@ -66,6 +66,11 @@ export default function App() {
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
   const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
   const workspacePicked = useWorkspaceStore((s) => s.workspacePicked);
+  const startWorkspaceRealtime = useWorkspaceStore((s) => s.startWorkspaceRealtime);
+  const stopWorkspaceRealtime = useWorkspaceStore((s) => s.stopWorkspaceRealtime);
+  const refreshWorkspaceCollaborationState = useWorkspaceStore(
+    (s) => s.refreshWorkspaceCollaborationState,
+  );
 
   // server count loaders 완료 여부 — auto-hydrate 진입 가드.
   const serverStudentsLoadedAt = useWorkspaceStore((s) => s.serverStudentsLoadedAt);
@@ -96,6 +101,47 @@ export default function App() {
       clearWorkspacePicked();
     }
   }, [isAuthenticated, authUserId, ensureAcademyDataOwner, initializeWorkspace, clearWorkspace]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !isWorkspaceReady) return undefined;
+
+    startWorkspaceRealtime();
+    refreshWorkspaceCollaborationState({ reason: 'workspace-ready' });
+
+    const refresh = () => {
+      refreshWorkspaceCollaborationState({ reason: 'focus' });
+    };
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refresh();
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', refresh);
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', refresh);
+      }
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+      stopWorkspaceRealtime();
+    };
+  }, [
+    isAuthenticated,
+    isWorkspaceReady,
+    authUserId,
+    currentAcademyId,
+    startWorkspaceRealtime,
+    stopWorkspaceRealtime,
+    refreshWorkspaceCollaborationState,
+  ]);
 
   // ─── Phase 25: 자동 역할 진입 ───────────────────────────────
   // 로그인 + workspace ready 이후 currentAcademyId 의 membership.role 을 보고

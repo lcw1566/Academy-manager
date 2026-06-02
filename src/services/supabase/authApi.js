@@ -20,9 +20,12 @@ export async function getCurrentUser() {
   return data.user;
 }
 
-export async function signUpWithEmail({ email, password }) {
+export async function signUpWithEmail({ email, password, metadata } = {}) {
   assertSupabaseConfigured();
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const options = metadata && Object.keys(metadata).length > 0
+    ? { data: metadata }
+    : undefined;
+  const { data, error } = await supabase.auth.signUp({ email, password, options });
   if (error) throw error;
   return data;
 }

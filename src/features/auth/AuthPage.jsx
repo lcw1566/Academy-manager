@@ -106,7 +106,19 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
         // 미리 저장. 이메일 인증이 필요한 경우 syncProfile 이 다음 로그인에서 반영.
         setPendingAccountType(accountType);
         setPendingProfileInfo({ displayName: trimmedName, phone: cleanedPhone });
-        const data = await signUp({ email, password });
+        const data = await signUp({
+          email,
+          password,
+          metadata: {
+            display_name: trimmedName,
+            phone: cleanedPhone,
+            account_type: accountType,
+            default_role:
+              accountType === 'staff'
+                ? 'teacher'
+                : accountType,
+          },
+        });
         if (!data?.session) {
           // 이메일 인증 필요 — 패널은 유지하고 안내 표시
           setLocalMessage({

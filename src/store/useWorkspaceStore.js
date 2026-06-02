@@ -15,7 +15,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   getProfile,
   upsertProfile,
@@ -191,6 +191,11 @@ const initialState = {
   isClassSessionExceptionsLoading: false,
   classSessionExceptionsError: null,
   classSessionExceptionsLoadedAt: null,
+
+  // Realtime subscription/runtime handles. partialize() excludes these from
+  // localStorage, so they only live for the current browser session.
+  workspaceRealtimeChannel: null,
+  workspaceRealtimeRefreshTimer: null,
 };
 
 const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type';
@@ -247,12 +252,106 @@ const useWorkspaceStore = create(
 
       clearWorkspaceError: () => set({ workspaceError: null }),
 
-      clearWorkspace: () =>
+      clearWorkspace: () => {
+        get().stopWorkspaceRealtime?.();
         set({
           ...initialState,
           currentAcademyId: null,
           workspacePicked: false,
-        }),
+        });
+      },
+
+      stopWorkspaceRealtime: () => {
+        const channel = get().workspaceRealtimeChannel;
+        const timer = get().workspaceRealtimeRefreshTimer;
+        if (timer) clearTimeout(timer);
+        if (channel && supabase) {
+          supabase.removeChannel(channel);
+        }
+        set({
+          workspaceRealtimeChannel: null,
+          workspaceRealtimeRefreshTimer: null,
+        });
+      },
+
+      scheduleWorkspaceRealtimeRefresh: (reason = 'realtime') => {
+        const prevTimer = get().workspaceRealtimeRefreshTimer;
+        if (prevTimer) clearTimeout(prevTimer);
+        const timer = setTimeout(async () => {
+          set({ workspaceRealtimeRefreshTimer: null });
+          try {
+            await get().refreshWorkspaceCollaborationState({ reason });
+          } catch (err) {
+            console.warn('[workspace realtime] refresh failed', reason, err);
+          }
+        }, 250);
+        set({ workspaceRealtimeRefreshTimer: timer });
+      },
+
+      refreshWorkspaceCollaborationState: async () => {
+        if (!isSupabaseConfigured) return;
+        try {
+          await Promise.all([
+            get().loadMemberships(),
+            get().loadMyPendingInvitations(),
+          ]);
+
+          if (get().currentAcademyId) {
+            await Promise.all([
+              get().loadAcademyMemberProfiles(),
+              get().loadAcademyStaffProfiles(),
+              get().loadAcademyInvitations(),
+            ]);
+            get().syncLocalStaffFromServerMembers();
+          }
+        } catch (err) {
+          console.warn('[workspace realtime] collaboration refresh failed', err);
+        }
+      },
+
+      startWorkspaceRealtime: () => {
+        if (!isSupabaseConfigured || !supabase) return;
+        const authUser = useAuthStore.getState().user;
+        if (!authUser?.id) return;
+
+        get().stopWorkspaceRealtime?.();
+
+        const academyId = get().currentAcademyId || 'none';
+        const channel = supabase
+          .channel(`workspace-collaboration:${authUser.id}:${academyId}`)
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'academy_invitations' },
+            () => get().scheduleWorkspaceRealtimeRefresh('academy_invitations'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'academy_members' },
+            () => get().scheduleWorkspaceRealtimeRefresh('academy_members'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'academy_staff_profiles' },
+            () => get().scheduleWorkspaceRealtimeRefresh('academy_staff_profiles'),
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'profiles',
+              filter: `id=eq.${authUser.id}`,
+            },
+            () => get().scheduleWorkspaceRealtimeRefresh('profiles'),
+          );
+
+        set({ workspaceRealtimeChannel: channel });
+        channel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            get().scheduleWorkspaceRealtimeRefresh('realtime-subscribed');
+          }
+        });
+      },
 
       // Phase 32 — 학원 선택 picked 토글. sessionStorage 도 함께 동기화.
       setWorkspacePicked: (picked) => {

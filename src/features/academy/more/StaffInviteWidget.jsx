@@ -39,6 +39,9 @@ export default function StaffInviteWidget({
   onInviteSent,    // 초대 row 생성 시 inviteStatus='pending' 등 폼에 반영
 }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const refreshWorkspaceCollaborationState = useWorkspaceStore(
+    (s) => s.refreshWorkspaceCollaborationState,
+  );
   const myEmail = useAuthStore((s) => s.user?.email);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
@@ -109,17 +112,17 @@ export default function StaffInviteWidget({
         setSearchResult('found');
         setFeedback({
           type: 'info',
-          text: '가입된 계정을 찾았어요. 직원 초대를 보내면 해당 계정의 “받은 초대” 에 표시됩니다.',
+          text: '계정을 확인했어요. 직원 초대를 보내면 해당 계정의 “받은 초대”에 표시됩니다.',
         });
       } else {
-        // Post-Phase 32: SQL 007 RPC 적용 후엔 가입한 사용자가 있으면 'found'.
-        // 'unknown' 인 경우는 진짜 아직 가입하지 않은 이메일.
+        // 프로필 인덱스 생성 지연이나 RLS/네트워크 상황에서는 가입 직후에도
+        // unknown 이 나올 수 있다. 초대 row 자체를 source of truth 로 둔다.
         setSearchResult('unknown');
         setFeedback({
           type: 'info',
           text:
-            '아직 가입하지 않은 이메일이에요. 초대를 만들어두면 해당 이메일로 ' +
-            '가입한 뒤 “받은 초대”에서 수락할 수 있어요.',
+            '가입 여부를 아직 확인하지 못했어요. 그래도 초대는 보낼 수 있고, ' +
+            '해당 이메일 계정의 “받은 초대”에 자동으로 표시됩니다.',
         });
       }
     } catch (err) {
@@ -153,10 +156,11 @@ export default function StaffInviteWidget({
       setExistingInvite(inv);
       // Phase 33 — 즉시 store 에 반영해서 "대기 중인 초대" 카드가 곧바로 등장.
       useWorkspaceStore.getState().upsertAcademyInvitationLocal?.(inv);
+      refreshWorkspaceCollaborationState?.({ reason: 'invite-created' });
       setFeedback({
         type: 'success',
         text:
-          '직원 초대를 보냈어요. 해당 이메일로 로그인하면 “받은 초대” 에서 학원을 수락할 수 있어요.',
+          '직원 초대를 보냈어요. 상대 화면에도 곧 “받은 초대”로 갱신됩니다.',
       });
       onInviteSent?.({ email: cleanedEmail, status: inv.status });
     } catch (err) {
@@ -257,12 +261,12 @@ export default function StaffInviteWidget({
       {!feedback && searchResult === 'found' && (
         <div className="text-xs rounded-xl px-3 py-2.5 bg-blue-50 text-blue-700 flex items-start gap-2">
           <Check size={12} className="mt-0.5 flex-shrink-0" />
-          <span>가입된 계정을 확인했어요. “직원 초대 보내기” 를 눌러 학원에 합류하도록 요청하세요.</span>
+          <span>계정을 확인했어요. “직원 초대 보내기”를 눌러 학원에 합류하도록 요청하세요.</span>
         </div>
       )}
 
       <p className="text-[11px] text-gray-400 leading-relaxed mt-1">
-        이메일은 발송되지 않으며, 해당 이메일 계정으로 로그인한 사용자의 앱 “받은 초대” 에 표시되는 방식이에요.
+        실제 메일 발송 없이, 해당 이메일 계정의 앱 “받은 초대”에 표시되는 방식이에요.
       </p>
     </div>
   );

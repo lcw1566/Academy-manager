@@ -19,7 +19,12 @@ supabase/
     ├── 008_assistant_assignment.sql (반/회차에 보조강사 배정 영속화)
     ├── 009_academy_billing_settings.sql (학원별 급여/수강료 일자 설정)
     ├── 010_staff_wage_integer_guard.sql (강사 시급/월급 정수 원 단위 보정)
-    └── 011_attendance_settings_and_qr.sql (출결·등하원 설정 + 학생 체크인 이벤트)
+    ├── 011_attendance_settings_and_qr.sql (출결·등하원 설정 + 학생 체크인 이벤트)
+    ├── 012_remove_wifi_check_method.sql (출결 방식에서 wifi 제거)
+    ├── 013_teacher_assignment_user_id.sql (담당 강사 user_id 영속화)
+    ├── 014_schedule_rules_refactor.sql (룰 기반 스케줄)
+    ├── 015_staff_attendance_logs_self_rls.sql (직원 본인 근태 로그 RLS)
+    └── 016_profiles_signup_trigger_and_realtime.sql (가입 즉시 profile 생성 + Realtime 등록)
 ```
 
 ## 실행 순서 요약
@@ -37,6 +42,11 @@ supabase/
 | 9 | `009_academy_billing_settings.sql` | academies.salary_payment_day / tuition_due_day 컬럼 추가 (Phase 39) |
 | 10 | `010_staff_wage_integer_guard.sql` | academy_staff_profiles.hourly_wage / monthly_salary 정수 원 단위 보정 |
 | 11 | `011_attendance_settings_and_qr.sql` | academies 출결 설정 컬럼, attendance_records 출처/체크시각, student_check_events 테이블 (Phase 41) |
+| 12 | `012_remove_wifi_check_method.sql` | 출결 방식에서 wifi 옵션 제거 |
+| 13 | `013_teacher_assignment_user_id.sql` | 수업/반 담당 강사 user_id 참조 보강 |
+| 14 | `014_schedule_rules_refactor.sql` | 직원/수업 룰 기반 스케줄 테이블 |
+| 15 | `015_staff_attendance_logs_self_rls.sql` | 직원 본인 근태 로그 조회/기록 RLS |
+| 16 | `016_profiles_signup_trigger_and_realtime.sql` | auth.users 가입 직후 profiles row 생성, 초대/멤버 Realtime 등록 |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.

@@ -59,10 +59,10 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  signUp: async ({ email, password }) => {
+  signUp: async ({ email, password, metadata } = {}) => {
     set({ isAuthLoading: true, authError: null });
     try {
-      const data = await signUpWithEmail({ email, password });
+      const data = await signUpWithEmail({ email, password, metadata });
       set({
         session: data.session ?? null,
         user: data.user ?? null,
