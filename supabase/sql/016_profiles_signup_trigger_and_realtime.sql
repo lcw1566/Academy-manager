@@ -136,6 +136,34 @@ begin
        from pg_publication_tables
        where pubname = 'supabase_realtime'
          and schemaname = 'public'
+         and tablename = 'academy_staff_work_rules'
+     ) then
+    alter publication supabase_realtime add table public.academy_staff_work_rules;
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (
+       select 1
+       from pg_publication_tables
+       where pubname = 'supabase_realtime'
+         and schemaname = 'public'
+         and tablename = 'academy_staff_work_exceptions'
+     ) then
+    alter publication supabase_realtime add table public.academy_staff_work_exceptions;
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (
+       select 1
+       from pg_publication_tables
+       where pubname = 'supabase_realtime'
+         and schemaname = 'public'
          and tablename = 'academy_members'
      ) then
     alter publication supabase_realtime add table public.academy_members;

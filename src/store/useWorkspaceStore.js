@@ -50,6 +50,9 @@ import {
 import {
   listStaffWorkRules,
   listStaffWorkExceptions,
+  createStaffWorkException,
+  updateStaffWorkException,
+  deleteStaffWorkException,
   listClassScheduleRules,
   listClassSessionExceptions,
   listStaffAttendanceLogs,
@@ -301,6 +304,8 @@ const useWorkspaceStore = create(
               get().loadAcademyMemberProfiles(),
               get().loadAcademyStaffProfiles(),
               get().loadAcademyInvitations(),
+              get().loadStaffWorkRules(),
+              get().loadStaffWorkExceptions(),
             ]);
             get().syncLocalStaffFromServerMembers();
           }
@@ -333,6 +338,16 @@ const useWorkspaceStore = create(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'academy_staff_profiles' },
             () => get().scheduleWorkspaceRealtimeRefresh('academy_staff_profiles'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'academy_staff_work_rules' },
+            () => get().scheduleWorkspaceRealtimeRefresh('academy_staff_work_rules'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'academy_staff_work_exceptions' },
+            () => get().scheduleWorkspaceRealtimeRefresh('academy_staff_work_exceptions'),
           )
           .on(
             'postgres_changes',
@@ -1167,6 +1182,43 @@ const useWorkspaceStore = create(
         } finally {
           set({ isStaffWorkExceptionsLoading: false });
         }
+      },
+
+      createStaffWorkExceptionLocal: async (payload = {}) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        const academyId = get().currentAcademyId;
+        if (!academyId) throw new Error('학원을 먼저 선택해주세요.');
+        const created = await createStaffWorkException({ academyId, ...payload });
+        if (created) {
+          set((s) => ({
+            staffWorkExceptions: [created, ...(s.staffWorkExceptions || [])],
+          }));
+        }
+        return created;
+      },
+
+      updateStaffWorkExceptionLocal: async (id, patch = {}) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        if (!id) throw new Error('id가 필요해요.');
+        const updated = await updateStaffWorkException(id, patch);
+        if (updated) {
+          set((s) => ({
+            staffWorkExceptions: (s.staffWorkExceptions || []).map(
+              (item) => (item.id === id ? updated : item),
+            ),
+          }));
+        }
+        return updated;
+      },
+
+      deleteStaffWorkExceptionLocal: async (id) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        if (!id) throw new Error('id가 필요해요.');
+        await deleteStaffWorkException(id);
+        set((s) => ({
+          staffWorkExceptions: (s.staffWorkExceptions || []).filter((item) => item.id !== id),
+        }));
+        return true;
       },
 
       loadClassScheduleRules: async () => {

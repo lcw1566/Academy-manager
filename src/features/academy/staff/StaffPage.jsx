@@ -30,9 +30,13 @@ import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import {
   today as todayDate,
   formatDateShort,
+  formatMonth,
   getCurrentMonth,
+  getMonthDates,
   getWeekDates,
   getKoreanWeekdayFromYMD,
+  nextMonth,
+  prevMonth,
 } from '../../../utils/date';
 import {
   createAcademyStaffShift,
@@ -121,6 +125,18 @@ function formatShiftHoursFromMinutes(minutes) {
 function formatTimelineHour(minutes) {
   const h = Math.floor((Number(minutes) || 0) / 60);
   return `${String(h).padStart(2, '0')}:00`;
+}
+function monthStart(month) {
+  return `${month}-01`;
+}
+function monthEnd(month) {
+  const [year, m] = String(month || '').split('-').map(Number);
+  if (!year || !m) return '';
+  const last = new Date(year, m, 0).getDate();
+  return `${month}-${String(last).padStart(2, '0')}`;
+}
+function isPlannedShiftException(sh) {
+  return !!(sh?.isPlanned && sh?.exceptionType);
 }
 function validateShiftTime({ startTime, endTime, breakMinutes = 0 } = {}) {
   if (!startTime || !endTime) return '시작 시간과 종료 시간을 입력해주세요.';
@@ -759,6 +775,10 @@ function StaffShiftSection({ staff }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
   const loadStaffWorkRules = useWorkspaceStore((s) => s.loadStaffWorkRules);
+  const loadStaffWorkExceptions = useWorkspaceStore((s) => s.loadStaffWorkExceptions);
+  const createStaffWorkExceptionLocal = useWorkspaceStore((s) => s.createStaffWorkExceptionLocal);
+  const updateStaffWorkExceptionLocal = useWorkspaceStore((s) => s.updateStaffWorkExceptionLocal);
+  const deleteStaffWorkExceptionLocal = useWorkspaceStore((s) => s.deleteStaffWorkExceptionLocal);
   const classSessions = useAcademyStore((s) => s.classSessions) ?? [];
   const classGroups = useAcademyStore((s) => s.classGroups) ?? [];
 
@@ -767,6 +787,8 @@ function StaffShiftSection({ staff }) {
   const [defaultMode, setDefaultMode] = useState('recurring');
   const [defaultDate, setDefaultDate] = useState(null);
   const [recurringPreset, setRecurringPreset] = useState(null);
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
+  const [exceptionTarget, setExceptionTarget] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [draggingShiftId, setDraggingShiftId] = useState(null);
   const dragPayloadRef = useRef(null);
@@ -774,6 +796,17 @@ function StaffShiftSection({ staff }) {
 
   const todayStr = todayDate();
   const weekDates = useMemo(() => getWeekDates(todayStr), [todayStr]);
+  const monthFrom = monthStart(selectedMonth);
+  const monthTo = monthEnd(selectedMonth);
+  const monthDates = useMemo(
+    () => getMonthDates(monthFrom).filter(Boolean),
+    [monthFrom],
+  );
+
+  useEffect(() => {
+    if (!monthFrom || !monthTo) return;
+    loadStaffWorkExceptions?.({ fromDate: monthFrom, toDate: monthTo });
+  }, [loadStaffWorkExceptions, monthFrom, monthTo]);
 
   // Phase 44.6 / Phase B — 룰 기반 planned + 기존 shift 머지. 14일 너머 주간 패턴도
   // 보이게. 본인 staff 한 명에 한정.
@@ -783,13 +816,11 @@ function StaffShiftSection({ staff }) {
   const academyAssistantsAll = useAcademyStore((s) => s.academyAssistants) ?? [];
 
   const staffShifts = useMemo(() => {
-    const weekFrom = weekDates[0];
-    const weekTo = weekDates[weekDates.length - 1];
     const plannedRaw = buildPlannedStaffSchedule({
       rules: staffWorkRules,
       exceptions: staffWorkExceptions,
-      fromDate: weekFrom,
-      toDate: weekTo,
+      fromDate: monthFrom,
+      toDate: monthTo,
       staffUserId: staff.serverUserId || undefined,
     });
     const plannedShaped = plannedToStaffShiftShape(plannedRaw, {
@@ -798,8 +829,44 @@ function StaffShiftSection({ staff }) {
     });
     const actualForStaff = academyStaffShifts.filter((sh) => sh.staffId === staff.id);
     return mergePlannedAndActualStaffShifts(plannedShaped, actualForStaff);
-  }, [academyStaffShifts, staff.id, staff.serverUserId, staffWorkRules, staffWorkExceptions, academyTeachersAll, academyAssistantsAll, weekDates]);
+  }, [academyStaffShifts, staff.id, staff.serverUserId, staffWorkRules, staffWorkExceptions, academyTeachersAll, academyAssistantsAll, monthFrom, monthTo]);
   const hasAnyShift = staffShifts.some((sh) => sh.status !== 'canceled');
+
+  const monthByDate = useMemo(() => {
+    const map = new Map();
+    monthDates.forEach((d) => map.set(d, []));
+    for (const sh of staffShifts) {
+      if (!sh.date || !map.has(sh.date)) continue;
+      if (sh.status === 'canceled') continue;
+      map.get(sh.date).push(sh);
+    }
+    for (const d of monthDates) {
+      map.get(d).sort((a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || ''));
+    }
+    return map;
+  }, [staffShifts, monthDates]);
+
+  const monthWorkSummary = useMemo(() => {
+    let grossMin = 0;
+    let netMin = 0;
+    let count = 0;
+    let exceptionCount = 0;
+    for (const sh of staffShifts) {
+      if (sh.status === 'canceled') continue;
+      if (!sh.date?.startsWith(selectedMonth)) continue;
+      count += 1;
+      grossMin += scheduledShiftGrossMinutes(sh);
+      netMin += scheduledShiftMinutes(sh);
+      if (isPlannedShiftException(sh)) exceptionCount += 1;
+    }
+    return {
+      grossMin,
+      netMin,
+      breakMin: Math.max(0, grossMin - netMin),
+      count,
+      exceptionCount,
+    };
+  }, [staffShifts, selectedMonth]);
 
   const weekByDate = useMemo(() => {
     const map = new Map();
@@ -821,7 +888,7 @@ function StaffShiftSection({ staff }) {
   );
   const classesByDate = useMemo(() => {
     const map = new Map();
-    weekDates.forEach((d) => map.set(d, []));
+    monthDates.forEach((d) => map.set(d, []));
     for (const session of classSessions || []) {
       if (!session.date || !map.has(session.date) || session.status === 'canceled') continue;
       const isAssigned = staff._role === 'assistant'
@@ -830,11 +897,11 @@ function StaffShiftSection({ staff }) {
       if (!isAssigned) continue;
       map.get(session.date).push(session);
     }
-    for (const d of weekDates) {
+    for (const d of monthDates) {
       map.get(d).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
     }
     return map;
-  }, [classSessions, staff.id, staff._role, weekDates]);
+  }, [classSessions, staff.id, staff._role, monthDates]);
   const calendarRange = useMemo(() => {
     const bounds = [];
     for (const date of weekDates) {
@@ -1156,6 +1223,48 @@ function StaffShiftSection({ staff }) {
     }
   };
 
+  const handleSaveException = async (data) => {
+    if (!staff.serverUserId) {
+      showToast('서버 계정과 연결된 직원만 월별 예외를 저장할 수 있어요.', 'error');
+      return;
+    }
+    const exceptionId = exceptionTarget?.shift?.exceptionId || exceptionTarget?.exceptionId || null;
+    if (data.type === 'reset') {
+      if (exceptionId) {
+        await deleteStaffWorkExceptionLocal?.(exceptionId);
+        await loadStaffWorkExceptions?.({ fromDate: monthFrom, toDate: monthTo });
+        showToast('이 날짜의 예외를 되돌렸어요.');
+      }
+      setExceptionTarget(null);
+      return;
+    }
+
+    if (data.type !== 'cancel') {
+      const timeError = validateShiftTime({
+        startTime: data.startTime,
+        endTime: data.endTime,
+        breakMinutes: data.breakMinutes,
+      });
+      if (timeError) { showToast(timeError, 'error'); return; }
+    }
+
+    const payload = {
+      staff_user_id: staff.serverUserId,
+      date: data.date,
+      type: data.type,
+      start_time: data.type === 'cancel' ? null : data.startTime,
+      end_time: data.type === 'cancel' ? null : data.endTime,
+      break_minutes: data.type === 'cancel' ? null : Number(data.breakMinutes) || 0,
+      memo: data.memo || null,
+    };
+
+    if (exceptionId) await updateStaffWorkExceptionLocal?.(exceptionId, payload);
+    else await createStaffWorkExceptionLocal?.(payload);
+    await loadStaffWorkExceptions?.({ fromDate: monthFrom, toDate: monthTo });
+    showToast('월별 근무 예외가 저장됐어요.');
+    setExceptionTarget(null);
+  };
+
   return (
     <div className="flex flex-col gap-3">
       {!hasAnyShift && (
@@ -1175,192 +1284,165 @@ function StaffShiftSection({ staff }) {
       )}
 
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-4 md:px-5 py-3 border-b border-[#F2F4F6] flex items-center justify-between">
-          <div>
-            <p className="text-sm font-bold text-[#191F28]">요일별 근무표</p>
-            <p className="text-[11px] text-[#8B95A1] mt-0.5">반복 근무 패턴과 이번 주 배정 수업을 같이 확인해요.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => openManageShifts()}
-            className="text-xs font-bold text-[#3182F6] flex items-center gap-1 px-2 py-1.5 rounded-lg active:bg-blue-50"
-          >
-            <Pencil size={11} /> 근무 수정
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <div className="min-w-[760px]">
-            <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))] border-b border-[#F2F4F6] bg-[#FBFCFD]">
-              <div className="px-2 py-2 text-[10px] font-bold text-[#8B95A1]">시간</div>
-              {weekDates.map((date) => {
-                const day = getKoreanWeekdayFromYMD(date);
-                return (
-                  <div
-                    key={date}
-                    className="px-2 py-2 border-l border-[#F2F4F6]"
-                  >
-                    <p className="text-xs font-extrabold text-[#191F28]">{day}</p>
-                  </div>
-                );
-              })}
+        <div className="px-4 md:px-5 py-4 border-b border-[#F2F4F6]">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold text-[#191F28]">월별 운영 근무표</p>
+              <p className="text-[11px] text-[#8B95A1] mt-0.5">
+                기본 템플릿 위에 이 달의 휴무, 시간 변경, 추가 근무를 반영해요.
+              </p>
             </div>
-            <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
-              <div className="relative bg-[#FBFCFD] border-r border-[#F2F4F6]" style={{ height: calendarRange.height }}>
-                {calendarRange.ticks.map((tick) => (
-                  <div
-                    key={tick}
-                    className="absolute right-2 -translate-y-1/2 text-[10px] font-medium text-[#8B95A1]"
-                    style={{ top: `${((tick - calendarRange.startMin) / (calendarRange.endMin - calendarRange.startMin)) * 100}%` }}
-                  >
-                    {formatTimelineHour(tick)}
-                  </div>
-                ))}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedMonth((m) => prevMonth(m))}
+                className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] flex items-center justify-center"
+                aria-label="이전 달"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <div className="min-w-[112px] text-center">
+                <p className="text-sm font-extrabold text-[#191F28]">{formatMonth(selectedMonth)}</p>
               </div>
-              {weekDates.map((date) => {
-                const shifts = weekByDate.get(date) || [];
-                const sessions = classesByDate.get(date) || [];
-                const positionedSessions = sessions.map((session) => ({
-                  session,
-                  coveringShift: findShiftCoveringTime(shifts, staff.id, date, session.startTime, session.endTime),
-                }));
-                const totalRange = calendarRange.endMin - calendarRange.startMin;
-                return (
-                  <div
-                    key={date}
-                    className={`relative border-l border-[#F2F4F6] bg-white ${draggingShiftId ? 'bg-blue-50/10' : ''}`}
-                    style={{ height: calendarRange.height }}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const shiftId = e.dataTransfer.getData('application/x-staff-shift')
-                        || e.dataTransfer.getData('text/plain')
-                        || dragPayloadRef.current?.shiftId;
-                      if (shiftId) handleDropShift(shiftId, date);
-                    }}
-                  >
-                    {calendarRange.ticks.map((tick) => (
-                      <div
-                        key={tick}
-                        className="absolute left-0 right-0 border-t border-[#F2F4F6]"
-                        style={{ top: `${((tick - calendarRange.startMin) / totalRange) * 100}%` }}
-                      />
-                    ))}
-                    {shifts.length === 0 && sessions.length === 0 && (
-                      <div className="absolute inset-x-2 top-4 rounded-xl border border-dashed border-[#F2F4F6] px-2 py-3 text-center text-[11px] font-semibold text-[#B0B8C1]">
-                        근무 없음
-                      </div>
-                    )}
-                    {shifts.map((sh) => {
-                      const start = hhmmToMin(sh.scheduledStartTime) ?? calendarRange.startMin;
-                      const rawEnd = hhmmToMin(sh.scheduledEndTime) ?? start + 30;
-                      const end = Math.max(start + 30, rawEnd);
-                      const top = ((Math.max(calendarRange.startMin, start) - calendarRange.startMin) / totalRange) * 100;
-                      const height = ((Math.min(calendarRange.endMin, end) - Math.max(calendarRange.startMin, start)) / totalRange) * 100;
-                      const shiftTitle = [
-                        `근무 ${formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)}`,
-                        `${formatShiftHoursFromMinutes(scheduledShiftMinutes(sh))}h`,
-                        sh.breakMinutes ? `휴게 ${sh.breakMinutes}분` : '',
-                        sh.memo || '',
-                      ].filter(Boolean).join(' · ');
-                      return (
+              <button
+                type="button"
+                onClick={() => setSelectedMonth((m) => nextMonth(m))}
+                className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] flex items-center justify-center"
+                aria-label="다음 달"
+              >
+                <ChevronRight size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => openManageShifts()}
+                className="h-9 px-3 rounded-xl bg-blue-50 text-[#3182F6] text-xs font-bold flex items-center gap-1.5"
+              >
+                <Pencil size={12} /> 기본 템플릿
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <SummaryStat label="월 근무" value={`${formatShiftHoursFromMinutes(monthWorkSummary.grossMin)}h`} />
+            <SummaryStat
+              label="급여 기준"
+              value={`${formatShiftHoursFromMinutes(monthWorkSummary.netMin)}h`}
+              hint={monthWorkSummary.breakMin > 0 ? `휴게 ${formatShiftHoursFromMinutes(monthWorkSummary.breakMin)}h 제외` : '휴게 없음'}
+            />
+            <SummaryStat label="예외" value={`${monthWorkSummary.exceptionCount}건`} />
+          </div>
+        </div>
+
+        <div className="divide-y divide-[#F2F4F6]">
+          {monthDates.map((date) => {
+            const shifts = monthByDate.get(date) || [];
+            const sessions = classesByDate.get(date) || [];
+            const day = getKoreanWeekdayFromYMD(date);
+            const isTodayRow = date === todayStr;
+            const dayGross = shifts.reduce((sum, sh) => sum + scheduledShiftGrossMinutes(sh), 0);
+            const dayNet = shifts.reduce((sum, sh) => sum + scheduledShiftMinutes(sh), 0);
+            return (
+              <div key={date} className={`px-4 md:px-5 py-3 ${isTodayRow ? 'bg-blue-50/30' : 'bg-white'}`}>
+                <div className="flex items-start gap-3">
+                  <div className="w-14 flex-shrink-0 pt-1">
+                    <p className={`text-sm font-extrabold ${isTodayRow ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+                      {date.slice(5)}
+                    </p>
+                    <p className="text-[11px] font-semibold text-[#8B95A1]">{day}요일</p>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {shifts.length === 0 ? (
+                        <span className="text-xs font-semibold text-[#B0B8C1]">근무 없음</span>
+                      ) : (
+                        <>
+                          <span className="text-xs font-bold text-[#191F28]">
+                            {formatShiftHoursFromMinutes(dayGross)}h
+                          </span>
+                          {dayGross !== dayNet && (
+                            <span className="text-[11px] text-[#8B95A1]">
+                              휴게 제외 {formatShiftHoursFromMinutes(dayNet)}h
+                            </span>
+                          )}
+                        </>
+                      )}
+                      {sessions.length > 0 && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                          수업 {sessions.length}건
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      {shifts.map((sh) => (
                         <div
                           key={sh.id}
-                          title={shiftTitle}
-                          draggable
-                          onDragStart={(e) => {
-                            dragPayloadRef.current = { shiftId: sh.id, sourceDate: date };
-                            e.dataTransfer.setData('application/x-staff-shift', sh.id);
-                            e.dataTransfer.setData('text/plain', sh.id);
-                            e.dataTransfer.effectAllowed = 'move';
-                            setDraggingShiftId(sh.id);
-                          }}
-                          onDragEnd={() => {
-                            setDraggingShiftId(null);
-                            dragPayloadRef.current = null;
-                          }}
-                          className={`absolute left-1.5 right-1.5 rounded-xl border border-blue-200 bg-blue-50/70 shadow-sm px-2 py-2 overflow-hidden cursor-grab active:cursor-grabbing ${
-                            draggingShiftId === sh.id ? 'opacity-50' : ''
+                          className={`rounded-xl border px-3 py-2 ${
+                            isPlannedShiftException(sh)
+                              ? 'border-amber-100 bg-amber-50'
+                              : sh.isPlanned
+                              ? 'border-blue-100 bg-blue-50'
+                              : 'border-gray-100 bg-[#F8F9FA]'
                           }`}
-                          style={{ top: `${top}%`, height: `${Math.max(8, height)}%`, minHeight: 96, zIndex: 5 }}
                         >
-                          <button
-                            type="button"
-                            onClick={() => (sh.isPlanned ? openManageShifts(sh) : openEdit(sh))}
-                            className="absolute inset-0"
-                            aria-label={shiftTitle}
-                          />
-                          <div className="absolute left-2 top-2 z-10 flex items-center gap-1">
-                            <span className="rounded-full bg-white/75 px-2 py-0.5 text-[10px] font-bold text-blue-700 shadow-sm">
-                              근무
-                            </span>
-                            {sh.memo && (
-                              <span className="max-w-[80px] truncate rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-semibold text-[#4E5968] shadow-sm">
-                                {sh.memo}
-                              </span>
-                            )}
-                          </div>
-                          <div className="absolute right-1.5 top-1.5 z-20 flex items-center gap-1">
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap bg-blue-100 text-blue-700">
-                              {sh.isPlanned ? '규칙' : STATUS_LABELS[sh.status]}
-                            </span>
-                            {!sh.isPlanned && (
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-xs font-extrabold text-[#191F28]">
+                                {formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)}
+                                {sh.breakMinutes ? ` · 휴게 ${sh.breakMinutes}분` : ''}
+                              </p>
+                              <p className="text-[11px] text-[#8B95A1] mt-0.5 truncate">
+                                {isPlannedShiftException(sh)
+                                  ? sh.exceptionType === 'extra' ? '이 달 추가 근무' : '이 달 예외 반영'
+                                  : sh.isPlanned ? '기본 템플릿' : STATUS_LABELS[sh.status]}
+                                {sh.memo ? ` · ${sh.memo}` : ''}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
                               <button
                                 type="button"
-                                onClick={() => setConfirmDeleteId(sh.id)}
-                                className="w-5 h-5 text-red-400 bg-white/75 active:bg-red-50 rounded-md flex items-center justify-center"
-                                aria-label="근무 삭제"
+                                onClick={() => (sh.isPlanned ? setExceptionTarget({ date, shift: sh }) : openEdit(sh))}
+                                className="text-[11px] font-bold text-[#3182F6] px-2 py-1 rounded-lg bg-white/80 active:bg-blue-50"
                               >
-                                <Trash2 size={11} />
+                                이 날 수정
                               </button>
-                            )}
+                              {!sh.isPlanned && (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(sh.id)}
+                                  className="w-7 h-7 text-red-400 bg-white/80 active:bg-red-50 rounded-lg flex items-center justify-center"
+                                  aria-label="근무 삭제"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      );
-                    })}
-                    {positionedSessions.map(({ session, coveringShift }) => {
-                      const start = hhmmToMin(session.startTime) ?? calendarRange.startMin;
-                      const rawEnd = hhmmToMin(session.endTime) ?? start + 30;
-                      const end = Math.max(start + 30, rawEnd);
-                      const top = ((Math.max(calendarRange.startMin, start) - calendarRange.startMin) / totalRange) * 100;
-                      const height = ((Math.min(calendarRange.endMin, end) - Math.max(calendarRange.startMin, start)) / totalRange) * 100;
-                      const group = classGroupById.get(session.classGroupId);
-                      const covered = !!coveringShift;
-                      const verticalInset = covered ? 8 : 0;
-                      const visualTop = verticalInset ? `calc(${top}% + ${verticalInset}px)` : `${top}%`;
-                      const visualHeight = verticalInset ? `calc(${Math.max(5, height)}% - ${verticalInset * 2}px)` : `${Math.max(5, height)}%`;
-                      const lessonTitle = [
-                        `${group?.name || '수업'} ${formatShiftTimeRange(session.startTime, session.endTime)}`,
-                        covered ? '근무 시간 내' : '근무 시간 외',
-                      ].join(' · ');
-                      return (
-                        <div
-                          key={session.id}
-                          title={lessonTitle}
-                          aria-label={lessonTitle}
-                          className={`absolute rounded-lg border px-2 py-1 shadow-sm overflow-hidden ${
-                            covered
-                              ? 'left-3 right-3 border-emerald-200 bg-white/95'
-                              : 'left-2 right-2 border-amber-200 bg-amber-50'
-                          }`}
-                          style={{ top: visualTop, height: visualHeight, minHeight: 30, zIndex: 12 }}
-                        >
-                          <p className={`text-[10px] font-extrabold truncate ${covered ? 'text-emerald-700' : 'text-amber-700'}`}>
-                            {group?.name || '수업'}
-                          </p>
-                          {!covered && (
-                            <p className="mt-0.5 text-[9px] font-semibold text-amber-600 truncate">
-                              근무 외
+                      ))}
+                      {sessions.map((session) => {
+                        const group = classGroupById.get(session.classGroupId);
+                        return (
+                          <div key={session.id} className="rounded-xl border border-emerald-100 bg-white px-3 py-2">
+                            <p className="text-[11px] font-bold text-emerald-700 truncate">
+                              {group?.name || '수업'} · {formatShiftTimeRange(session.startTime, session.endTime)}
                             </p>
-                          )}
-                        </div>
-                      );
-                    })}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
+                  <button
+                    type="button"
+                    onClick={() => setExceptionTarget({ date, shift: shifts[0] || null, defaultType: shifts.length ? 'change' : 'extra' })}
+                    className="mt-1 flex-shrink-0 text-[11px] font-bold text-[#4E5968] px-2.5 py-1.5 rounded-lg bg-[#F2F4F6] active:bg-gray-200"
+                  >
+                    {shifts.length ? '예외' : '추가'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -1379,6 +1461,14 @@ function StaffShiftSection({ staff }) {
           onClose={() => { setFormOpen(false); setEditing(null); setRecurringPreset(null); }}
           onSaveSingle={handleSaveSingle}
           onSaveRecurring={handleSaveRecurring}
+        />
+      )}
+
+      {exceptionTarget && (
+        <StaffWorkExceptionModal
+          target={exceptionTarget}
+          onClose={() => setExceptionTarget(null)}
+          onSave={handleSaveException}
         />
       )}
 
@@ -1415,6 +1505,142 @@ function ChoiceCard({ active, title, subtitle, onClick }) {
       <p className={`text-sm font-bold ${active ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>{title}</p>
       {subtitle && <p className="text-[11px] text-[#8B95A1] mt-0.5">{subtitle}</p>}
     </button>
+  );
+}
+
+function StaffWorkExceptionModal({ target, onClose, onSave }) {
+  const shift = target?.shift || null;
+  const hasException = !!shift?.exceptionId;
+  const initialType = target?.defaultType || shift?.exceptionType || (shift ? 'change' : 'extra');
+  const [type, setType] = useState(initialType === 'cancel' ? 'cancel' : initialType === 'extra' ? 'extra' : 'change');
+  const [form, setForm] = useState({
+    date: target?.date || todayDate(),
+    startTime: shift?.scheduledStartTime || '',
+    endTime: shift?.scheduledEndTime || '',
+    breakMinutes: shift?.breakMinutes ? String(shift.breakMinutes) : '',
+    memo: shift?.memo || '',
+  });
+
+  const save = () => {
+    onSave?.({
+      type,
+      date: form.date,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      breakMinutes: form.breakMinutes,
+      memo: form.memo,
+    });
+  };
+
+  const reset = () => {
+    onSave?.({ type: 'reset', date: form.date });
+  };
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="이 날짜만 수정"
+      footer={
+        <div className="flex gap-2">
+          {hasException && (
+            <button
+              type="button"
+              onClick={reset}
+              className="flex-1 bg-gray-100 text-gray-700 font-bold py-3.5 rounded-xl"
+            >
+              예외 해제
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={save}
+            className="flex-1 bg-blue-600 text-white font-bold py-3.5 rounded-xl"
+          >
+            저장
+          </button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <div className="rounded-2xl bg-[#F8F9FA] px-4 py-3">
+          <p className="text-sm font-bold text-[#191F28]">{formatDateShort(form.date)}</p>
+          <p className="text-[11px] text-[#8B95A1] mt-0.5">
+            기본 템플릿은 유지하고 이 날짜에만 적용돼요.
+          </p>
+        </div>
+
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">변경 방식</label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'change', label: '시간 변경' },
+              { id: 'cancel', label: '휴무' },
+              { id: 'extra', label: '추가 근무' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setType(item.id)}
+                className={`py-2.5 rounded-xl text-sm font-bold border-2 ${
+                  type === item.id
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-500'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {type !== 'cancel' && (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">시작</label>
+                <input
+                  type="time"
+                  value={form.startTime}
+                  onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">종료</label>
+                <input
+                  type="time"
+                  value={form.endTime}
+                  onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
+                  className="input"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">휴게(분)</label>
+              <input
+                type="number"
+                value={form.breakMinutes}
+                onChange={(e) => setForm((f) => ({ ...f, breakMinutes: e.target.value }))}
+                placeholder="0"
+                className="input"
+              />
+            </div>
+          </>
+        )}
+
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
+          <textarea
+            value={form.memo}
+            onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))}
+            rows={2}
+            placeholder={type === 'cancel' ? '휴무 사유 등' : '대타, 보강, 시간 변경 사유 등'}
+            className="input resize-none"
+          />
+        </div>
+      </div>
+    </Modal>
   );
 }
 
