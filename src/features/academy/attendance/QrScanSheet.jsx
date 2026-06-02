@@ -2,10 +2,9 @@
 //
 // 직원/학생이 공용 QR(또는 학생 카드 QR) 를 스캔하기 위한 sheet.
 //
-// 실제 카메라 디코딩 라이브러리(`jsQR`, `@zxing/library`) 는 큰 의존성이라
-// 현 단계에서는 추가하지 않는다. 대신:
-//   1) 브라우저 BarcodeDetector API 가 있으면 활용하여 카메라 디코드를 시도. (안드로이드 크롬 지원)
-//   2) 미지원이면 "QR 코드 텍스트 붙여넣기" fallback 입력을 노출.
+//   1) 브라우저 BarcodeDetector API 가 있으면 활용하여 카메라 디코드를 시도.
+//   2) 미지원이면 jsQR 로 비디오 프레임을 디코드한다.
+//   3) 카메라 자체가 열리지 않는 환경에서는 "QR 코드 텍스트 붙여넣기" fallback 입력을 노출.
 //
 // 사용처:
 //   - 직원이 본인 단말에서 공용 QR 을 스캔 → 본인 shift 출퇴근
@@ -16,6 +15,7 @@
 //   mode='student_scan'  → 학원 단말이 학생 카드 스캔 → 학생 등·하원
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import jsQR from 'jsqr';
 import { Camera, ClipboardPaste, Loader2, CheckCircle2, AlertTriangle, ScanLine } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -37,6 +37,11 @@ function nowHHmm() {
 
 const hasBarcodeDetector = typeof globalThis !== 'undefined'
   && typeof globalThis.BarcodeDetector === 'function';
+
+function canUseCameraApi() {
+  return typeof navigator !== 'undefined'
+    && !!navigator.mediaDevices?.getUserMedia;
+}
 
 export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, autoStartCamera = false, onClose }) {
   const role = useAcademyStore((s) => s.role);
@@ -71,7 +76,9 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // { ok, title, detail }
   const cameraRef = useRef({ stream: null, raf: 0 });
+  const canvasRef = useRef(null);
   const videoRef = useRef(null);
+  const canUseCamera = canUseCameraApi();
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState(null);
 
@@ -79,8 +86,8 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
   const startCamera = async () => {
     setCameraError(null);
     try {
-      if (!hasBarcodeDetector) {
-        setCameraError('이 브라우저는 카메라 QR 디코드를 지원하지 않아요. 텍스트 붙여넣기로 진행해주세요.');
+      if (!canUseCameraApi()) {
+        setCameraError('이 브라우저에서는 카메라를 열 수 없어요. 텍스트 붙여넣기로 진행해주세요.');
         return;
       }
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -93,16 +100,55 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
         await videoRef.current.play();
       }
       setCameraOn(true);
-      const detector = new globalThis.BarcodeDetector({ formats: ['qr_code'] });
+      let detector = null;
+      if (hasBarcodeDetector) {
+        try {
+          detector = new globalThis.BarcodeDetector({ formats: ['qr_code'] });
+        } catch (err) {
+          console.warn('[qr] BarcodeDetector init failed, falling back to jsQR', err);
+        }
+      }
+
       const tick = async () => {
         if (!videoRef.current || !cameraRef.current.stream) return;
+        const video = videoRef.current;
+        if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
+          cameraRef.current.raf = requestAnimationFrame(tick);
+          return;
+        }
+
         try {
-          const codes = await detector.detect(videoRef.current);
-          if (codes && codes.length > 0) {
-            const raw = codes[0].rawValue || codes[0].rawValues?.[0];
-            if (raw) {
+          if (detector) {
+            try {
+              const codes = await detector.detect(video);
+              if (codes && codes.length > 0) {
+                const raw = codes[0].rawValue || codes[0].rawValues?.[0];
+                if (raw) {
+                  stopCamera();
+                  await processPayload(raw);
+                  return;
+                }
+              }
+            } catch (err) {
+              detector = null;
+              console.warn('[qr] BarcodeDetector failed, falling back to jsQR', err);
+            }
+          }
+
+          const canvas = canvasRef.current || document.createElement('canvas');
+          canvasRef.current = canvas;
+          const width = video.videoWidth;
+          const height = video.videoHeight;
+          if (canvas.width !== width) canvas.width = width;
+          if (canvas.height !== height) canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, width, height);
+            const image = ctx.getImageData(0, 0, width, height);
+            const code = jsQR(image.data, width, height, { inversionAttempts: 'dontInvert' });
+            if (code?.data) {
               stopCamera();
-              await processPayload(raw);
+              await processPayload(code.data);
               return;
             }
           }
@@ -120,11 +166,12 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
     const { stream, raf } = cameraRef.current;
     if (raf) cancelAnimationFrame(raf);
     if (stream) stream.getTracks().forEach((t) => t.stop());
+    if (videoRef.current) videoRef.current.srcObject = null;
     cameraRef.current = { stream: null, raf: 0 };
     setCameraOn(false);
   };
   useEffect(() => {
-    if (autoStartCamera && hasBarcodeDetector) startCamera();
+    if (autoStartCamera) startCamera();
     return () => stopCamera();
   }, []); // 언마운트 시 정리
 
@@ -315,32 +362,32 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
       <div className="flex flex-col gap-4">
         {/* 카메라 영역 */}
         <div className="bg-[#0B1220] rounded-2xl overflow-hidden">
-          {cameraOn ? (
-            <div className="relative aspect-[4/3]">
-              <video
-                ref={videoRef}
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
+          <div className="relative aspect-[4/3]">
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              className={`w-full h-full object-cover ${cameraOn ? 'block' : 'hidden'}`}
+            />
+            {cameraOn ? (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <div className="w-48 h-48 border-2 border-white/70 rounded-2xl" />
               </div>
-            </div>
-          ) : (
-            <div className="aspect-[4/3] flex flex-col items-center justify-center text-white/80">
-              <ScanLine size={28} className="text-white/60 mb-2" />
-              <p className="text-sm font-bold">
-                {hasBarcodeDetector ? '카메라로 QR을 스캔해주세요.' : '이 브라우저는 카메라 QR을 지원하지 않아요.'}
-              </p>
-              {cameraError && (
-                <p className="mt-2 px-6 text-[11px] text-amber-300 text-center">{cameraError}</p>
-              )}
-            </div>
-          )}
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-white/80">
+                <ScanLine size={28} className="text-white/60 mb-2" />
+                <p className="text-sm font-bold">
+                  {canUseCamera ? '카메라로 QR을 스캔해주세요.' : '카메라를 사용할 수 없는 브라우저예요.'}
+                </p>
+                {cameraError && (
+                  <p className="mt-2 px-6 text-[11px] text-amber-300 text-center">{cameraError}</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        {hasBarcodeDetector && (
+        {canUseCamera && (
           <button
             type="button"
             onClick={cameraOn ? stopCamera : startCamera}
@@ -401,8 +448,8 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
         )}
 
         <p className="text-[11px] text-[#8B95A1] leading-relaxed">
-          ⓘ 카메라 디코드는 안드로이드 크롬 등 BarcodeDetector 지원 브라우저에서만 동작해요.
-          미지원 환경에서는 QR 코드 텍스트를 직접 붙여넣어 진행해주세요.
+          ⓘ 카메라 권한을 허용하면 QR을 바로 스캔할 수 있어요.
+          카메라를 열 수 없는 환경에서는 QR 코드 텍스트를 직접 붙여넣어 진행해주세요.
         </p>
       </div>
     </Modal>
