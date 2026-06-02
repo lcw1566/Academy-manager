@@ -79,6 +79,7 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
   const cameraRef = useRef({ stream: null, raf: 0 });
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
+  const closeTimerRef = useRef(0);
   const canUseCamera = canUseCameraApi();
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState(null);
@@ -178,9 +179,19 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
     cameraRef.current = { stream: null, raf: 0 };
     setCameraOn(false);
   };
+  const closeAfterSuccess = () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = 0;
+      onClose?.();
+    }, 900);
+  };
   useEffect(() => {
     if (autoStartCamera) startCamera();
-    return () => stopCamera();
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      stopCamera();
+    };
   }, []); // 언마운트 시 정리
 
   const processPayload = async (raw) => {
@@ -314,12 +325,14 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
     }
 
     const status = classifyShiftStatus({ ...(todayShift || {}), ...writePatch });
-    showToast('체크인이 기록됐어요.');
+    const successMessage = writePatch.actualEndTime ? '퇴근됐어요' : '출근되었어요';
+    showToast(successMessage);
     setResult({
       ok: true,
       title: writePatch.actualEndTime ? '퇴근 처리됐어요.' : '출근 처리됐어요.',
       detail: `${SHIFT_STATUS_LABELS[status] || ''} · ${time} · 원장 확인 대기`,
     });
+    closeAfterSuccess();
   };
 
   const handleStudentScan = async (payload) => {
