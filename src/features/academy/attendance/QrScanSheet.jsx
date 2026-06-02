@@ -29,6 +29,7 @@ import { today as todayDate } from '../../../utils/date';
 import {
   parseCheckinPayload, isPayloadExpired, SHIFT_STATUS_LABELS, classifyShiftStatus,
 } from './attendanceHelpers';
+import { canUseNativeQrScanner, scanNativeQrCode } from './nativeQrScanner';
 
 function nowHHmm() {
   const d = new Date();
@@ -86,6 +87,13 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
   const startCamera = async () => {
     setCameraError(null);
     try {
+      if (canUseNativeQrScanner()) {
+        const raw = await scanNativeQrCode();
+        if (raw) await processPayload(raw);
+        else setCameraError('QR을 읽지 못했어요. 다시 시도해주세요.');
+        return;
+      }
+
       if (!canUseCameraApi()) {
         setCameraError('이 브라우저에서는 카메라를 열 수 없어요. 텍스트 붙여넣기로 진행해주세요.');
         return;

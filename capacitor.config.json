@@ -1,0 +1,8 @@
+{
+  "appId": "com.classnote.academymanager",
+  "appName": "클래스노트",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
