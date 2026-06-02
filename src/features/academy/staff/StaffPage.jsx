@@ -16,7 +16,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Plus, Repeat, ChevronLeft, ChevronRight, Pencil, Trash2,
+  Plus, ChevronLeft, ChevronRight, Pencil, Trash2,
   Clock, Search, Users as UsersIcon, GraduationCap, Mail, X as XIcon,
   Loader2, Check, BookOpen, Coffee, AlertTriangle,
   LogIn, LogOut as LogOutIcon, ShieldCheck,
@@ -62,6 +62,7 @@ import StaffInviteWidget from '../more/StaffInviteWidget';
 
 const KOREAN_WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const KO_TO_DOW = { '일': 0, '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6 };
+const DOW_TO_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
 const STATUS_LABELS = { scheduled: '예정', completed: '완료', canceled: '취소' };
 const STATUS_TONES = {
@@ -96,6 +97,12 @@ function scheduledShiftMinutes(sh) {
   const end = hhmmToMin(sh?.scheduledEndTime);
   if (start == null || end == null || end <= start) return 0;
   return Math.max(0, end - start - (Number(sh.breakMinutes) || 0));
+}
+function scheduledShiftGrossMinutes(sh) {
+  const start = hhmmToMin(sh?.scheduledStartTime);
+  const end = hhmmToMin(sh?.scheduledEndTime);
+  if (start == null || end == null || end <= start) return 0;
+  return Math.max(0, end - start);
 }
 function shiftMinutes(sh) {
   const start = sh.actualStartTime || (sh.status === 'completed' ? sh.scheduledStartTime : null);
@@ -169,14 +176,27 @@ function OwnerStaffView() {
   const staffSummaries = useMemo(() => {
     const map = new Map();
     for (const staff of allStaff) {
-      map.set(staff.id, { weekMin: 0, monthMin: 0, todayCount: 0, hasShift: false });
+      map.set(staff.id, {
+        weekMin: 0,
+        weekGrossMin: 0,
+        weekBreakMin: 0,
+        monthMin: 0,
+        todayCount: 0,
+        hasShift: false,
+      });
     }
     for (const sh of academyStaffShifts) {
       if (!sh.staffId || sh.status === 'canceled') continue;
       const cur = map.get(sh.staffId);
       if (!cur) continue;
       cur.hasShift = true;
-      if (weekDates.includes(sh.date)) cur.weekMin += scheduledShiftMinutes(sh);
+      if (weekDates.includes(sh.date)) {
+        const grossMin = scheduledShiftGrossMinutes(sh);
+        const netMin = scheduledShiftMinutes(sh);
+        cur.weekGrossMin += grossMin;
+        cur.weekMin += netMin;
+        cur.weekBreakMin += Math.max(0, grossMin - netMin);
+      }
       if (sh.date?.startsWith(currentMonth)) cur.monthMin += shiftMinutes(sh);
       if (sh.date === todayStr) cur.todayCount += 1;
     }
@@ -396,7 +416,8 @@ function StaffRosterCard({ item, active, summary, onClick }) {
   }
   const staff = item.staff;
   const isAssistant = staff?._role === 'assistant';
-  const weekHours = formatShiftHoursFromMinutes(summary?.weekMin || 0);
+  const weekHours = formatShiftHoursFromMinutes(summary?.weekGrossMin ?? summary?.weekMin ?? 0);
+  const netWeekHours = formatShiftHoursFromMinutes(summary?.weekMin || 0);
   const hasShift = summary?.hasShift;
   const statusBadge = !hasShift
     ? { label: '근무 미설정', tone: 'bg-amber-50 text-amber-700' }
@@ -424,6 +445,7 @@ function StaffRosterCard({ item, active, summary, onClick }) {
           </p>
           <p className="text-[11px] mt-0.5 text-[#8B95A1]">
             {isAssistant ? '보조강사' : '강사'} · 이번 주 {weekHours}시간
+            {summary?.weekBreakMin > 0 ? ` · 휴게 제외 ${netWeekHours}시간` : ''}
           </p>
         </div>
         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${statusBadge.tone}`}>
@@ -673,7 +695,13 @@ function StaffDetailPanel({ staff, summary, onBack }) {
         </div>
         {summary && (
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <SummaryStat label="이번 주" value={`${formatShiftHoursFromMinutes(summary.weekMin)}h`} />
+            <SummaryStat
+              label="이번 주 근무"
+              value={`${formatShiftHoursFromMinutes(summary.weekGrossMin ?? summary.weekMin)}h`}
+              hint={summary.weekBreakMin > 0
+                ? `휴게 ${formatShiftHoursFromMinutes(summary.weekBreakMin)}h 제외 시 ${formatShiftHoursFromMinutes(summary.weekMin)}h`
+                : '휴게 없음'}
+            />
             <SummaryStat label="이번 달" value={`${formatShiftHoursFromMinutes(summary.monthMin)}h`} />
             <SummaryStat label="오늘 근무" value={`${summary.todayCount}건`} />
           </div>
@@ -707,11 +735,12 @@ function StaffDetailPanel({ staff, summary, onBack }) {
   );
 }
 
-function SummaryStat({ label, value }) {
+function SummaryStat({ label, value, hint }) {
   return (
     <div className="bg-[#F8F9FA] rounded-xl px-3 py-2.5 text-center">
       <p className="text-base font-extrabold text-[#191F28]">{value}</p>
       <p className="text-[11px] text-[#8B95A1] mt-0.5">{label}</p>
+      {hint && <p className="text-[10px] text-[#8B95A1] mt-0.5 truncate">{hint}</p>}
     </div>
   );
 }
@@ -737,6 +766,7 @@ function StaffShiftSection({ staff }) {
   const [editing, setEditing] = useState(null);
   const [defaultMode, setDefaultMode] = useState('recurring');
   const [defaultDate, setDefaultDate] = useState(null);
+  const [recurringPreset, setRecurringPreset] = useState(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [draggingShiftId, setDraggingShiftId] = useState(null);
   const dragPayloadRef = useRef(null);
@@ -835,21 +865,76 @@ function StaffShiftSection({ staff }) {
     };
   }, [classesByDate, weekByDate, weekDates]);
 
-  const openAddRecurring = () => {
+  const buildRecurringPreset = (sourceShift = null) => {
+    const staffRules = (staffWorkRules || []).filter((rule) =>
+      rule.is_active && rule.staff_user_id === staff.serverUserId
+    );
+    const sourceRuleId = getRuleIdFromPlannedShift(sourceShift);
+    const sourceRule = sourceRuleId
+      ? staffRules.find((rule) => rule.id === sourceRuleId)
+      : null;
+    const keyOfRule = (rule) => [
+      (rule.start_time || '').slice(0, 5),
+      (rule.end_time || '').slice(0, 5),
+      Number(rule.break_minutes || 0),
+      rule.effective_start_date || '',
+      rule.effective_end_date || '',
+      rule.memo || '',
+    ].join('__');
+    const targetKey = sourceRule ? keyOfRule(sourceRule) : null;
+    const groups = new Map();
+    for (const rule of staffRules) {
+      const key = keyOfRule(rule);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(rule);
+    }
+    const pickedRules = targetKey && groups.has(targetKey)
+      ? groups.get(targetKey)
+      : [...groups.values()].sort((a, b) => b.length - a.length)[0];
+
+    if (pickedRules?.length) {
+      const first = pickedRules[0];
+      const weekdays = pickedRules
+        .map((rule) => DOW_TO_KO[rule.day_of_week])
+        .filter(Boolean)
+        .sort((a, b) => KOREAN_WEEKDAYS.indexOf(a) - KOREAN_WEEKDAYS.indexOf(b));
+      return {
+        weekdays,
+        startDate: first.effective_start_date || todayStr,
+        endDate: first.effective_end_date || '',
+        scheduledStartTime: (first.start_time || '').slice(0, 5),
+        scheduledEndTime: (first.end_time || '').slice(0, 5),
+        breakMinutes: first.break_minutes ? String(first.break_minutes) : '',
+        memo: first.memo || '',
+      };
+    }
+
+    if (sourceShift) {
+      return {
+        weekdays: [getKoreanWeekdayFromYMD(sourceShift.date)].filter(Boolean),
+        startDate: sourceShift.date || todayStr,
+        endDate: '',
+        scheduledStartTime: sourceShift.scheduledStartTime || '',
+        scheduledEndTime: sourceShift.scheduledEndTime || '',
+        breakMinutes: sourceShift.breakMinutes ? String(sourceShift.breakMinutes) : '',
+        memo: sourceShift.memo || '',
+      };
+    }
+
+    return null;
+  };
+
+  const openManageShifts = (sourceShift = null) => {
     setEditing(null);
     setDefaultMode('recurring');
-    setDefaultDate(todayStr);
-    setFormOpen(true);
-  };
-  const openAddSingle = (date) => {
-    setEditing(null);
-    setDefaultMode('single');
-    setDefaultDate(date || todayStr);
+    setDefaultDate(sourceShift?.date || todayStr);
+    setRecurringPreset(buildRecurringPreset(sourceShift));
     setFormOpen(true);
   };
   const openEdit = (sh) => {
     setEditing(sh);
     setDefaultMode('single');
+    setRecurringPreset(null);
     setFormOpen(true);
   };
 
@@ -936,6 +1021,38 @@ function StaffShiftSection({ staff }) {
     if (timeError) { showToast(timeError, 'error'); return; }
     const daysOfWeek = (data.weekdays || []).map((d) => KO_TO_DOW[d]).filter((d) => d !== undefined);
     if (daysOfWeek.length === 0) return;
+    const selectedDowSet = new Set(daysOfWeek);
+    const overlappingRules = (staffWorkRules || []).filter((rule) =>
+      rule.is_active
+      && rule.staff_user_id === staff.serverUserId
+      && selectedDowSet.has(rule.day_of_week)
+    );
+    const shouldReplaceShift = (shift) => {
+      if (!shift || shift.status !== 'scheduled') return false;
+      if (shift.actualStartTime || shift.actualEndTime) return false;
+      if (!(shift.staffId === staff.id || shift.staffUserId === staff.serverUserId)) return false;
+      if (!shift.date || shift.date < data.startDate) return false;
+      if (data.endDate && shift.date > data.endDate) return false;
+      const dow = KO_TO_DOW[getKoreanWeekdayFromYMD(shift.date)];
+      if (!selectedDowSet.has(dow)) return false;
+      return overlappingRules.some((rule) =>
+        rule.day_of_week === dow
+        && (rule.start_time || '').slice(0, 5) === (shift.scheduledStartTime || '').slice(0, 5)
+        && (rule.end_time || '').slice(0, 5) === (shift.scheduledEndTime || '').slice(0, 5)
+        && Number(rule.break_minutes || 0) === Number(shift.breakMinutes || 0)
+      );
+    };
+    const shiftsToReplace = overlappingRules.length > 0
+      ? academyStaffShifts.filter(shouldReplaceShift)
+      : [];
+    const replaceIds = new Set(shiftsToReplace.map((shift) => shift.id));
+    for (const shift of shiftsToReplace) {
+      deleteAcademyStaffShift(shift.id);
+      if (shift.serverId && isAuthenticated && currentAcademyId) {
+        try { await deleteServerStaffShift(shift.serverId); }
+        catch (err) { console.warn('[supabase] delete replaced recurring shift failed', err); }
+      }
+    }
     const result = await saveRecurringStaffWorkSchedule({
       academyId: isAuthenticated ? currentAcademyId : null,
       staff,
@@ -948,7 +1065,7 @@ function StaffShiftSection({ staff }) {
       memo: data.memo,
       todayYMD: todayStr,
       existingRules: staffWorkRules,
-      existingShifts: academyStaffShifts,
+      existingShifts: academyStaffShifts.filter((shift) => !replaceIds.has(shift.id)),
       addLocalShift: addAcademyStaffShift,
       setLocalShiftServerId: setStaffShiftServerId,
     });
@@ -960,12 +1077,8 @@ function StaffShiftSection({ staff }) {
     setFormOpen(false);
     if (result.shiftsCreated === 0 && result.rulesCreated === 0) {
       showToast(`이미 등록된 ${result.shiftsSkipped}건이라 추가하지 않았어요.`, 'error');
-    } else if (result.capped) {
-      showToast(`근무 규칙이 저장됐어요. 이후 근무는 반복 규칙에 따라 자동으로 표시돼요.`);
-    } else if (result.shiftsSkipped > 0) {
-      showToast(`근무 규칙 저장 · 가까운 근무 ${result.shiftsCreated}건 준비 · ${result.shiftsSkipped}건은 중복 건너뜀.`);
     } else {
-      showToast(`근무 규칙 저장 · 가까운 근무 ${result.shiftsCreated}건 준비.`);
+      showToast('근무표가 저장됐어요.');
     }
   };
 
@@ -1053,10 +1166,10 @@ function StaffShiftSection({ staff }) {
           </p>
           <button
             type="button"
-            onClick={openAddRecurring}
+            onClick={() => openManageShifts()}
             className="w-full py-3 rounded-xl bg-[#3182F6] text-white text-sm font-bold flex items-center justify-center gap-1.5"
           >
-            <Repeat size={14} /> 근무 시간 설정하기
+            <Pencil size={14} /> 근무 시간 설정하기
           </button>
         </div>
       )}
@@ -1067,22 +1180,13 @@ function StaffShiftSection({ staff }) {
             <p className="text-sm font-bold text-[#191F28]">요일별 근무표</p>
             <p className="text-[11px] text-[#8B95A1] mt-0.5">반복 근무 패턴과 이번 주 배정 수업을 같이 확인해요.</p>
           </div>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => openAddSingle(todayStr)}
-              className="text-xs font-bold text-[#3182F6] flex items-center gap-1 px-2 py-1.5 rounded-lg active:bg-blue-50"
-            >
-              <Plus size={11} /> 근무 추가
-            </button>
-            <button
-              type="button"
-              onClick={openAddRecurring}
-              className="text-xs font-bold text-[#3182F6] flex items-center gap-1 px-2 py-1.5 rounded-lg active:bg-blue-50"
-            >
-              <Repeat size={11} /> 반복 추가
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => openManageShifts()}
+            className="text-xs font-bold text-[#3182F6] flex items-center gap-1 px-2 py-1.5 rounded-lg active:bg-blue-50"
+          >
+            <Pencil size={11} /> 근무 수정
+          </button>
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[760px]">
@@ -1182,7 +1286,7 @@ function StaffShiftSection({ staff }) {
                         >
                           <button
                             type="button"
-                            onClick={() => (sh.isPlanned ? null : openEdit(sh))}
+                            onClick={() => (sh.isPlanned ? openManageShifts(sh) : openEdit(sh))}
                             className="absolute inset-0"
                             aria-label={shiftTitle}
                           />
@@ -1271,7 +1375,8 @@ function StaffShiftSection({ staff }) {
           initial={editing}
           defaultDate={defaultDate || todayStr}
           defaultMode={defaultMode}
-          onClose={() => { setFormOpen(false); setEditing(null); }}
+          initialRecurring={recurringPreset}
+          onClose={() => { setFormOpen(false); setEditing(null); setRecurringPreset(null); }}
           onSaveSingle={handleSaveSingle}
           onSaveRecurring={handleSaveRecurring}
         />
@@ -1314,13 +1419,15 @@ function ChoiceCard({ active, title, subtitle, onClick }) {
 }
 
 function ShiftFormModal({
-  initial, defaultDate, defaultMode = 'recurring',
+  initial, defaultDate, defaultMode = 'recurring', initialRecurring,
   onClose, onSaveSingle, onSaveRecurring,
 }) {
   const isEdit = !!initial;
   const [mode, setMode] = useState(isEdit ? 'single' : defaultMode);
-  const [recurringStartMode, setRecurringStartMode] = useState(isEdit ? 'custom' : 'today');
-  const [recurringEndMode, setRecurringEndMode] = useState(initial?.date ? 'until' : 'forever');
+  const [recurringStartMode, setRecurringStartMode] = useState(
+    initialRecurring?.startDate && initialRecurring.startDate !== todayDate() ? 'custom' : 'today',
+  );
+  const [recurringEndMode, setRecurringEndMode] = useState(initialRecurring?.endDate ? 'until' : 'forever');
   const [form, setForm] = useState({
     date: initial?.date || defaultDate || todayDate(),
     scheduledStartTime: initial?.scheduledStartTime || '',
@@ -1330,20 +1437,20 @@ function ShiftFormModal({
     status: initial?.status || 'scheduled',
   });
   const [recurring, setRecurring] = useState({
-    weekdays: [],
-    startDate: todayDate(),
-    endDate: '',
-    scheduledStartTime: '',
-    scheduledEndTime: '',
-    breakMinutes: '',
-    memo: '',
+    weekdays: initialRecurring?.weekdays || [],
+    startDate: initialRecurring?.startDate || todayDate(),
+    endDate: initialRecurring?.endDate || '',
+    scheduledStartTime: initialRecurring?.scheduledStartTime || '',
+    scheduledEndTime: initialRecurring?.scheduledEndTime || '',
+    breakMinutes: initialRecurring?.breakMinutes || '',
+    memo: initialRecurring?.memo || '',
   });
 
   const recurringPreview = useMemo(() => {
     if (mode !== 'recurring') return null;
-    if (!recurring.startDate || recurring.weekdays.length === 0) return { dates: [], count: 0 };
+    if (!recurring.startDate || recurring.weekdays.length === 0) return null;
     const daysOfWeek = recurring.weekdays.map((d) => KO_TO_DOW[d]).filter((d) => d !== undefined);
-    if (daysOfWeek.length === 0) return { dates: [], count: 0 };
+    if (daysOfWeek.length === 0) return null;
     try {
       const preview = buildRecurringStaffWorkPreview({
         weekdays: daysOfWeek,
@@ -1352,11 +1459,40 @@ function ShiftFormModal({
         todayYMD: todayDate(),
       });
       return { ...preview, dates: preview.dates.slice(0, 3) };
-    } catch { return { dates: [], count: 0 }; }
+    } catch { return null; }
   }, [mode, recurring.startDate, recurring.endDate, recurring.weekdays]);
 
+  const recurringSummary = useMemo(() => {
+    const start = hhmmToMin(recurring.scheduledStartTime);
+    const end = hhmmToMin(recurring.scheduledEndTime);
+    if (start == null || end == null || end <= start || recurring.weekdays.length === 0) {
+      return null;
+    }
+    const breakMin = Number(recurring.breakMinutes) || 0;
+    const dailyGrossMin = end - start;
+    const dailyNetMin = Math.max(0, dailyGrossMin - breakMin);
+    const count = recurring.weekdays.length;
+    return {
+      count,
+      dailyGrossMin,
+      dailyNetMin,
+      weeklyGrossMin: dailyGrossMin * count,
+      weeklyNetMin: dailyNetMin * count,
+      weeklyBreakMin: breakMin * count,
+    };
+  }, [
+    recurring.scheduledStartTime,
+    recurring.scheduledEndTime,
+    recurring.breakMinutes,
+    recurring.weekdays,
+  ]);
+
   const singleTimeError = useMemo(
-    () => validateShiftTime(form),
+    () => validateShiftTime({
+      startTime: form.scheduledStartTime,
+      endTime: form.scheduledEndTime,
+      breakMinutes: form.breakMinutes,
+    }),
     [form.scheduledStartTime, form.scheduledEndTime, form.breakMinutes],
   );
   const recurringTimeError = useMemo(
@@ -1403,7 +1539,7 @@ function ShiftFormModal({
     <Modal
       isOpen
       onClose={onClose}
-      title={isEdit ? '근무 일정 수정' : (mode === 'recurring' ? '반복 근무 설정' : '단일 근무 추가')}
+      title={isEdit ? '근무 일정 수정' : '근무 수정'}
       footer={
         <button
           type="button"
@@ -1411,7 +1547,7 @@ function ShiftFormModal({
           disabled={!canSave}
           className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl disabled:opacity-50"
         >
-          {mode === 'recurring' && !isEdit ? '근무 규칙 저장' : '저장'}
+          {mode === 'recurring' && !isEdit ? '근무 저장' : '저장'}
         </button>
       }
     >
@@ -1434,7 +1570,7 @@ function ShiftFormModal({
                 mode === 'single' ? 'bg-white text-[#3182F6] shadow-sm' : 'text-gray-500'
               }`}
             >
-              단일 근무
+              하루만 변경
             </button>
           </div>
         )}
@@ -1580,30 +1716,48 @@ function ShiftFormModal({
               <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
               <textarea value={recurring.memo} onChange={(e) => setRecurring((f) => ({ ...f, memo: e.target.value }))} rows={2} placeholder="특이사항 등" className="input resize-none" />
             </div>
-            {recurringPreview ? (
+            {recurringPreview && recurringSummary ? (
               <div className="bg-blue-50 rounded-2xl px-4 py-3">
                 <div className="flex items-center gap-2 mb-1">
                   <Check size={14} className="text-[#3182F6]" />
-                  <p className="text-sm font-bold text-[#3182F6]">반복 근무 규칙이 저장돼요</p>
+                  <p className="text-sm font-bold text-[#3182F6]">이 패턴으로 근무표에 표시돼요</p>
                 </div>
                 <p className="text-[11px] text-[#4E5968] leading-relaxed">
                   {recurring.weekdays.join(', ')} {formatShiftTimeRange(recurring.scheduledStartTime, recurring.scheduledEndTime)}
                 </p>
-                <p className="text-[11px] text-[#4E5968] mt-1 leading-relaxed">
+                {recurringSummary && (
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-white/70 px-3 py-2">
+                      <p className="text-[10px] font-semibold text-[#8B95A1]">주 근무</p>
+                      <p className="text-sm font-extrabold text-[#191F28]">
+                        {formatShiftHoursFromMinutes(recurringSummary.weeklyGrossMin)}h
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-white/70 px-3 py-2">
+                      <p className="text-[10px] font-semibold text-[#8B95A1]">휴게 제외</p>
+                      <p className="text-sm font-extrabold text-[#191F28]">
+                        {formatShiftHoursFromMinutes(recurringSummary.weeklyNetMin)}h
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {recurringSummary?.weeklyBreakMin > 0 && (
+                  <p className="text-[11px] text-[#4E5968] mt-2 leading-relaxed">
+                    휴게 {formatShiftHoursFromMinutes(recurringSummary.weeklyBreakMin)}h가 빠져서 급여 기준 시간은 {formatShiftHoursFromMinutes(recurringSummary.weeklyNetMin)}h예요.
+                  </p>
+                )}
+                <p className="text-[11px] text-[#8B95A1] mt-2 leading-relaxed">
                   {recurringEndMode === 'until' && recurring.endDate
-                    ? `${recurring.startDate}부터 ${recurring.endDate}까지 반복해요.`
-                    : `${recurring.startDate}부터 계속 반복해요.`}
+                    ? `${recurring.startDate}부터 ${recurring.endDate}까지 반복돼요.`
+                    : `${recurring.startDate}부터 계속 반복돼요.`}
+                  {recurringPreview.dates.length > 0 ? ` 다음 일정: ${recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}` : ''}
                 </p>
                 <p className="text-[11px] text-[#8B95A1] mt-1 leading-relaxed">
-                  가까운 14일 기준 {recurringPreview.count}개의 근무만 미리 준비돼요.
-                  {recurringPreview.dates.length > 0 ? ` 첫 일정: ${recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}` : ''}
-                </p>
-                <p className="text-[11px] text-[#8B95A1] mt-1 leading-relaxed">
-                  이후 근무는 규칙에 따라 자동으로 표시돼요. 실제 급여는 출퇴근 기록을 기준으로 계산돼요.
+                  실제 급여는 이 예정표가 아니라 승인된 출퇴근 기록을 기준으로 계산돼요.
                 </p>
               </div>
             ) : (
-              <p className="text-[11px] text-gray-400">요일·시간·기간을 선택하면 가까운 14일 준비 일정이 표시돼요.</p>
+              <p className="text-[11px] text-gray-400">요일과 시간을 선택하면 주 근무시간이 바로 계산돼요.</p>
             )}
           </>
         )}
