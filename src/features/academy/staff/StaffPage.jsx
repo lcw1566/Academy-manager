@@ -14,11 +14,11 @@
 //   - academy_member_profiles (서버 — 이메일/이름/연락처)
 //   - academyStaffShifts     (로컬 근무표)
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Plus, ChevronLeft, ChevronRight, Pencil, Trash2,
+  Plus, ChevronLeft, ChevronRight, Pencil,
   Clock, Search, Users as UsersIcon, GraduationCap, Mail, X as XIcon,
-  Loader2, Check, BookOpen, Coffee, AlertTriangle,
+  Loader2, Check, BookOpen, Coffee,
   LogIn, LogOut as LogOutIcon, ShieldCheck,
 } from 'lucide-react';
 import Header from '../../../components/Header';
@@ -43,14 +43,12 @@ import {
   updateAcademyStaffShift as updateServerStaffShift,
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
-import { updateStaffWorkRule } from '../../../services/supabase/scheduleRulesApi';
 import {
   buildRecurringStaffWorkPreview,
   saveRecurringStaffWorkSchedule,
 } from '../../../services/staffWorkScheduleService';
 import {
   buildShiftTimeline,
-  findShiftCoveringTime,
   hhmmToMin,
 } from '../../../utils/shiftCoverage';
 import {
@@ -121,10 +119,6 @@ function shiftMinutes(sh) {
 function formatShiftHoursFromMinutes(minutes) {
   const hours = (Number(minutes) || 0) / 60;
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
-}
-function formatTimelineHour(minutes) {
-  const h = Math.floor((Number(minutes) || 0) / 60);
-  return `${String(h).padStart(2, '0')}:00`;
 }
 function monthStart(month) {
   return `${month}-01`;
@@ -788,11 +782,8 @@ function StaffShiftSection({ staff }) {
   const [defaultDate, setDefaultDate] = useState(null);
   const [recurringPreset, setRecurringPreset] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
+  const [calendarMode, setCalendarMode] = useState('month');
   const [exceptionTarget, setExceptionTarget] = useState(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const [draggingShiftId, setDraggingShiftId] = useState(null);
-  const dragPayloadRef = useRef(null);
-  const dropLockRef = useRef(false);
 
   const todayStr = todayDate();
   const weekDates = useMemo(() => getWeekDates(todayStr), [todayStr]);
@@ -800,6 +791,10 @@ function StaffShiftSection({ staff }) {
   const monthTo = monthEnd(selectedMonth);
   const monthDates = useMemo(
     () => getMonthDates(monthFrom).filter(Boolean),
+    [monthFrom],
+  );
+  const monthCalendarDates = useMemo(
+    () => getMonthDates(monthFrom),
     [monthFrom],
   );
 
@@ -868,20 +863,6 @@ function StaffShiftSection({ staff }) {
     };
   }, [staffShifts, selectedMonth]);
 
-  const weekByDate = useMemo(() => {
-    const map = new Map();
-    weekDates.forEach((d) => map.set(d, []));
-    for (const sh of staffShifts) {
-      if (!sh.date || !map.has(sh.date)) continue;
-      if (sh.status === 'canceled') continue;
-      map.get(sh.date).push(sh);
-    }
-    for (const d of weekDates) {
-      map.get(d).sort((a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || ''));
-    }
-    return map;
-  }, [staffShifts, weekDates]);
-
   const classGroupById = useMemo(
     () => new Map((classGroups || []).map((group) => [group.id, group])),
     [classGroups],
@@ -902,35 +883,6 @@ function StaffShiftSection({ staff }) {
     }
     return map;
   }, [classSessions, staff.id, staff._role, monthDates]);
-  const calendarRange = useMemo(() => {
-    const bounds = [];
-    for (const date of weekDates) {
-      for (const sh of weekByDate.get(date) || []) {
-        const start = hhmmToMin(sh.scheduledStartTime);
-        const end = hhmmToMin(sh.scheduledEndTime);
-        if (start != null) bounds.push(start);
-        if (end != null) bounds.push(end);
-      }
-      for (const session of classesByDate.get(date) || []) {
-        const start = hhmmToMin(session.startTime);
-        const end = hhmmToMin(session.endTime);
-        if (start != null) bounds.push(start);
-        if (end != null) bounds.push(end);
-      }
-    }
-    const min = bounds.length ? Math.min(...bounds) : 9 * 60;
-    const max = bounds.length ? Math.max(...bounds) : 22 * 60;
-    const startMin = Math.max(0, Math.floor((min - 60) / 60) * 60);
-    const endMin = Math.min(24 * 60, Math.ceil((max + 60) / 60) * 60);
-    const ticks = [];
-    for (let t = startMin; t <= endMin; t += 60) ticks.push(t);
-    return {
-      startMin,
-      endMin,
-      ticks,
-      height: Math.max(360, Math.round((endMin - startMin) * 0.72)),
-    };
-  }, [classesByDate, weekByDate, weekDates]);
 
   const buildRecurringPreset = (sourceShift = null) => {
     const staffRules = (staffWorkRules || []).filter((rule) =>
@@ -998,85 +950,11 @@ function StaffShiftSection({ staff }) {
     setRecurringPreset(buildRecurringPreset(sourceShift));
     setFormOpen(true);
   };
-  const openEdit = (sh) => {
-    setEditing(sh);
-    setDefaultMode('single');
-    setRecurringPreset(null);
-    setFormOpen(true);
-  };
-
   const getRuleIdFromPlannedShift = (shift) => {
     if (!shift?.isPlanned) return null;
     if (shift.ruleId) return shift.ruleId;
     const parts = String(shift.id || '').split(':');
     return parts[0] === 'rule' ? parts[1] : null;
-  };
-
-  const findMatchingRuleForShift = (shift) => {
-    if (!shift?.date || !staff.serverUserId) return null;
-    const dow = KO_TO_DOW[getKoreanWeekdayFromYMD(shift.date)];
-    return (staffWorkRules || []).find((rule) =>
-      rule.is_active
-      && rule.staff_user_id === staff.serverUserId
-      && rule.day_of_week === dow
-      && (rule.start_time || '').slice(0, 5) === (shift.scheduledStartTime || '').slice(0, 5)
-      && (rule.end_time || '').slice(0, 5) === (shift.scheduledEndTime || '').slice(0, 5)
-      && Number(rule.break_minutes || 0) === Number(shift.breakMinutes || 0)
-    ) || null;
-  };
-
-  const applyLocalRuleDay = (ruleId, nextDow) => {
-    if (!ruleId) return;
-    useWorkspaceStore.setState((s) => ({
-      staffWorkRules: (s.staffWorkRules || []).map((rule) =>
-        rule.id === ruleId ? { ...rule, day_of_week: nextDow } : rule
-      ),
-    }));
-  };
-
-  const handleDropShift = async (shiftId, targetDate) => {
-    if (dropLockRef.current) return;
-    dropLockRef.current = true;
-    const targetDow = KO_TO_DOW[getKoreanWeekdayFromYMD(targetDate)];
-    const shift = staffShifts.find((sh) => sh.id === shiftId);
-    setDraggingShiftId(null);
-    dragPayloadRef.current = null;
-    window.setTimeout(() => { dropLockRef.current = false; }, 0);
-    if (!shift || !targetDate || shift.date === targetDate || targetDow == null) return;
-
-    const matchingRule = shift.isPlanned ? null : findMatchingRuleForShift(shift);
-    const ruleId = shift.isPlanned ? getRuleIdFromPlannedShift(shift) : matchingRule?.id;
-
-    if (ruleId) {
-      const prevDow = matchingRule?.day_of_week ?? KO_TO_DOW[getKoreanWeekdayFromYMD(shift.date)];
-      applyLocalRuleDay(ruleId, targetDow);
-      if (!shift.isPlanned) updateAcademyStaffShift(shift.id, { date: targetDate });
-      try {
-        await updateStaffWorkRule(ruleId, { day_of_week: targetDow });
-        if (!shift.isPlanned && shift.serverId && isAuthenticated && currentAcademyId) {
-          await updateServerStaffShift(shift.serverId, { date: targetDate });
-          loadServerStaffShifts();
-        }
-        loadStaffWorkRules?.();
-        showToast(`${getKoreanWeekdayFromYMD(targetDate)}요일로 옮겼어요.`);
-      } catch (err) {
-        applyLocalRuleDay(ruleId, prevDow);
-        if (!shift.isPlanned) updateAcademyStaffShift(shift.id, { date: shift.date });
-        showToast(err?.message ?? '근무 요일 변경에 실패했어요.', 'error');
-      }
-      return;
-    }
-
-    updateAcademyStaffShift(shift.id, { date: targetDate });
-    if (shift.serverId && isAuthenticated && currentAcademyId) {
-      try {
-        await updateServerStaffShift(shift.serverId, { date: targetDate });
-        loadServerStaffShifts();
-      } catch (err) {
-        console.warn('[supabase] move shift failed', err);
-        showToast('요일은 옮겼지만 서버 동기화는 실패했어요.', 'error');
-      }
-    }
   };
 
   const handleSaveRecurring = async (data) => {
@@ -1214,21 +1092,12 @@ function StaffShiftSection({ staff }) {
     }
   };
 
-  const handleDelete = async (id) => {
-    const target = academyStaffShifts.find((sh) => sh.id === id);
-    deleteAcademyStaffShift(id);
-    if (target?.serverId && isAuthenticated && currentAcademyId) {
-      try { await deleteServerStaffShift(target.serverId); }
-      catch (err) { console.warn('[supabase] delete shift failed', err); }
-    }
-  };
-
   const handleSaveException = async (data) => {
     if (!staff.serverUserId) {
       showToast('서버 계정과 연결된 직원만 월별 예외를 저장할 수 있어요.', 'error');
       return;
     }
-    const exceptionId = exceptionTarget?.shift?.exceptionId || exceptionTarget?.exceptionId || null;
+    const exceptionId = data.exceptionId || exceptionTarget?.shift?.exceptionId || exceptionTarget?.exceptionId || null;
     if (data.type === 'reset') {
       if (exceptionId) {
         await deleteStaffWorkExceptionLocal?.(exceptionId);
@@ -1283,168 +1152,22 @@ function StaffShiftSection({ staff }) {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-4 md:px-5 py-4 border-b border-[#F2F4F6]">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div>
-              <p className="text-sm font-bold text-[#191F28]">월별 운영 근무표</p>
-              <p className="text-[11px] text-[#8B95A1] mt-0.5">
-                기본 템플릿 위에 이 달의 휴무, 시간 변경, 추가 근무를 반영해요.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedMonth((m) => prevMonth(m))}
-                className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] flex items-center justify-center"
-                aria-label="이전 달"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <div className="min-w-[112px] text-center">
-                <p className="text-sm font-extrabold text-[#191F28]">{formatMonth(selectedMonth)}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedMonth((m) => nextMonth(m))}
-                className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] flex items-center justify-center"
-                aria-label="다음 달"
-              >
-                <ChevronRight size={16} />
-              </button>
-              <button
-                type="button"
-                onClick={() => openManageShifts()}
-                className="h-9 px-3 rounded-xl bg-blue-50 text-[#3182F6] text-xs font-bold flex items-center gap-1.5"
-              >
-                <Pencil size={12} /> 기본 템플릿
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <SummaryStat label="월 근무" value={`${formatShiftHoursFromMinutes(monthWorkSummary.grossMin)}h`} />
-            <SummaryStat
-              label="급여 기준"
-              value={`${formatShiftHoursFromMinutes(monthWorkSummary.netMin)}h`}
-              hint={monthWorkSummary.breakMin > 0 ? `휴게 ${formatShiftHoursFromMinutes(monthWorkSummary.breakMin)}h 제외` : '휴게 없음'}
-            />
-            <SummaryStat label="예외" value={`${monthWorkSummary.exceptionCount}건`} />
-          </div>
-        </div>
-
-        <div className="divide-y divide-[#F2F4F6]">
-          {monthDates.map((date) => {
-            const shifts = monthByDate.get(date) || [];
-            const sessions = classesByDate.get(date) || [];
-            const day = getKoreanWeekdayFromYMD(date);
-            const isTodayRow = date === todayStr;
-            const dayGross = shifts.reduce((sum, sh) => sum + scheduledShiftGrossMinutes(sh), 0);
-            const dayNet = shifts.reduce((sum, sh) => sum + scheduledShiftMinutes(sh), 0);
-            return (
-              <div key={date} className={`px-4 md:px-5 py-3 ${isTodayRow ? 'bg-blue-50/30' : 'bg-white'}`}>
-                <div className="flex items-start gap-3">
-                  <div className="w-14 flex-shrink-0 pt-1">
-                    <p className={`text-sm font-extrabold ${isTodayRow ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
-                      {date.slice(5)}
-                    </p>
-                    <p className="text-[11px] font-semibold text-[#8B95A1]">{day}요일</p>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {shifts.length === 0 ? (
-                        <span className="text-xs font-semibold text-[#B0B8C1]">근무 없음</span>
-                      ) : (
-                        <>
-                          <span className="text-xs font-bold text-[#191F28]">
-                            {formatShiftHoursFromMinutes(dayGross)}h
-                          </span>
-                          {dayGross !== dayNet && (
-                            <span className="text-[11px] text-[#8B95A1]">
-                              휴게 제외 {formatShiftHoursFromMinutes(dayNet)}h
-                            </span>
-                          )}
-                        </>
-                      )}
-                      {sessions.length > 0 && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
-                          수업 {sessions.length}건
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="mt-2 flex flex-col gap-1.5">
-                      {shifts.map((sh) => (
-                        <div
-                          key={sh.id}
-                          className={`rounded-xl border px-3 py-2 ${
-                            isPlannedShiftException(sh)
-                              ? 'border-amber-100 bg-amber-50'
-                              : sh.isPlanned
-                              ? 'border-blue-100 bg-blue-50'
-                              : 'border-gray-100 bg-[#F8F9FA]'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-xs font-extrabold text-[#191F28]">
-                                {formatShiftTimeRange(sh.scheduledStartTime, sh.scheduledEndTime)}
-                                {sh.breakMinutes ? ` · 휴게 ${sh.breakMinutes}분` : ''}
-                              </p>
-                              <p className="text-[11px] text-[#8B95A1] mt-0.5 truncate">
-                                {isPlannedShiftException(sh)
-                                  ? sh.exceptionType === 'extra' ? '이 달 추가 근무' : '이 달 예외 반영'
-                                  : sh.isPlanned ? '기본 템플릿' : STATUS_LABELS[sh.status]}
-                                {sh.memo ? ` · ${sh.memo}` : ''}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => (sh.isPlanned ? setExceptionTarget({ date, shift: sh }) : openEdit(sh))}
-                                className="text-[11px] font-bold text-[#3182F6] px-2 py-1 rounded-lg bg-white/80 active:bg-blue-50"
-                              >
-                                이 날 수정
-                              </button>
-                              {!sh.isPlanned && (
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmDeleteId(sh.id)}
-                                  className="w-7 h-7 text-red-400 bg-white/80 active:bg-red-50 rounded-lg flex items-center justify-center"
-                                  aria-label="근무 삭제"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {sessions.map((session) => {
-                        const group = classGroupById.get(session.classGroupId);
-                        return (
-                          <div key={session.id} className="rounded-xl border border-emerald-100 bg-white px-3 py-2">
-                            <p className="text-[11px] font-bold text-emerald-700 truncate">
-                              {group?.name || '수업'} · {formatShiftTimeRange(session.startTime, session.endTime)}
-                            </p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setExceptionTarget({ date, shift: shifts[0] || null, defaultType: shifts.length ? 'change' : 'extra' })}
-                    className="mt-1 flex-shrink-0 text-[11px] font-bold text-[#4E5968] px-2.5 py-1.5 rounded-lg bg-[#F2F4F6] active:bg-gray-200"
-                  >
-                    {shifts.length ? '예외' : '추가'}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <StaffScheduleCalendar
+        selectedMonth={selectedMonth}
+        calendarMode={calendarMode}
+        monthWorkSummary={monthWorkSummary}
+        monthCalendarDates={monthCalendarDates}
+        weekDates={weekDates}
+        monthByDate={monthByDate}
+        classesByDate={classesByDate}
+        classGroupById={classGroupById}
+        todayStr={todayStr}
+        onPrevMonth={() => setSelectedMonth((m) => prevMonth(m))}
+        onNextMonth={() => setSelectedMonth((m) => nextMonth(m))}
+        onCalendarModeChange={setCalendarMode}
+        onEditTemplate={() => openManageShifts()}
+        onSelectDay={(target) => setExceptionTarget(target)}
+      />
 
       <StaffAssignmentSummary staff={staff} />
 
@@ -1465,34 +1188,428 @@ function StaffShiftSection({ staff }) {
       )}
 
       {exceptionTarget && (
-        <StaffWorkExceptionModal
+        <StaffWorkDayDrawer
           target={exceptionTarget}
+          classGroupById={classGroupById}
           onClose={() => setExceptionTarget(null)}
           onSave={handleSaveException}
         />
       )}
-
-      <Modal
-        isOpen={!!confirmDeleteId}
-        onClose={() => setConfirmDeleteId(null)}
-        title="근무 일정 삭제"
-        footer={
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setConfirmDeleteId(null)} className="flex-1 py-3.5 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold">취소</button>
-            <button type="button" onClick={() => { handleDelete(confirmDeleteId); setConfirmDeleteId(null); }} className="flex-1 py-3.5 rounded-xl bg-red-500 text-white text-sm font-bold">삭제</button>
-          </div>
-        }
-      >
-        <div className="bg-red-50 rounded-2xl px-4 py-4 flex items-start gap-3">
-          <AlertTriangle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
-          <p className="text-sm font-bold text-red-700">선택한 근무 일정을 삭제할까요?</p>
-        </div>
-      </Modal>
     </div>
   );
 }
 
 // ─── 단일/반복 근무 폼 모달 ────────────────────────────────────────
+function StaffScheduleCalendar({
+  selectedMonth,
+  calendarMode,
+  monthWorkSummary,
+  monthCalendarDates,
+  weekDates,
+  monthByDate,
+  classesByDate,
+  classGroupById,
+  todayStr,
+  onPrevMonth,
+  onNextMonth,
+  onCalendarModeChange,
+  onEditTemplate,
+  onSelectDay,
+}) {
+  const dates = calendarMode === 'week' ? weekDates : monthCalendarDates;
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+      <div className="px-4 md:px-5 py-4 border-b border-[#F2F4F6]">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-[#191F28]">근무 캘린더</p>
+            <p className="text-[11px] text-[#8B95A1] mt-0.5">
+              날짜를 눌러 이 날만 휴무, 시간 변경, 추가 근무를 처리해요.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onPrevMonth}
+              className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] flex items-center justify-center"
+              aria-label="이전 달"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <div className="min-w-[112px] text-center">
+              <p className="text-sm font-extrabold text-[#191F28]">{formatMonth(selectedMonth)}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onNextMonth}
+              className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] flex items-center justify-center"
+              aria-label="다음 달"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <div className="flex rounded-xl bg-[#F2F4F6] p-1">
+              {[
+                { id: 'month', label: '월간' },
+                { id: 'week', label: '주간' },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onCalendarModeChange(item.id)}
+                  className={`h-8 px-3 rounded-lg text-xs font-bold ${
+                    calendarMode === item.id
+                      ? 'bg-white text-[#3182F6] shadow-sm'
+                      : 'text-[#8B95A1]'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={onEditTemplate}
+              className="h-9 px-3 rounded-xl bg-blue-50 text-[#3182F6] text-xs font-bold flex items-center gap-1.5"
+            >
+              <Pencil size={12} /> 기본 일정
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <SummaryStat label="월 근무" value={`${formatShiftHoursFromMinutes(monthWorkSummary.grossMin)}h`} />
+          <SummaryStat
+            label="급여 기준"
+            value={`${formatShiftHoursFromMinutes(monthWorkSummary.netMin)}h`}
+            hint={monthWorkSummary.breakMin > 0 ? `휴게 ${formatShiftHoursFromMinutes(monthWorkSummary.breakMin)}h 제외` : '휴게 없음'}
+          />
+          <SummaryStat label="변경일" value={`${monthWorkSummary.exceptionCount}건`} />
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div className="min-w-[760px]">
+          <div className="grid grid-cols-7 bg-[#FBFCFD] border-b border-[#F2F4F6]">
+            {DOW_TO_KO.map((day) => (
+              <div key={day} className="px-3 py-2 text-[11px] font-extrabold text-[#8B95A1]">
+                {day}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7">
+            {dates.map((date, idx) => {
+              if (!date) {
+                return <div key={`blank-${idx}`} className="min-h-[120px] border-r border-b border-[#F2F4F6] bg-[#FBFCFD]" />;
+              }
+              const shifts = monthByDate.get(date) || [];
+              const sessions = classesByDate.get(date) || [];
+              return (
+                <CalendarCell
+                  key={date}
+                  date={date}
+                  shifts={shifts}
+                  sessions={sessions}
+                  classGroupById={classGroupById}
+                  todayStr={todayStr}
+                  onClick={() => onSelectDay({ date, shifts, sessions })}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CalendarCell({ date, shifts, sessions, classGroupById, todayStr, onClick }) {
+  const isTodayRow = date === todayStr;
+  const hasShift = shifts.length > 0;
+  const hasException = shifts.some(isPlannedShiftException);
+  const grossMin = shifts.reduce((sum, sh) => sum + scheduledShiftGrossMinutes(sh), 0);
+  const netMin = shifts.reduce((sum, sh) => sum + scheduledShiftMinutes(sh), 0);
+  const firstShift = shifts[0] || null;
+  const uncoveredSessions = sessions.filter((session) =>
+    !shifts.some((shift) => {
+      const s = hhmmToMin(shift.scheduledStartTime);
+      const e = hhmmToMin(shift.scheduledEndTime);
+      const ls = hhmmToMin(session.startTime);
+      const le = hhmmToMin(session.endTime);
+      return s != null && e != null && ls != null && le != null && ls >= s && le <= e;
+    })
+  );
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`min-h-[120px] border-r border-b border-[#F2F4F6] p-3 text-left transition-colors hover:bg-blue-50/40 ${
+        isTodayRow ? 'bg-blue-50/40' : 'bg-white'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className={`text-sm font-extrabold ${isTodayRow ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+            {Number(date.slice(8))}
+          </p>
+          <p className="text-[10px] font-semibold text-[#8B95A1]">{getKoreanWeekdayFromYMD(date)}</p>
+        </div>
+        {hasException && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+            변경
+          </span>
+        )}
+        {!hasShift && sessions.length === 0 && (
+          <span className="rounded-full bg-[#F2F4F6] px-2 py-0.5 text-[10px] font-bold text-[#8B95A1]">
+            비번
+          </span>
+        )}
+      </div>
+
+      {hasShift ? (
+        <div className={`mt-3 rounded-xl px-2.5 py-2 ${hasException ? 'bg-amber-50 border border-amber-100' : 'bg-blue-50 border border-blue-100'}`}>
+          <p className="text-[11px] font-extrabold text-[#191F28]">
+            {formatShiftTimeRange(firstShift?.scheduledStartTime, firstShift?.scheduledEndTime)}
+          </p>
+          <p className="mt-0.5 text-[10px] font-semibold text-[#8B95A1]">
+            {formatShiftHoursFromMinutes(grossMin)}h
+            {grossMin !== netMin ? ` · 급여 ${formatShiftHoursFromMinutes(netMin)}h` : ''}
+          </p>
+          {sessions.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {sessions.slice(0, 2).map((session) => {
+                const group = classGroupById.get(session.classGroupId);
+                return (
+                  <span
+                    key={session.id}
+                    className={`max-w-full truncate rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
+                      uncoveredSessions.some((s) => s.id === session.id)
+                        ? 'bg-red-50 text-red-600'
+                        : 'bg-white text-emerald-700'
+                    }`}
+                  >
+                    {group?.name || '수업'} {formatClock(session.startTime)}
+                  </span>
+                );
+              })}
+              {sessions.length > 2 && (
+                <span className="rounded-md bg-white px-1.5 py-0.5 text-[9px] font-bold text-[#8B95A1]">
+                  +{sessions.length - 2}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="mt-4 text-[11px] font-semibold text-[#B0B8C1]">근무 없음</p>
+      )}
+
+      {uncoveredSessions.length > 0 && (
+        <p className="mt-2 text-[10px] font-bold text-red-500">
+          근무 밖 수업 {uncoveredSessions.length}건
+        </p>
+      )}
+    </button>
+  );
+}
+
+function StaffWorkDayDrawer({ target, classGroupById, onClose, onSave }) {
+  const shifts = target?.shifts || [];
+  const sessions = target?.sessions || [];
+  const [selectedShiftId, setSelectedShiftId] = useState(shifts[0]?.id || '');
+  const selectedShift = shifts.find((shift) => shift.id === selectedShiftId) || shifts[0] || null;
+  const [action, setAction] = useState(shifts.length > 0 ? 'summary' : 'extra');
+  const [form, setForm] = useState({
+    startTime: selectedShift?.scheduledStartTime || '',
+    endTime: selectedShift?.scheduledEndTime || '',
+    breakMinutes: selectedShift?.breakMinutes ? String(selectedShift.breakMinutes) : '',
+    memo: selectedShift?.memo || '',
+  });
+
+  useEffect(() => {
+    setForm({
+      startTime: selectedShift?.scheduledStartTime || '',
+      endTime: selectedShift?.scheduledEndTime || '',
+      breakMinutes: selectedShift?.breakMinutes ? String(selectedShift.breakMinutes) : '',
+      memo: selectedShift?.memo || '',
+    });
+  }, [selectedShift?.id]);
+
+  const save = () => {
+    onSave?.({
+      type: action === 'summary' ? 'change' : action,
+      exceptionId: selectedShift?.exceptionId || null,
+      date: target.date,
+      startTime: form.startTime,
+      endTime: form.endTime,
+      breakMinutes: form.breakMinutes,
+      memo: form.memo,
+    });
+  };
+
+  const reset = () => {
+    onSave?.({
+      type: 'reset',
+      exceptionId: selectedShift?.exceptionId || null,
+      date: target.date,
+    });
+  };
+
+  const needsForm = action === 'change' || action === 'extra';
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/20 flex items-end md:items-stretch md:justify-end">
+      <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-label="닫기" />
+      <aside className="relative w-full md:w-[420px] max-h-[92vh] md:max-h-none bg-white rounded-t-3xl md:rounded-none shadow-2xl overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-[#F2F4F6] px-5 py-4 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-lg font-extrabold text-[#191F28]">{formatDateShort(target.date)} 근무</p>
+            <p className="text-xs text-[#8B95A1] mt-1">이 날짜에만 적용되는 변경을 관리해요.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-9 h-9 rounded-full bg-[#F2F4F6] text-[#4E5968] flex items-center justify-center"
+            aria-label="닫기"
+          >
+            <XIcon size={17} />
+          </button>
+        </div>
+
+        <div className="px-5 py-5 flex flex-col gap-4">
+          <div className="rounded-2xl bg-[#F8F9FA] px-4 py-4">
+            <p className="text-xs font-bold text-[#8B95A1] mb-2">오늘 일정</p>
+            {shifts.length === 0 ? (
+              <p className="text-sm font-bold text-[#191F28]">등록된 근무가 없어요.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {shifts.map((shift) => (
+                  <button
+                    key={shift.id}
+                    type="button"
+                    onClick={() => setSelectedShiftId(shift.id)}
+                    className={`rounded-xl px-3 py-2 text-left border ${
+                      selectedShift?.id === shift.id ? 'border-[#3182F6] bg-white' : 'border-transparent bg-white/70'
+                    }`}
+                  >
+                    <p className="text-sm font-extrabold text-[#191F28]">
+                      {formatShiftTimeRange(shift.scheduledStartTime, shift.scheduledEndTime)}
+                    </p>
+                    <p className="text-[11px] text-[#8B95A1] mt-0.5">
+                      {isPlannedShiftException(shift) ? '이 달 예외 반영' : shift.isPlanned ? '기본 일정' : STATUS_LABELS[shift.status]}
+                      {shift.breakMinutes ? ` · 휴게 ${shift.breakMinutes}분` : ''}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+            {sessions.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-[#E5E8EB] flex flex-col gap-1.5">
+                {sessions.map((session) => {
+                  const group = classGroupById.get(session.classGroupId);
+                  return (
+                    <p key={session.id} className="text-xs font-bold text-emerald-700">
+                      {group?.name || '수업'} · {formatShiftTimeRange(session.startTime, session.endTime)}
+                    </p>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'cancel', label: '휴무' },
+              { id: 'change', label: '시간 수정' },
+              { id: 'extra', label: '추가 근무' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setAction(item.id)}
+                className={`py-3 rounded-2xl text-sm font-bold border ${
+                  action === item.id
+                    ? 'border-[#3182F6] bg-blue-50 text-[#3182F6]'
+                    : 'border-[#E5E8EB] bg-white text-[#4E5968]'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          {needsForm && (
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">시작</label>
+                  <input
+                    type="time"
+                    value={form.startTime}
+                    onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-gray-600 mb-1.5 block">종료</label>
+                  <input
+                    type="time"
+                    value={form.endTime}
+                    onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
+                    className="input"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">휴게(분)</label>
+                <input
+                  type="number"
+                  value={form.breakMinutes}
+                  onChange={(e) => setForm((f) => ({ ...f, breakMinutes: e.target.value }))}
+                  placeholder="0"
+                  className="input"
+                />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
+            <textarea
+              value={form.memo}
+              onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))}
+              rows={2}
+              placeholder="사유, 대타, 보강 메모 등"
+              className="input resize-none"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            {selectedShift?.exceptionId && (
+              <button
+                type="button"
+                onClick={reset}
+                className="flex-1 py-3.5 rounded-xl bg-[#F2F4F6] text-[#4E5968] text-sm font-bold"
+              >
+                예외 해제
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={save}
+              disabled={action === 'summary'}
+              className="flex-1 py-3.5 rounded-xl bg-[#3182F6] text-white text-sm font-bold disabled:opacity-50"
+            >
+              저장
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function ChoiceCard({ active, title, subtitle, onClick }) {
   return (
     <button
@@ -1505,142 +1622,6 @@ function ChoiceCard({ active, title, subtitle, onClick }) {
       <p className={`text-sm font-bold ${active ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>{title}</p>
       {subtitle && <p className="text-[11px] text-[#8B95A1] mt-0.5">{subtitle}</p>}
     </button>
-  );
-}
-
-function StaffWorkExceptionModal({ target, onClose, onSave }) {
-  const shift = target?.shift || null;
-  const hasException = !!shift?.exceptionId;
-  const initialType = target?.defaultType || shift?.exceptionType || (shift ? 'change' : 'extra');
-  const [type, setType] = useState(initialType === 'cancel' ? 'cancel' : initialType === 'extra' ? 'extra' : 'change');
-  const [form, setForm] = useState({
-    date: target?.date || todayDate(),
-    startTime: shift?.scheduledStartTime || '',
-    endTime: shift?.scheduledEndTime || '',
-    breakMinutes: shift?.breakMinutes ? String(shift.breakMinutes) : '',
-    memo: shift?.memo || '',
-  });
-
-  const save = () => {
-    onSave?.({
-      type,
-      date: form.date,
-      startTime: form.startTime,
-      endTime: form.endTime,
-      breakMinutes: form.breakMinutes,
-      memo: form.memo,
-    });
-  };
-
-  const reset = () => {
-    onSave?.({ type: 'reset', date: form.date });
-  };
-
-  return (
-    <Modal
-      isOpen
-      onClose={onClose}
-      title="이 날짜만 수정"
-      footer={
-        <div className="flex gap-2">
-          {hasException && (
-            <button
-              type="button"
-              onClick={reset}
-              className="flex-1 bg-gray-100 text-gray-700 font-bold py-3.5 rounded-xl"
-            >
-              예외 해제
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={save}
-            className="flex-1 bg-blue-600 text-white font-bold py-3.5 rounded-xl"
-          >
-            저장
-          </button>
-        </div>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <div className="rounded-2xl bg-[#F8F9FA] px-4 py-3">
-          <p className="text-sm font-bold text-[#191F28]">{formatDateShort(form.date)}</p>
-          <p className="text-[11px] text-[#8B95A1] mt-0.5">
-            기본 템플릿은 유지하고 이 날짜에만 적용돼요.
-          </p>
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">변경 방식</label>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { id: 'change', label: '시간 변경' },
-              { id: 'cancel', label: '휴무' },
-              { id: 'extra', label: '추가 근무' },
-            ].map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setType(item.id)}
-                className={`py-2.5 rounded-xl text-sm font-bold border-2 ${
-                  type === item.id
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 bg-white text-gray-500'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {type !== 'cancel' && (
-          <>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">시작</label>
-                <input
-                  type="time"
-                  value={form.startTime}
-                  onChange={(e) => setForm((f) => ({ ...f, startTime: e.target.value }))}
-                  className="input"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-gray-600 mb-1.5 block">종료</label>
-                <input
-                  type="time"
-                  value={form.endTime}
-                  onChange={(e) => setForm((f) => ({ ...f, endTime: e.target.value }))}
-                  className="input"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">휴게(분)</label>
-              <input
-                type="number"
-                value={form.breakMinutes}
-                onChange={(e) => setForm((f) => ({ ...f, breakMinutes: e.target.value }))}
-                placeholder="0"
-                className="input"
-              />
-            </div>
-          </>
-        )}
-
-        <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
-          <textarea
-            value={form.memo}
-            onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))}
-            rows={2}
-            placeholder={type === 'cancel' ? '휴무 사유 등' : '대타, 보강, 시간 변경 사유 등'}
-            className="input resize-none"
-          />
-        </div>
-      </div>
-    </Modal>
   );
 }
 

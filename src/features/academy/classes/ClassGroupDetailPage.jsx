@@ -1,10 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { deleteClassGroup as deleteServerClassGroup } from '../../../services/supabase/domainApi';
+import {
+  createAcademyClassSessionsBulk,
+  deleteClassGroup as deleteServerClassGroup,
+} from '../../../services/supabase/domainApi';
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
@@ -19,7 +22,10 @@ import {
 } from '../../../utils/date';
 import { hhmmToMin } from '../../../utils/shiftCoverage';
 import { getTeacherDisplayName } from '../../../utils/format';
-import ClassGroupFormModal from './ClassGroupFormModal';
+import ClassGroupFormModal, {
+  mapClassSessionToServerPayload,
+  matchSessionPairs,
+} from './ClassGroupFormModal';
 
 const SESSION_STATUS = {
   scheduled:   { label: '예정',  color: 'bg-blue-50 text-blue-600' },
@@ -66,11 +72,12 @@ export function getSessionPreviewGroups({ sessions, todayYMD, limit = 3 }) {
 export default function ClassGroupDetailPage() {
   const {
     role, selectedClassGroupId, classGroups, classSessions,
-    academyStudents, academyTeachers, academyProfile, academyAttendanceRecords,
+    academyStudents, academyTeachers, academyAssistants = [], academyProfile, academyAttendanceRecords,
     clinicRecords = [], navigateToClassSession, goBackFromClassGroup, setActiveTab,
-    deleteClassGroup, showToast,
+    deleteClassGroup, showToast, ensureClassSessionsForMonth, setClassSessionServerIds,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authUserId = useAuthStore((s) => s.user?.id);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
@@ -81,6 +88,57 @@ export default function ClassGroupDetailPage() {
   const todayStr = today();
 
   const group = classGroups.find((g) => g.id === selectedClassGroupId) ?? null;
+  const activeMonth = weekAnchor.slice(0, 7);
+
+  useEffect(() => {
+    if (!group || !activeMonth) return;
+    const created = ensureClassSessionsForMonth?.(group.id, activeMonth) || [];
+    if (created.length === 0) return;
+    showToast(`${activeMonth} 수업 ${created.length}회차를 준비했어요.`);
+
+    if (!group.serverId || !isAuthenticated || !currentAcademyId) return;
+    void (async () => {
+      try {
+        const sessionPayloads = created.map((session) =>
+          mapClassSessionToServerPayload(
+            session,
+            group.serverId,
+            academyStudents,
+            academyAssistants,
+            academyTeachers,
+            authUserId,
+          )
+        );
+        const serverSessions = await createAcademyClassSessionsBulk({
+          academyId: currentAcademyId,
+          sessions: sessionPayloads,
+        });
+        setClassSessionServerIds?.(matchSessionPairs(created, serverSessions));
+        await loadServerClassSessions?.();
+      } catch (err) {
+        console.error('[supabase] monthly class session sync failed', err);
+        showToast(
+          err?.message
+            ? `월별 수업은 준비됐지만 서버 동기화에 실패했어요: ${err.message}`
+            : '월별 수업은 준비됐지만 서버 동기화에 실패했어요.',
+          'error',
+        );
+      }
+    })();
+  }, [
+    group,
+    activeMonth,
+    ensureClassSessionsForMonth,
+    showToast,
+    isAuthenticated,
+    currentAcademyId,
+    academyStudents,
+    academyAssistants,
+    academyTeachers,
+    authUserId,
+    setClassSessionServerIds,
+    loadServerClassSessions,
+  ]);
 
   // Phase 44.6 / Phase B — 룰 기반 planned 세션 + 기존 classSessions 머지.
   const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];

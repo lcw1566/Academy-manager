@@ -2,8 +2,6 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { generateClassDates } from '../utils/recurringClass';
 import { getCurrentMonth, getMonthsBetween, today as getTodayYMD } from '../utils/date';
-// Phase 44.5 / Phase A — 미래 row 사전 생성을 14일로 cap.
-import { clampGenerationEndDate, isGenerationCapped, FUTURE_GENERATION_WINDOW_DAYS } from '../utils/schedule';
 import { generatePaymentForMonth, groupHasPayment, resolveStudentBilling } from '../utils/billing';
 import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../constants/aiPrompts';
 import {
@@ -28,6 +26,30 @@ function toWonInteger(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.round(n));
+}
+
+function monthStartYMD(month) {
+  if (!month) return '';
+  return `${month}-01`;
+}
+
+function monthEndYMD(month) {
+  const [year, m] = String(month || '').split('-').map(Number);
+  if (!year || !m) return '';
+  const last = new Date(year, m, 0).getDate();
+  return `${month}-${String(last).padStart(2, '0')}`;
+}
+
+function minYMD(a, b) {
+  if (!a) return b || '';
+  if (!b) return a || '';
+  return a < b ? a : b;
+}
+
+function maxYMD(a, b) {
+  if (!a) return b || '';
+  if (!b) return a || '';
+  return a > b ? a : b;
 }
 
 function createDeferredLocalStorage(delay = 250) {
@@ -907,16 +929,16 @@ const useAcademyStore = create(
   //   weekdayTimes 구조: { '월': { startTime: '16:00', endTime: '18:00' }, ... }
   //   keys 는 한글 요일 문자열 ('월','화','수','목','금','토','일').
   //   해당 키가 없으면 group.startTime / group.endTime 으로 fallback.
-  generateClassSessions: (group) => {
+  generateClassSessions: (group, options = {}) => {
     const { id: classGroupId, weekdays, startDate, endDate, startTime, endTime, room, teacherId, teacherUserId, assistantIds, studentIds, weekdayTimes } = group;
     const dayNameToNum = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 };
     const numToDayName = ['일', '월', '화', '수', '목', '금', '토'];
     const daysOfWeek = (weekdays || []).map((d) => dayNameToNum[d]).filter((d) => d !== undefined);
-    // Phase 44.5 / Phase A — 사전 생성은 today+14일 까지만. 학원장이 endDate 를
-    // 6개월 뒤로 잡아도 14일 윈도우만 만들어진다. 나머지 회차는 Phase B 에서
-    // class_schedule_rules 기반으로 런타임 렌더 예정. group.endDate 자체는 보존.
-    const cappedEndDate = clampGenerationEndDate(endDate || null, { todayYMD: getTodayYMD() });
-    const dates = generateClassDates({ daysOfWeek, startDate, endDate: cappedEndDate, repeatType: '매주' });
+    const targetMonth = options.month || (startDate || getTodayYMD()).slice(0, 7);
+    const fromDate = maxYMD(startDate, options.fromDate || monthStartYMD(targetMonth));
+    const toDate = minYMD(endDate || '', options.toDate || monthEndYMD(targetMonth));
+    if (!fromDate || !toDate || fromDate > toDate) return [];
+    const dates = generateClassDates({ daysOfWeek, startDate: fromDate, endDate: toDate, repeatType: '매주' });
     const ts = Date.now();
     return dates.map((date, i) => {
       const [y, m, d] = date.split('-').map(Number);
@@ -950,20 +972,30 @@ const useAcademyStore = create(
       classGroups: [...s.classGroups, newGroup],
       classSessions: [...s.classSessions, ...sessions],
     }));
-    // Phase 44.5 / Phase A — 사전 생성이 14일 cap 으로 잘렸으면 안내 toast.
-    // Phase 44.7 — 룰 기반 렌더가 들어왔으므로 "수업 규칙에 따라" 로 문구 갱신.
-    const capped = isGenerationCapped(groupData.endDate || null, { todayYMD: getTodayYMD() });
-    if (capped) {
-      get().showToast(
-        '반이 생성되었어요. 이후 일정은 수업 규칙에 따라 표시돼요.',
-      );
-    } else {
-      get().showToast('반이 생성되었어요.');
-    }
+    const monthLabel = (newGroup.startDate || getTodayYMD()).slice(0, 7);
+    get().showToast(`반이 생성되었어요. ${monthLabel} 수업 ${sessions.length}회차를 만들었어요.`);
     // 10단계: write-through 호출처가 생성된 sessions 에 serverId 매핑할 수 있도록
     // group 과 sessions 를 함께 반환. 기존 caller 는 newGroup.id / .name 등으로
     // 사용 중이라 group 을 그대로 spread 한다 (호환).
     return { ...newGroup, group: newGroup, sessions };
+  },
+  ensureClassSessionsForMonth: (groupId, month) => {
+    if (!groupId || !month) return [];
+    const group = get().classGroups.find((g) => g.id === groupId);
+    if (!group) return [];
+    const generated = get().generateClassSessions(group, { month });
+    if (generated.length === 0) return [];
+    const existingKeys = new Set(
+      get().classSessions
+        .filter((s) => s.classGroupId === groupId)
+        .map((s) => `${s.date}__${(s.startTime || '').slice(0, 5)}`)
+    );
+    const missing = generated.filter((s) => !existingKeys.has(`${s.date}__${(s.startTime || '').slice(0, 5)}`));
+    if (missing.length === 0) return [];
+    set((s) => ({
+      classSessions: [...s.classSessions, ...missing],
+    }));
+    return missing;
   },
   updateClassGroup: (groupId, updates) => {
     set((s) => ({

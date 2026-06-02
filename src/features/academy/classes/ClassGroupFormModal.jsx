@@ -139,7 +139,7 @@ function buildClassScheduleRulePayloads(form, academyTeachers, academyAssistants
 // class_group_id 는 호출처에서 (serverGroupId) 로 명시적으로 전달.
 // student_ids 는 학생 serverId 가 있는 항목만 포함.
 // Phase 35 — assistant_ids (server user_id 배열) 도 함께 보냄.
-function mapClassSessionToServerPayload(localSession, classGroupServerId, academyStudents, academyAssistants = [], academyTeachers = [], ownerUserId = null) {
+export function mapClassSessionToServerPayload(localSession, classGroupServerId, academyStudents, academyAssistants = [], academyTeachers = [], ownerUserId = null) {
   const studentById = new Map(academyStudents.map((s) => [s.id, s]));
   const serverStudentIds = (localSession.studentIds || [])
     .map((localId) => studentById.get(localId)?.serverId)
@@ -168,7 +168,7 @@ function mapClassSessionToServerPayload(localSession, classGroupServerId, academ
 
 // bulk insert 결과를 local sessions 와 매칭. (date, start_time) 조합이
 // 같은 class_group 안에서 unique 하므로 이를 key 로 사용.
-function matchSessionPairs(localSessions, serverSessions) {
+export function matchSessionPairs(localSessions, serverSessions) {
   const serverByKey = new Map(
     serverSessions.map((srv) => [`${srv.date}__${srv.start_time ?? ''}`, srv])
   );
