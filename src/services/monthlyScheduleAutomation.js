@@ -50,12 +50,10 @@ function resolveTeacherUserId(localTeacherId, academyTeachers, ownerUserId) {
 
 function mapClassSessionToServerPayload(session, classGroupServerId, {
   academyStudents,
-  academyAssistants,
   academyTeachers,
   ownerUserId,
 } = {}) {
   const studentById = new Map((academyStudents || []).map((item) => [item.id, item]));
-  const assistantById = new Map((academyAssistants || []).map((item) => [item.id, item]));
   return {
     class_group_id: classGroupServerId,
     date: session.date,
@@ -70,9 +68,7 @@ function mapClassSessionToServerPayload(session, classGroupServerId, {
     student_ids: (session.studentIds || [])
       .map((localId) => studentById.get(localId)?.serverId || localId)
       .filter(Boolean),
-    assistant_ids: (session.assistantIds || [])
-      .map((localId) => assistantById.get(localId)?.serverUserId)
-      .filter(Boolean),
+    assistant_ids: [],
     status: session.status || 'scheduled',
     memo: session.memo || null,
   };
@@ -96,7 +92,6 @@ async function syncClassSessions({ academyId, targetMonth, ownerUserId }) {
     classGroups = [],
     academyStudents = [],
     academyTeachers = [],
-    academyAssistants = [],
     ensureClassSessionsForMonth,
     setClassSessionServerIds,
   } = academyState;
@@ -116,7 +111,6 @@ async function syncClassSessions({ academyId, targetMonth, ownerUserId }) {
     const payloads = sessions.map((session) =>
       mapClassSessionToServerPayload(session, group.serverId, {
         academyStudents,
-        academyAssistants,
         academyTeachers,
         ownerUserId,
       })

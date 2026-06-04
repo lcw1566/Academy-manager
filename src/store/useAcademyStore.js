@@ -934,7 +934,7 @@ const useAcademyStore = create(
   //   keys 는 한글 요일 문자열 ('월','화','수','목','금','토','일').
   //   해당 키가 없으면 group.startTime / group.endTime 으로 fallback.
   generateClassSessions: (group, options = {}) => {
-    const { id: classGroupId, weekdays, startDate, endDate, startTime, endTime, room, teacherId, teacherUserId, assistantIds, studentIds, weekdayTimes } = group;
+    const { id: classGroupId, weekdays, startDate, endDate, startTime, endTime, room, teacherId, teacherUserId, studentIds, weekdayTimes } = group;
     const dayNameToNum = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 };
     const numToDayName = ['일', '월', '화', '수', '목', '금', '토'];
     const daysOfWeek = (weekdays || []).map((d) => dayNameToNum[d]).filter((d) => d !== undefined);
@@ -960,7 +960,7 @@ const useAcademyStore = create(
         teacherId: teacherId || '',
         // Phase 44 — server-stable user id (cross-device 매칭)
         teacherUserId: teacherUserId || '',
-        assistantIds: assistantIds || [],
+        assistantIds: [],
         studentIds: studentIds || [],
         status: 'scheduled',
         memo: '',
@@ -2174,7 +2174,7 @@ const useAcademyStore = create(
       subject: '영어',
       level: '중2',
       teacherId: sampleTeacher.id,
-      assistantIds: [sampleAssistant.id],
+      assistantIds: [],
       studentIds: sampleStudents.map((s) => s.id),
       weekdays: ['월', '수'],
       startTime: '18:00',
@@ -2199,7 +2199,7 @@ const useAcademyStore = create(
       endTime: '20:00',
       room: '1강의실',
       teacherId: sampleTeacher.id,
-      assistantIds: [sampleAssistant.id],
+      assistantIds: [],
       studentIds: sampleStudents.map((s) => s.id),
       status: 'scheduled',
       memo: '',

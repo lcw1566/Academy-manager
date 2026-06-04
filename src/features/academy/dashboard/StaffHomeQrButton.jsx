@@ -43,9 +43,9 @@ export default function StaffHomeQrButton({ staff, staffRole }) {
         type="button"
         onClick={() => setOpen(true)}
         disabled={status === 'done'}
-        className="h-9 px-3 rounded-xl bg-[#191F28] text-white text-xs font-bold flex items-center gap-1.5 active:bg-black disabled:opacity-45"
+        className="h-11 px-4 rounded-2xl bg-[#0064FF] text-white text-sm font-bold flex items-center gap-1.5 shadow-sm active:bg-[#0050CC] disabled:opacity-45"
       >
-        <QrCode size={13} />
+        <QrCode size={15} />
         {label}
       </button>
       {open && (

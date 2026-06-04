@@ -278,7 +278,7 @@ function OwnerStaffView() {
           <button
             type="button"
             onClick={() => setInviteOpen(true)}
-            className="hidden md:flex items-center gap-1.5 bg-[#3182F6] text-white text-sm font-bold px-4 py-2 rounded-xl active:bg-[#1B64DA]"
+            className="hidden md:flex items-center gap-1.5 bg-[#0064FF] text-white text-sm font-bold px-4 py-2 rounded-xl active:bg-[#0050CC]"
           >
             <Plus size={14} /> 직원 초대
           </button>
@@ -325,7 +325,7 @@ function OwnerStaffView() {
               <button
                 type="button"
                 onClick={() => setInviteOpen(true)}
-                className="md:hidden w-full flex items-center justify-center gap-1.5 mb-3 py-2.5 rounded-xl bg-[#3182F6] text-white text-sm font-bold active:bg-[#1B64DA]"
+                className="md:hidden w-full flex items-center justify-center gap-1.5 mb-3 py-2.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold active:bg-[#0050CC]"
               >
                 <Plus size={14} /> 직원 초대
               </button>
@@ -495,7 +495,7 @@ function EmptyDetailPanel({ onAdd }) {
       <button
         type="button"
         onClick={onAdd}
-        className="px-4 py-2.5 rounded-xl bg-[#3182F6] text-white text-sm font-bold"
+        className="px-4 py-2.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold active:bg-[#0050CC]"
       >
         + 직원 초대
       </button>
@@ -899,7 +899,7 @@ function StaffShiftSection({ staff }) {
     for (const session of classSessions || []) {
       if (!session.date || !map.has(session.date) || session.status === 'canceled') continue;
       const isAssigned = staff._role === 'assistant'
-        ? ((Array.isArray(session.assistantIds) ? session.assistantIds : []).includes(staff.id) || session.assistantId === staff.id)
+        ? false
         : ((session.teacherId === staff.id && !session.substituteTeacherId) || session.substituteTeacherId === staff.id);
       if (!isAssigned) continue;
       map.get(session.date).push(session);
@@ -2066,8 +2066,7 @@ function StaffContractSection({ staff }) {
       const isAssistant = staff._role === 'assistant';
       let counts = false;
       if (isAssistant) {
-        const ids = Array.isArray(s.assistantIds) ? s.assistantIds : [];
-        counts = ids.includes(staff.id) || s.assistantId === staff.id;
+        counts = false;
       } else {
         counts = (s.teacherId === staff.id && !s.substituteTeacherId) || s.substituteTeacherId === staff.id;
       }
@@ -2356,9 +2355,7 @@ function StaffAssignmentSummary({ staff }) {
   const isAssistant = staff._role === 'assistant';
 
   const myGroups = useMemo(() => {
-    if (isAssistant) {
-      return classGroups.filter((g) => Array.isArray(g.assistantIds) && g.assistantIds.includes(staff.id));
-    }
+    if (isAssistant) return [];
     return classGroups.filter((g) => g.teacherId === staff.id);
   }, [classGroups, staff.id, isAssistant]);
 
@@ -2372,7 +2369,7 @@ function StaffAssignmentSummary({ staff }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-[#191F28]">
-            {isAssistant ? '담당 클리닉/수업' : '맡고 있는 반'}
+            {isAssistant ? '담당 클리닉' : '맡고 있는 반'}
           </p>
           <p className="text-[11px] text-[#8B95A1] mt-1">
             배정 정보는 근무표와 함께 확인해요.
@@ -2487,10 +2484,7 @@ function MyStaffView() {
     if (!myStaff) return [];
     return classSessions.filter((s) => {
       if (s.date !== todayStr || s.status === 'canceled') return false;
-      if (role === 'assistant') {
-        const ids = Array.isArray(s.assistantIds) ? s.assistantIds : [];
-        return ids.includes(myStaff.id) || s.assistantId === myStaff.id;
-      }
+      if (role === 'assistant') return false;
       const isMain = s.teacherId === myStaff.id && !s.substituteTeacherId;
       const isSub = s.substituteTeacherId === myStaff.id;
       return isMain || isSub;

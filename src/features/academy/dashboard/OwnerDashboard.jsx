@@ -237,9 +237,21 @@ export default function OwnerDashboard() {
     <div className="pt-6 pb-4">
       {/* 인사 */}
       <div className="px-5 mb-5">
-        <p className="text-gray-500 text-sm">{greetingByTime()}</p>
-        <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 학원 운영</h2>
-        <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)} · {academyProfile.name || '학원'}</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-gray-500 text-sm">{greetingByTime()}</p>
+            <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 학원 운영</h2>
+            <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)} · {academyProfile.name || '학원'}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowQrDisplay(true)}
+            className="h-11 px-4 rounded-2xl bg-[#0064FF] text-white text-sm font-bold flex items-center gap-1.5 shadow-sm active:bg-[#0050CC]"
+          >
+            <QrCode size={15} />
+            공용 QR
+          </button>
+        </div>
       </div>
 
       {/* 주간 캘린더 */}
@@ -311,14 +323,6 @@ export default function OwnerDashboard() {
               <CheckSquare size={14} className="text-emerald-600" />
               오늘 출결
             </p>
-            {/* Phase 43 — staff QR 단일 옵션이므로 항상 노출 */}
-            <button
-              type="button"
-              onClick={() => setShowQrDisplay(true)}
-              className="text-[11px] font-bold text-[#3182F6] flex items-center gap-1 px-2 py-1 rounded-lg active:bg-blue-50"
-            >
-              <QrCode size={11} /> 공용 QR 열기
-            </button>
           </div>
           <div className="grid grid-cols-4 gap-2">
             <AttendanceChip label="정상" value={todayShiftSummary.present} tone="emerald" />

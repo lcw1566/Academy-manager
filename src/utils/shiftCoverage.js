@@ -270,7 +270,7 @@ export function planShiftForDraft(existingShifts = [], draft) {
 // staff 의 lesson assignment 는:
 //   - classSessions.teacherId === staffId  AND status='completed' AND !substituteTeacherId
 //   - OR classSessions.substituteTeacherId === staffId AND status='completed'
-//   - OR classSessions.assistantId === staffId  (assistant 가 본 lesson 에 배정된 경우)
+// 보조강사는 수업 배정 대상이 아니므로 lesson 시간에 포함하지 않는다.
 //
 // "수업 시간" 정책상 status='completed' 만 합산 (작성된 수업만 정산).
 export function computeLessonHoursForMonth({ staffId, staffRole, month, classSessions = [] }) {
@@ -284,9 +284,7 @@ export function computeLessonHoursForMonth({ staffId, staffRole, month, classSes
     if (lStart == null || lEnd == null || lEnd <= lStart) continue;
     let counts = false;
     if (staffRole === 'assistant') {
-      // generateClassSessions 는 assistantIds 배열을 사용. 하위 호환 위해 assistantId 도 체크.
-      const ids = Array.isArray(s.assistantIds) ? s.assistantIds : [];
-      if (ids.includes(staffId) || s.assistantId === staffId) counts = true;
+      counts = false;
     } else {
       // teacher (또는 staffRole 미지정)
       const isMainAndNoSubstitute = s.teacherId === staffId && !s.substituteTeacherId;
@@ -303,10 +301,7 @@ export function listLessonSessionsForMonth({ staffId, staffRole, month, classSes
   if (!staffId || !month) return [];
   return classSessions.filter((s) => {
     if (!s.date?.startsWith(month)) return false;
-    if (staffRole === 'assistant') {
-      const ids = Array.isArray(s.assistantIds) ? s.assistantIds : [];
-      return ids.includes(staffId) || s.assistantId === staffId;
-    }
+    if (staffRole === 'assistant') return false;
     const isMainAndNoSubstitute = s.teacherId === staffId && !s.substituteTeacherId;
     const isSubstitute = s.substituteTeacherId === staffId;
     return isMainAndNoSubstitute || isSubstitute;

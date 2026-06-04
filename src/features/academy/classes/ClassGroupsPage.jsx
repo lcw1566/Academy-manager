@@ -123,7 +123,7 @@ export default function ClassGroupsPage() {
             }
           />
         ) : (
-          <div className="px-4 flex flex-col gap-3">
+          <div className="px-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
             {enriched.map((group) => {
               const statusInfo = STATUS_MAP[group.status] || STATUS_MAP.active;
               return (
@@ -131,47 +131,51 @@ export default function ClassGroupsPage() {
                   key={group.id}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => navigateToClassGroup(group.id)}
-                  className="bg-white rounded-2xl p-4 shadow-sm cursor-pointer select-none"
+                  className="bg-white rounded-2xl p-3.5 md:p-4 shadow-sm cursor-pointer select-none min-h-[190px] flex flex-col"
                 >
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${statusInfo.color}`}>
+                  <div className="flex items-center gap-1.5 mb-3 min-w-0">
+                    <span className={`text-[10px] md:text-xs px-2 py-1 rounded-full font-semibold whitespace-nowrap ${statusInfo.color}`}>
                       {statusInfo.label}
                     </span>
-                    <span className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-semibold">
-                      {group.subject}
+                    <span className="text-[10px] md:text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-semibold truncate min-w-0">
+                      {group.subject || '과목'}
                     </span>
                   </div>
 
-                  <p className="font-bold text-gray-900 text-base mb-0.5">{group.name}</p>
-                  {group.level && <p className="text-xs text-gray-400 mb-2">{group.level}</p>}
+                  <p className="font-extrabold text-gray-900 text-base md:text-lg leading-snug line-clamp-2 min-h-[42px]">
+                    {group.name}
+                  </p>
+                  {group.level && <p className="text-xs text-gray-400 mt-1 truncate">{group.level}</p>}
 
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-3 text-xs text-gray-500">
-                      <span className="flex items-center gap-1">
-                        <Users size={11} />
+                  <div className="mt-3 flex flex-col gap-1.5">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0">
+                      <span className="flex items-center gap-1 min-w-0">
+                        <Users size={12} className="flex-shrink-0" />
                         {group.studentCount}명
                       </span>
-                      <span className="flex items-center gap-1">
-                        <Clock size={11} />
-                        {group.weekdays?.join('·')}요일{' '}
-                        {group.weekdayTimes && Object.keys(group.weekdayTimes).length > 0
-                          ? '요일별 시간 다름'
-                          : group.startTime}
-                      </span>
-                      {group.room && <span>{group.room}</span>}
                     </div>
+                    <div className="flex items-start gap-1.5 text-xs text-gray-500 min-w-0">
+                      <Clock size={12} className="flex-shrink-0 mt-0.5" />
+                      <span className="leading-relaxed line-clamp-2">
+                        {group.weekdays?.join('·') || '요일 미정'}요일{' '}
+                        {group.weekdayTimes && Object.keys(group.weekdayTimes).length > 0
+                          ? '요일별 시간'
+                          : group.startTime || ''}
+                      </span>
+                    </div>
+                    {group.room && <p className="text-xs text-gray-400 truncate">{group.room}</p>}
                     {group.teacherName && (
-                      <p className="text-xs text-gray-400">담당: {group.teacherName}</p>
+                      <p className="text-xs text-gray-400 truncate">담당: {group.teacherName}</p>
                     )}
                   </div>
 
                   {group.nextSession && (
-                    <p className="text-xs text-blue-600 font-semibold mt-2.5">
+                    <p className="text-xs text-blue-600 font-bold mt-auto pt-3">
                       다음 수업 {formatDateShort(group.nextSession.date)}
                     </p>
                   )}
 
-                  <div className="flex items-center justify-between mt-2.5 pt-2.5 border-t border-gray-50">
+                  <div className={`${group.nextSession ? 'mt-2.5' : 'mt-auto'} flex items-center justify-between pt-2.5 border-t border-gray-50`}>
                     <span className="text-[11px] text-gray-400">총 {group.sessions.length}회차</span>
                     <ChevronRight size={14} className="text-gray-300" />
                   </div>

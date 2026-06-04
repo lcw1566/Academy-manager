@@ -1151,10 +1151,7 @@ function StaffWorkView() {
     if (!myStaff) return [];
     return classSessions.filter((s) => {
       if (s.date !== todayStr || s.status === 'canceled') return false;
-      if (role === 'assistant') {
-        const ids = Array.isArray(s.assistantIds) ? s.assistantIds : [];
-        return ids.includes(myStaff.id) || s.assistantId === myStaff.id;
-      }
+      if (role === 'assistant') return false;
       const isMainAndNoSub = s.teacherId === myStaff.id && !s.substituteTeacherId;
       const isSub = s.substituteTeacherId === myStaff.id;
       return isMainAndNoSub || isSub;

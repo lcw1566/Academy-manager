@@ -194,7 +194,7 @@ export function getWeekPlannedWork(staffUserId, refDate = new Date(), { rules, e
 //   [{
 //     id, source: 'rule' | 'exception',
 //     classGroupId, date, startTime, endTime,
-//     teacherUserId, assistantIds (array),
+//     teacherUserId, assistantIds (array, legacy-empty),
 //     substituteTeacherUserId,
 //     room, exceptionType,
 //     reason, memo,
@@ -237,9 +237,7 @@ export function buildPlannedClassSessions({ rules = [], exceptions = [], fromDat
         startTime,
         endTime,
         teacherUserId: relatedExc?.teacher_user_id || rule.teacher_user_id || null,
-        assistantIds: Array.isArray(relatedExc?.assistant_ids)
-          ? relatedExc.assistant_ids
-          : Array.isArray(rule.assistant_ids) ? rule.assistant_ids : [],
+        assistantIds: [],
         substituteTeacherUserId: relatedExc?.substitute_teacher_user_id || null,
         room: relatedExc?.start_time ? null : (rule.room || null),
         exceptionId: relatedExc?.id || null,
@@ -262,7 +260,7 @@ export function buildPlannedClassSessions({ rules = [], exceptions = [], fromDat
       startTime: exc.start_time,
       endTime: exc.end_time,
       teacherUserId: exc.teacher_user_id || null,
-      assistantIds: Array.isArray(exc.assistant_ids) ? exc.assistant_ids : [],
+      assistantIds: [],
       substituteTeacherUserId: exc.substitute_teacher_user_id || null,
       room: null,
       exceptionId: exc.id,
@@ -426,7 +424,7 @@ export function plannedToClassSessionShape(plannedItems = [], classGroups = []) 
       room: p.room || group.room || '',
       teacherId: group.teacherId || '',
       teacherUserId: p.teacherUserId || group.teacherUserId || '',
-      assistantUserIds: Array.isArray(p.assistantIds) ? p.assistantIds : [],
+      assistantUserIds: [],
       assistantIds: [],
       studentIds: Array.isArray(group.studentIds) ? group.studentIds : [],
       status: 'scheduled',
@@ -486,4 +484,3 @@ export function plannedToStaffShiftShape(plannedItems = [], { academyTeachers = 
   }
   return out;
 }
-

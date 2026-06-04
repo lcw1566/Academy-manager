@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronRight, AlertTriangle, Check, Clock } from 'lucide-react';
+import { ChevronRight, AlertTriangle, Check } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import OptionSelectSheet from '../../../components/OptionSelectSheet';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -40,8 +40,8 @@ function addDaysYMD(ymd, days) {
 // 로컬 반 폼 → Supabase class_groups snake_case payload.
 // student_ids / student_billings 는 academyStudents 에서 serverId 가 있는 학생만
 // 서버 uuid 로 매핑. serverId 없는 학생은 서버 row 에서 제외 (로컬은 그대로 유지).
-// Phase 35 — assistantIds (로컬 ID) → assistant_ids (server user_id) 로 변환.
-//   serverUserId 가 비어 있는 보조강사는 제외 (서버에 매핑할 수 없으므로).
+// 보조강사는 수업 회차가 아니라 클리닉/근무 쪽에서 관리한다.
+// 기존 DB 컬럼은 호환을 위해 남겨두지만 새 저장 payload 에는 빈 배열만 보낸다.
 // id / academy_id / user_id / mode 는 createAcademyClassGroup 에서 자동 주입.
 // Phase 44 — teacher_user_id (auth.users.id) 를 함께 기록해 cross-device 매칭 가능.
 //   - form.teacherId === OWNER_TEACHER_ID ('owner') 이면 ownerUserId (현재 로그인 user.id)
@@ -69,11 +69,6 @@ function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistan
     }
   }
 
-  const assistantById = new Map(academyAssistants.map((a) => [a.id, a]));
-  const serverAssistantIds = (form.assistantIds || [])
-    .map((localId) => assistantById.get(localId)?.serverUserId)
-    .filter(Boolean);
-
   const monthlyFee = Number(form.monthlyFee) || 0;
   const defaultBilling = monthlyFee > 0 ? { monthlyFee } : {};
 
@@ -85,7 +80,7 @@ function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistan
     teacher_type: form.teacherId === OWNER_TEACHER_ID ? 'owner' : 'teacher',
     teacher_user_id: resolveTeacherUserId(form.teacherId, academyTeachers, ownerUserId),
     student_ids: serverStudentIds,
-    assistant_ids: serverAssistantIds,
+    assistant_ids: [],
     weekdays: Array.isArray(form.weekdays) ? form.weekdays : [],
     start_time: emptyToNull(form.startTime),
     end_time: emptyToNull(form.endTime),
@@ -104,15 +99,11 @@ function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistan
 //   - weekdayTimes 가 있으면 요일별 시간 별도 사용. 없으면 form.startTime/endTime.
 //   - 요일은 한글 → 0~6 (0=일).
 //   - teacher_user_id 는 resolveTeacherUserId 로 매핑.
-//   - assistant_ids 는 academyAssistants.id → serverUserId 매핑한 배열.
+//   - assistant_ids 는 더 이상 수업 배정에 사용하지 않으므로 항상 빈 배열.
 const DOW_KO_TO_NUM = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 };
 
 function buildClassScheduleRulePayloads(form, academyTeachers, academyAssistants, ownerUserId) {
   const teacherUserId = resolveTeacherUserId(form.teacherId, academyTeachers, ownerUserId);
-  const assistantById = new Map(academyAssistants.map((a) => [a.id, a]));
-  const assistantUserIds = (form.assistantIds || [])
-    .map((localId) => assistantById.get(localId)?.serverUserId)
-    .filter(Boolean);
   const weekdayList = Array.isArray(form.weekdays) ? form.weekdays : [];
   const rows = [];
   for (const ko of weekdayList) {
@@ -127,7 +118,7 @@ function buildClassScheduleRulePayloads(form, academyTeachers, academyAssistants
       start_time: startTime,
       end_time: endTime,
       teacher_user_id: teacherUserId || null,
-      assistant_ids: assistantUserIds,
+      assistant_ids: [],
       room: emptyToNull(form.room),
       is_active: true,
     });
@@ -138,15 +129,11 @@ function buildClassScheduleRulePayloads(form, academyTeachers, academyAssistants
 // local classSession → Supabase class_sessions snake_case payload.
 // class_group_id 는 호출처에서 (serverGroupId) 로 명시적으로 전달.
 // student_ids 는 학생 serverId 가 있는 항목만 포함.
-// Phase 35 — assistant_ids (server user_id 배열) 도 함께 보냄.
+// assistant_ids 는 기존 스키마 호환을 위해 빈 배열로만 보낸다.
 export function mapClassSessionToServerPayload(localSession, classGroupServerId, academyStudents, academyAssistants = [], academyTeachers = [], ownerUserId = null) {
   const studentById = new Map(academyStudents.map((s) => [s.id, s]));
   const serverStudentIds = (localSession.studentIds || [])
     .map((localId) => studentById.get(localId)?.serverId)
-    .filter(Boolean);
-  const assistantById = new Map(academyAssistants.map((a) => [a.id, a]));
-  const serverAssistantIds = (localSession.assistantIds || [])
-    .map((localId) => assistantById.get(localId)?.serverUserId)
     .filter(Boolean);
   const teacherId = localSession.teacherId || null;
   return {
@@ -160,7 +147,7 @@ export function mapClassSessionToServerPayload(localSession, classGroupServerId,
     // Phase 44 — server-stable 매칭 키.
     teacher_user_id: resolveTeacherUserId(teacherId, academyTeachers, ownerUserId),
     student_ids: serverStudentIds,
-    assistant_ids: serverAssistantIds,
+    assistant_ids: [],
     status: localSession.status || 'scheduled',
     memo: emptyToNull(localSession.memo),
   };
@@ -299,10 +286,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const [levelSheetOpen, setLevelSheetOpen] = useState(false);
   const ownerLabel = academyProfile?.ownerName?.trim() || '원장';
 
-  // Phase 34 — 보조강사 배정 (옵션). UI 는 단일 선택, 내부 저장은 assistantIds 배열.
-  const initialAssistantId = Array.isArray(editGroup?.assistantIds)
-    ? editGroup.assistantIds[0] || ''
-    : editGroup?.assistantId || '';
   // Phase 38 — 요일별 시간 토글. weekdayTimes 가 명시적으로 들어있으면 OFF 로 시작.
   const initialUseSameTime = !editGroup?.weekdayTimes
     || Object.keys(editGroup.weekdayTimes || {}).length === 0;
@@ -311,7 +294,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     subject: editGroup?.subject || '',
     level: editGroup?.level || '',
     teacherId: editGroup?.teacherId || '',
-    assistantId: initialAssistantId,
     studentIds: editGroup?.studentIds || [],
     weekdays: editGroup?.weekdays || [],
     startTime: editGroup?.startTime || '16:00',
@@ -450,7 +432,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
 
     // form.useSameTime 은 UI 상태일 뿐이므로 저장 데이터에서 제외.
     // weekdayTimes 의 유무가 source of truth.
-    const { useSameTime: _useSameTime, ...formRest } = form;
+    const { useSameTime: _useSameTime, assistantId: _assistantId, ...formRest } = form;
     // Phase 44 — server-stable user id 를 로컬에도 함께 저장하여, 학원장 본인 단말의
     // 즉시 매칭(다른 단말 hydrate 전)도 정상 동작하도록 한다.
     const teacherUserIdForData = resolveTeacherUserId(form.teacherId, academyTeachers, authUserId);
@@ -460,8 +442,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
       endTime: savedEndTime,
       weekdayTimes: savedWeekdayTimes,
       teacherUserId: teacherUserIdForData || '',
-      // assistantId(단일 UI) → assistantIds 배열로 저장. 기존 데이터와 호환.
-      assistantIds: form.assistantId ? [form.assistantId] : [],
+      assistantId: '',
+      assistantIds: [],
       monthlyFee: Number(form.monthlyFee) || 0,
       studentBillings: Object.fromEntries(
         Object.entries(form.studentBillings).map(([k, v]) => [k, Number(v) || 0])
@@ -529,7 +511,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         const localGroup = result.group;
         const localSessions = result.sessions ?? [];
 
-        // Phase 35 — 다음 7일 안에 있는 세션에 대해 강사/보조강사 근무표 제안.
+        // Phase 35 — 다음 7일 안에 있는 세션에 대해 담당 강사 근무표 제안.
         // (전체 세션은 너무 많아서 부담. 가까운 1주만 미리 셋업하면 충분.)
         const todayStr = new Date().toISOString().slice(0, 10);
         const oneWeekLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -551,23 +533,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             sessions: teacherSessions,
           });
         }
-        const assistantId = data.assistantIds?.[0];
-        const assistant = assistantId
-          ? academyAssistants.find((a) => a.id === assistantId)
-          : null;
-        if (assistant) {
-          const assistantSessions = getUncoveredStaffSessions({
-            shifts: effectiveCoverageShifts,
-            staffId: assistant.id,
-            sessions: upcoming.map((s) => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
-          });
-          lessonsByStaff.set(`assistant_${assistant.id}`, {
-            staff: assistant,
-            staffRole: 'assistant',
-            sessions: assistantSessions,
-          });
-        }
-
         // 2) Supabase write-through — 화면은 로컬 저장 직후 닫고, 서버 동기화는 백그라운드 처리.
         if (isAuthenticated && currentAcademyId) {
           void (async () => {
@@ -683,7 +648,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     return errs;
   }, [form.useSameTime, form.weekdays, form.weekdayTimes]);
 
-  // Phase 40 — 강사·보조강사 근무 가용성 체크 (인라인 안내용).
+  // Phase 40 — 강사 근무 가용성 체크 (인라인 안내용).
   const teacherAvailability = useMemo(() => {
     if (!form.teacherId || form.teacherId === OWNER_TEACHER_ID) return null;
     return classifyTeacherAvailability({
@@ -696,19 +661,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
       useSameTime: form.useSameTime,
     });
   }, [form.teacherId, form.weekdays, form.weekdayTimes, form.startTime, form.endTime, form.useSameTime, effectiveCoverageShifts]);
-
-  const assistantAvailability = useMemo(() => {
-    if (!form.assistantId) return null;
-    return classifyTeacherAvailability({
-      staffId: form.assistantId,
-      shifts: effectiveCoverageShifts,
-      weekdays: form.weekdays,
-      timesByWeekday: form.weekdayTimes,
-      fallbackStart: form.startTime,
-      fallbackEnd: form.endTime,
-      useSameTime: form.useSameTime,
-    });
-  }, [form.assistantId, form.weekdays, form.weekdayTimes, form.startTime, form.endTime, form.useSameTime, effectiveCoverageShifts]);
 
   // 직원 탭으로 이동하여 근무 시간을 설정. 폼은 닫는다 (state 가 사라지더라도
   // 강사 배정 자체는 직원 일정 등록 후 다시 진행하는 게 자연스러움).
@@ -778,23 +730,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             <AvailabilityBanner status={teacherAvailability} onGoToStaff={goToStaffSchedule} />
           </Field>
 
-          {/* Phase 34 — 보조강사 배정 (옵션). 비워둬도 정상. */}
-          <Field label="보조강사 (선택)">
-            <select
-              value={form.assistantId}
-              onChange={(e) => set('assistantId', e.target.value)}
-              className="input"
-            >
-              <option value="">필요한 경우에만 선택하세요</option>
-              {academyAssistants.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
-            <AvailabilityBanner status={assistantAvailability} onGoToStaff={goToStaffSchedule} />
-            <p className="text-[11px] text-gray-400 mt-1.5">
-              보조강사 주업무는 클리닉이라 수업 배정은 선택이에요.
-            </p>
-          </Field>
         </div>
 
         {/* ── 우측 (데스크톱) · 일정 설정 ──────────────────────────── */}
