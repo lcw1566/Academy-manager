@@ -284,6 +284,9 @@ const useWorkspaceStore = create(
           set({ workspaceRealtimeRefreshTimer: null });
           try {
             await get().refreshWorkspaceCollaborationState({ reason });
+            if (reason === 'staff_attendance_logs' && useAcademyStore.getState().role === 'owner') {
+              useAcademyStore.getState().showToast?.('직원 근퇴 기록이 업데이트됐어요.');
+            }
           } catch (err) {
             console.warn('[workspace realtime] refresh failed', reason, err);
           }
@@ -306,6 +309,7 @@ const useWorkspaceStore = create(
               get().loadAcademyInvitations(),
               get().loadStaffWorkRules(),
               get().loadStaffWorkExceptions(),
+              get().loadStaffAttendanceLogs({ limit: 200 }),
             ]);
             get().syncLocalStaffFromServerMembers();
           }
@@ -348,6 +352,11 @@ const useWorkspaceStore = create(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'academy_staff_work_exceptions' },
             () => get().scheduleWorkspaceRealtimeRefresh('academy_staff_work_exceptions'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'staff_attendance_logs' },
+            () => get().scheduleWorkspaceRealtimeRefresh('staff_attendance_logs'),
           )
           .on(
             'postgres_changes',
@@ -529,6 +538,7 @@ const useWorkspaceStore = create(
             get().loadAcademyStaffProfiles(),
             get().loadAcademyInvitations(),
             get().loadServerStaffShifts(),
+            get().loadStaffAttendanceLogs({ limit: 200 }),
           ]);
           return academy;
         } catch (err) {
@@ -561,6 +571,7 @@ const useWorkspaceStore = create(
         get().loadAcademyStaffProfiles();
         get().loadAcademyInvitations();
         get().loadServerStaffShifts();
+        get().loadStaffAttendanceLogs({ limit: 200 });
       },
 
       // 서버 학생 목록 조회 (read-only). currentAcademyId 가 비어 있으면 빈 배열.

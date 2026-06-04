@@ -31,6 +31,7 @@ import {
   today as todayDate,
   formatDateShort,
   formatMonth,
+  addDaysYMD,
   getCurrentMonth,
   getMonthDates,
   getWeekDates,
@@ -128,6 +129,24 @@ function monthEnd(month) {
   if (!year || !m) return '';
   const last = new Date(year, m, 0).getDate();
   return `${month}-${String(last).padStart(2, '0')}`;
+}
+function minYMD(a, b) {
+  if (!a) return b || '';
+  if (!b) return a || '';
+  return a < b ? a : b;
+}
+function maxYMD(a, b) {
+  if (!a) return b || '';
+  if (!b) return a || '';
+  return a > b ? a : b;
+}
+function formatWeekOfMonthLabel(anchorYMD) {
+  if (!anchorYMD) return '';
+  const [year, month, day] = anchorYMD.split('-').map(Number);
+  if (!year || !month || !day) return '';
+  const weekNo = Math.floor((day - 1) / 7) + 1;
+  const names = ['첫째', '둘째', '셋째', '넷째', '다섯째', '여섯째'];
+  return `${month}월 ${names[weekNo - 1] || `${weekNo}번째`} 주`;
 }
 function isPlannedShiftException(sh) {
   return !!(sh?.isPlanned && sh?.exceptionType);
@@ -782,13 +801,16 @@ function StaffShiftSection({ staff }) {
   const [defaultDate, setDefaultDate] = useState(null);
   const [recurringPreset, setRecurringPreset] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
+  const [weekAnchor, setWeekAnchor] = useState(todayDate());
   const [calendarMode, setCalendarMode] = useState('month');
   const [exceptionTarget, setExceptionTarget] = useState(null);
 
   const todayStr = todayDate();
-  const weekDates = useMemo(() => getWeekDates(todayStr), [todayStr]);
+  const weekDates = useMemo(() => getWeekDates(weekAnchor), [weekAnchor]);
   const monthFrom = monthStart(selectedMonth);
   const monthTo = monthEnd(selectedMonth);
+  const rangeFrom = minYMD(monthFrom, weekDates[0]);
+  const rangeTo = maxYMD(monthTo, weekDates[6]);
   const monthDates = useMemo(
     () => getMonthDates(monthFrom).filter(Boolean),
     [monthFrom],
@@ -797,11 +819,15 @@ function StaffShiftSection({ staff }) {
     () => getMonthDates(monthFrom),
     [monthFrom],
   );
+  const calendarDataDates = useMemo(
+    () => Array.from(new Set([...monthDates, ...weekDates])).filter(Boolean),
+    [monthDates, weekDates],
+  );
 
   useEffect(() => {
-    if (!monthFrom || !monthTo) return;
-    loadStaffWorkExceptions?.({ fromDate: monthFrom, toDate: monthTo });
-  }, [loadStaffWorkExceptions, monthFrom, monthTo]);
+    if (!rangeFrom || !rangeTo) return;
+    loadStaffWorkExceptions?.({ fromDate: rangeFrom, toDate: rangeTo });
+  }, [loadStaffWorkExceptions, rangeFrom, rangeTo]);
 
   // Phase 44.6 / Phase B — 룰 기반 planned + 기존 shift 머지. 14일 너머 주간 패턴도
   // 보이게. 본인 staff 한 명에 한정.
@@ -814,8 +840,8 @@ function StaffShiftSection({ staff }) {
     const plannedRaw = buildPlannedStaffSchedule({
       rules: staffWorkRules,
       exceptions: staffWorkExceptions,
-      fromDate: monthFrom,
-      toDate: monthTo,
+      fromDate: rangeFrom,
+      toDate: rangeTo,
       staffUserId: staff.serverUserId || undefined,
     });
     const plannedShaped = plannedToStaffShiftShape(plannedRaw, {
@@ -824,22 +850,22 @@ function StaffShiftSection({ staff }) {
     });
     const actualForStaff = academyStaffShifts.filter((sh) => sh.staffId === staff.id);
     return mergePlannedAndActualStaffShifts(plannedShaped, actualForStaff);
-  }, [academyStaffShifts, staff.id, staff.serverUserId, staffWorkRules, staffWorkExceptions, academyTeachersAll, academyAssistantsAll, monthFrom, monthTo]);
+  }, [academyStaffShifts, staff.id, staff.serverUserId, staffWorkRules, staffWorkExceptions, academyTeachersAll, academyAssistantsAll, rangeFrom, rangeTo]);
   const hasAnyShift = staffShifts.some((sh) => sh.status !== 'canceled');
 
   const monthByDate = useMemo(() => {
     const map = new Map();
-    monthDates.forEach((d) => map.set(d, []));
+    calendarDataDates.forEach((d) => map.set(d, []));
     for (const sh of staffShifts) {
       if (!sh.date || !map.has(sh.date)) continue;
       if (sh.status === 'canceled') continue;
       map.get(sh.date).push(sh);
     }
-    for (const d of monthDates) {
+    for (const d of calendarDataDates) {
       map.get(d).sort((a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || ''));
     }
     return map;
-  }, [staffShifts, monthDates]);
+  }, [staffShifts, calendarDataDates]);
 
   const monthWorkSummary = useMemo(() => {
     let grossMin = 0;
@@ -869,7 +895,7 @@ function StaffShiftSection({ staff }) {
   );
   const classesByDate = useMemo(() => {
     const map = new Map();
-    monthDates.forEach((d) => map.set(d, []));
+    calendarDataDates.forEach((d) => map.set(d, []));
     for (const session of classSessions || []) {
       if (!session.date || !map.has(session.date) || session.status === 'canceled') continue;
       const isAssigned = staff._role === 'assistant'
@@ -878,11 +904,11 @@ function StaffShiftSection({ staff }) {
       if (!isAssigned) continue;
       map.get(session.date).push(session);
     }
-    for (const d of monthDates) {
+    for (const d of calendarDataDates) {
       map.get(d).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
     }
     return map;
-  }, [classSessions, staff.id, staff._role, monthDates]);
+  }, [classSessions, staff.id, staff._role, calendarDataDates]);
 
   const buildRecurringPreset = (sourceShift = null) => {
     const staffRules = (staffWorkRules || []).filter((rule) =>
@@ -1162,8 +1188,15 @@ function StaffShiftSection({ staff }) {
         classesByDate={classesByDate}
         classGroupById={classGroupById}
         todayStr={todayStr}
-        onPrevMonth={() => setSelectedMonth((m) => prevMonth(m))}
-        onNextMonth={() => setSelectedMonth((m) => nextMonth(m))}
+        weekAnchor={weekAnchor}
+        onPrevPeriod={() => {
+          if (calendarMode === 'month') setSelectedMonth((m) => prevMonth(m));
+          else setWeekAnchor((d) => addDaysYMD(d, -7));
+        }}
+        onNextPeriod={() => {
+          if (calendarMode === 'month') setSelectedMonth((m) => nextMonth(m));
+          else setWeekAnchor((d) => addDaysYMD(d, 7));
+        }}
         onCalendarModeChange={setCalendarMode}
         onEditTemplate={() => openManageShifts()}
         onSelectDay={(target) => setExceptionTarget(target)}
@@ -1172,7 +1205,7 @@ function StaffShiftSection({ staff }) {
       <StaffAssignmentSummary staff={staff} />
 
       <p className="text-[11px] text-[#8B95A1] leading-relaxed px-1">
-        근무표는 배정 가능 시간 확인용이에요. 시급 정산은 승인된 실제 근퇴 기록을 기준으로 계산돼요.
+        근무표는 배정 가능 시간 확인용이에요. 시급 정산은 저장된 실제 근퇴 기록을 기준으로 계산돼요.
       </p>
 
       {formOpen && (
@@ -1210,13 +1243,17 @@ function StaffScheduleCalendar({
   classesByDate,
   classGroupById,
   todayStr,
-  onPrevMonth,
-  onNextMonth,
+  weekAnchor,
+  onPrevPeriod,
+  onNextPeriod,
   onCalendarModeChange,
   onEditTemplate,
   onSelectDay,
 }) {
   const dates = calendarMode === 'week' ? weekDates : monthCalendarDates;
+  const periodLabel = calendarMode === 'month'
+    ? formatMonth(selectedMonth)
+    : formatWeekOfMonthLabel(weekAnchor);
 
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -1231,20 +1268,20 @@ function StaffScheduleCalendar({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={onPrevMonth}
+              onClick={onPrevPeriod}
               className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] flex items-center justify-center"
-              aria-label="이전 달"
+              aria-label={calendarMode === 'month' ? '이전 달' : '이전 주'}
             >
               <ChevronLeft size={16} />
             </button>
             <div className="min-w-[112px] text-center">
-              <p className="text-sm font-extrabold text-[#191F28]">{formatMonth(selectedMonth)}</p>
+              <p className="text-sm font-extrabold text-[#191F28]">{periodLabel}</p>
             </div>
             <button
               type="button"
-              onClick={onNextMonth}
+              onClick={onNextPeriod}
               className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] flex items-center justify-center"
-              aria-label="다음 달"
+              aria-label={calendarMode === 'month' ? '다음 달' : '다음 주'}
             >
               <ChevronRight size={16} />
             </button>
@@ -1358,11 +1395,6 @@ function CalendarCell({ date, shifts, sessions, classGroupById, todayStr, onClic
         {hasException && (
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
             변경
-          </span>
-        )}
-        {!hasShift && sessions.length === 0 && (
-          <span className="rounded-full bg-[#F2F4F6] px-2 py-0.5 text-[10px] font-bold text-[#8B95A1]">
-            비번
           </span>
         )}
       </div>
@@ -1960,7 +1992,7 @@ function ShiftFormModal({
                   {recurringPreview.dates.length > 0 ? ` 다음 일정: ${recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}` : ''}
                 </p>
                 <p className="text-[11px] text-[#8B95A1] mt-1 leading-relaxed">
-                  실제 급여는 이 예정표가 아니라 승인된 출퇴근 기록을 기준으로 계산돼요.
+                  실제 급여는 이 예정표가 아니라 저장된 출퇴근 기록을 기준으로 계산돼요.
                 </p>
               </div>
             ) : (
@@ -2124,7 +2156,7 @@ function StaffContractSection({ staff }) {
             {form.wageType === 'hourly' && (
               <>
                 <Row label="시급" value={`${hourlyWageNum.toLocaleString()}원`} />
-                <Row label="정산 기준" value="승인된 실제 근퇴 기록" />
+                <Row label="정산 기준" value="저장된 실제 근퇴 기록" />
               </>
             )}
             {form.wageType === 'monthly' && (
@@ -2161,9 +2193,9 @@ function StaffContractSection({ staff }) {
                   className="input"
                 />
                 <div className="rounded-2xl border border-blue-100 bg-blue-50 px-3 py-2.5">
-                  <p className="text-sm font-bold text-blue-700">승인된 실제 근퇴 기록 기준</p>
+                  <p className="text-sm font-bold text-blue-700">저장된 실제 근퇴 기록 기준</p>
                   <p className="text-[11px] text-blue-700/80 mt-0.5 leading-relaxed">
-                    출근/퇴근 기록을 원장이 승인한 시간만 급여에 반영돼요.
+                    직원이 출근/퇴근을 찍은 시간이 급여 계산에 바로 반영돼요.
                   </p>
                 </div>
               </>
@@ -2187,15 +2219,15 @@ function StaffContractSection({ staff }) {
           {estimatedPay.toLocaleString()}<span className="text-base text-[#8B95A1] font-medium ml-1">원</span>
         </p>
         <div className="flex flex-col gap-2 pt-3 border-t border-[#F2F4F6]">
-          <Row label="승인된 근퇴 시간" value={`${approvedActualHours.toFixed(1)}시간`} />
-          {pendingActualHours > 0 && <Row label="승인 대기 근퇴" value={`${pendingActualHours.toFixed(1)}시간`} />}
+          <Row label="저장된 근퇴 시간" value={`${approvedActualHours.toFixed(1)}시간`} />
+          {pendingActualHours > 0 && <Row label="미확정 근퇴" value={`${pendingActualHours.toFixed(1)}시간`} />}
           <Row label="수업 시간" value={`${lessonHours.toFixed(1)}시간`} />
           <Row label="수업 외 체류" value={`${nonLessonHours.toFixed(1)}시간`} />
         </div>
         <p className="text-[11px] text-[#8B95A1] mt-3 leading-relaxed">
           {form.wageType === 'monthly'
             ? '월급은 근무 시간과 무관하게 고정 지급돼요.'
-            : '시급은 승인된 실제 출근·퇴근 기록 시간에 적용돼요. 수업 시간은 업무 참고용이에요.'}
+            : '시급은 저장된 실제 출근·퇴근 기록 시간에 적용돼요. 수업 시간은 업무 참고용이에요.'}
         </p>
       </div>
 

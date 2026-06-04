@@ -703,7 +703,7 @@ export default function SettlementPage() {
                       </p>
                       {pr.wageType === 'hourly' && pr.pendingLogHours > 0 && (
                         <p className="text-[11px] text-amber-600 mt-1">
-                          승인 대기 근퇴 {formatHours(pr.pendingLogHours)}시간은 미반영
+                          미확정 근퇴 {formatHours(pr.pendingLogHours)}시간은 미반영
                         </p>
                       )}
                     </div>

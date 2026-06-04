@@ -13,6 +13,7 @@ import AcademyAppLayout from './features/academy/AcademyAppLayout';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import { fetchAcademySnapshot } from './services/supabase/hydrateApi';
+import { runMonthEndScheduleGeneration } from './services/monthlyScheduleAutomation';
 import { membershipRoleToAppRole } from './utils/format';
 import { tossSpring } from './utils/motion';
 
@@ -71,6 +72,8 @@ export default function App() {
   const refreshWorkspaceCollaborationState = useWorkspaceStore(
     (s) => s.refreshWorkspaceCollaborationState,
   );
+  const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
+  const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
 
   // server count loaders 완료 여부 — auto-hydrate 진입 가드.
   const serverStudentsLoadedAt = useWorkspaceStore((s) => s.serverStudentsLoadedAt);
@@ -197,6 +200,7 @@ export default function App() {
   // 이렇게 해야 localhost / Vercel 처럼 origin 이 달라도 로컬 찌꺼기가 중복 표시되지 않는다.
   // 실패해도 키를 표시해 같은 세션 내 반복 시도를 막는다 (앱은 현재 로컬 데이터로 동작).
   const hydratingRef = useRef(false);
+  const monthEndGenerationRef = useRef(null);
   useEffect(() => {
     if (!isAuthenticated) return;
     if (!currentAcademyId) return;
@@ -239,6 +243,51 @@ export default function App() {
     serverStudentsLoadedAt, serverClassGroupsLoadedAt, serverClassSessionsLoadedAt,
     isServerStudentsLoading, isServerClassGroupsLoading, isServerClassSessionsLoading,
     hydrateAcademyFromServerSnapshot, showToast,
+  ]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (!isWorkspaceReady) return;
+    if (role !== 'owner') return;
+    if (!currentAcademyId) return;
+    if (!wasAutoHydratedThisSession(currentAcademyId)) return;
+    if (hydratingRef.current) return;
+
+    const runKey = `${currentAcademyId}:${new Date().toISOString().slice(0, 10)}`;
+    if (monthEndGenerationRef.current === runKey) return;
+    monthEndGenerationRef.current = runKey;
+
+    (async () => {
+      try {
+        const result = await runMonthEndScheduleGeneration({
+          academyId: currentAcademyId,
+          ownerUserId: authUserId,
+        });
+        if (result?.skipped) return;
+        const total = (result.classSessionsCreated || 0) + (result.staffShiftsCreated || 0);
+        if (total > 0) {
+          showToast(
+            `${result.targetMonth} 운영 일정이 준비됐어요. 수업 ${result.classSessionsCreated || 0}개, 근무 ${result.staffShiftsCreated || 0}개`,
+          );
+          await Promise.all([
+            loadServerClassSessions?.(),
+            loadServerStaffShifts?.(),
+          ]);
+        }
+      } catch (err) {
+        console.error('[month-end-schedule-generation] failed', err);
+        showToast('다음 달 운영 일정 자동 생성에 실패했어요.', 'error');
+      }
+    })();
+  }, [
+    isAuthenticated,
+    isWorkspaceReady,
+    role,
+    currentAcademyId,
+    authUserId,
+    showToast,
+    loadServerClassSessions,
+    loadServerStaffShifts,
   ]);
 
   const renderLayout = () => {

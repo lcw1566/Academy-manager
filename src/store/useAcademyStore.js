@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { generateClassDates } from '../utils/recurringClass';
 import { getCurrentMonth, getMonthsBetween, today as getTodayYMD } from '../utils/date';
+import {
+  buildPlannedStaffSchedule,
+  plannedToStaffShiftShape,
+} from '../utils/schedule';
 import { generatePaymentForMonth, groupHasPayment, resolveStudentBilling } from '../utils/billing';
 import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../constants/aiPrompts';
 import {
@@ -996,6 +1000,74 @@ const useAcademyStore = create(
       classSessions: [...s.classSessions, ...missing],
     }));
     return missing;
+  },
+  ensureStaffShiftsForMonth: ({
+    month,
+    rules = [],
+    exceptions = [],
+    academyTeachers = [],
+    academyAssistants = [],
+  } = {}) => {
+    if (!month) return [];
+    const fromDate = monthStartYMD(month);
+    const toDate = monthEndYMD(month);
+    if (!fromDate || !toDate) return [];
+
+    const plannedRaw = buildPlannedStaffSchedule({
+      rules,
+      exceptions,
+      fromDate,
+      toDate,
+    });
+    const planned = plannedToStaffShiftShape(plannedRaw, {
+      academyTeachers,
+      academyAssistants,
+    });
+    if (planned.length === 0) return [];
+
+    const keyOf = (shift) => {
+      const staffKey = shift.staffUserId || shift.staffId || '';
+      const start = (shift.scheduledStartTime || shift.startTime || '').slice(0, 5);
+      return `${shift.date}__${staffKey}__${start}`;
+    };
+    const existingKeys = new Set(
+      (get().academyStaffShifts || [])
+        .filter((shift) => shift?.status !== 'canceled' && shift?.date?.startsWith(month))
+        .map(keyOf)
+        .filter(Boolean),
+    );
+    const missing = [];
+    for (const shift of planned) {
+      if (!shift?.date || !shift.staffUserId || !shift.scheduledStartTime || !shift.scheduledEndTime) continue;
+      const key = keyOf(shift);
+      if (!key || existingKeys.has(key)) continue;
+      existingKeys.add(key);
+      missing.push({
+        staffId: shift.staffId || '',
+        staffUserId: shift.staffUserId || '',
+        staffRole: shift.staffRole || 'teacher',
+        date: shift.date,
+        scheduledStartTime: shift.scheduledStartTime || '',
+        scheduledEndTime: shift.scheduledEndTime || '',
+        breakMinutes: Number(shift.breakMinutes) || 0,
+        actualStartTime: null,
+        actualEndTime: null,
+        status: 'scheduled',
+        memo: shift.memo || '',
+      });
+    }
+    if (missing.length === 0) return [];
+    const ts = Date.now();
+    const rows = missing.map((shift, index) => ({
+      id: `shift_auto_${ts}_${index}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...shift,
+    }));
+    set((s) => ({
+      academyStaffShifts: [...(s.academyStaffShifts || []), ...rows],
+    }));
+    return rows;
   },
   updateClassGroup: (groupId, updates) => {
     set((s) => ({

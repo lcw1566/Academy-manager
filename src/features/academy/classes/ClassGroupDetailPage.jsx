@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -18,7 +18,8 @@ import {
   plannedToClassSessionShape,
 } from '../../../utils/schedule';
 import {
-  today, addDaysYMD, formatDateShort, compareYMD, getKoreanWeekdayFromYMD, getWeekDates,
+  today, addDaysYMD, formatDateShort, compareYMD, getKoreanWeekdayFromYMD,
+  getWeekDates, getMonthDates, formatMonth, nextMonth, prevMonth,
 } from '../../../utils/date';
 import { hhmmToMin } from '../../../utils/shiftCoverage';
 import { getTeacherDisplayName } from '../../../utils/format';
@@ -33,6 +34,14 @@ const SESSION_STATUS = {
   canceled:    { label: '취소',  color: 'bg-gray-100 text-gray-400' },
   rescheduled: { label: '변경',  color: 'bg-yellow-50 text-yellow-600' },
 };
+const DOW_TO_KO = ['일', '월', '화', '수', '목', '금', '토'];
+
+function monthEndYMD(month) {
+  const [year, m] = String(month || '').split('-').map(Number);
+  if (!year || !m) return '';
+  const last = new Date(year, m, 0).getDate();
+  return `${month}-${String(last).padStart(2, '0')}`;
+}
 
 function formatTimelineHour(minutes) {
   const h = Math.floor((Number(minutes) || 0) / 60);
@@ -84,61 +93,13 @@ export default function ClassGroupDetailPage() {
 
   const [showEditForm, setShowEditForm] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
-  const [weekAnchor, setWeekAnchor] = useState(today());
+  const [calendarAnchor, setCalendarAnchor] = useState(today());
+  const [calendarMode, setCalendarMode] = useState('week');
+  const [generatingMonth, setGeneratingMonth] = useState(false);
   const todayStr = today();
 
   const group = classGroups.find((g) => g.id === selectedClassGroupId) ?? null;
-  const activeMonth = weekAnchor.slice(0, 7);
-
-  useEffect(() => {
-    if (!group || !activeMonth) return;
-    const created = ensureClassSessionsForMonth?.(group.id, activeMonth) || [];
-    if (created.length === 0) return;
-    showToast(`${activeMonth} 수업 ${created.length}회차를 준비했어요.`);
-
-    if (!group.serverId || !isAuthenticated || !currentAcademyId) return;
-    void (async () => {
-      try {
-        const sessionPayloads = created.map((session) =>
-          mapClassSessionToServerPayload(
-            session,
-            group.serverId,
-            academyStudents,
-            academyAssistants,
-            academyTeachers,
-            authUserId,
-          )
-        );
-        const serverSessions = await createAcademyClassSessionsBulk({
-          academyId: currentAcademyId,
-          sessions: sessionPayloads,
-        });
-        setClassSessionServerIds?.(matchSessionPairs(created, serverSessions));
-        await loadServerClassSessions?.();
-      } catch (err) {
-        console.error('[supabase] monthly class session sync failed', err);
-        showToast(
-          err?.message
-            ? `월별 수업은 준비됐지만 서버 동기화에 실패했어요: ${err.message}`
-            : '월별 수업은 준비됐지만 서버 동기화에 실패했어요.',
-          'error',
-        );
-      }
-    })();
-  }, [
-    group,
-    activeMonth,
-    ensureClassSessionsForMonth,
-    showToast,
-    isAuthenticated,
-    currentAcademyId,
-    academyStudents,
-    academyAssistants,
-    academyTeachers,
-    authUserId,
-    setClassSessionServerIds,
-    loadServerClassSessions,
-  ]);
+  const activeMonth = calendarAnchor.slice(0, 7);
 
   // Phase 44.6 / Phase B — 룰 기반 planned 세션 + 기존 classSessions 머지.
   const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
@@ -172,6 +133,28 @@ export default function ClassGroupDetailPage() {
       : [],
     [mergedClassSessions, group]
   );
+
+  const actualGroupSessions = useMemo(
+    () => group
+      ? classSessions.filter((s) => s.classGroupId === selectedClassGroupId && s.status !== 'canceled')
+      : [],
+    [classSessions, group, selectedClassGroupId],
+  );
+  const activeMonthHasGeneratedSessions = useMemo(
+    () => actualGroupSessions.some((s) => s.date?.startsWith(activeMonth)),
+    [actualGroupSessions, activeMonth],
+  );
+  const activeMonthCanGenerate = useMemo(() => {
+    if (!group || !activeMonth) return false;
+    const monthEnd = monthEndYMD(activeMonth);
+    if (group.startDate && group.startDate > monthEnd) return false;
+    if (group.endDate && group.endDate < `${activeMonth}-01`) return false;
+    return true;
+  }, [group, activeMonth]);
+  const calendarSessions = useMemo(() => {
+    if (activeMonthHasGeneratedSessions || !activeMonthCanGenerate) return sessions;
+    return sessions.filter((session) => !session.date?.startsWith(activeMonth));
+  }, [sessions, activeMonthHasGeneratedSessions, activeMonthCanGenerate, activeMonth]);
 
   const students = useMemo(
     () => group ? academyStudents.filter((s) => (group.studentIds || []).includes(s.id)) : [],
@@ -233,6 +216,49 @@ export default function ClassGroupDetailPage() {
     }
 
     goBackFromClassGroup();
+  };
+
+  const handleGenerateActiveMonth = async () => {
+    if (!group || !activeMonth || generatingMonth) return;
+    setGeneratingMonth(true);
+    try {
+      const created = ensureClassSessionsForMonth?.(group.id, activeMonth) || [];
+      if (created.length === 0) {
+        showToast(`${activeMonth}에 만들 수업 일정이 없어요.`, 'info');
+        return;
+      }
+      showToast(`${activeMonth} 수업 ${created.length}회차를 만들었어요.`);
+
+      if (!group.serverId || !isAuthenticated || !currentAcademyId) return;
+      try {
+        const sessionPayloads = created.map((session) =>
+          mapClassSessionToServerPayload(
+            session,
+            group.serverId,
+            academyStudents,
+            academyAssistants,
+            academyTeachers,
+            authUserId,
+          )
+        );
+        const serverSessions = await createAcademyClassSessionsBulk({
+          academyId: currentAcademyId,
+          sessions: sessionPayloads,
+        });
+        setClassSessionServerIds?.(matchSessionPairs(created, serverSessions));
+        await loadServerClassSessions?.();
+      } catch (err) {
+        console.error('[supabase] monthly class session sync failed', err);
+        showToast(
+          err?.message
+            ? `월별 수업은 만들어졌지만 서버 동기화에 실패했어요: ${err.message}`
+            : '월별 수업은 만들어졌지만 서버 동기화에 실패했어요.',
+          'error',
+        );
+      }
+    } finally {
+      setGeneratingMonth(false);
+    }
   };
 
   return (
@@ -321,15 +347,23 @@ export default function ClassGroupDetailPage() {
           </div>
         )}
 
-        <ClassGroupWeekCalendar
-          sessions={sessions}
+        <ClassGroupScheduleCalendar
+          sessions={calendarSessions}
           students={students}
           attendanceRecords={academyAttendanceRecords}
-          weekAnchor={weekAnchor}
+          calendarAnchor={calendarAnchor}
+          calendarMode={calendarMode}
           todayYMD={todayStr}
-          onPrevWeek={() => setWeekAnchor((d) => addDaysYMD(d, -7))}
-          onNextWeek={() => setWeekAnchor((d) => addDaysYMD(d, 7))}
-          onToday={() => setWeekAnchor(today())}
+          monthNeedsGeneration={activeMonthCanGenerate && !activeMonthHasGeneratedSessions}
+          generatingMonth={generatingMonth}
+          onGenerateMonth={handleGenerateActiveMonth}
+          onPrevPeriod={() => setCalendarAnchor((d) =>
+            calendarMode === 'month' ? `${prevMonth(d.slice(0, 7))}-01` : addDaysYMD(d, -7)
+          )}
+          onNextPeriod={() => setCalendarAnchor((d) =>
+            calendarMode === 'month' ? `${nextMonth(d.slice(0, 7))}-01` : addDaysYMD(d, 7)
+          )}
+          onCalendarModeChange={setCalendarMode}
           onSessionClick={(session) => {
             if (session.isPlanned) {
               showToast('아직 실제 회차로 저장되지 않은 예정 수업이에요. 기록을 시작할 때 회차를 생성하도록 바꾸는 게 좋아요.', 'info');
@@ -383,23 +417,27 @@ export default function ClassGroupDetailPage() {
   );
 }
 
-function ClassGroupWeekCalendar({
-  sessions, students, attendanceRecords, weekAnchor, todayYMD,
-  onPrevWeek, onNextWeek, onSessionClick,
+function ClassGroupScheduleCalendar({
+  sessions, students, attendanceRecords, calendarAnchor, calendarMode, todayYMD,
+  monthNeedsGeneration, generatingMonth, onGenerateMonth,
+  onPrevPeriod, onNextPeriod, onCalendarModeChange, onSessionClick,
 }) {
-  const weekDates = useMemo(() => getWeekDates(weekAnchor), [weekAnchor]);
+  const selectedMonth = calendarAnchor.slice(0, 7);
+  const weekDates = useMemo(() => getWeekDates(calendarAnchor), [calendarAnchor]);
+  const monthDates = useMemo(() => getMonthDates(`${selectedMonth}-01`), [selectedMonth]);
+  const visibleDates = calendarMode === 'month' ? monthDates : weekDates;
   const sessionsByDate = useMemo(() => {
     const map = new Map();
-    weekDates.forEach((date) => map.set(date, []));
+    visibleDates.filter(Boolean).forEach((date) => map.set(date, []));
     for (const session of sessions || []) {
       if (!session.date || !map.has(session.date) || session.status === 'canceled') continue;
       map.get(session.date).push(session);
     }
-    for (const date of weekDates) {
+    for (const date of map.keys()) {
       map.get(date).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
     }
     return map;
-  }, [sessions, weekDates]);
+  }, [sessions, visibleDates]);
 
   const calendarRange = useMemo(() => {
     const bounds = [];
@@ -427,131 +465,278 @@ function ClassGroupWeekCalendar({
 
   const weekLabel = `${formatDateShort(weekDates[0])} - ${formatDateShort(weekDates[6])}`;
   const weekCount = weekDates.reduce((sum, date) => sum + (sessionsByDate.get(date)?.length || 0), 0);
+  const monthCount = monthDates
+    .filter(Boolean)
+    .reduce((sum, date) => sum + (sessionsByDate.get(date)?.length || 0), 0);
   const totalRange = calendarRange.endMin - calendarRange.startMin || 1;
 
   return (
     <div className="px-4 mb-5">
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-4 md:px-5 py-3 border-b border-[#F2F4F6] flex items-center justify-between gap-3">
+        <div className="px-4 md:px-5 py-3 border-b border-[#F2F4F6] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm font-bold text-[#191F28]">주간 수업표</p>
+            <p className="text-sm font-bold text-[#191F28]">{calendarMode === 'month' ? '월간 수업표' : '주간 수업표'}</p>
             <p className="text-[11px] text-[#8B95A1] mt-0.5 truncate">
-              {weekLabel} · {weekCount}회
+              {calendarMode === 'month'
+                ? `${formatMonth(selectedMonth)} · ${monthCount}회`
+                : `${weekLabel} · ${weekCount}회`}
             </p>
           </div>
-          <div className="flex items-center gap-1">
-            <button type="button" onClick={onPrevWeek} className="w-8 h-8 rounded-lg text-[#4E5968] active:bg-[#F2F4F6] flex items-center justify-center" aria-label="이전 주">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={onPrevPeriod} className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] active:bg-[#E5E8EB] flex items-center justify-center" aria-label={calendarMode === 'month' ? '이전 달' : '이전 주'}>
               <ChevronLeft size={16} />
             </button>
-            <button type="button" onClick={onNextWeek} className="w-8 h-8 rounded-lg text-[#4E5968] active:bg-[#F2F4F6] flex items-center justify-center" aria-label="다음 주">
+            <button type="button" onClick={onNextPeriod} className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] active:bg-[#E5E8EB] flex items-center justify-center" aria-label={calendarMode === 'month' ? '다음 달' : '다음 주'}>
               <ChevronRight size={16} />
             </button>
+            <div className="flex rounded-xl bg-[#F2F4F6] p-1">
+              {[
+                { id: 'month', label: '월간' },
+                { id: 'week', label: '주간' },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onCalendarModeChange(item.id)}
+                  className={`h-8 px-3 rounded-lg text-xs font-bold ${
+                    calendarMode === item.id
+                      ? 'bg-white text-[#3182F6] shadow-sm'
+                      : 'text-[#8B95A1]'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <div className="min-w-[760px]">
-            <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))] border-b border-[#F2F4F6] bg-[#FBFCFD]">
-              <div className="px-2 py-2 text-[10px] font-bold text-[#8B95A1]">시간</div>
-              {weekDates.map((date) => {
-                const isTodayCell = date === todayYMD;
-                return (
-                  <div key={date} className="px-2 py-2 border-l border-[#F2F4F6]">
-                    <p className={`text-xs font-extrabold ${isTodayCell ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
-                      {getKoreanWeekdayFromYMD(date)}
-                      <span className="ml-1 text-[10px] font-bold text-[#8B95A1]">{date.slice(5).replace('-', '.')}</span>
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
-              <div className="relative bg-[#FBFCFD] border-r border-[#F2F4F6]" style={{ height: calendarRange.height }}>
-                {calendarRange.ticks.map((tick) => (
-                  <div
-                    key={tick}
-                    className="absolute right-2 text-[10px] font-medium text-[#8B95A1]"
-                    style={{
-                      top: `clamp(10px, ${((tick - calendarRange.startMin) / totalRange) * 100}%, calc(100% - 16px))`,
-                      transform: 'translateY(-50%)',
-                    }}
-                  >
-                    {formatTimelineHour(tick)}
+        <div className="relative">
+          {calendarMode === 'month' ? (
+            <div className={`overflow-x-auto transition ${monthNeedsGeneration ? 'blur-[1.5px] opacity-45 pointer-events-none select-none' : ''}`}>
+            <div className="min-w-[760px]">
+              <div className="grid grid-cols-7 bg-[#FBFCFD] border-b border-[#F2F4F6]">
+                {DOW_TO_KO.map((day) => (
+                  <div key={day} className="px-3 py-2 text-[11px] font-extrabold text-[#8B95A1]">
+                    {day}
                   </div>
                 ))}
               </div>
-              {weekDates.map((date) => {
-                const daySessions = sessionsByDate.get(date) || [];
-                const isTodayColumn = date === todayYMD;
-                return (
-                  <div
-                    key={date}
-                    className={`relative border-l border-[#F2F4F6] ${isTodayColumn ? 'bg-blue-50/20' : 'bg-white'}`}
-                    style={{ height: calendarRange.height }}
-                  >
-                    {calendarRange.ticks.map((tick) => (
-                      <div
-                        key={tick}
-                        className="absolute left-0 right-0 border-t border-[#F2F4F6]"
-                        style={{ top: `${((tick - calendarRange.startMin) / totalRange) * 100}%` }}
-                      />
-                    ))}
-                    {daySessions.length === 0 && (
-                      <div className="absolute inset-x-2 top-4 rounded-xl border border-dashed border-[#F2F4F6] px-2 py-3 text-center text-[11px] font-semibold text-[#B0B8C1]">
-                        수업 없음
-                      </div>
-                    )}
-                    {daySessions.map((session) => {
-                      const start = hhmmToMin(session.startTime) ?? calendarRange.startMin;
-                      const rawEnd = hhmmToMin(session.endTime) ?? start + 30;
-                      const end = Math.max(start + 30, rawEnd);
-                      const top = ((Math.max(calendarRange.startMin, start) - calendarRange.startMin) / totalRange) * 100;
-                      const height = ((Math.min(calendarRange.endMin, end) - Math.max(calendarRange.startMin, start)) / totalRange) * 100;
-                      const statusInfo = SESSION_STATUS[session.status] || SESSION_STATUS.scheduled;
-                      const attendedCount = attendanceRecords.filter((a) => a.sessionId === session.id && a.status === 'present').length;
-                      const isTodaySession = session.date === todayYMD;
-                      const title = [
-                        formatSessionTimeRange(session.startTime, session.endTime),
-                        session.room || '',
-                        `${students.length}명`,
-                        session.isPlanned ? '규칙 예정' : statusInfo.label,
-                      ].filter(Boolean).join(' · ');
-                      return (
-                        <button
-                          key={session.id}
-                          type="button"
-                          title={title}
-                          aria-label={title}
-                          onClick={() => onSessionClick(session)}
-                          className={`absolute left-2 right-2 rounded-xl border px-2 py-2 text-left overflow-hidden active:scale-[0.99] ${
-                            isTodaySession
-                              ? 'border-[#3182F6] bg-blue-100 shadow-[0_8px_20px_rgba(49,130,246,0.18)] ring-2 ring-blue-100'
-                              : 'border-blue-200 bg-blue-50/80 shadow-sm'
-                          }`}
-                          style={{ top: `${top}%`, height: `${Math.max(5, height)}%`, minHeight: 48, zIndex: isTodaySession ? 12 : 8 }}
-                        >
-                          <div className="flex items-start justify-between gap-1.5">
-                            <p className={`min-w-0 truncate text-xs font-extrabold ${isTodaySession ? 'text-[#0054C8]' : 'text-[#191F28]'}`}>
-                              {isTodaySession ? '오늘 수업' : '수업'}
-                            </p>
-                            <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${session.isPlanned ? 'bg-indigo-50 text-indigo-600' : statusInfo.color}`}>
-                              {session.isPlanned ? '규칙' : statusInfo.label}
-                            </span>
-                          </div>
-                          <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold text-[#8B95A1]">
-                            {session.room && <span className="truncate">{session.room}</span>}
-                            <span>{students.length}명</span>
-                            {attendedCount > 0 && <span className="text-green-600">출석 {attendedCount}</span>}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })}
+              <div className="grid grid-cols-7">
+                {monthDates.map((date, idx) => {
+                  if (!date) {
+                    return <div key={`blank-${idx}`} className="min-h-[120px] border-r border-b border-[#F2F4F6] bg-[#FBFCFD]" />;
+                  }
+                  const daySessions = sessionsByDate.get(date) || [];
+                  return (
+                    <MonthSessionCell
+                      key={date}
+                      date={date}
+                      sessions={daySessions}
+                      students={students}
+                      attendanceRecords={attendanceRecords}
+                      todayYMD={todayYMD}
+                      onSessionClick={onSessionClick}
+                    />
+                  );
+                })}
+              </div>
             </div>
           </div>
+          ) : (
+            <div className={`overflow-x-auto transition ${monthNeedsGeneration ? 'blur-[1.5px] opacity-45 pointer-events-none select-none' : ''}`}>
+            <div className="min-w-[760px]">
+              <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))] border-b border-[#F2F4F6] bg-[#FBFCFD]">
+                <div className="px-2 py-2 text-[10px] font-bold text-[#8B95A1]">시간</div>
+                {weekDates.map((date) => {
+                  const isTodayCell = date === todayYMD;
+                  return (
+                    <div key={date} className="px-2 py-2 border-l border-[#F2F4F6]">
+                      <p className={`text-xs font-extrabold ${isTodayCell ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+                        {getKoreanWeekdayFromYMD(date)}
+                        <span className="ml-1 text-[10px] font-bold text-[#8B95A1]">{date.slice(5).replace('-', '.')}</span>
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
+                <div className="relative bg-[#FBFCFD] border-r border-[#F2F4F6]" style={{ height: calendarRange.height }}>
+                  {calendarRange.ticks.map((tick) => (
+                    <div
+                      key={tick}
+                      className="absolute right-2 text-[10px] font-medium text-[#8B95A1]"
+                      style={{
+                        top: `clamp(10px, ${((tick - calendarRange.startMin) / totalRange) * 100}%, calc(100% - 16px))`,
+                        transform: 'translateY(-50%)',
+                      }}
+                    >
+                      {formatTimelineHour(tick)}
+                    </div>
+                  ))}
+                </div>
+                {weekDates.map((date) => {
+                  const daySessions = sessionsByDate.get(date) || [];
+                  const isTodayColumn = date === todayYMD;
+                  return (
+                    <div
+                      key={date}
+                      className={`relative border-l border-[#F2F4F6] ${isTodayColumn ? 'bg-blue-50/20' : 'bg-white'}`}
+                      style={{ height: calendarRange.height }}
+                    >
+                      {calendarRange.ticks.map((tick) => (
+                        <div
+                          key={tick}
+                          className="absolute left-0 right-0 border-t border-[#F2F4F6]"
+                          style={{ top: `${((tick - calendarRange.startMin) / totalRange) * 100}%` }}
+                        />
+                      ))}
+                      {daySessions.length === 0 && (
+                        <div className="absolute inset-x-2 top-4 rounded-xl border border-dashed border-[#F2F4F6] px-2 py-3 text-center text-[11px] font-semibold text-[#B0B8C1]">
+                          수업 없음
+                        </div>
+                      )}
+                      {daySessions.map((session) => {
+                        const start = hhmmToMin(session.startTime) ?? calendarRange.startMin;
+                        const rawEnd = hhmmToMin(session.endTime) ?? start + 30;
+                        const end = Math.max(start + 30, rawEnd);
+                        const top = ((Math.max(calendarRange.startMin, start) - calendarRange.startMin) / totalRange) * 100;
+                        const height = ((Math.min(calendarRange.endMin, end) - Math.max(calendarRange.startMin, start)) / totalRange) * 100;
+                        return (
+                          <WeekSessionBlock
+                            key={session.id}
+                            session={session}
+                            students={students}
+                            attendanceRecords={attendanceRecords}
+                            todayYMD={todayYMD}
+                            top={top}
+                            height={height}
+                            onSessionClick={onSessionClick}
+                          />
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          )}
+
+          {monthNeedsGeneration && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/55 px-4">
+              <div className="rounded-2xl bg-white/95 px-5 py-5 shadow-xl border border-blue-100 text-center max-w-[320px]">
+                <p className="text-sm font-extrabold text-[#191F28]">아직 이 달 일정이 없어요</p>
+                <p className="mt-1 text-xs leading-relaxed text-[#8B95A1]">
+                  필요한 달만 수업 회차를 만들어 데이터가 불필요하게 쌓이지 않아요.
+                </p>
+                <button
+                  type="button"
+                  onClick={onGenerateMonth}
+                  disabled={generatingMonth}
+                  className="mt-4 w-full rounded-xl bg-[#3182F6] px-4 py-3 text-sm font-extrabold text-white shadow-sm active:bg-[#1B64DA] disabled:opacity-60"
+                >
+                  {generatingMonth ? '일정 만드는 중...' : '이 달 수업 일정 만들기'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function WeekSessionBlock({ session, students, attendanceRecords, todayYMD, top, height, onSessionClick }) {
+  const statusInfo = SESSION_STATUS[session.status] || SESSION_STATUS.scheduled;
+  const attendedCount = attendanceRecords.filter((a) => a.sessionId === session.id && a.status === 'present').length;
+  const isTodaySession = session.date === todayYMD;
+  const title = [
+    formatSessionTimeRange(session.startTime, session.endTime),
+    session.room || '',
+    `${students.length}명`,
+    session.isPlanned ? '규칙 예정' : statusInfo.label,
+  ].filter(Boolean).join(' · ');
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={() => onSessionClick(session)}
+      className={`absolute left-2 right-2 rounded-xl border px-2 py-2 text-left overflow-hidden active:scale-[0.99] ${
+        isTodaySession
+          ? 'border-[#3182F6] bg-blue-100 shadow-[0_8px_20px_rgba(49,130,246,0.18)] ring-2 ring-blue-100'
+          : 'border-blue-200 bg-blue-50/80 shadow-sm'
+      }`}
+      style={{ top: `${top}%`, height: `${Math.max(5, height)}%`, minHeight: 48, zIndex: isTodaySession ? 12 : 8 }}
+    >
+      <div className="flex items-start justify-between gap-1.5">
+        <p className={`min-w-0 truncate text-xs font-extrabold ${isTodaySession ? 'text-[#0054C8]' : 'text-[#191F28]'}`}>
+          {isTodaySession ? '오늘 수업' : '수업'}
+        </p>
+        <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${session.isPlanned ? 'bg-indigo-50 text-indigo-600' : statusInfo.color}`}>
+          {session.isPlanned ? '규칙' : statusInfo.label}
+        </span>
+      </div>
+      <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold text-[#8B95A1]">
+        {session.room && <span className="truncate">{session.room}</span>}
+        <span>{students.length}명</span>
+        {attendedCount > 0 && <span className="text-green-600">출석 {attendedCount}</span>}
+      </div>
+    </button>
+  );
+}
+
+function MonthSessionCell({ date, sessions, students, attendanceRecords, todayYMD, onSessionClick }) {
+  const isTodayCell = date === todayYMD;
+  return (
+    <div className={`min-h-[120px] border-r border-b border-[#F2F4F6] p-3 ${isTodayCell ? 'bg-blue-50/40' : 'bg-white'}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className={`text-sm font-extrabold ${isTodayCell ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+            {Number(date.slice(8))}
+          </p>
+          <p className="text-[10px] font-semibold text-[#8B95A1]">{getKoreanWeekdayFromYMD(date)}</p>
+        </div>
+        {sessions.length > 0 && (
+          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-[#3182F6]">
+            {sessions.length}회
+          </span>
+        )}
+      </div>
+      {sessions.length === 0 ? (
+        <p className="mt-4 text-[11px] font-semibold text-[#B0B8C1]">수업 없음</p>
+      ) : (
+        <div className="mt-3 flex flex-col gap-1.5">
+          {sessions.slice(0, 3).map((session) => {
+            const statusInfo = SESSION_STATUS[session.status] || SESSION_STATUS.scheduled;
+            const attendedCount = attendanceRecords.filter((a) => a.sessionId === session.id && a.status === 'present').length;
+            return (
+              <button
+                key={session.id}
+                type="button"
+                onClick={() => onSessionClick(session)}
+                className="rounded-xl border border-blue-100 bg-blue-50 px-2.5 py-2 text-left active:scale-[0.99]"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-[11px] font-extrabold text-[#191F28]">
+                    {formatSessionTimeRange(session.startTime, session.endTime)}
+                  </p>
+                  <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${session.isPlanned ? 'bg-indigo-50 text-indigo-600' : statusInfo.color}`}>
+                    {session.isPlanned ? '규칙' : statusInfo.label}
+                  </span>
+                </div>
+                <p className="mt-0.5 truncate text-[10px] font-semibold text-[#8B95A1]">
+                  {session.room || '강의실 미정'} · {students.length}명
+                  {attendedCount > 0 ? ` · 출석 ${attendedCount}` : ''}
+                </p>
+              </button>
+            );
+          })}
+          {sessions.length > 3 && (
+            <p className="text-[10px] font-bold text-[#8B95A1]">+{sessions.length - 3}회 더 있음</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

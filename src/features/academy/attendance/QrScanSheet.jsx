@@ -284,10 +284,15 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
     // 1) staff_attendance_logs upsert.
     if (staffUserId) {
       try {
+        const confirmedPatch = {
+          [fieldKey]: time,
+          status: 'approved',
+          approved_at: new Date().toISOString(),
+        };
         if (existingLog?.id) {
           await useWorkspaceStore.getState().updateStaffAttendanceLogLocal(
             existingLog.id,
-            { [fieldKey]: time, ...(fieldKey === 'actual_end_time' ? { status: 'pending' } : {}) },
+            confirmedPatch,
           );
         } else {
           await useWorkspaceStore.getState().createStaffAttendanceLogLocal({
@@ -299,7 +304,8 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
             break_minutes: todayShift?.breakMinutes ?? 0,
             [fieldKey]: time,
             source: 'qr',
-            status: 'pending',
+            status: 'approved',
+            approved_at: confirmedPatch.approved_at,
           });
         }
       } catch (err) {
@@ -330,7 +336,7 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
     setResult({
       ok: true,
       title: writePatch.actualEndTime ? '퇴근 처리됐어요.' : '출근 처리됐어요.',
-      detail: `${SHIFT_STATUS_LABELS[status] || ''} · ${time} · 원장 확인 대기`,
+      detail: `${SHIFT_STATUS_LABELS[status] || ''} · ${time} · 바로 저장됨`,
     });
     closeAfterSuccess();
   };

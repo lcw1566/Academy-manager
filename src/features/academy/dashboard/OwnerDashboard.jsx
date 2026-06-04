@@ -8,8 +8,6 @@ import { formatCurrency } from '../../../utils/format';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import { classifyShiftStatus, readAttendanceSettings } from '../attendance/attendanceHelpers';
 import QrDisplayPage from '../attendance/QrDisplayPage';
-// Phase 44.7 / Phase C — 근퇴 승인 sheet.
-import StaffAttendanceApprovalSheet from '../attendance/StaffAttendanceApprovalSheet';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
 import {
   buildPlannedClassSessions,
@@ -62,13 +60,31 @@ export default function OwnerDashboard() {
 
   const [selectedDate, setSelectedDate] = useState(today());
   const [showQrDisplay, setShowQrDisplay] = useState(false);
-  // Phase 44.7 / Phase C — 근퇴 승인 sheet.
-  const [showApprovalSheet, setShowApprovalSheet] = useState(false);
-  const pendingApprovalCount = useMemo(
-    () => (staffAttendanceLogs || []).filter((l) => l.status === 'pending').length,
-    [staffAttendanceLogs],
-  );
   const todayStr = today();
+
+  const recentAttendanceEvents = useMemo(() => {
+    const staffByUserId = new Map(
+      [...academyTeachers, ...academyAssistants]
+        .filter((staff) => staff?.serverUserId)
+        .map((staff) => [staff.serverUserId, staff]),
+    );
+    return (staffAttendanceLogs || [])
+      .filter((log) => log.work_date === todayStr && (log.actual_start_time || log.actual_end_time))
+      .sort((a, b) => String(b.updated_at || b.approved_at || b.created_at || '').localeCompare(
+        String(a.updated_at || a.approved_at || a.created_at || ''),
+      ))
+      .slice(0, 3)
+      .map((log) => {
+        const staff = staffByUserId.get(log.staff_user_id);
+        const isClockOut = !!log.actual_end_time;
+        return {
+          id: log.id,
+          name: staff?.name || '직원',
+          action: isClockOut ? '퇴근' : '출근',
+          time: formatClock(isClockOut ? log.actual_end_time : log.actual_start_time),
+        };
+      });
+  }, [staffAttendanceLogs, academyTeachers, academyAssistants, todayStr]);
 
   // Phase 44.6 / Phase B — 향후 60일 윈도우 안에서 룰+예외로 planned 세션 산출 후
   // 기존 classSessions 와 머지. 14일 너머에도 자연스럽게 예정 세션이 노출됨.
@@ -326,16 +342,17 @@ export default function OwnerDashboard() {
       {(inProgressOrSoonSessions.length > 0
         || unfinishedLessonRecordSessions.length > 0
         || pendingInvitations.length > 0
-        || pendingApprovalCount > 0) && (
+        || recentAttendanceEvents.length > 0) && (
         <div className="px-4 mb-5 flex flex-col gap-2">
-          {/* Phase 44.7 / Phase C — 근퇴 확인 필요 */}
-          {pendingApprovalCount > 0 && (
+          {recentAttendanceEvents.length > 0 && (
             <OpsCard
               icon={CheckSquare}
-              tone="amber"
-              title={`근퇴 확인 필요 ${pendingApprovalCount}건`}
-              detail="강사 출근 기록을 검토하고 정산에 반영해주세요."
-              onClick={() => setShowApprovalSheet(true)}
+              tone="green"
+              title={`오늘 근퇴 알림 ${recentAttendanceEvents.length}건`}
+              detail={recentAttendanceEvents
+                .map((event) => `${event.name} ${event.action} ${event.time}`)
+                .join(' · ')}
+              onClick={() => setActiveTab('staff')}
             />
           )}
           {inProgressOrSoonSessions.length > 0 && (
@@ -417,9 +434,6 @@ export default function OwnerDashboard() {
       {showQrDisplay && (
         <QrDisplayPage onClose={() => setShowQrDisplay(false)} />
       )}
-      {showApprovalSheet && (
-        <StaffAttendanceApprovalSheet onClose={() => setShowApprovalSheet(false)} />
-      )}
     </div>
   );
 }
@@ -453,6 +467,7 @@ function SummaryCard({ label, value, color = 'text-gray-900', onClick }) {
 function OpsCard({ icon: Icon, tone = 'blue', title, detail, onClick }) {
   const tones = {
     blue:   { bg: 'bg-blue-50',   text: 'text-blue-700',   iconColor: 'text-blue-600' },
+    green:  { bg: 'bg-emerald-50', text: 'text-emerald-700', iconColor: 'text-emerald-600' },
     amber:  { bg: 'bg-amber-50',  text: 'text-amber-700',  iconColor: 'text-amber-600' },
     purple: { bg: 'bg-purple-50', text: 'text-purple-700', iconColor: 'text-purple-600' },
     red:    { bg: 'bg-red-50',    text: 'text-red-700',    iconColor: 'text-red-600' },

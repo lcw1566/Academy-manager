@@ -109,8 +109,13 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
   const upsertTodayLog = async (fields, { source = 'manual' } = {}) => {
     if (!canUseLogs) return null;
     try {
+      const confirmedFields = {
+        ...fields,
+        status: 'approved',
+        approved_at: new Date().toISOString(),
+      };
       if (myTodayLog?.id) {
-        return await updateStaffAttendanceLogLocal(myTodayLog.id, { ...fields });
+        return await updateStaffAttendanceLogLocal(myTodayLog.id, confirmedFields);
       }
       return await createStaffAttendanceLogLocal({
         staff_user_id: staff.serverUserId,
@@ -120,8 +125,7 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
         scheduled_end_time: myTodayShift.scheduledEndTime || null,
         break_minutes: myTodayShift.breakMinutes ?? 0,
         source,
-        status: 'pending',
-        ...fields,
+        ...confirmedFields,
       });
     } catch (err) {
       console.warn('[supabase] upsert attendance log failed', err);
@@ -150,7 +154,7 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
         }
       }
     }
-    showToast('출근 시간을 기록했어요. 원장 확인 후 정산에 반영돼요.');
+    showToast('출근 시간이 바로 저장됐어요.');
     setBusy(false);
   };
 
@@ -174,7 +178,7 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
         }
       }
     }
-    showToast('퇴근 시간을 기록했어요. 원장 확인 후 정산에 반영돼요.');
+    showToast('퇴근 시간이 바로 저장됐어요.');
     setBusy(false);
   };
 
@@ -201,9 +205,9 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
 
         {(clockedIn || clockedOut) && (
           <p className="text-[11px] text-gray-600 mb-2">
-            {clockedIn && `출근 ${formatClock(myTodayShift.actualStartTime)}`}
+            {clockedIn && `출근 ${formatClock(myTodayLog?.actual_start_time || myTodayShift.actualStartTime)}`}
             {clockedIn && clockedOut && ' · '}
-            {clockedOut && `퇴근 ${formatClock(myTodayShift.actualEndTime)}`}
+            {clockedOut && `퇴근 ${formatClock(myTodayLog?.actual_end_time || myTodayShift.actualEndTime)}`}
           </p>
         )}
 

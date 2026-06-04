@@ -117,6 +117,21 @@ for each row execute function public.handle_auth_user_profile_upsert();
 do $$
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and to_regclass('public.staff_attendance_logs') is not null
+     and not exists (
+       select 1
+       from pg_publication_tables
+       where pubname = 'supabase_realtime'
+         and schemaname = 'public'
+         and tablename = 'staff_attendance_logs'
+     ) then
+    alter publication supabase_realtime add table public.staff_attendance_logs;
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
      and not exists (
        select 1
        from pg_publication_tables

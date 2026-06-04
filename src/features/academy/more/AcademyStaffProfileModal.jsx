@@ -245,9 +245,9 @@ export default function AcademyStaffProfileModal({ userId, defaultRole = 'teache
               <div>
                 <label className="text-xs font-semibold text-gray-600 mb-1.5 block">급여 계산 기준</label>
                 <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
-                  <p className="text-sm font-bold text-blue-700">승인된 실제 근퇴 기록</p>
+                  <p className="text-sm font-bold text-blue-700">저장된 실제 근퇴 기록</p>
                   <p className="text-[11px] text-blue-700/80 mt-0.5 leading-relaxed">
-                    직원이 기록한 출근/퇴근 시간을 원장이 승인하면 시급 계산에 반영돼요.
+                    직원이 기록한 출근/퇴근 시간이 시급 계산에 바로 반영돼요.
                   </p>
                 </div>
               </div>
