@@ -12,7 +12,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, RefreshCw, Maximize2 } from 'lucide-react';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import QrImage from '../../../components/qr/QrImage';
-import { buildPublicCheckinPayload, generateQrToken, readAttendanceSettings } from './attendanceHelpers';
+import {
+  buildPublicCheckinPayload,
+  buildPublicCheckinUrl,
+  generateQrToken,
+  readAttendanceSettings,
+} from './attendanceHelpers';
 
 const REFRESH_SEC = 20; // 20초마다 issuedAt/expiresAt 갱신 (cached read 도 충분).
 
@@ -44,6 +49,11 @@ export default function QrDisplayPage({ onClose }) {
     // tick 으로 issuedAt 만 갱신 — 캐시된 academy/token 이 바뀌지 않으면 token 은 그대로.
     [currentAcademyId, token, tick],
   );
+  const qrValue = useMemo(
+    () => buildPublicCheckinUrl({ payload }),
+    [payload],
+  );
+  const isPublicQrUrl = qrValue !== payload;
 
   const [rotating, setRotating] = useState(false);
   const handleRotateToken = async () => {
@@ -135,11 +145,16 @@ export default function QrDisplayPage({ onClose }) {
           <div className="grid md:grid-cols-[auto_1fr] items-center gap-5 md:gap-8">
             <div className="mx-auto rounded-[28px] bg-white p-4 md:p-6 shadow-[0_18px_50px_rgba(25,31,40,0.12)] ring-1 ring-[#E5E8EB]">
               <QrImage
-                value={payload}
+                value={qrValue}
                 size={320}
                 margin={2}
                 className="w-[72vw] max-w-[320px] h-auto rounded-2xl"
               />
+              {!isPublicQrUrl && (
+                <p className="mt-3 max-w-[320px] text-center text-[11px] font-medium leading-relaxed text-amber-700">
+                  공개 앱 주소가 없어 기본 카메라용 URL을 만들지 못했어요. VITE_PUBLIC_APP_URL을 설정해 주세요.
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-3">

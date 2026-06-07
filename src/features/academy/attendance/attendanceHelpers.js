@@ -55,6 +55,32 @@ export function buildPublicCheckinPayload({ academyId, token, purpose = 'shared'
 
 // 학생 개별 QR — 학원이 학생 카드/프린트물로 발급. 학생이 본인 단말이 없어도
 // 공용 단말 스캐너에 노출할 수 있도록 분리된 페이로드 사용.
+function normalizePublicBaseUrl(baseUrl) {
+  const raw = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!/^https?:\/\//i.test(raw)) return '';
+  return raw;
+}
+
+export function getPublicCheckinBaseUrl() {
+  const envBaseUrl = import.meta.env?.VITE_PUBLIC_APP_URL || import.meta.env?.VITE_APP_URL || '';
+  const windowOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  return normalizePublicBaseUrl(envBaseUrl) || normalizePublicBaseUrl(windowOrigin);
+}
+
+export function buildPublicCheckinUrl({ payload, baseUrl } = {}) {
+  const base = normalizePublicBaseUrl(baseUrl || getPublicCheckinBaseUrl());
+  if (!base || !payload) return payload || '';
+
+  try {
+    const url = new URL(base);
+    url.searchParams.set('checkin', '1');
+    url.searchParams.set('p', payload);
+    return url.toString();
+  } catch {
+    return payload || '';
+  }
+}
+
 export function buildStudentCardPayload({ academyId, studentId }) {
   return JSON.stringify({
     v: 1,

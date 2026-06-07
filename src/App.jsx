@@ -10,6 +10,7 @@ import StaffWaitingPage from './features/auth/StaffWaitingPage';
 import WorkspaceSelectionPage, { wasWorkspacePicked, clearWorkspacePicked } from './features/auth/WorkspaceSelectionPage';
 import AppLayout from './components/AppLayout';
 import AcademyAppLayout from './features/academy/AcademyAppLayout';
+import PublicCheckinPage from './features/academy/attendance/PublicCheckinPage';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import { fetchAcademySnapshot } from './services/supabase/hydrateApi';
@@ -18,6 +19,17 @@ import { membershipRoleToAppRole } from './utils/format';
 import { tossSpring } from './utils/motion';
 
 const ACADEMY_ROLES = ['owner', 'teacher', 'assistant'];
+
+function isPublicCheckinRequest() {
+  if (typeof window === 'undefined') return false;
+  try {
+    const url = new URL(window.location.href);
+    const pathname = url.pathname.replace(/\/+$/, '');
+    return url.searchParams.has('checkin') || pathname.endsWith('/checkin');
+  } catch {
+    return false;
+  }
+}
 
 // Phase 25 — sessionStorage key per academy. Used to make sure auto-hydrate
 // runs at most once per academy per browser session.
@@ -44,6 +56,7 @@ function markAutoHydratedThisSession(academyId) {
 }
 
 export default function App() {
+  const isPublicCheckin = isPublicCheckinRequest();
   const role = useAcademyStore((s) => s.role);
   const setRole = useAcademyStore((s) => s.setRole);
   const toast = useAcademyStore((s) => s.toast);
@@ -291,6 +304,8 @@ export default function App() {
   ]);
 
   const renderLayout = () => {
+    if (isPublicCheckin) return <PublicCheckinPage />;
+
     // Phase 26 — 인증 우선. Supabase 가 설정돼 있을 때만 login-first 적용.
     // (env 미설정 환경에서는 인증이 불가하므로 RoleSelectPage / 기존 흐름으로 폴백)
     if (isSupabaseReady) {
