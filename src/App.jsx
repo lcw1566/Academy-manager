@@ -97,10 +97,12 @@ export default function App() {
   const isServerClassSessionsLoading = useWorkspaceStore((s) => s.isServerClassSessionsLoading);
 
   useEffect(() => {
+    if (isPublicCheckin) return;
     initializeAuth();
-  }, [initializeAuth]);
+  }, [isPublicCheckin, initializeAuth]);
 
   useEffect(() => {
+    if (isPublicCheckin) return;
     if (isAuthenticated) {
       // Phase 29: 인증된 사용자가 academy-store 의 마지막 소유자와 다르면
       // 학원 로컬 데이터를 리셋. 같은 브라우저에서 다른 계정이 로그인한 경우
@@ -116,9 +118,10 @@ export default function App() {
       // Phase 28: 학원 선택 sessionStorage 도 비워서 다음 사용자가 다시 선택할 수 있게.
       clearWorkspacePicked();
     }
-  }, [isAuthenticated, authUserId, ensureAcademyDataOwner, initializeWorkspace, clearWorkspace]);
+  }, [isPublicCheckin, isAuthenticated, authUserId, ensureAcademyDataOwner, initializeWorkspace, clearWorkspace]);
 
   useEffect(() => {
+    if (isPublicCheckin) return undefined;
     if (!isAuthenticated || !isWorkspaceReady) return undefined;
 
     startWorkspaceRealtime();
@@ -154,6 +157,7 @@ export default function App() {
     isWorkspaceReady,
     authUserId,
     currentAcademyId,
+    isPublicCheckin,
     startWorkspaceRealtime,
     stopWorkspaceRealtime,
     refreshWorkspaceCollaborationState,
@@ -174,6 +178,7 @@ export default function App() {
   // role 이 그 값과 다른 동안은 재설정하지 않는다 (Workspace UI 의 수동 전환 보호).
   const autoAppliedRoleRef = useRef(null);
   useEffect(() => {
+    if (isPublicCheckin) return;
     if (!isAuthenticated) return;
     if (!isWorkspaceReady) return; // memberships 가 아직 로딩 중일 수 있음
 
@@ -198,7 +203,7 @@ export default function App() {
     setRole(nextRole);
     autoAppliedRoleRef.current = nextRole;
   }, [
-    isAuthenticated, isWorkspaceReady, memberships, currentAcademyId,
+    isPublicCheckin, isAuthenticated, isWorkspaceReady, memberships, currentAcademyId,
     profile?.account_type, role, setRole,
   ]);
 
@@ -215,6 +220,7 @@ export default function App() {
   const hydratingRef = useRef(false);
   const monthEndGenerationRef = useRef(null);
   useEffect(() => {
+    if (isPublicCheckin) return;
     if (!isAuthenticated) return;
     if (!currentAcademyId) return;
     if (hydratingRef.current) return;
@@ -252,13 +258,14 @@ export default function App() {
       }
     })();
   }, [
-    isAuthenticated, currentAcademyId,
+    isPublicCheckin, isAuthenticated, currentAcademyId,
     serverStudentsLoadedAt, serverClassGroupsLoadedAt, serverClassSessionsLoadedAt,
     isServerStudentsLoading, isServerClassGroupsLoading, isServerClassSessionsLoading,
     hydrateAcademyFromServerSnapshot, showToast,
   ]);
 
   useEffect(() => {
+    if (isPublicCheckin) return;
     if (!isAuthenticated) return;
     if (!isWorkspaceReady) return;
     if (role !== 'owner') return;
@@ -294,6 +301,7 @@ export default function App() {
     })();
   }, [
     isAuthenticated,
+    isPublicCheckin,
     isWorkspaceReady,
     role,
     currentAcademyId,
@@ -360,7 +368,7 @@ export default function App() {
         {/* Phase 26: 미인증 상태에서는 renderLayout 이 AuthPage 를 노출하므로
             isAuthPanelOpen 으로 모달을 띄울 필요가 없다. 인증된 사용자가
             "다른 계정으로 로그인" 등을 트리거하면 이 패널이 열린다. */}
-        {isAuthenticated && isAuthPanelOpen && (
+        {!isPublicCheckin && isAuthenticated && isAuthPanelOpen && (
           <div className="fixed inset-0 z-50 bg-[#F2F4F6] overflow-y-auto">
             <AuthPage onAuthSuccess={closeAuthPanel} onCancel={closeAuthPanel} />
           </div>

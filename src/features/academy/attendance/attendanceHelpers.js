@@ -69,15 +69,24 @@ export function getPublicCheckinBaseUrl() {
 
 export function buildPublicCheckinUrl({ payload, baseUrl } = {}) {
   const base = normalizePublicBaseUrl(baseUrl || getPublicCheckinBaseUrl());
-  if (!base || !payload) return payload || '';
+  if (!base || !payload) return '';
 
   try {
+    const parsed = JSON.parse(payload);
     const url = new URL(base);
     url.searchParams.set('checkin', '1');
-    url.searchParams.set('p', payload);
+    if (parsed?.type === 'academy_checkin') {
+      url.searchParams.set('a', parsed.academyId || '');
+      url.searchParams.set('t', parsed.token || '');
+      url.searchParams.set('e', String(parsed.expiresAt || ''));
+      url.searchParams.set('u', String(parsed.issuedAt || ''));
+      url.searchParams.set('r', parsed.purpose || 'shared');
+    } else {
+      url.searchParams.set('p', payload);
+    }
     return url.toString();
   } catch {
-    return payload || '';
+    return '';
   }
 }
 
@@ -100,6 +109,17 @@ export function parseCheckinPayload(raw) {
       const u = new URL(s);
       const p = u.searchParams.get('p');
       if (p) s = decodeURIComponent(p);
+      else if (u.searchParams.has('checkin')) {
+        return {
+          v: 1,
+          type: 'academy_checkin',
+          academyId: u.searchParams.get('a') || '',
+          purpose: u.searchParams.get('r') || 'shared',
+          token: u.searchParams.get('t') || '',
+          issuedAt: Number(u.searchParams.get('u') || 0),
+          expiresAt: Number(u.searchParams.get('e') || 0),
+        };
+      }
     }
   } catch { /* ignore */ }
   try {

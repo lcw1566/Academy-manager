@@ -53,7 +53,7 @@ export default function QrDisplayPage({ onClose }) {
     () => buildPublicCheckinUrl({ payload }),
     [payload],
   );
-  const isPublicQrUrl = qrValue !== payload;
+  const isPublicQrUrl = /^https?:\/\//i.test(qrValue);
 
   const [rotating, setRotating] = useState(false);
   const handleRotateToken = async () => {
@@ -151,9 +151,11 @@ export default function QrDisplayPage({ onClose }) {
                 className="w-[72vw] max-w-[320px] h-auto rounded-2xl"
               />
               {!isPublicQrUrl && (
-                <p className="mt-3 max-w-[320px] text-center text-[11px] font-medium leading-relaxed text-amber-700">
-                  공개 앱 주소가 없어 기본 카메라용 URL을 만들지 못했어요. VITE_PUBLIC_APP_URL을 설정해 주세요.
-                </p>
+                <div className="w-[72vw] max-w-[320px] aspect-square rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center px-5 text-center">
+                  <p className="text-xs font-bold leading-relaxed text-amber-700">
+                    공개 앱 주소가 없어 기본 카메라용 QR을 만들지 못했어요. VITE_PUBLIC_APP_URL을 설정해 주세요.
+                  </p>
+                </div>
               )}
             </div>
 
