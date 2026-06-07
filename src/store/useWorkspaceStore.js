@@ -303,15 +303,64 @@ const useWorkspaceStore = create(
           ]);
 
           if (get().currentAcademyId) {
+            const academyStore = useAcademyStore.getState();
+            const hydrateSnapshot = academyStore.hydrateAcademyFromServerSnapshot;
+
             await Promise.all([
               get().loadAcademyMemberProfiles(),
               get().loadAcademyStaffProfiles(),
               get().loadAcademyInvitations(),
-              get().loadStaffWorkRules(),
-              get().loadStaffWorkExceptions(),
-              get().loadStaffAttendanceLogs({ limit: 200 }),
             ]);
             get().syncLocalStaffFromServerMembers();
+
+            const [
+              students,
+              classGroups,
+              classSessions,
+              lessonRecords,
+              attendanceRecords,
+              clinicRecords,
+              payments,
+              payrolls,
+            ] = await Promise.all([
+              get().loadServerStudents(),
+              get().loadServerClassGroups(),
+              get().loadServerClassSessions(),
+              get().loadServerLessonRecords(),
+              get().loadServerAttendanceRecords(),
+              get().loadServerClinicRecords(),
+              get().loadServerPayments(),
+              get().loadServerPayrolls(),
+            ]);
+
+            if (typeof hydrateSnapshot === 'function') {
+              hydrateSnapshot(
+                {
+                  students,
+                  classGroups,
+                  classSessions,
+                  lessonRecords,
+                  attendanceRecords,
+                  clinicRecords,
+                  payments,
+                  payrolls,
+                },
+                {
+                  strategy: 'serverWins',
+                  preserveLocalOnly: false,
+                },
+              );
+            }
+
+            await Promise.all([
+              get().loadServerStaffShifts(),
+              get().loadStudentCheckEvents(),
+              get().loadStaffWorkRules(),
+              get().loadStaffWorkExceptions(),
+              get().loadClassScheduleRules(),
+              get().loadClassSessionExceptions(),
+              get().loadStaffAttendanceLogs({ limit: 200 }),
+            ]);
           }
         } catch (err) {
           console.warn('[workspace realtime] collaboration refresh failed', err);
@@ -352,6 +401,66 @@ const useWorkspaceStore = create(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'academy_staff_work_exceptions' },
             () => get().scheduleWorkspaceRealtimeRefresh('academy_staff_work_exceptions'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'students' },
+            () => get().scheduleWorkspaceRealtimeRefresh('students'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'class_groups' },
+            () => get().scheduleWorkspaceRealtimeRefresh('class_groups'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'class_sessions' },
+            () => get().scheduleWorkspaceRealtimeRefresh('class_sessions'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'lesson_records' },
+            () => get().scheduleWorkspaceRealtimeRefresh('lesson_records'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'attendance_records' },
+            () => get().scheduleWorkspaceRealtimeRefresh('attendance_records'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'clinic_records' },
+            () => get().scheduleWorkspaceRealtimeRefresh('clinic_records'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'payments' },
+            () => get().scheduleWorkspaceRealtimeRefresh('payments'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'payrolls' },
+            () => get().scheduleWorkspaceRealtimeRefresh('payrolls'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'academy_staff_shifts' },
+            () => get().scheduleWorkspaceRealtimeRefresh('academy_staff_shifts'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'student_check_events' },
+            () => get().scheduleWorkspaceRealtimeRefresh('student_check_events'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'class_schedule_rules' },
+            () => get().scheduleWorkspaceRealtimeRefresh('class_schedule_rules'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'class_session_exceptions' },
+            () => get().scheduleWorkspaceRealtimeRefresh('class_session_exceptions'),
           )
           .on(
             'postgres_changes',

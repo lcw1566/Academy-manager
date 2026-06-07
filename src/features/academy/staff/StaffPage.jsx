@@ -1325,11 +1325,11 @@ function StaffScheduleCalendar({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <div className="min-w-[760px]">
+      <div className="overflow-hidden md:overflow-x-auto">
+        <div className="w-full md:min-w-[760px]">
           <div className="grid grid-cols-7 bg-[#FBFCFD] border-b border-[#F2F4F6]">
             {DOW_TO_KO.map((day) => (
-              <div key={day} className="px-3 py-2 text-[11px] font-extrabold text-[#8B95A1]">
+              <div key={day} className="px-1 py-2 text-center text-[10px] font-extrabold text-[#8B95A1] md:px-3 md:text-left md:text-[11px]">
                 {day}
               </div>
             ))}
@@ -1337,7 +1337,7 @@ function StaffScheduleCalendar({
           <div className="grid grid-cols-7">
             {dates.map((date, idx) => {
               if (!date) {
-                return <div key={`blank-${idx}`} className="min-h-[120px] border-r border-b border-[#F2F4F6] bg-[#FBFCFD]" />;
+                return <div key={`blank-${idx}`} className="min-h-[92px] border-r border-b border-[#F2F4F6] bg-[#FBFCFD] md:min-h-[120px]" />;
               }
               const shifts = monthByDate.get(date) || [];
               const sessions = classesByDate.get(date) || [];
@@ -1381,41 +1381,41 @@ function CalendarCell({ date, shifts, sessions, classGroupById, todayStr, onClic
     <button
       type="button"
       onClick={onClick}
-      className={`min-h-[120px] border-r border-b border-[#F2F4F6] p-3 text-left transition-colors hover:bg-blue-50/40 ${
+      className={`min-h-[92px] border-r border-b border-[#F2F4F6] p-1.5 text-left transition-colors hover:bg-blue-50/40 md:min-h-[120px] md:p-3 ${
         isTodayRow ? 'bg-blue-50/40' : 'bg-white'
       }`}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-1 md:gap-2">
         <div>
-          <p className={`text-sm font-extrabold ${isTodayRow ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+          <p className={`text-xs font-extrabold md:text-sm ${isTodayRow ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
             {Number(date.slice(8))}
           </p>
-          <p className="text-[10px] font-semibold text-[#8B95A1]">{getKoreanWeekdayFromYMD(date)}</p>
+          <p className="text-[9px] font-semibold text-[#8B95A1] md:text-[10px]">{getKoreanWeekdayFromYMD(date)}</p>
         </div>
         {hasException && (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
+          <span className="rounded-full bg-amber-100 px-1 py-0.5 text-[8px] font-bold text-amber-700 md:px-2 md:text-[10px]">
             변경
           </span>
         )}
       </div>
 
       {hasShift ? (
-        <div className={`mt-3 rounded-xl px-2.5 py-2 ${hasException ? 'bg-amber-50 border border-amber-100' : 'bg-blue-50 border border-blue-100'}`}>
-          <p className="text-[11px] font-extrabold text-[#191F28]">
+        <div className={`mt-2 rounded-lg px-1.5 py-1.5 md:mt-3 md:rounded-xl md:px-2.5 md:py-2 ${hasException ? 'bg-amber-50 border border-amber-100' : 'bg-blue-50 border border-blue-100'}`}>
+          <p className="truncate text-[9px] font-extrabold text-[#191F28] md:text-[11px]">
             {formatShiftTimeRange(firstShift?.scheduledStartTime, firstShift?.scheduledEndTime)}
           </p>
-          <p className="mt-0.5 text-[10px] font-semibold text-[#8B95A1]">
+          <p className="mt-0.5 text-[9px] font-semibold text-[#8B95A1] md:text-[10px]">
             {formatShiftHoursFromMinutes(grossMin)}h
-            {grossMin !== netMin ? ` · 급여 ${formatShiftHoursFromMinutes(netMin)}h` : ''}
+            {grossMin !== netMin ? <span className="hidden md:inline">{` · 급여 ${formatShiftHoursFromMinutes(netMin)}h`}</span> : ''}
           </p>
           {sessions.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
+            <div className="mt-1.5 flex flex-wrap gap-1 md:mt-2">
               {sessions.slice(0, 2).map((session) => {
                 const group = classGroupById.get(session.classGroupId);
                 return (
                   <span
                     key={session.id}
-                    className={`max-w-full truncate rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
+                    className={`max-w-full truncate rounded-md px-1 py-0.5 text-[8px] font-bold md:px-1.5 md:text-[9px] ${
                       uncoveredSessions.some((s) => s.id === session.id)
                         ? 'bg-red-50 text-red-600'
                         : 'bg-white text-emerald-700'
@@ -1426,7 +1426,7 @@ function CalendarCell({ date, shifts, sessions, classGroupById, todayStr, onClic
                 );
               })}
               {sessions.length > 2 && (
-                <span className="rounded-md bg-white px-1.5 py-0.5 text-[9px] font-bold text-[#8B95A1]">
+                <span className="rounded-md bg-white px-1 py-0.5 text-[8px] font-bold text-[#8B95A1] md:px-1.5 md:text-[9px]">
                   +{sessions.length - 2}
                 </span>
               )}
@@ -1434,11 +1434,11 @@ function CalendarCell({ date, shifts, sessions, classGroupById, todayStr, onClic
           )}
         </div>
       ) : (
-        <p className="mt-4 text-[11px] font-semibold text-[#B0B8C1]">근무 없음</p>
+        <p className="mt-3 text-[9px] font-semibold text-[#B0B8C1] md:mt-4 md:text-[11px]">근무 없음</p>
       )}
 
       {uncoveredSessions.length > 0 && (
-        <p className="mt-2 text-[10px] font-bold text-red-500">
+        <p className="mt-1.5 text-[8px] font-bold text-red-500 md:mt-2 md:text-[10px]">
           근무 밖 수업 {uncoveredSessions.length}건
         </p>
       )}

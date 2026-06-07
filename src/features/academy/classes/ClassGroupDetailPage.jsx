@@ -512,11 +512,11 @@ function ClassGroupScheduleCalendar({
         </div>
         <div className="relative">
           {calendarMode === 'month' ? (
-            <div className={`overflow-x-auto transition ${monthNeedsGeneration ? 'blur-[1.5px] opacity-45 pointer-events-none select-none' : ''}`}>
-            <div className="min-w-[760px]">
+            <div className={`overflow-hidden transition md:overflow-x-auto ${monthNeedsGeneration ? 'blur-[1.5px] opacity-45 pointer-events-none select-none' : ''}`}>
+            <div className="w-full md:min-w-[760px]">
               <div className="grid grid-cols-7 bg-[#FBFCFD] border-b border-[#F2F4F6]">
                 {DOW_TO_KO.map((day) => (
-                  <div key={day} className="px-3 py-2 text-[11px] font-extrabold text-[#8B95A1]">
+                  <div key={day} className="px-1 py-2 text-center text-[10px] font-extrabold text-[#8B95A1] md:px-3 md:text-left md:text-[11px]">
                     {day}
                   </div>
                 ))}
@@ -524,7 +524,7 @@ function ClassGroupScheduleCalendar({
               <div className="grid grid-cols-7">
                 {monthDates.map((date, idx) => {
                   if (!date) {
-                    return <div key={`blank-${idx}`} className="min-h-[120px] border-r border-b border-[#F2F4F6] bg-[#FBFCFD]" />;
+                    return <div key={`blank-${idx}`} className="min-h-[92px] border-r border-b border-[#F2F4F6] bg-[#FBFCFD] md:min-h-[120px]" />;
                   }
                   const daySessions = sessionsByDate.get(date) || [];
                   return (
@@ -543,28 +543,28 @@ function ClassGroupScheduleCalendar({
             </div>
           </div>
           ) : (
-            <div className={`overflow-x-auto transition ${monthNeedsGeneration ? 'blur-[1.5px] opacity-45 pointer-events-none select-none' : ''}`}>
-            <div className="min-w-[760px]">
-              <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))] border-b border-[#F2F4F6] bg-[#FBFCFD]">
-                <div className="px-2 py-2 text-[10px] font-bold text-[#8B95A1]">시간</div>
+            <div className={`overflow-hidden transition md:overflow-x-auto ${monthNeedsGeneration ? 'blur-[1.5px] opacity-45 pointer-events-none select-none' : ''}`}>
+            <div className="w-full md:min-w-[760px]">
+              <div className="grid grid-cols-[38px_repeat(7,minmax(0,1fr))] border-b border-[#F2F4F6] bg-[#FBFCFD] md:grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
+                <div className="px-1 py-2 text-center text-[9px] font-bold text-[#8B95A1] md:px-2 md:text-left md:text-[10px]">시간</div>
                 {weekDates.map((date) => {
                   const isTodayCell = date === todayYMD;
                   return (
-                    <div key={date} className="px-2 py-2 border-l border-[#F2F4F6]">
-                      <p className={`text-xs font-extrabold ${isTodayCell ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+                    <div key={date} className="border-l border-[#F2F4F6] px-0.5 py-2 text-center md:px-2 md:text-left">
+                      <p className={`text-[10px] font-extrabold leading-tight md:text-xs ${isTodayCell ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
                         {getKoreanWeekdayFromYMD(date)}
-                        <span className="ml-1 text-[10px] font-bold text-[#8B95A1]">{date.slice(5).replace('-', '.')}</span>
+                        <span className="block text-[9px] font-bold text-[#8B95A1] md:ml-1 md:inline md:text-[10px]">{date.slice(5).replace('-', '.')}</span>
                       </p>
                     </div>
                   );
                 })}
               </div>
-              <div className="grid grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
+              <div className="grid grid-cols-[38px_repeat(7,minmax(0,1fr))] md:grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
                 <div className="relative bg-[#FBFCFD] border-r border-[#F2F4F6]" style={{ height: calendarRange.height }}>
                   {calendarRange.ticks.map((tick) => (
                     <div
                       key={tick}
-                      className="absolute right-2 text-[10px] font-medium text-[#8B95A1]"
+                      className="absolute right-0.5 text-[8px] font-medium text-[#8B95A1] md:right-2 md:text-[10px]"
                       style={{
                         top: `clamp(10px, ${((tick - calendarRange.startMin) / totalRange) * 100}%, calc(100% - 16px))`,
                         transform: 'translateY(-50%)',
@@ -591,7 +591,7 @@ function ClassGroupScheduleCalendar({
                         />
                       ))}
                       {daySessions.length === 0 && (
-                        <div className="absolute inset-x-2 top-4 rounded-xl border border-dashed border-[#F2F4F6] px-2 py-3 text-center text-[11px] font-semibold text-[#B0B8C1]">
+                        <div className="absolute inset-x-0.5 top-4 rounded-lg border border-dashed border-[#F2F4F6] px-1 py-2 text-center text-[8px] font-semibold text-[#B0B8C1] md:inset-x-2 md:rounded-xl md:px-2 md:py-3 md:text-[11px]">
                           수업 없음
                         </div>
                       )}
@@ -662,22 +662,22 @@ function WeekSessionBlock({ session, students, attendanceRecords, todayYMD, top,
       title={title}
       aria-label={title}
       onClick={() => onSessionClick(session)}
-      className={`absolute left-2 right-2 rounded-xl border px-2 py-2 text-left overflow-hidden active:scale-[0.99] ${
+      className={`absolute left-0.5 right-0.5 rounded-lg border px-1 py-1 text-left overflow-hidden active:scale-[0.99] md:left-2 md:right-2 md:rounded-xl md:px-2 md:py-2 ${
         isTodaySession
           ? 'border-[#3182F6] bg-blue-100 shadow-[0_8px_20px_rgba(49,130,246,0.18)] ring-2 ring-blue-100'
           : 'border-blue-200 bg-blue-50/80 shadow-sm'
       }`}
-      style={{ top: `${top}%`, height: `${Math.max(5, height)}%`, minHeight: 48, zIndex: isTodaySession ? 12 : 8 }}
+      style={{ top: `${top}%`, height: `${Math.max(5, height)}%`, minHeight: 40, zIndex: isTodaySession ? 12 : 8 }}
     >
-      <div className="flex items-start justify-between gap-1.5">
-        <p className={`min-w-0 truncate text-xs font-extrabold ${isTodaySession ? 'text-[#0054C8]' : 'text-[#191F28]'}`}>
+      <div className="flex items-start justify-between gap-1 md:gap-1.5">
+        <p className={`min-w-0 truncate text-[9px] font-extrabold md:text-xs ${isTodaySession ? 'text-[#0054C8]' : 'text-[#191F28]'}`}>
           {isTodaySession ? '오늘 수업' : '수업'}
         </p>
-        <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${session.isPlanned ? 'bg-indigo-50 text-indigo-600' : statusInfo.color}`}>
+        <span className={`hidden shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold sm:inline-flex ${session.isPlanned ? 'bg-indigo-50 text-indigo-600' : statusInfo.color}`}>
           {session.isPlanned ? '규칙' : statusInfo.label}
         </span>
       </div>
-      <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold text-[#8B95A1]">
+      <div className="mt-0.5 hidden items-center gap-1.5 text-[10px] font-semibold text-[#8B95A1] md:flex">
         {session.room && <span className="truncate">{session.room}</span>}
         <span>{students.length}명</span>
         {attendedCount > 0 && <span className="text-green-600">출석 {attendedCount}</span>}
@@ -689,24 +689,24 @@ function WeekSessionBlock({ session, students, attendanceRecords, todayYMD, top,
 function MonthSessionCell({ date, sessions, students, attendanceRecords, todayYMD, onSessionClick }) {
   const isTodayCell = date === todayYMD;
   return (
-    <div className={`min-h-[120px] border-r border-b border-[#F2F4F6] p-3 ${isTodayCell ? 'bg-blue-50/40' : 'bg-white'}`}>
-      <div className="flex items-start justify-between gap-2">
+    <div className={`min-h-[92px] border-r border-b border-[#F2F4F6] p-1.5 md:min-h-[120px] md:p-3 ${isTodayCell ? 'bg-blue-50/40' : 'bg-white'}`}>
+      <div className="flex items-start justify-between gap-1 md:gap-2">
         <div>
-          <p className={`text-sm font-extrabold ${isTodayCell ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+          <p className={`text-xs font-extrabold md:text-sm ${isTodayCell ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
             {Number(date.slice(8))}
           </p>
-          <p className="text-[10px] font-semibold text-[#8B95A1]">{getKoreanWeekdayFromYMD(date)}</p>
+          <p className="text-[9px] font-semibold text-[#8B95A1] md:text-[10px]">{getKoreanWeekdayFromYMD(date)}</p>
         </div>
         {sessions.length > 0 && (
-          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-[#3182F6]">
+          <span className="rounded-full bg-blue-50 px-1 py-0.5 text-[8px] font-bold text-[#3182F6] md:px-2 md:text-[10px]">
             {sessions.length}회
           </span>
         )}
       </div>
       {sessions.length === 0 ? (
-        <p className="mt-4 text-[11px] font-semibold text-[#B0B8C1]">수업 없음</p>
+        <p className="mt-3 text-[9px] font-semibold text-[#B0B8C1] md:mt-4 md:text-[11px]">수업 없음</p>
       ) : (
-        <div className="mt-3 flex flex-col gap-1.5">
+        <div className="mt-2 flex flex-col gap-1 md:mt-3 md:gap-1.5">
           {sessions.slice(0, 3).map((session) => {
             const statusInfo = SESSION_STATUS[session.status] || SESSION_STATUS.scheduled;
             const attendedCount = attendanceRecords.filter((a) => a.sessionId === session.id && a.status === 'present').length;
@@ -715,17 +715,17 @@ function MonthSessionCell({ date, sessions, students, attendanceRecords, todayYM
                 key={session.id}
                 type="button"
                 onClick={() => onSessionClick(session)}
-                className="rounded-xl border border-blue-100 bg-blue-50 px-2.5 py-2 text-left active:scale-[0.99]"
+                className="rounded-lg border border-blue-100 bg-blue-50 px-1.5 py-1.5 text-left active:scale-[0.99] md:rounded-xl md:px-2.5 md:py-2"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-[11px] font-extrabold text-[#191F28]">
+                  <p className="truncate text-[9px] font-extrabold text-[#191F28] md:text-[11px]">
                     {formatSessionTimeRange(session.startTime, session.endTime)}
                   </p>
-                  <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${session.isPlanned ? 'bg-indigo-50 text-indigo-600' : statusInfo.color}`}>
+                  <span className={`hidden shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold md:inline-flex ${session.isPlanned ? 'bg-indigo-50 text-indigo-600' : statusInfo.color}`}>
                     {session.isPlanned ? '규칙' : statusInfo.label}
                   </span>
                 </div>
-                <p className="mt-0.5 truncate text-[10px] font-semibold text-[#8B95A1]">
+                <p className="mt-0.5 hidden truncate text-[10px] font-semibold text-[#8B95A1] md:block">
                   {session.room || '강의실 미정'} · {students.length}명
                   {attendedCount > 0 ? ` · 출석 ${attendedCount}` : ''}
                 </p>
@@ -733,7 +733,7 @@ function MonthSessionCell({ date, sessions, students, attendanceRecords, todayYM
             );
           })}
           {sessions.length > 3 && (
-            <p className="text-[10px] font-bold text-[#8B95A1]">+{sessions.length - 3}회 더 있음</p>
+            <p className="text-[9px] font-bold text-[#8B95A1] md:text-[10px]">+{sessions.length - 3}회</p>
           )}
         </div>
       )}

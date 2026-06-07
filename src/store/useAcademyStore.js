@@ -1963,7 +1963,10 @@ const useAcademyStore = create(
   mirrorServerStaffShifts: (serverShifts = []) => {
     if (!Array.isArray(serverShifts)) return;
     set((s) => {
-      const existing = s.academyStaffShifts || [];
+      const serverIds = new Set(serverShifts.map((sr) => sr?.id).filter(Boolean));
+      const existing = (s.academyStaffShifts || []).filter(
+        (sh) => !sh.serverId || serverIds.has(sh.serverId),
+      );
       const next = existing.slice();
       const localStaffByUserId = new Map();
       (s.academyTeachers || []).forEach((t) => {
