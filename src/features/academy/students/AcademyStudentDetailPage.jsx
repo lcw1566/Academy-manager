@@ -1,7 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X, QrCode } from 'lucide-react';
-import QrImage from '../../../components/qr/QrImage';
-import { buildStudentCardPayload, readAttendanceSettings } from '../attendance/attendanceHelpers';
+import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -385,11 +383,6 @@ export default function AcademyStudentDetailPage() {
         </div>
       )}
 
-      {/* Phase 41 — 학생 카드 QR (owner 만, QR 모드일 때만 노출) */}
-      {role === 'owner' && (
-        <StudentCardQrSection student={student} />
-      )}
-
       {/* 최근 수업 + 클리닉 요약 */}
       <div className="grid grid-cols-2 gap-3">
 
@@ -714,63 +707,6 @@ function InfoRowFull({ label, value }) {
     <div className="flex items-center justify-between py-1.5">
       <span className="text-xs text-gray-400">{label}</span>
       <span className="text-sm font-medium text-gray-800">{value}</span>
-    </div>
-  );
-}
-
-// Phase 41 — 학생 카드 QR. 학원이 student_check_method='qr' 이고 학생에게
-// serverId 가 있는 경우에만 의미가 있어 노출한다. 출력/공유용으로 펼침 토글.
-function StudentCardQrSection({ student }) {
-  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
-  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
-  const academy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
-  const attendance = readAttendanceSettings(academy);
-  const [open, setOpen] = useState(false);
-
-  if (attendance.studentCheckMethod !== 'qr') return null;
-  const serverStudentId = student?.serverId || student?.id;
-  if (!currentAcademyId || !serverStudentId) {
-    return (
-      <div className="bg-white rounded-2xl p-4 shadow-sm">
-        <p className="text-xs font-semibold text-gray-400 mb-1">학생 카드 QR</p>
-        <p className="text-xs text-gray-500 leading-relaxed">
-          이 학생은 아직 서버에 연결되지 않아 QR 카드를 생성할 수 없어요. 학생 정보를 수정한 뒤 서버에 저장되면 노출돼요.
-        </p>
-      </div>
-    );
-  }
-  const payload = buildStudentCardPayload({
-    academyId: currentAcademyId,
-    studentId: serverStudentId,
-  });
-
-  return (
-    <div className="bg-white rounded-2xl p-4 shadow-sm">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 text-left"
-      >
-        <div className="w-9 h-9 rounded-full bg-indigo-50 flex items-center justify-center">
-          <QrCode size={16} className="text-indigo-600" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-900">학생 카드 QR</p>
-          <p className="text-[11px] text-gray-500 mt-0.5">
-            공용 단말로 스캔하면 등·하원으로 기록돼요.
-          </p>
-        </div>
-        <ChevronDown size={14} className={`text-gray-300 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="mt-3 pt-3 border-t border-gray-50 flex flex-col items-center gap-2">
-          <QrImage value={payload} size={224} ariaLabel={`${student.name} 학생 카드 QR`} />
-          <p className="text-xs text-gray-500 mt-1">{student.name}</p>
-          <p className="text-[11px] text-gray-400 text-center px-2">
-            출력해 학원 책상/카드에 부착하면 학생이 직접 등·하원 체크인할 수 있어요.
-          </p>
-        </div>
-      )}
     </div>
   );
 }
