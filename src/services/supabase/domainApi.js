@@ -943,6 +943,7 @@ const STUDENT_ALLOWED_FIELDS = new Set([
   'name', 'school_type', 'school_name', 'grade',
   'phone', 'parent_phone', 'parent_title', 'parent_name',
   'enrollment_date', 'status', 'memo', 'class_group_ids',
+  'checkin_pin',
 ]);
 
 function sanitizeStudentPayload(input, { strip = [] } = {}) {

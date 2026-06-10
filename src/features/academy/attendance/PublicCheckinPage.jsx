@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { publicStudentCheckin } from '../../../services/supabase/workspaceApi';
 import { isPayloadExpired, parseCheckinPayload } from './attendanceHelpers';
 
 function readPayloadFromLocation() {
@@ -7,23 +8,82 @@ function readPayloadFromLocation() {
   return parseCheckinPayload(window.location.href);
 }
 
+const CHECKIN_FAILURE_MESSAGES = {
+  invalid_qr: {
+    title: '사용할 수 없는 QR입니다',
+    detail: '학원 화면의 최신 QR을 다시 스캔해 주세요.',
+  },
+  expired_qr: {
+    title: 'QR 시간이 만료됐습니다',
+    detail: '학원 화면의 최신 QR을 다시 스캔해 주세요.',
+  },
+  invalid_pin: {
+    title: 'PIN을 다시 확인해 주세요',
+    detail: '4자리 숫자로 입력해 주세요.',
+  },
+  pin_not_found: {
+    title: 'PIN을 찾을 수 없습니다',
+    detail: '학원에 등록된 등하원 PIN인지 확인해 주세요.',
+  },
+  duplicate_pin: {
+    title: '같은 PIN을 쓰는 학생이 있습니다',
+    detail: '학원에 알려 PIN을 다시 설정해 주세요.',
+  },
+  default: {
+    title: '체크인에 실패했습니다',
+    detail: '잠시 후 다시 시도해 주세요.',
+  },
+};
+
 export default function PublicCheckinPage() {
   const payload = useMemo(() => readPayloadFromLocation(), []);
   const [pin, setPin] = useState('');
   const [message, setMessage] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const invalid = !payload || payload.type !== 'academy_checkin';
   const expired = !invalid && isPayloadExpired(payload);
   const canSubmit = !invalid && !expired && /^\d{4}$/.test(pin);
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!canSubmit) return;
-    setMessage({
-      type: 'info',
-      title: 'PIN 체크인 연결 준비 중',
-      detail: 'QR URL은 정상입니다. 다음 단계에서 PIN 검증과 등하원 저장 RPC를 연결하면 바로 기록됩니다.',
-    });
+    if (!canSubmit || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await publicStudentCheckin({
+        academyId: payload.academyId,
+        qrToken: payload.token,
+        pin,
+        expiresAt: payload.expiresAt,
+      });
+      if (result?.ok) {
+        const eventLabel = result.event_type === 'check_out' ? '하원' : '등원';
+        const timeLabel = result.event_time
+          ? new Date(result.event_time).toLocaleTimeString('ko-KR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : '';
+        setMessage({
+          type: 'success',
+          title: `${result.student_name || '학생'} ${eventLabel} 완료`,
+          detail: timeLabel ? `${timeLabel}에 기록됐어요.` : '기록됐어요.',
+        });
+        setPin('');
+        return;
+      }
+      const failure = CHECKIN_FAILURE_MESSAGES[result?.message] || CHECKIN_FAILURE_MESSAGES.default;
+      setMessage({ type: 'error', ...failure });
+    } catch (err) {
+      setMessage({
+        type: 'error',
+        title: '체크인 저장 실패',
+        detail: err?.message || '잠시 후 다시 시도해 주세요.',
+      });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -67,20 +127,31 @@ export default function PublicCheckinPage() {
               />
               <button
                 type="submit"
-                disabled={!canSubmit}
-                className="mt-4 w-full h-12 rounded-xl bg-[#191F28] text-white text-sm font-bold disabled:opacity-40"
+                disabled={!canSubmit || busy}
+                className="mt-4 w-full h-12 rounded-xl bg-[#191F28] text-white text-sm font-bold disabled:opacity-40 flex items-center justify-center gap-1.5"
               >
+                {busy ? <Loader2 size={15} className="animate-spin" /> : null}
                 체크하기
               </button>
             </>
           )}
 
           {message && (
-            <div className="mt-4 rounded-xl bg-[#E8F3FF] px-4 py-3 flex gap-2">
-              <CheckCircle2 size={17} className="text-[#1B64DA] flex-shrink-0 mt-0.5" />
+            <div className={`mt-4 rounded-xl px-4 py-3 flex gap-2 ${
+              message.type === 'success' ? 'bg-emerald-50' : 'bg-amber-50'
+            }`}>
+              {message.type === 'success' ? (
+                <CheckCircle2 size={17} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+              ) : (
+                <AlertTriangle size={17} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              )}
               <div>
-                <p className="text-sm font-bold text-[#1B64DA]">{message.title}</p>
-                <p className="mt-1 text-xs text-[#1B64DA] leading-relaxed">{message.detail}</p>
+                <p className={`text-sm font-bold ${
+                  message.type === 'success' ? 'text-emerald-700' : 'text-amber-800'
+                }`}>{message.title}</p>
+                <p className={`mt-1 text-xs leading-relaxed ${
+                  message.type === 'success' ? 'text-emerald-700' : 'text-amber-700'
+                }`}>{message.detail}</p>
               </div>
             </div>
           )}

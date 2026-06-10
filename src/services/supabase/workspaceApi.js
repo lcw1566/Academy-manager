@@ -605,3 +605,15 @@ export async function createStudentCheckEvent({
   if (error) throw error;
   return data;
 }
+
+export async function publicStudentCheckin({ academyId, qrToken, pin, expiresAt } = {}) {
+  assertSupabaseConfigured();
+  const { data, error } = await supabase.rpc('public_student_checkin', {
+    p_academy_id: academyId || null,
+    p_qr_token: qrToken || '',
+    p_pin: pin || '',
+    p_expires_at: expiresAt ? Number(expiresAt) : null,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] : data;
+}

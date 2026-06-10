@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X, Paperclip } from 'lucide-react';
+import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -20,13 +20,27 @@ import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 
 // 역할별 탭 정의
 const TABS_BY_ROLE = {
-  owner:     ['요약', '수업 기록', '정산'],
-  teacher:   ['요약', '수업 기록'],
-  assistant: ['요약', '클리닉'],
+  owner:     ['요약', '수업 기록', '클리닉 기록', '정산'],
+  teacher:   ['요약', '수업 기록', '클리닉 기록'],
+  assistant: ['요약', '클리닉 기록'],
 };
 
+function nowHHMM() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function isSessionFuture(session, todayYMD = today(), currentHHMM = nowHHMM()) {
+  if (!session?.date) return false;
+  if (session.date > todayYMD) return true;
+  if (session.date < todayYMD) return false;
+  return (session.startTime || '00:00') > currentHHMM;
+}
+
 // ── helper: 학생 날짜별 수업 기록 생성 ─────────────────────────────
-function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, academyLessonRecords, academyAttendanceRecords, clinicTasks, clinicRecords = [], academyTeachers }) {
+function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, academyLessonRecords, academyAttendanceRecords, clinicRecords = [], academyTeachers }) {
+  const todayYMD = today();
+  const currentHHMM = nowHHMM();
   const records = classSessions
     .filter((s) => (s.studentIds || []).includes(studentId))
     .map((session) => {
@@ -36,10 +50,11 @@ function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, a
       const commonRecord = academyLessonRecords.find((lr) => lr.sessionId === session.id && lr.studentId === '_common_');
       const teacher = academyTeachers.find((t) => t.id === session.teacherId);
 
-      // clinicRecords 연결: sessionId 일치 또는 같은 학생 + 같은 날짜
+      // 수업 카드에는 회차에 직접 연결된 클리닉만 노출한다.
+      // 날짜만 같은 기록은 독립 클리닉 탭에서 확인해 중복 매핑을 줄인다.
       const linkedClinicRecords = clinicRecords.filter((r) =>
         r.studentId === studentId &&
-        (r.classSessionId === session.id || r.date === session.date)
+        r.classSessionId === session.id
       );
 
       return {
@@ -57,6 +72,7 @@ function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, a
         commonRecord,
         clinics: linkedClinicRecords,
         clinicSummary: { total: linkedClinicRecords.length },
+        isFuture: isSessionFuture(session, todayYMD, currentHHMM),
       };
     })
     .sort((a, b) => {
@@ -80,13 +96,54 @@ const SUPPORT_TAG_MAP = {
   test_retry: '테스트 재응시', absence_makeup: '결석 보강', other: '기타',
 };
 
+function StatusBadge({ type }) {
+  const styles = {
+    present:    'bg-blue-50 text-blue-700',
+    late:       'bg-orange-50 text-orange-700',
+    absent:     'bg-red-50 text-red-700',
+    makeup:     'bg-red-50 text-red-700',
+    unrecorded: 'bg-orange-50 text-orange-700',
+    upcoming:   'bg-gray-50 text-gray-500 border border-dashed border-gray-300',
+  };
+  const labels = {
+    present: '출석',
+    late: '지각',
+    absent: '결석',
+    makeup: '보강필요',
+    unrecorded: '미기록',
+    upcoming: '수업 예정',
+  };
+  const safeType = styles[type] ? type : 'unrecorded';
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${styles[safeType]}`}>
+      {labels[safeType]}
+    </span>
+  );
+}
+
+function LinkedClinicMiniBadge({ count, onClick }) {
+  if (!count) return null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.();
+      }}
+      className="inline-flex items-center gap-1 text-[11px] font-semibold bg-blue-50 text-blue-600 px-2 py-1 rounded-full"
+    >
+      <Paperclip size={11} />
+      연결된 클리닉 {count}건
+    </button>
+  );
+}
+
 // ── 수업 기록 카드 ─────────────────────────────────────────────────
-function LessonRecordCard({ record }) {
+function SessionRecordCard({ record, onClinicClick }) {
   const [expanded, setExpanded] = useState(false);
-  const { date, startTime, endTime, classGroupName, subject, teacherName, attendanceStatus, lessonRecord, commonRecord, clinics, clinicSummary } = record;
+  const { date, startTime, endTime, classGroupName, subject, teacherName, attendanceStatus, lessonRecord, commonRecord, clinics, clinicSummary, isFuture } = record;
 
   const weekday = date ? getKoreanWeekdayFromYMD(date) : '';
-  const attMeta = attendanceStatus ? attendanceStatusMap[attendanceStatus] : null;
 
   const hasEval = lessonRecord && (lessonRecord.attitude || lessonRecord.focus || lessonRecord.understanding || lessonRecord.homeworkStatus);
   const hasSupport = lessonRecord && ((lessonRecord.supportTags?.length > 0) || lessonRecord.supportMemo?.trim());
@@ -94,35 +151,38 @@ function LessonRecordCard({ record }) {
   const hasAnyRecord = hasEval || hasSupport || hasCommon || clinicSummary.total > 0;
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+    <div className={`rounded-2xl shadow-sm overflow-hidden ${
+      isFuture ? 'bg-gray-50 border border-dashed border-gray-200 shadow-none' : 'bg-white'
+    }`}>
       {/* 카드 헤더 */}
-      <button type="button" className="w-full px-4 py-4 text-left" onClick={() => setExpanded(!expanded)}>
+      <button
+        type="button"
+        className={`w-full px-4 py-4 text-left ${isFuture ? 'cursor-default' : ''}`}
+        onClick={() => {
+          if (!isFuture) setExpanded(!expanded);
+        }}
+      >
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <p className="text-sm font-bold text-gray-900">
+              <p className={`text-base font-bold ${isFuture ? 'text-gray-500' : 'text-gray-900'}`}>
                 {date ? `${date.slice(5).replace('-', '/')} ${weekday}요일` : '날짜 없음'}
               </p>
-              {attMeta && (
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${attMeta.bg} ${attMeta.color}`}>
-                  {attMeta.label}
-                </span>
-              )}
-              {!attendanceStatus && <span className="text-xs text-gray-300">미기록</span>}
+              <StatusBadge type={isFuture ? 'upcoming' : (attendanceStatus || 'unrecorded')} />
             </div>
             <p className="text-xs text-gray-500">{classGroupName} {subject && `· ${subject}`} · {startTime}–{endTime}</p>
-            {commonRecord?.commonProgress && (
+            {!isFuture && commonRecord?.commonProgress && (
               <p className="text-xs text-gray-400 mt-1.5 line-clamp-1">진도: {commonRecord.commonProgress}</p>
             )}
+            <div className="flex items-center gap-1.5 flex-wrap mt-2">
+              {!isFuture && hasAnyRecord && (
+                <span className="text-[11px] font-semibold bg-green-50 text-green-600 px-2 py-1 rounded-full">기록 있음</span>
+              )}
+              <LinkedClinicMiniBadge count={clinicSummary.total} onClick={onClinicClick} />
+            </div>
           </div>
           <div className="flex items-center gap-2 ml-2 flex-shrink-0">
-            {clinicSummary.total > 0 && (
-              <span className="text-[10px] font-semibold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">
-                클리닉 {clinicSummary.total}건
-              </span>
-            )}
-            {hasAnyRecord && <span className="text-[10px] font-semibold bg-green-50 text-green-600 px-1.5 py-0.5 rounded-full">기록 있음</span>}
-            {expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+            {!isFuture && (expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />)}
           </div>
         </div>
       </button>
@@ -131,11 +191,11 @@ function LessonRecordCard({ record }) {
       <div
         style={{
           display: 'grid',
-          gridTemplateRows: expanded ? '1fr' : '0fr',
+          gridTemplateRows: expanded && !isFuture ? '1fr' : '0fr',
           transition: 'grid-template-rows 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
         }}
       >
-        <div style={{ overflow: 'hidden', opacity: expanded ? 1 : 0, transition: 'opacity 0.18s ease' }}>
+        <div style={{ overflow: 'hidden', opacity: expanded && !isFuture ? 1 : 0, transition: 'opacity 0.18s ease' }}>
             <div className="px-4 pb-4 border-t border-gray-50">
               {/* 수업 정보 */}
               <div className="mt-3 mb-3">
@@ -204,29 +264,7 @@ function LessonRecordCard({ record }) {
                 </div>
               )}
 
-              {/* 클리닉 기록 */}
-              {clinics.length > 0 && (
-                <div className="mb-1">
-                  <p className="text-xs font-semibold text-gray-400 mb-2">클리닉 기록 {clinics.length}건</p>
-                  <div className="flex flex-col gap-2">
-                    {clinics.map((cr) => (
-                      <div key={cr.id} className="bg-gray-50 rounded-xl px-3 py-2.5">
-                        <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">{cr.subject}</span>
-                        {cr.items?.map((item, i) => (
-                          <div key={item.id || i} className="mt-1.5">
-                            <p className="text-xs font-semibold text-gray-700">{item.title}</p>
-                            {item.description && <p className="text-xs text-gray-500">{item.description}</p>}
-                            {item.result && <p className="text-xs text-blue-600">결과: {item.result}</p>}
-                          </div>
-                        ))}
-                        {cr.overallMemo && (
-                          <p className="text-xs text-gray-400 mt-1.5 border-t border-gray-200 pt-1.5">{cr.overallMemo}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <LinkedClinicMiniBadge count={clinics.length} onClick={onClinicClick} />
 
               {!hasAnyRecord && (
                 <p className="text-xs text-gray-300 py-2">수업 기록이 없어요</p>
@@ -281,14 +319,24 @@ export default function AcademyStudentDetailPage() {
     () => !student ? [] : getStudentDailyLessonRecords({
       studentId: student.id, classSessions, classGroups,
       academyLessonRecords, academyAttendanceRecords,
-      clinicTasks, clinicRecords, academyTeachers,
+      clinicRecords, academyTeachers,
     }),
-    [student, classSessions, classGroups, academyLessonRecords, academyAttendanceRecords, clinicTasks, clinicRecords, academyTeachers]
+    [student, classSessions, classGroups, academyLessonRecords, academyAttendanceRecords, clinicRecords, academyTeachers]
   );
 
   const studentClinicRecords = useMemo(
     () => !student ? [] : (clinicRecords || []).filter((r) => r.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || '')),
     [clinicRecords, student]
+  );
+
+  const pendingClinicCount = useMemo(
+    () => !student ? 0 : (clinicTasks || []).filter((t) => t.studentId === student.id && t.status !== 'completed').length,
+    [clinicTasks, student]
+  );
+
+  const thisMonthClinicCount = useMemo(
+    () => !student ? 0 : studentClinicRecords.filter((r) => r.date?.slice(0, 7) === today().slice(0, 7)).length,
+    [studentClinicRecords, student]
   );
 
   const tabs = TABS_BY_ROLE[role] || TABS_BY_ROLE.owner;
@@ -319,8 +367,9 @@ export default function AcademyStudentDetailPage() {
     );
   }
 
-  // 최근 수업 (요약용)
-  const latestRecord = dailyRecords[0];
+  // 최근 수업 (요약용): 미래 회차는 제외한다.
+  const latestRecord = dailyRecords.find((r) => !r.isFuture) || null;
+  const nextRecord = [...dailyRecords].reverse().find((r) => r.isFuture) || null;
 
   const handleDelete = async () => {
     if (!window.confirm(`${student.name} 학생을 삭제할까요?`)) return;
@@ -353,7 +402,8 @@ export default function AcademyStudentDetailPage() {
   // ── 렌더 함수들 ───────────────────────────────────────────────────
 
   const renderSummary = () => (
-    <div className="flex flex-col gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="md:col-span-2 flex flex-col gap-4">
       {/* 기본 정보 */}
       <div className="bg-white rounded-2xl p-4 shadow-sm">
         <p className="text-xs font-semibold text-gray-400 mb-3">기본 정보</p>
@@ -363,10 +413,13 @@ export default function AcademyStudentDetailPage() {
           {student.phone && <InfoRowFull label="연락처" value={student.phone} />}
           {student.parentName && <InfoRowFull label="학부모" value={student.parentName} />}
           {student.parentPhone && <InfoRowFull label="학부모 연락처" value={student.parentPhone} />}
+          {role === 'owner' && student.checkinPin && <InfoRowFull label="등하원 PIN" value={student.checkinPin} />}
           {student.memo && <InfoRowFull label="메모" value={student.memo} />}
         </div>
       </div>
+      </div>
 
+      <div className="md:col-span-3 flex flex-col gap-4">
       {/* 수강 반 */}
       {studentGroups.length > 0 && (
         <div className="bg-white rounded-2xl p-4 shadow-sm">
@@ -384,11 +437,11 @@ export default function AcademyStudentDetailPage() {
       )}
 
       {/* 최근 수업 + 클리닉 요약 */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 
         {latestRecord && (
           <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <p className="text-xs font-semibold text-gray-400 mb-2">최근 수업</p>
+            <p className="text-xs font-semibold text-gray-400 mb-2">최근 완료/진행 수업</p>
             <p className="text-sm font-bold text-gray-900">
               {latestRecord.date?.slice(5).replace('-', '/')}
             </p>
@@ -400,36 +453,84 @@ export default function AcademyStudentDetailPage() {
             )}
           </div>
         )}
+        {!latestRecord && nextRecord && (
+          <div className="bg-gray-50 rounded-2xl p-4 border border-dashed border-gray-200">
+            <p className="text-xs font-semibold text-gray-400 mb-2">다가오는 수업</p>
+            <p className="text-sm font-bold text-gray-700">
+              {nextRecord.date?.slice(5).replace('-', '/')}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">{nextRecord.classGroupName}</p>
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full mt-1.5 inline-block bg-gray-100 text-gray-500">
+              수업 예정
+            </span>
+          </div>
+        )}
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <p className="text-xs font-semibold text-gray-400 mb-2">클리닉 기록</p>
-          <p className="text-sm font-bold text-gray-900">
-            총 {clinicRecords.filter((r) => r.studentId === student.id).length}건
+          <p className={`text-sm font-bold ${pendingClinicCount > 0 ? 'text-orange-600' : 'text-gray-900'}`}>
+            미완료 {pendingClinicCount}건
           </p>
           <p className="text-xs text-gray-400 mt-0.5">
-            이번 달 {clinicRecords.filter((r) => r.studentId === student.id && r.date?.slice(0, 7) === today().slice(0, 7)).length}건
+            이번 달 완료 {thisMonthClinicCount}건
           </p>
         </div>
+      </div>
       </div>
     </div>
   );
 
-  const renderLessonHistory = () => (
-    <div className="flex flex-col gap-3">
-      {dailyRecords.length === 0 ? (
-        <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
-          <p className="text-sm text-gray-400">수업 기록이 없어요</p>
-        </div>
-      ) : (
-        dailyRecords.map((record) => (
-          <LessonRecordCard key={record.id} record={record} />
-        ))
-      )}
+  const renderLessonHistory = () => {
+    const currentAndPastRecords = dailyRecords.filter((record) => !record.isFuture);
+    const futureRecords = dailyRecords
+      .filter((record) => record.isFuture)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.startTime || '').localeCompare(b.startTime || ''));
 
-      {/* 수업 기록 탭에서는 클리닉 추가 버튼을 제공하지 않음.
-          원장/강사는 ClassSessionPage의 학습 보완 항목으로만 남기고,
-          클리닉 기록 생성은 보조강사 클리닉 탭에서 진행. */}
-    </div>
-  );
+    return (
+      <div className="flex flex-col gap-4">
+        {dailyRecords.length === 0 ? (
+          <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
+            <p className="text-sm text-gray-400">수업 기록이 없어요</p>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-3">
+              <p className="text-xs font-bold text-gray-400 px-1">완료/진행 수업</p>
+              {currentAndPastRecords.length === 0 ? (
+                <div className="bg-white rounded-2xl p-5 text-center shadow-sm">
+                  <p className="text-sm text-gray-400">아직 완료된 수업이 없어요</p>
+                </div>
+              ) : (
+                currentAndPastRecords.map((record) => (
+                  <SessionRecordCard
+                    key={record.id}
+                    record={record}
+                    onClinicClick={() => setActiveTab('클리닉 기록')}
+                  />
+                ))
+              )}
+            </div>
+
+            {futureRecords.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-bold text-gray-400 px-1">예정된 수업</p>
+                {futureRecords.map((record) => (
+                  <SessionRecordCard
+                    key={record.id}
+                    record={record}
+                    onClinicClick={() => setActiveTab('클리닉 기록')}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* 수업 기록 탭에서는 클리닉 추가 버튼을 제공하지 않음.
+            원장/강사는 ClassSessionPage의 학습 보완 항목으로만 남기고,
+            클리닉 기록 생성은 보조강사 클리닉 탭에서 진행. */}
+      </div>
+    );
+  };
 
   const renderClinic = () => (
     <div className="flex flex-col gap-3">
@@ -559,10 +660,13 @@ export default function AcademyStudentDetailPage() {
 
     return (
       <div className="flex flex-col gap-2">
-        <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowAddPayment(!showAddPayment)}
-          className="w-full py-2.5 border-2 border-dashed border-blue-200 rounded-2xl text-blue-600 text-sm font-semibold flex items-center justify-center gap-1">
-          <Plus size={14} /> 수납 항목 추가
-        </motion.button>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-sm font-bold text-gray-700">수납 내역</p>
+          <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowAddPayment(!showAddPayment)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold shadow-sm">
+            <Plus size={13} /> 수납 등록
+          </motion.button>
+        </div>
 
         {showAddPayment && (
           <div className="bg-white rounded-2xl p-4 shadow-sm">
@@ -611,7 +715,11 @@ export default function AcademyStudentDetailPage() {
               <div className="flex items-center gap-2">
                 <div className="text-right">
                   <p className="font-bold text-gray-900 text-sm">{p.amount?.toLocaleString()}원</p>
-                  <span className={`text-xs font-medium ${p.status === 'paid' ? 'text-green-600' : 'text-red-500'}`}>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block mt-0.5 ${
+                    p.status === 'paid'
+                      ? 'bg-green-50 text-green-700'
+                      : 'bg-red-50 text-red-600'
+                  }`}>
                     {p.status === 'paid' ? '수납 완료' : '미납'}
                   </span>
                 </div>
@@ -689,7 +797,7 @@ export default function AcademyStudentDetailPage() {
         <div className="px-4">
           {activeTab === '요약' && renderSummary()}
           {activeTab === '수업 기록' && renderLessonHistory()}
-          {activeTab === '클리닉' && renderClinic()}
+          {activeTab === '클리닉 기록' && renderClinic()}
           {activeTab === '정산' && renderSettlement()}
         </div>
       </div>

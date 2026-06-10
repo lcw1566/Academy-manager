@@ -25,6 +25,7 @@ export function mapServerStudentToLocal(s) {
     parentTitle: s.parent_title ?? '',
     parentName: s.parent_name ?? '',
     parentPhone: s.parent_phone ?? '',
+    checkinPin: s.checkin_pin ?? '',
     enrollmentDate: s.enrollment_date ?? '',
     status: s.status ?? 'active',
     memo: s.memo ?? '',
