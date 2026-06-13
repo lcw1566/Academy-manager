@@ -1,9 +1,10 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { AnimatePresence, MotionConfig } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import useAcademyStore from './store/useAcademyStore';
 import useAuthStore from './store/useAuthStore';
 import useWorkspaceStore from './store/useWorkspaceStore';
+import useChatStore from './store/useChatStore';
 import RoleSelectPage from './features/auth/RoleSelectPage';
 import AuthPage from './features/auth/AuthPage';
 import StaffWaitingPage from './features/auth/StaffWaitingPage';
@@ -88,6 +89,12 @@ export default function App() {
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
 
+  // 채팅 (학원 직원 전용) — 로그인 + 학원 선택 시 로드/실시간 구독.
+  const loadChat = useChatStore((s) => s.loadChat);
+  const startChatRealtime = useChatStore((s) => s.startChatRealtime);
+  const stopChatRealtime = useChatStore((s) => s.stopChatRealtime);
+  const clearChat = useChatStore((s) => s.clearChat);
+
   // server count loaders 완료 여부 — auto-hydrate 진입 가드.
   const serverStudentsLoadedAt = useWorkspaceStore((s) => s.serverStudentsLoadedAt);
   const serverClassGroupsLoadedAt = useWorkspaceStore((s) => s.serverClassGroupsLoadedAt);
@@ -112,13 +119,14 @@ export default function App() {
       initializeWorkspace();
     } else {
       clearWorkspace();
+      clearChat();
       // Phase 27: 로그아웃 시 자동 역할 ref 초기화. 다음 사용자의 권장 역할이
       // 이전 사용자 값과 같아 잘못 skip 되는 것을 방지.
       autoAppliedRoleRef.current = null;
       // Phase 28: 학원 선택 sessionStorage 도 비워서 다음 사용자가 다시 선택할 수 있게.
       clearWorkspacePicked();
     }
-  }, [isPublicCheckin, isAuthenticated, authUserId, ensureAcademyDataOwner, initializeWorkspace, clearWorkspace]);
+  }, [isPublicCheckin, isAuthenticated, authUserId, ensureAcademyDataOwner, initializeWorkspace, clearWorkspace, clearChat]);
 
   useEffect(() => {
     if (isPublicCheckin) return undefined;
@@ -161,6 +169,30 @@ export default function App() {
     startWorkspaceRealtime,
     stopWorkspaceRealtime,
     refreshWorkspaceCollaborationState,
+  ]);
+
+  // ─── 앱 내 채팅 로드 + 실시간 ──────────────────────────────
+  // 학원 멤버십이 있는 사용자(owner/teacher/assistant)만. 과외(tutor) 단독
+  // 사용자는 currentAcademyId 멤버십이 없어 자연히 제외된다.
+  const hasAcademyMembership = useMemo(
+    () => !!currentAcademyId && memberships.some((m) => m.academy_id === currentAcademyId),
+    [currentAcademyId, memberships],
+  );
+  useEffect(() => {
+    if (isPublicCheckin) return undefined;
+    if (!isAuthenticated || !isWorkspaceReady || !hasAcademyMembership) return undefined;
+    loadChat(currentAcademyId);
+    startChatRealtime(currentAcademyId);
+    return () => stopChatRealtime();
+  }, [
+    isPublicCheckin,
+    isAuthenticated,
+    isWorkspaceReady,
+    hasAcademyMembership,
+    currentAcademyId,
+    loadChat,
+    startChatRealtime,
+    stopChatRealtime,
   ]);
 
   // ─── Phase 25: 자동 역할 진입 ───────────────────────────────
@@ -247,7 +279,7 @@ export default function App() {
           (counts?.attendanceRecords || 0) + (counts?.clinicRecords || 0) +
           (counts?.payments || 0) + (counts?.payrolls || 0);
         if (total > 0) {
-          showToast(`서버 기준으로 동기화했어요. (${total}개)`);
+          showToast(`접속 완료!`);
         }
       } catch (err) {
         console.error('[auto-hydrate] fetchAcademySnapshot failed', err);

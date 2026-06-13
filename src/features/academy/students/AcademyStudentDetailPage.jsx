@@ -155,11 +155,19 @@ function SessionRecordCard({ record, onClinicClick }) {
       isFuture ? 'bg-gray-50 border border-dashed border-gray-200 shadow-none' : 'bg-white'
     }`}>
       {/* 카드 헤더 */}
-      <button
-        type="button"
-        className={`w-full px-4 py-4 text-left ${isFuture ? 'cursor-default' : ''}`}
+      <div
+        role={isFuture ? undefined : 'button'}
+        tabIndex={isFuture ? -1 : 0}
+        className={`w-full px-4 py-4 text-left ${isFuture ? 'cursor-default' : 'cursor-pointer'}`}
         onClick={() => {
           if (!isFuture) setExpanded(!expanded);
+        }}
+        onKeyDown={(e) => {
+          if (isFuture) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setExpanded((prev) => !prev);
+          }
         }}
       >
         <div className="flex items-start justify-between">
@@ -185,7 +193,7 @@ function SessionRecordCard({ record, onClinicClick }) {
             {!isFuture && (expanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />)}
           </div>
         </div>
-      </button>
+      </div>
 
       {/* 펼침 상세 */}
       <div

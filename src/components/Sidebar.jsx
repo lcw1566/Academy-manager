@@ -20,7 +20,7 @@ const ROLE_LABEL = {
   assistant: '보조강사',
 };
 
-export default function Sidebar({ tabs }) {
+export default function Sidebar({ tabs, badges = {} }) {
   const role = useAcademyStore((s) => s.role);
   const activeTab = useAcademyStore((s) => s.activeTab);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -43,6 +43,7 @@ export default function Sidebar({ tabs }) {
         {(tabs || []).map((tab) => {
           const IconComponent = tab.Icon || tab.icon;
           const active = activeTab === tab.id;
+          const badge = badges[tab.id] || 0;
           return (
             <button
               key={tab.id}
@@ -61,6 +62,11 @@ export default function Sidebar({ tabs }) {
                 />
               )}
               <span className="text-sm font-semibold">{tab.label}</span>
+              {badge > 0 && (
+                <span className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              )}
             </button>
           );
         })}

@@ -1,40 +1,45 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { ClipboardList, ChevronRight, Check } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { today, formatDateShort, greetingByTime, getDDay } from '../../../utils/date';
+import { today, formatDateShort, greetingByTime } from '../../../utils/date';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
 import StaffHomeQrButton from './StaffHomeQrButton';
+import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 
-const CLINIC_TYPE_LABELS = {
-  homework: '숙제', wrong_answer: '오답', vocabulary: '단어', reading: '본문',
-  grammar: '문법', concept: '개념', test_retry: '재시험', absence_makeup: '보강', other: '기타',
-};
+// "방금 끝난 수업" 윈도우 — 종료 후 이 시간(분) 이내 수업을 홈 상단에 우선 노출.
+const JUST_FINISHED_WINDOW_MIN = 120;
 
-const STATUS_CONFIG = {
-  pending:     { label: '대기',    color: 'bg-orange-50 text-orange-600' },
-  in_progress: { label: '진행 중', color: 'bg-blue-50 text-blue-600' },
-  completed:   { label: '완료',    color: 'bg-green-50 text-green-600' },
-  hold:        { label: '보류',    color: 'bg-gray-100 text-gray-500' },
-};
+function parseHHmmToMinutes(hhmm) {
+  if (!hhmm || typeof hhmm !== 'string') return null;
+  const [h, m] = hhmm.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
 
-const PRIORITY_CONFIG = {
-  urgent: { label: '긴급', color: 'bg-red-100 text-red-600' },
-  high:   { label: '높음', color: 'bg-orange-50 text-orange-600' },
-  normal: { label: '일반', color: 'bg-gray-100 text-gray-500' },
-  low:    { label: '낮음', color: 'bg-gray-50 text-gray-400' },
-};
+function formatClock(value) {
+  if (!value) return '';
+  return String(value).slice(0, 5);
+}
+
+function endedAgoLabel(minutesAgo) {
+  if (minutesAgo <= 0) return '방금 종료';
+  if (minutesAgo < 60) return `${minutesAgo}분 전 종료`;
+  const h = Math.floor(minutesAgo / 60);
+  const m = minutesAgo % 60;
+  return m === 0 ? `${h}시간 전 종료` : `${h}시간 ${m}분 전 종료`;
+}
 
 export default function AssistantDashboard() {
   const academyStudents = useAcademyStore((s) => s.academyStudents);
   const classGroups = useAcademyStore((s) => s.classGroups);
-  const clinicTasks = useAcademyStore((s) => s.clinicTasks);
+  const classSessions = useAcademyStore((s) => s.classSessions);
+  const clinicRecords = useAcademyStore((s) => s.clinicRecords) ?? [];
   const academyAssistants = useAcademyStore((s) => s.academyAssistants);
-  const completeClinicTask = useAcademyStore((s) => s.completeClinicTask);
-  const updateClinicTask = useAcademyStore((s) => s.updateClinicTask);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const academyPayrolls = useAcademyStore((s) => s.academyPayrolls) ?? [];
   const todayStr = today();
@@ -45,52 +50,133 @@ export default function AssistantDashboard() {
   const authUserEmail = useAuthStore((s) => s.user?.email);
   const memberships = useWorkspaceStore((s) => s.memberships);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const academyMemberProfiles = useWorkspaceStore((s) => s.academyMemberProfiles) ?? [];
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const myMembership = useMemo(
     () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
     [memberships, currentAcademyId],
   );
-  const myAssistant = useMemo(
-    () => findLocalStaffForUser(academyAssistants, {
+  // 본인 보조강사 신원.
+  //   1) 로컬 미러(academyAssistants) 가 있으면 그대로 사용.
+  //   2) 미러가 아직 없을 때 (보조강사 본인은 다른 멤버 프로필 로드 권한이
+  //      제한돼 syncLocalStaffFromServerMembers 가 비어 있을 수 있다) → auth +
+  //      멤버/스태프 프로필로 최소 신원을 합성한다. id 는 미러 stableId 와 동일한
+  //      `assistant_${userId}` 포맷이라 미러가 나중에 로드돼도 충돌하지 않는다.
+  //      세션 매칭은 assistantUserIds(서버 user_id) 경로로 별도 동작한다.
+  const myAssistant = useMemo(() => {
+    const matched = findLocalStaffForUser(academyAssistants, {
       userId: authUserId,
       memberId: myMembership?.id,
       email: authUserEmail,
-    }),
-    [academyAssistants, authUserId, myMembership?.id, authUserEmail],
+    });
+    if (matched) return matched;
+    if (!authUserId) return null;
+    const staffProfile = academyStaffProfiles.find((sp) => sp.user_id === authUserId) || null;
+    const memberProfile = academyMemberProfiles.find((mp) => mp.user_id === authUserId) || null;
+    return {
+      id: `assistant_${authUserId}`,
+      serverUserId: authUserId,
+      academyMemberId: myMembership?.id || staffProfile?.member_id || null,
+      email: authUserEmail || memberProfile?.email || null,
+      name: memberProfile?.display_name || authUserEmail || '보조강사',
+      role: 'assistant',
+      permissions: staffProfile?.permissions,
+      status: staffProfile?.status || 'active',
+      source: 'fallback',
+    };
+  }, [academyAssistants, authUserId, myMembership?.id, authUserEmail, academyStaffProfiles, academyMemberProfiles]);
+
+  // 1분마다 갱신 — "방금 끝난 수업" 윈도우 통과/이탈 자동 반영.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // 학생 탭 → 클리닉 기록 폼 바로 열기. { studentId, session, group } 보관.
+  const [clinicTarget, setClinicTarget] = useState(null);
+
+  // 내가 배정된 반 — 세션 매칭 fallback. local id / server user_id 양쪽 지원.
+  const myGroupIds = useMemo(() => {
+    const set = new Set();
+    classGroups.forEach((g) => {
+      const byLocal = myAssistant && (g.assistantIds || []).includes(myAssistant.id);
+      const byUser = authUserId && Array.isArray(g.assistantUserIds) && g.assistantUserIds.includes(authUserId);
+      if (byLocal || byUser) set.add(g.id);
+    });
+    return set;
+  }, [classGroups, myAssistant, authUserId]);
+
+  // 내 담당 세션 — 세션 자체 배정 또는 반 배정으로 매칭.
+  const myAssignedSessions = useMemo(() => {
+    return classSessions.filter((s) => {
+      if (s.status === 'canceled') return false;
+      if (myAssistant && (s.assistantIds || []).includes(myAssistant.id)) return true;
+      if (authUserId && Array.isArray(s.assistantUserIds) && s.assistantUserIds.includes(authUserId)) return true;
+      return myGroupIds.has(s.classGroupId);
+    });
+  }, [classSessions, myAssistant, myGroupIds, authUserId]);
+
+  // 특정 학생이 해당 세션에 대해 이미 클리닉 기록을 남겼는지.
+  // 세션 직접 연결(classSessionId) 우선, 없으면 같은 날·같은 반 기록으로 fallback.
+  const isStudentRecorded = (studentId, session) =>
+    clinicRecords.some((r) =>
+      r.studentId === studentId &&
+      (r.classSessionId === session.id ||
+        (r.date === session.date && session.classGroupId && r.classGroupId === session.classGroupId)),
+    );
+
+  // 홈 우선 노출 대상: 오늘 종료 후 2시간 이내 + 아직 기록이 남은 학생이 있는 세션.
+  // 모든 학생 기록을 마친 세션은 우선 표시에서 제외한다.
+  const justFinishedSessions = useMemo(() => {
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+
+    // 배정 세션이 하나도 없으면(배정 미설정 학원) 오늘 모든 세션을 후보로 사용.
+    const pool = myAssignedSessions.length > 0
+      ? myAssignedSessions
+      : classSessions.filter((s) => s.status !== 'canceled');
+
+    return pool
+      .filter((s) => s.date === todayStr)
+      .map((s) => {
+        const endMin = parseHHmmToMinutes(s.endTime) ?? parseHHmmToMinutes(s.startTime);
+        return { session: s, endMin };
+      })
+      .filter(({ endMin }) => {
+        if (endMin === null) return false;
+        const ago = nowMin - endMin;
+        return ago >= 0 && ago <= JUST_FINISHED_WINDOW_MIN;
+      })
+      .map(({ session, endMin }) => {
+        const studentIds = session.studentIds || [];
+        const remaining = studentIds.filter((sid) => !isStudentRecorded(sid, session));
+        return { session, endMin, minutesAgo: nowMin - endMin, remaining };
+      })
+      .filter(({ remaining }) => remaining.length > 0)
+      .sort((a, b) => b.endMin - a.endMin);
+  }, [myAssignedSessions, classSessions, todayStr, now, clinicRecords]);
+
+  const remainingTotal = useMemo(
+    () => justFinishedSessions.reduce((acc, s) => acc + s.remaining.length, 0),
+    [justFinishedSessions],
   );
 
-  // 내 클리닉만 필터 — assignedToId 가 내 id 와 일치하는 항목.
-  const myClinicTasks = useMemo(() => {
-    if (!myAssistant) return [];
-    return clinicTasks.filter((t) => t.assignedToId === myAssistant.id);
-  }, [clinicTasks, myAssistant]);
-
-  const pendingClinics = useMemo(
-    () => myClinicTasks.filter((t) => t.status === 'pending').sort((a, b) => {
-      const pri = { urgent: 0, high: 1, normal: 2, low: 3 };
-      return (pri[a.priority] ?? 2) - (pri[b.priority] ?? 2);
-    }),
-    [myClinicTasks]
+  // 요약 — 오늘/이번 주 클리닉 기록 수.
+  const todayRecordCount = useMemo(
+    () => clinicRecords.filter((r) => r.date === todayStr).length,
+    [clinicRecords, todayStr],
   );
-
-  const inProgressClinics = useMemo(
-    () => myClinicTasks.filter((t) => t.status === 'in_progress'),
-    [myClinicTasks]
-  );
-
-  const todayDueClinics = useMemo(
-    () => myClinicTasks.filter((t) => t.dueDate === todayStr && t.status !== 'completed'),
-    [myClinicTasks, todayStr]
-  );
-
-  const urgentClinics = useMemo(
-    () => myClinicTasks.filter((t) => t.priority === 'urgent' && t.status !== 'completed'),
-    [myClinicTasks]
-  );
-
-  const completedToday = useMemo(
-    () => myClinicTasks.filter((t) => t.completedAt?.startsWith(todayStr)),
-    [myClinicTasks, todayStr]
-  );
+  const weekRecordCount = useMemo(() => {
+    const start = new Date(todayStr);
+    start.setDate(start.getDate() - start.getDay());
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return clinicRecords.filter((r) => {
+      if (!r.date) return false;
+      const d = new Date(r.date);
+      return d >= start && d <= end;
+    }).length;
+  }, [clinicRecords, todayStr]);
 
   // Phase 32 — 내 급여 (이번 달)
   const myPayroll = useMemo(() => {
@@ -100,13 +186,18 @@ export default function AssistantDashboard() {
     ) || null;
   }, [academyPayrolls, currentMonth, myAssistant]);
 
+  const openClinicForStudent = (studentId, session) => {
+    const group = classGroups.find((g) => g.id === session.classGroupId) || null;
+    setClinicTarget({ studentId, session, group });
+  };
+
   return (
     <div className="pt-6 pb-4">
       <div className="px-5 mb-5">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-gray-500 text-sm">{greetingByTime()}</p>
-            <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 클리닉</h2>
+            <h2 className="text-xl font-bold text-gray-900 mt-0.5">클리닉 기록</h2>
             <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
           </div>
           <StaffHomeQrButton staff={myAssistant} staffRole="assistant" />
@@ -120,39 +211,94 @@ export default function AssistantDashboard() {
         <div className="mx-4 mb-5">
           <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
             <div className="text-4xl mb-3">📋</div>
-            <p className="font-bold text-gray-900 mb-1">아직 배정된 클리닉이 없어요</p>
+            <p className="font-bold text-gray-900 mb-1">계정이 아직 연결되지 않았어요</p>
             <p className="text-xs text-gray-400 mt-1 leading-relaxed">
               계정과 연결된 보조강사 정보가 없어요.<br />
-              원장이 보조강사로 등록하면 여기에 클리닉이 표시됩니다.
+              원장이 보조강사로 등록하면 여기에 수업과 클리닉이 표시됩니다.
             </p>
           </div>
         </div>
       )}
 
+      {/* 방금 끝난 수업 — 클리닉 기록 우선 액션 (홈의 핵심) */}
+      <div className="px-4 mb-5">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-bold text-gray-700">방금 끝난 수업</p>
+          {remainingTotal > 0 && (
+            <span className="text-xs font-bold text-orange-500">기록 필요 {remainingTotal}명</span>
+          )}
+        </div>
+
+        {justFinishedSessions.length === 0 ? (
+          <div className="bg-white rounded-2xl px-4 py-6 text-center shadow-sm">
+            <div className="text-3xl mb-2">✅</div>
+            <p className="text-sm font-semibold text-gray-700">기록할 수업이 없어요</p>
+            <p className="text-xs text-gray-400 mt-1">수업이 끝나면 학생들이 여기에 떠요.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {justFinishedSessions.map(({ session, minutesAgo, remaining }) => {
+              const group = classGroups.find((g) => g.id === session.classGroupId);
+              return (
+                <div key={session.id} className="bg-white rounded-2xl p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-2 h-2 rounded-full bg-[#0064FF] flex-shrink-0" />
+                    <span className="font-bold text-gray-900 text-sm flex-1 min-w-0 truncate">
+                      {group?.name || '수업'}
+                    </span>
+                    <span className="text-[11px] font-semibold text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                      {endedAgoLabel(minutesAgo)}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-gray-400 mb-2">
+                    {formatClock(session.startTime)}–{formatClock(session.endTime)} · 기록할 학생 {remaining.length}명
+                  </p>
+
+                  <div className="flex flex-col gap-1.5">
+                    {remaining.map((sid) => {
+                      const student = academyStudents.find((s) => s.id === sid);
+                      return (
+                        <motion.button
+                          key={sid}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => openClinicForStudent(sid, session)}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50 active:bg-blue-50 text-left transition-colors"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                            <ClipboardList size={14} className="text-[#0064FF]" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">
+                              {student?.name || '학생'}
+                              {student?.grade ? <span className="text-xs text-gray-400 font-normal"> · {student.grade}</span> : null}
+                            </p>
+                          </div>
+                          <span className="text-[11px] font-bold text-[#0064FF] flex-shrink-0">클리닉 기록</span>
+                          <ChevronRight size={15} className="text-gray-300 flex-shrink-0" />
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* 요약 카드 */}
       <div className="px-4 grid grid-cols-2 gap-3 mb-5">
         <SummaryCard
-          label="대기"
-          value={`${pendingClinics.length}건`}
-          color={pendingClinics.length > 0 ? 'text-orange-500' : 'text-gray-900'}
+          label="오늘 클리닉 기록"
+          value={`${todayRecordCount}건`}
+          color={todayRecordCount > 0 ? 'text-[#0064FF]' : 'text-gray-900'}
           onClick={() => setActiveTab('clinic')}
         />
         <SummaryCard
-          label="진행 중"
-          value={`${inProgressClinics.length}건`}
-          color={inProgressClinics.length > 0 ? 'text-blue-600' : 'text-gray-900'}
+          label="이번 주 기록"
+          value={`${weekRecordCount}건`}
           onClick={() => setActiveTab('clinic')}
-        />
-        <SummaryCard
-          label="오늘 마감"
-          value={`${todayDueClinics.length}건`}
-          color={todayDueClinics.length > 0 ? 'text-red-500' : 'text-gray-900'}
-          onClick={() => setActiveTab('clinic')}
-        />
-        <SummaryCard
-          label="오늘 완료"
-          value={`${completedToday.length}건`}
-          color="text-green-600"
         />
       </div>
 
@@ -164,100 +310,35 @@ export default function AssistantDashboard() {
         onOpen={() => setActiveTab('payroll')}
       />
 
-      {/* 긴급 클리닉 */}
-      {urgentClinics.length > 0 && (
-        <div className="px-4 mb-5">
-          <p className="text-sm font-bold text-red-600 mb-2">🚨 긴급 처리 필요</p>
-          <div className="flex flex-col gap-2">
-            {urgentClinics.map((task) => (
-              <ClinicCard key={task.id} task={task} students={academyStudents} classGroups={classGroups}
-                onStart={() => updateClinicTask(task.id, { status: 'in_progress' })}
-                onComplete={() => completeClinicTask(task.id, '')}
-              />
-            ))}
+      {/* 전체 클리닉 기록 보기 — 탭에서 제거된 ClinicPage 로 진입 */}
+      <div className="px-4">
+        <button
+          type="button"
+          onClick={() => setActiveTab('clinic')}
+          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white shadow-sm active:scale-[0.98] transition-transform"
+        >
+          <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+            <Check size={15} className="text-[#0064FF]" />
           </div>
-        </div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-sm font-bold text-gray-900">전체 클리닉 기록 보기</p>
+            <p className="text-xs text-gray-400 mt-0.5">지난 기록 확인 · 직접 추가</p>
+          </div>
+          <ChevronRight size={18} className="text-gray-300 flex-shrink-0" />
+        </button>
+      </div>
+
+      {/* 클리닉 기록 폼 — 학생/수업/날짜/과목 자동 채움 */}
+      {clinicTarget && (
+        <ClinicRecordFormModal
+          presetStudentId={clinicTarget.studentId}
+          presetClassGroupId={clinicTarget.group?.id}
+          presetClassSessionId={clinicTarget.session?.id}
+          presetDate={clinicTarget.session?.date}
+          presetSubject={clinicTarget.group?.subject || ''}
+          onClose={() => setClinicTarget(null)}
+        />
       )}
-
-      {/* 오늘 처리할 클리닉 */}
-      <div className="px-4 mb-5">
-        <p className="text-sm font-bold text-gray-700 mb-3">오늘 처리할 클리닉</p>
-        {pendingClinics.length === 0 && inProgressClinics.length === 0 ? (
-          <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
-            <p className="text-2xl mb-2">✅</p>
-            <p className="text-sm font-semibold text-gray-700">처리할 클리닉이 없어요!</p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {[...inProgressClinics, ...pendingClinics].slice(0, 5).map((task) => (
-              <ClinicCard key={task.id} task={task} students={academyStudents} classGroups={classGroups}
-                onStart={() => updateClinicTask(task.id, { status: 'in_progress' })}
-                onComplete={() => completeClinicTask(task.id, '')}
-              />
-            ))}
-          </div>
-        )}
-
-        {(pendingClinics.length + inProgressClinics.length) > 5 && (
-          <button
-            onClick={() => setActiveTab('clinic')}
-            className="w-full mt-3 py-3 rounded-2xl border-2 border-dashed border-blue-200 text-blue-600 text-sm font-semibold"
-          >
-            전체 클리닉 보기 ({pendingClinics.length + inProgressClinics.length}건)
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ClinicCard({ task, students, classGroups, onStart, onComplete }) {
-  const student = students.find((s) => s.id === task.studentId);
-  const group = classGroups.find((g) => g.id === task.classGroupId);
-  const status = STATUS_CONFIG[task.status] || STATUS_CONFIG.pending;
-  const priority = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.normal;
-  const dday = getDDay(task.dueDate);
-
-  return (
-    <div className="bg-white rounded-2xl p-4 shadow-sm">
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${priority.color}`}>{priority.label}</span>
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${status.color}`}>{status.label}</span>
-          <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">
-            {CLINIC_TYPE_LABELS[task.type] || '기타'}
-          </span>
-        </div>
-        {dday !== null && dday <= 3 && (
-          <span className={`text-xs font-bold ${dday === 0 ? 'text-red-600' : dday <= 1 ? 'text-orange-500' : 'text-amber-500'}`}>
-            {dday === 0 ? 'D-Day' : `D-${dday}`}
-          </span>
-        )}
-      </div>
-      <p className="font-semibold text-gray-900 text-sm">{student?.name || '학생'} · {task.title}</p>
-      {group && <p className="text-xs text-gray-400 mt-0.5">{group.name}</p>}
-      {task.description && <p className="text-xs text-gray-500 mt-1">{task.description}</p>}
-
-      <div className="flex gap-2 mt-3">
-        {task.status === 'pending' && (
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={onStart}
-            className="flex-1 bg-blue-600 text-white text-xs font-bold py-2 rounded-xl"
-          >
-            진행 시작
-          </motion.button>
-        )}
-        {task.status === 'in_progress' && (
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={onComplete}
-            className="flex-1 bg-green-500 text-white text-xs font-bold py-2 rounded-xl"
-          >
-            완료 처리
-          </motion.button>
-        )}
-      </div>
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Home, BookOpen, Users, MoreHorizontal, Stethoscope, CreditCard, BarChart2, UserCog } from 'lucide-react';
+import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
+import useChatStore, { totalUnread } from '../../store/useChatStore';
 import { currentUserCan } from '../../utils/staffPermissions';
 import AttendanceSettingsSheet from './attendance/AttendanceSettingsSheet';
 import OwnerDashboard from './dashboard/OwnerDashboard';
@@ -18,6 +19,7 @@ import AcademyMorePage from './more/AcademyMorePage';
 import SettlementPage from './settlement/SettlementPage';
 import PayrollPage from './payroll/PayrollPage';
 import StaffPage from './staff/StaffPage';
+import ChatPage from './chat/ChatPage';
 import Sidebar from '../../components/Sidebar';
 
 // Phase 40 — 기존 "근무" 탭을 "직원" 으로 통합. 직원 리스트 + 근무 스케줄 +
@@ -32,6 +34,7 @@ const TAB_CONFIG = {
     { id: 'students',   label: '학생',  Icon: Users },
     { id: 'staff',      label: '직원',   Icon: UserCog },
     { id: 'settlement', label: '정산',  Icon: BarChart2 },
+    { id: 'chat',       label: '채팅',  Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
   teacher: [
@@ -39,16 +42,27 @@ const TAB_CONFIG = {
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
+    { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
+  // 보조강사는 강사와 동일한 탭 셸을 공유한다 (홈/수업/학생/급여/더보기).
+  // 기능 차이만 둔다: 홈은 클리닉 기록 중심(AssistantDashboard), 클리닉 전용 탭은 제거.
+  // 클리닉 기록 전체 목록(ClinicPage)은 탭에서 빠졌지만 홈의 "전체 클리닉 기록 보기"
+  // 버튼으로 setActiveTab('clinic') 라우트가 그대로 살아 있다.
   assistant: [
-    { id: 'home',     label: '홈',    Icon: Home },
-    { id: 'clinic',   label: '클리닉', Icon: Stethoscope },
-    { id: 'students', label: '학생',  Icon: Users },
-    { id: 'payroll',  label: '급여',  Icon: CreditCard },
+    { id: 'home',     label: '홈',   Icon: Home },
+    { id: 'classes',  label: '수업', Icon: BookOpen },
+    { id: 'students', label: '학생', Icon: Users },
+    { id: 'payroll',  label: '급여', Icon: CreditCard },
+    { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
 };
+
+// 네비게이션 탭에는 없지만 프로그램적으로 진입 가능한 유효 라우트.
+// 보조강사 홈의 "전체 클리닉 기록 보기" → setActiveTab('clinic') 가 여기에 해당하며,
+// 아래 보정 effect 가 이 라우트를 홈으로 되돌리지 않도록 예외 처리한다.
+const HIDDEN_VALID_TABS = ['clinic'];
 
 function FallbackScreen() {
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -121,6 +135,14 @@ export default function AcademyAppLayout() {
     });
   }, [baseTabs, role, myStaffProfile]);
 
+  // 채팅 안 읽음 — 하단 탭/사이드바 배지.
+  const chatMessages = useChatStore((s) => s.messages);
+  const chatReads = useChatStore((s) => s.reads);
+  const chatUnread = useMemo(
+    () => totalUnread({ messages: chatMessages, reads: chatReads }, authUserId),
+    [chatMessages, chatReads, authUserId],
+  );
+
   // 역할이 바뀌어 현재 activeTab이 해당 역할 탭 목록에 없으면 첫 번째 탭으로 보정.
   // Phase 40 호환 — 이전에 저장된 'work' 는 새 'staff' 로 자동 마이그레이션.
   useEffect(() => {
@@ -129,7 +151,7 @@ export default function AcademyAppLayout() {
       setActiveTab('staff');
       return;
     }
-    if (!validTabIds.includes(activeTab)) {
+    if (!validTabIds.includes(activeTab) && !HIDDEN_VALID_TABS.includes(activeTab)) {
       setActiveTab(tabs[0]?.id || 'home');
     }
   }, [role, tabs, activeTab, setActiveTab]);
@@ -186,6 +208,7 @@ export default function AcademyAppLayout() {
       if (activeTab === 'settlement') return <SettlementPage />;
       if (activeTab === 'payroll')    return <PayrollPage />;
       if (activeTab === 'staff')      return <StaffPage />;
+      if (activeTab === 'chat')       return <ChatPage />;
       // Phase 40 호환 — 이전 버전 store 에 'work' 가 저장되어 있어도 staff 로 매핑.
       if (activeTab === 'work')       return <StaffPage />;
       if (activeTab === 'more')       return <AcademyMorePage />;
@@ -204,7 +227,7 @@ export default function AcademyAppLayout() {
   return (
     <div className="min-h-screen bg-[#F2F4F6] md:flex">
       {/* PC 사이드바 — md 이상에서만 표시 */}
-      <Sidebar tabs={tabs} />
+      <Sidebar tabs={tabs} badges={{ chat: chatUnread }} />
 
       <main className="flex-1 min-w-0">
         <div className="main-content max-w-md mx-auto md:mx-0 md:max-w-none md:px-8 md:py-6 pb-24 md:pb-8">
@@ -232,6 +255,7 @@ export default function AcademyAppLayout() {
         <div className="max-w-md mx-auto flex pt-2">
           {tabs.filter((t) => t.mobileBottomNav !== false).map(({ id, label, Icon }) => {
             const active = activeTab === id;
+            const badge = id === 'chat' ? chatUnread : 0;
             return (
               <button
                 key={id}
@@ -240,8 +264,13 @@ export default function AcademyAppLayout() {
                 aria-current={active ? 'page' : undefined}
                 className="flex-1 min-w-0 flex flex-col items-center gap-0.5 pb-1 active:scale-[0.98] transition-transform"
               >
-                <div className={`flex items-center justify-center w-9 h-7 rounded-2xl transition-colors ${active ? 'bg-blue-50' : ''}`}>
+                <div className={`relative flex items-center justify-center w-9 h-7 rounded-2xl transition-colors ${active ? 'bg-blue-50' : ''}`}>
                   <Icon size={19} className={active ? 'text-blue-600' : 'text-gray-400'} strokeWidth={active ? 2.5 : 1.8} />
+                  {badge > 0 && (
+                    <span className="absolute -top-0.5 right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
                 </div>
                 <span className={`text-[9.5px] font-medium ${active ? 'text-blue-600' : 'text-gray-400'}`}>{label}</span>
               </button>
