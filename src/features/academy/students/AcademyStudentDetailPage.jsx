@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X, Paperclip } from 'lucide-react';
+import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X, Paperclip, PhoneCall } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -95,6 +95,11 @@ const SUPPORT_TAG_MAP = {
   reading: '본문 암기', grammar: '문법 보충', concept: '개념 재설명',
   test_retry: '테스트 재응시', absence_makeup: '결석 보강', other: '기타',
 };
+
+function phoneHref(value) {
+  const digits = String(value || '').replace(/[^\d+]/g, '');
+  return digits ? `tel:${digits}` : null;
+}
 
 function StatusBadge({ type }) {
   const styles = {
@@ -418,9 +423,9 @@ export default function AcademyStudentDetailPage() {
         <div className="flex flex-col gap-2">
           {student.grade && <InfoRowFull label="학년" value={student.grade} />}
           {student.school && <InfoRowFull label="학교" value={student.school} />}
-          {student.phone && <InfoRowFull label="연락처" value={student.phone} />}
+          {student.phone && <InfoRowFull label="연락처" value={student.phone} phone={student.phone} />}
           {student.parentName && <InfoRowFull label="학부모" value={student.parentName} />}
-          {student.parentPhone && <InfoRowFull label="학부모 연락처" value={student.parentPhone} />}
+          {student.parentPhone && <InfoRowFull label="학부모 연락처" value={student.parentPhone} phone={student.parentPhone} />}
           {role === 'owner' && student.checkinPin && <InfoRowFull label="등하원 PIN" value={student.checkinPin} />}
           {student.memo && <InfoRowFull label="메모" value={student.memo} />}
         </div>
@@ -818,11 +823,24 @@ export default function AcademyStudentDetailPage() {
   );
 }
 
-function InfoRowFull({ label, value }) {
+function InfoRowFull({ label, value, phone }) {
+  const href = phoneHref(phone);
   return (
-    <div className="flex items-center justify-between py-1.5">
+    <div className="flex items-center justify-between gap-3 py-1.5">
       <span className="text-xs text-gray-400">{label}</span>
-      <span className="text-sm font-medium text-gray-800">{value}</span>
+      <span className="flex items-center justify-end gap-2 min-w-0">
+        <span className="text-sm font-medium text-gray-800 truncate">{value}</span>
+        {href && (
+          <a
+            href={href}
+            className="inline-flex items-center gap-1 h-8 px-2.5 rounded-full bg-blue-50 text-blue-600 text-xs font-bold active:bg-blue-100 flex-shrink-0"
+            aria-label={`${label} 전화하기`}
+          >
+            <PhoneCall size={13} />
+            전화
+          </a>
+        )}
+      </span>
     </div>
   );
 }

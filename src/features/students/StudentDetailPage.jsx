@@ -25,6 +25,11 @@ const TABS = [
 // Exclude legacy types from exam tab display
 const EXAM_TAB_TYPES = ['midterm', 'final', 'mock', 'csat', 'performance', 'unit', 'school', 'other'];
 
+function phoneHref(value) {
+  const digits = String(value || '').replace(/[^\d+]/g, '');
+  return digits ? `tel:${digits}` : null;
+}
+
 function getScoreChange(result, allResults) {
   if (result.score === null || result.score === undefined) return null;
   const prev = allResults
@@ -185,8 +190,8 @@ export default function StudentDetailPage() {
           {tab === 'info' && (
             <div className="flex flex-col gap-3">
               <InfoCard label="연락처">
-                <InfoRow label="학생" value={student.phone} icon={<Phone size={13} className="text-gray-400" />} />
-                <InfoRow label="학부모" value={student.parentPhone} icon={<Phone size={13} className="text-gray-400" />} />
+                <InfoRow label="학생" value={student.phone} phone={student.phone} icon={<Phone size={13} className="text-gray-400" />} />
+                <InfoRow label="학부모" value={student.parentPhone} phone={student.parentPhone} icon={<Phone size={13} className="text-gray-400" />} />
               </InfoCard>
               {student.depositorName && (
                 <InfoCard label="수납 정보">
@@ -711,12 +716,23 @@ function InfoCard({ label, children }) {
   );
 }
 
-function InfoRow({ label, value, icon }) {
+function InfoRow({ label, value, icon, phone }) {
+  const href = phoneHref(phone);
   return (
     <div className="flex items-center gap-2">
       {icon}
       <span className="text-xs text-gray-400 w-14 flex-shrink-0">{label}</span>
-      <span className="text-sm text-gray-800">{value || '-'}</span>
+      <span className="text-sm text-gray-800 flex-1 min-w-0 truncate">{value || '-'}</span>
+      {href && (
+        <a
+          href={href}
+          className="inline-flex items-center gap-1 h-8 px-2.5 rounded-full bg-blue-50 text-blue-600 text-xs font-bold active:bg-blue-100 flex-shrink-0"
+          aria-label={`${label} 전화하기`}
+        >
+          <Phone size={13} />
+          전화
+        </a>
+      )}
     </div>
   );
 }
