@@ -76,6 +76,32 @@ export function normalizePhoneNumber(value) {
   return value.replace(/\D/g, '');
 }
 
+export function toTelHref(value, { defaultCountryCode = '82' } = {}) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const compact = raw.replace(/[^\d+]/g, '');
+  if (!compact) return null;
+
+  if (compact.startsWith('+')) {
+    const international = `+${compact.slice(1).replace(/\D/g, '')}`;
+    return international.length > 1 ? `tel:${international}` : null;
+  }
+
+  const digits = compact.replace(/\D/g, '');
+  if (!digits) return null;
+
+  if (digits.startsWith(defaultCountryCode) && digits.length >= 9) {
+    return `tel:+${digits}`;
+  }
+
+  if (digits.startsWith('0') && digits.length >= 9) {
+    return `tel:+${defaultCountryCode}${digits.slice(1)}`;
+  }
+
+  return `tel:${digits}`;
+}
+
 // 원장도 담당 강사로 배정 가능. teacherId === 'owner'면 원장 이름 사용.
 export const OWNER_TEACHER_ID = 'owner';
 

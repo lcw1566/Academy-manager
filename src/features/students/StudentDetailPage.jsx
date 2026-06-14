@@ -11,7 +11,7 @@ import ClassFormModal from '../classes/ClassFormModal';
 import StudentEventModal from './StudentEventModal';
 import ExamResultModal from './ExamResultModal';
 import StudentLessonsTab from './StudentLessonsTab';
-import { formatCurrency, paymentStatusMap } from '../../utils/format';
+import { formatCurrency, paymentStatusMap, toTelHref } from '../../utils/format';
 import { formatDateShort, getCurrentMonth, today, getDDayLabel, getDDay, isPastDate } from '../../utils/date';
 import { STUDENT_EVENT_TYPES, IMPORTANCE_LABELS, EXAM_TYPES, GRADE_LABELS } from '../../constants/studentSchedule';
 
@@ -24,11 +24,6 @@ const TABS = [
 
 // Exclude legacy types from exam tab display
 const EXAM_TAB_TYPES = ['midterm', 'final', 'mock', 'csat', 'performance', 'unit', 'school', 'other'];
-
-function phoneHref(value) {
-  const digits = String(value || '').replace(/[^\d+]/g, '');
-  return digits ? `tel:${digits}` : null;
-}
 
 function getScoreChange(result, allResults) {
   if (result.score === null || result.score === undefined) return null;
@@ -717,7 +712,7 @@ function InfoCard({ label, children }) {
 }
 
 function InfoRow({ label, value, icon, phone }) {
-  const href = phoneHref(phone);
+  const href = toTelHref(phone);
   return (
     <div className="flex items-center gap-2">
       {icon}

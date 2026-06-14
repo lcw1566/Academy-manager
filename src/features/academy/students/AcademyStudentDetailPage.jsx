@@ -11,7 +11,7 @@ import {
   deletePayment as deleteServerPayment,
 } from '../../../services/supabase/domainApi';
 import { formatDateShort, getKoreanWeekdayFromYMD, today } from '../../../utils/date';
-import { attendanceStatusMap } from '../../../utils/format';
+import { attendanceStatusMap, toTelHref } from '../../../utils/format';
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
@@ -95,11 +95,6 @@ const SUPPORT_TAG_MAP = {
   reading: '본문 암기', grammar: '문법 보충', concept: '개념 재설명',
   test_retry: '테스트 재응시', absence_makeup: '결석 보강', other: '기타',
 };
-
-function phoneHref(value) {
-  const digits = String(value || '').replace(/[^\d+]/g, '');
-  return digits ? `tel:${digits}` : null;
-}
 
 function StatusBadge({ type }) {
   const styles = {
@@ -824,7 +819,7 @@ export default function AcademyStudentDetailPage() {
 }
 
 function InfoRowFull({ label, value, phone }) {
-  const href = phoneHref(phone);
+  const href = toTelHref(phone);
   return (
     <div className="flex items-center justify-between gap-3 py-1.5">
       <span className="text-xs text-gray-400">{label}</span>
