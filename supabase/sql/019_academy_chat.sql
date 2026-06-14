@@ -2,7 +2,8 @@
 -- 019_academy_chat.sql
 --
 -- 앱 내 채팅 (학원 직원 전용).
---   - 학원당 전체 단톡방 1개 (kind='group')
+--   - 학원당 전체 단톡방 1개 (kind='group', group_scope='academy')
+--   - 직원 선택 단톡방 (kind='group', group_scope='custom')
 --   - 직원 간 1:1 DM (kind='dm', 정렬된 두 user_id 쌍으로 유일)
 --   - 읽음 추적 (academy_chat_reads.last_read_at) → 안 읽은 메시지 배지
 --
@@ -21,6 +22,8 @@ create table if not exists public.academy_chat_threads (
   id          uuid primary key default gen_random_uuid(),
   academy_id  uuid not null references public.academies(id) on delete cascade,
   kind        text not null check (kind in ('group', 'dm')),
+  title       text,
+  group_scope text not null default 'academy' check (group_scope in ('academy', 'custom')),
   -- dm 전용: 항상 dm_user_a < dm_user_b (정규화) → 중복 방 방지.
   dm_user_a   uuid references auth.users(id) on delete cascade,
   dm_user_b   uuid references auth.users(id) on delete cascade,
@@ -33,10 +36,18 @@ create table if not exists public.academy_chat_threads (
   )
 );
 
--- 학원당 group 방 1개.
+alter table public.academy_chat_threads
+  add column if not exists title text;
+
+alter table public.academy_chat_threads
+  add column if not exists group_scope text not null default 'academy';
+
+drop index if exists academy_chat_threads_group_uniq;
+
+-- 학원당 전체 group 방 1개. 선택 멤버 단톡방(custom)은 여러 개 만들 수 있다.
 create unique index if not exists academy_chat_threads_group_uniq
   on public.academy_chat_threads (academy_id)
-  where kind = 'group';
+  where kind = 'group' and group_scope = 'academy';
 
 -- 학원당 동일 (a,b) 쌍 DM 1개.
 create unique index if not exists academy_chat_threads_dm_uniq
@@ -73,6 +84,16 @@ create table if not exists public.academy_chat_reads (
   primary key (thread_id, user_id)
 );
 
+create table if not exists public.academy_chat_thread_members (
+  thread_id   uuid not null references public.academy_chat_threads(id) on delete cascade,
+  user_id     uuid not null references auth.users(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  primary key (thread_id, user_id)
+);
+
+create index if not exists academy_chat_thread_members_user_idx
+  on public.academy_chat_thread_members (user_id);
+
 
 -- ─── updated_at trigger (set_updated_at from 001) ────────────
 
@@ -80,6 +101,25 @@ drop trigger if exists set_academy_chat_threads_updated_at on public.academy_cha
 create trigger set_academy_chat_threads_updated_at
 before update on public.academy_chat_threads
 for each row execute function public.set_updated_at();
+
+create or replace function public.touch_chat_thread_on_message()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.academy_chat_threads
+  set updated_at = new.created_at
+  where id = new.thread_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists touch_academy_chat_thread_on_message on public.academy_chat_messages;
+create trigger touch_academy_chat_thread_on_message
+after insert on public.academy_chat_messages
+for each row execute function public.touch_chat_thread_on_message();
 
 
 -- ─── visibility helper ───────────────────────────────────────
@@ -96,7 +136,20 @@ as $$
     from public.academy_chat_threads t
     where t.id = p_thread_id
       and public.is_member_of_academy(t.academy_id)
-      and (t.kind = 'group' or auth.uid() in (t.dm_user_a, t.dm_user_b))
+      and (
+        t.kind = 'dm'
+          and auth.uid() in (t.dm_user_a, t.dm_user_b)
+        or t.kind = 'group'
+          and t.group_scope = 'academy'
+        or t.kind = 'group'
+          and t.group_scope = 'custom'
+          and exists (
+            select 1
+            from public.academy_chat_thread_members tm
+            where tm.thread_id = t.id
+              and tm.user_id = auth.uid()
+          )
+      )
   );
 $$;
 
@@ -106,6 +159,7 @@ $$;
 alter table public.academy_chat_threads  enable row level security;
 alter table public.academy_chat_messages enable row level security;
 alter table public.academy_chat_reads    enable row level security;
+alter table public.academy_chat_thread_members enable row level security;
 
 -- threads
 drop policy if exists "chat_threads_select" on public.academy_chat_threads;
@@ -113,7 +167,7 @@ create policy "chat_threads_select"
 on public.academy_chat_threads for select
 using (
   public.is_member_of_academy(academy_id)
-  and (kind = 'group' or auth.uid() in (dm_user_a, dm_user_b))
+  and public.can_access_chat_thread(id)
 );
 
 drop policy if exists "chat_threads_insert" on public.academy_chat_threads;
@@ -122,7 +176,10 @@ on public.academy_chat_threads for insert
 with check (
   public.is_member_of_academy(academy_id)
   and created_by = auth.uid()
-  and (kind = 'group' or auth.uid() in (dm_user_a, dm_user_b))
+  and (
+    (kind = 'group' and group_scope = 'academy')
+    or (kind = 'dm' and auth.uid() in (dm_user_a, dm_user_b))
+  )
 );
 
 drop policy if exists "chat_threads_delete_owner" on public.academy_chat_threads;
@@ -143,6 +200,12 @@ with check (
   sender_id = auth.uid()
   and public.is_member_of_academy(academy_id)
   and public.can_access_chat_thread(thread_id)
+  and exists (
+    select 1
+    from public.academy_chat_threads t
+    where t.id = thread_id
+      and t.academy_id = academy_id
+  )
 );
 
 -- 메시지 수정/삭제: 본인 메시지만 (선택적 — UI 미노출이어도 안전망).
@@ -155,8 +218,14 @@ using (sender_id = auth.uid());
 drop policy if exists "chat_reads_all_self" on public.academy_chat_reads;
 create policy "chat_reads_all_self"
 on public.academy_chat_reads for all
-using (user_id = auth.uid())
-with check (user_id = auth.uid());
+using (user_id = auth.uid() and public.can_access_chat_thread(thread_id))
+with check (user_id = auth.uid() and public.can_access_chat_thread(thread_id));
+
+-- custom group participants. 생성/수정은 RPC가 담당하고, 조회는 접근 가능한 방만.
+drop policy if exists "chat_thread_members_select" on public.academy_chat_thread_members;
+create policy "chat_thread_members_select"
+on public.academy_chat_thread_members for select
+using (public.can_access_chat_thread(thread_id));
 
 
 -- ─── RPC: get-or-create (race-safe, security definer) ────────
@@ -177,16 +246,75 @@ begin
 
   select id into v_id
   from public.academy_chat_threads
-  where academy_id = p_academy_id and kind = 'group'
+  where academy_id = p_academy_id
+    and kind = 'group'
+    and group_scope = 'academy'
   limit 1;
 
   if v_id is null then
-    insert into public.academy_chat_threads (academy_id, kind, created_by)
-    values (p_academy_id, 'group', auth.uid())
-    on conflict (academy_id) where kind = 'group'
+    insert into public.academy_chat_threads (academy_id, kind, group_scope, title, created_by)
+    values (p_academy_id, 'group', 'academy', '학원 전체', auth.uid())
+    on conflict (academy_id) where kind = 'group' and group_scope = 'academy'
     do update set updated_at = now()
     returning id into v_id;
   end if;
+
+  return v_id;
+end;
+$$;
+
+
+create or replace function public.create_group_chat_thread(
+  p_academy_id uuid,
+  p_title text,
+  p_member_user_ids uuid[]
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+  v_title text;
+  v_members uuid[];
+  v_member_count int;
+begin
+  if not public.is_member_of_academy(p_academy_id) then
+    raise exception '권한이 없어요.';
+  end if;
+
+  v_title := nullif(trim(coalesce(p_title, '')), '');
+  if v_title is null then
+    raise exception '단톡방 이름을 입력해주세요.';
+  end if;
+
+  select array_agg(distinct uid)
+  into v_members
+  from unnest(coalesce(p_member_user_ids, array[]::uuid[]) || auth.uid()) as x(uid);
+
+  select count(*) into v_member_count
+  from unnest(v_members) as x(uid)
+  join public.academy_members m
+    on m.academy_id = p_academy_id
+   and m.user_id = uid
+   and m.status = 'active';
+
+  if v_member_count <> cardinality(v_members) then
+    raise exception '같은 학원의 활성 직원만 초대할 수 있어요.';
+  end if;
+  if v_member_count < 3 then
+    raise exception '단톡방은 나를 포함해 3명 이상이어야 해요.';
+  end if;
+
+  insert into public.academy_chat_threads (academy_id, kind, group_scope, title, created_by)
+  values (p_academy_id, 'group', 'custom', left(v_title, 80), auth.uid())
+  returning id into v_id;
+
+  insert into public.academy_chat_thread_members (thread_id, user_id)
+  select v_id, uid
+  from unnest(v_members) as x(uid)
+  on conflict do nothing;
 
   return v_id;
 end;
@@ -213,7 +341,9 @@ begin
   -- 상대도 같은 학원 멤버여야 한다.
   if not exists (
     select 1 from public.academy_members
-    where academy_id = p_academy_id and user_id = p_other_user_id
+    where academy_id = p_academy_id
+      and user_id = p_other_user_id
+      and status = 'active'
   ) then
     raise exception '같은 학원의 직원만 채팅할 수 있어요.';
   end if;
@@ -242,6 +372,15 @@ begin
 end;
 $$;
 
+grant execute on function public.get_or_create_group_thread(uuid) to authenticated;
+grant execute on function public.create_group_chat_thread(uuid, text, uuid[]) to authenticated;
+grant execute on function public.get_or_create_dm_thread(uuid, uuid) to authenticated;
+
+grant select, insert, update, delete on table public.academy_chat_threads to authenticated;
+grant select, insert, update, delete on table public.academy_chat_messages to authenticated;
+grant select, insert, update, delete on table public.academy_chat_reads to authenticated;
+grant select on table public.academy_chat_thread_members to authenticated;
+
 
 -- ─── realtime publication ────────────────────────────────────
 do $$
@@ -251,7 +390,8 @@ begin
   foreach v_table_name in array array[
     'academy_chat_threads',
     'academy_chat_messages',
-    'academy_chat_reads'
+    'academy_chat_reads',
+    'academy_chat_thread_members'
   ]
   loop
     if exists (

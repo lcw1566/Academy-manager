@@ -46,6 +46,19 @@ export async function getOrCreateDmThread(academyId, otherUserId) {
   return data; // uuid
 }
 
+// 선택한 직원들과 새 단톡방 생성.
+export async function createGroupChatThread(academyId, { title, memberUserIds = [] } = {}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const { data, error } = await supabase.rpc('create_group_chat_thread', {
+    p_academy_id: academyId,
+    p_title: title,
+    p_member_user_ids: memberUserIds,
+  });
+  if (error) throw error;
+  return data; // uuid
+}
+
 // 채팅용 멤버 디렉터리 — 학원 멤버 누구나 활성 직원 명단 조회 (이름/role).
 export async function listChatMembers(academyId) {
   assertSupabaseConfigured();

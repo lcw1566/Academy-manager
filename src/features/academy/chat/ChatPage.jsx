@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, ChevronLeft, Send, Users, Megaphone, Search } from 'lucide-react';
+import { Plus, ChevronLeft, Send, Users, Megaphone, Search, Check, Loader2 } from 'lucide-react';
 import useChatStore, { unreadCountForThread } from '../../../store/useChatStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 
@@ -40,11 +41,22 @@ export default function ChatPage() {
   // 채팅 디렉터리 — 모든 학원 멤버가 조회 가능한 RPC 기반(useChatStore.members).
   // 보조 fallback 으로 워크스페이스 프로필(원장만 채워짐)도 병합.
   const chatMembers = useChatStore((s) => s.members);
+  const chatAcademyId = useChatStore((s) => s.academyId);
+  const loadChat = useChatStore((s) => s.loadChat);
   const academyMemberProfiles = useWorkspaceStore((s) => s.academyMemberProfiles) ?? [];
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
 
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
+
+  // 채팅 탭을 열 때 직접 로드 — 전역 effect 타이밍에 의존하지 않는다.
+  // (현재 학원에 대해 아직 로드 안 됐으면 1회 로드.)
+  useEffect(() => {
+    if (currentAcademyId && chatAcademyId !== currentAcademyId) {
+      loadChat(currentAcademyId);
+    }
+  }, [currentAcademyId, chatAcademyId, loadChat]);
 
   // user_id → { name, role, email }
   const memberMap = useMemo(() => {
@@ -64,7 +76,10 @@ export default function ChatPage() {
 
   const threadTitle = (thread) => {
     if (!thread) return '';
-    if (thread.kind === 'group') return '학원 전체';
+    if (thread.kind === 'group') {
+      if (thread.group_scope === 'custom') return thread.title || '단톡방';
+      return thread.title || '학원 전체';
+    }
     const otherId = thread.dm_user_a === authUserId ? thread.dm_user_b : thread.dm_user_a;
     return memberMap[otherId]?.name || '직원';
   };
@@ -135,6 +150,7 @@ export default function ChatPage() {
               const last = lastMsgByThread[thread.id];
               const unread = unreadCountForThread({ messages, reads }, thread.id, authUserId);
               const isGroup = thread.kind === 'group';
+              const isAcademyGroup = isGroup && thread.group_scope !== 'custom';
               const senderName = last
                 ? (last.sender_id === authUserId ? '나' : (memberMap[last.sender_id]?.name || '직원'))
                 : null;
@@ -153,7 +169,7 @@ export default function ChatPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-bold text-gray-900 truncate">{threadTitle(thread)}</p>
-                      {isGroup && <span className="text-[10px] text-[#0064FF] font-semibold flex-shrink-0">전체</span>}
+                      {isGroup && <span className="text-[10px] text-[#0064FF] font-semibold flex-shrink-0">{isAcademyGroup ? '전체' : '단톡'}</span>}
                       <span className="ml-auto text-[11px] text-gray-400 flex-shrink-0">
                         {last ? formatThreadStamp(last.created_at) : ''}
                       </span>
@@ -182,6 +198,7 @@ export default function ChatPage() {
         <MemberPickerSheet
           memberMap={memberMap}
           authUserId={authUserId}
+          academyId={currentAcademyId}
           onClose={() => setShowPicker(false)}
           onPicked={(threadId) => { setShowPicker(false); setSelectedThreadId(threadId); }}
         />
@@ -195,10 +212,12 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
   const messages = useChatStore((s) => s.messages);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const markRead = useChatStore((s) => s.markRead);
+  const showToast = useAcademyStore((s) => s.showToast);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
   const isGroup = thread.kind === 'group';
+  const isAcademyGroup = isGroup && thread.group_scope !== 'custom';
 
   const threadMessages = useMemo(
     () => messages
@@ -224,8 +243,9 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
     setSending(true);
     try {
       await sendMessage({ threadId: thread.id, body: text });
-    } catch {
+    } catch (err) {
       setDraft(text); // 실패 시 입력 복원
+      showToast?.(err?.message ? `메시지 전송 실패: ${err.message}` : '메시지를 보내지 못했어요.', 'error');
     } finally {
       setSending(false);
     }
@@ -248,7 +268,7 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
           <p className="text-sm font-bold text-gray-900 truncate leading-tight">{title}</p>
           {isGroup && (
             <p className="text-[11px] text-gray-400 flex items-center gap-1">
-              <Users size={10} /> 학원 전체 직원
+              <Users size={10} /> {isAcademyGroup ? '학원 전체 직원' : '선택한 직원 단톡방'}
             </p>
           )}
         </div>
@@ -325,10 +345,16 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
 }
 
 // ─── DM 상대 선택 ───────────────────────────────────────────────
-function MemberPickerSheet({ memberMap, authUserId, onClose, onPicked }) {
+function MemberPickerSheet({ memberMap, authUserId, academyId, onClose, onPicked }) {
   const openDm = useChatStore((s) => s.openDm);
+  const createGroup = useChatStore((s) => s.createGroup);
+  const showToast = useAcademyStore((s) => s.showToast);
+  const [mode, setMode] = useState('dm');
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [groupTitle, setGroupTitle] = useState('');
+  const [creatingGroup, setCreatingGroup] = useState(false);
 
   const candidates = useMemo(() => {
     const list = Object.entries(memberMap)
@@ -345,11 +371,51 @@ function MemberPickerSheet({ memberMap, authUserId, onClose, onPicked }) {
     if (busyId) return;
     setBusyId(uid);
     try {
-      const threadId = await openDm(uid);
-      if (threadId) onPicked(threadId);
+      const threadId = await openDm(uid, academyId);
+      if (threadId) {
+        onPicked(threadId);
+      } else {
+        showToast?.('대화방을 열지 못했어요. 잠시 후 다시 시도해주세요.', 'error');
+        setBusyId(null);
+      }
     } catch (err) {
       console.warn('[chat] openDm failed', err);
+      showToast?.(err?.message ? `대화 시작 실패: ${err.message}` : '대화를 시작하지 못했어요.', 'error');
       setBusyId(null);
+    }
+  };
+
+  const toggleMember = (uid) => {
+    setSelectedIds((prev) => (
+      prev.includes(uid) ? prev.filter((id) => id !== uid) : [...prev, uid]
+    ));
+  };
+
+  const createSelectedGroup = async () => {
+    if (creatingGroup) return;
+    if (selectedIds.length < 2) {
+      showToast?.('단톡방은 나를 제외하고 2명 이상 선택해주세요.', 'error');
+      return;
+    }
+    const title = groupTitle.trim()
+      || selectedIds.map((id) => memberMap[id]?.name).filter(Boolean).slice(0, 3).join(', ');
+    setCreatingGroup(true);
+    try {
+      const threadId = await createGroup({
+        title,
+        memberUserIds: selectedIds,
+        academyId,
+      });
+      if (threadId) {
+        onPicked(threadId);
+      } else {
+        showToast?.('단톡방을 만들지 못했어요. 잠시 후 다시 시도해주세요.', 'error');
+        setCreatingGroup(false);
+      }
+    } catch (err) {
+      console.warn('[chat] createGroup failed', err);
+      showToast?.(err?.message ? `단톡방 생성 실패: ${err.message}` : '단톡방을 만들지 못했어요.', 'error');
+      setCreatingGroup(false);
     }
   };
 
@@ -373,7 +439,34 @@ function MemberPickerSheet({ memberMap, authUserId, onClose, onPicked }) {
         className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-8 max-h-[80vh] flex flex-col"
       >
         <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-        <p className="text-base font-bold text-gray-900 mb-3">새 대화 상대</p>
+        <p className="text-base font-bold text-gray-900 mb-3">새 대화</p>
+
+        <div className="grid grid-cols-2 gap-1 bg-gray-100 rounded-xl p-1 mb-3">
+          <button
+            type="button"
+            onClick={() => setMode('dm')}
+            className={`h-9 rounded-lg text-sm font-bold transition-colors ${mode === 'dm' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+          >
+            1:1
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('group')}
+            className={`h-9 rounded-lg text-sm font-bold transition-colors ${mode === 'group' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+          >
+            단톡
+          </button>
+        </div>
+
+        {mode === 'group' && (
+          <input
+            value={groupTitle}
+            onChange={(e) => setGroupTitle(e.target.value)}
+            placeholder="단톡방 이름"
+            maxLength={80}
+            className="w-full bg-gray-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none mb-3"
+          />
+        )}
 
         <div className="relative mb-3">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -394,8 +487,8 @@ function MemberPickerSheet({ memberMap, authUserId, onClose, onPicked }) {
                 <motion.button
                   key={m.uid}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => pick(m.uid)}
-                  disabled={!!busyId}
+                  onClick={() => (mode === 'dm' ? pick(m.uid) : toggleMember(m.uid))}
+                  disabled={!!busyId || creatingGroup}
                   className="w-full flex items-center gap-3 px-2 py-2.5 rounded-2xl active:bg-gray-50 text-left disabled:opacity-50"
                 >
                   <div className="w-10 h-10 rounded-2xl bg-gray-100 flex items-center justify-center flex-shrink-0">
@@ -406,11 +499,34 @@ function MemberPickerSheet({ memberMap, authUserId, onClose, onPicked }) {
                     {m.role && <p className="text-xs text-gray-400">{ROLE_LABELS[m.role] || ''}</p>}
                   </div>
                   {busyId === m.uid && <span className="text-xs text-gray-400">여는 중…</span>}
+                  {mode === 'group' && (
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      selectedIds.includes(m.uid) ? 'bg-[#0064FF] text-white' : 'bg-gray-100 text-transparent'
+                    }`}>
+                      <Check size={14} strokeWidth={3} />
+                    </span>
+                  )}
                 </motion.button>
               ))}
             </div>
           )}
         </div>
+
+        {mode === 'group' && (
+          <button
+            type="button"
+            onClick={createSelectedGroup}
+            disabled={creatingGroup || selectedIds.length < 2}
+            className={`mt-4 h-12 rounded-2xl flex items-center justify-center gap-2 text-sm font-bold transition-colors ${
+              selectedIds.length >= 2 && !creatingGroup
+                ? 'bg-[#0064FF] text-white active:bg-[#0050CC]'
+                : 'bg-gray-100 text-gray-400'
+            }`}
+          >
+            {creatingGroup && <Loader2 size={16} className="animate-spin" />}
+            {selectedIds.length > 0 ? `${selectedIds.length + 1}명 단톡방 만들기` : '단톡방 만들기'}
+          </button>
+        )}
       </motion.div>
     </AnimatePresence>,
     document.body,

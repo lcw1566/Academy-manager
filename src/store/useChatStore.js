@@ -14,6 +14,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   getOrCreateGroupThread,
   getOrCreateDmThread,
+  createGroupChatThread,
   listChatThreads,
   listChatMembers,
   listRecentChatMessages,
@@ -21,6 +22,40 @@ import {
   markThreadRead,
   listMyChatReads,
 } from '../services/supabase/chatApi';
+
+function makeDmThread({ threadId, academyId, myUserId, otherUserId }) {
+  const [dmUserA, dmUserB] = myUserId < otherUserId
+    ? [myUserId, otherUserId]
+    : [otherUserId, myUserId];
+  const now = new Date().toISOString();
+  return {
+    id: threadId,
+    academy_id: academyId,
+    kind: 'dm',
+    group_scope: 'academy',
+    dm_user_a: dmUserA,
+    dm_user_b: dmUserB,
+    created_by: myUserId,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+function makeGroupThread({ threadId, academyId, title, myUserId }) {
+  const now = new Date().toISOString();
+  return {
+    id: threadId,
+    academy_id: academyId,
+    kind: 'group',
+    title,
+    group_scope: 'custom',
+    dm_user_a: null,
+    dm_user_b: null,
+    created_by: myUserId,
+    created_at: now,
+    updated_at: now,
+  };
+}
 
 const useChatStore = create((set, get) => ({
   academyId: null,
@@ -37,41 +72,56 @@ const useChatStore = create((set, get) => ({
   loadChat: async (academyId) => {
     if (!isSupabaseConfigured || !academyId) return;
     set({ isLoading: true, academyId });
-    try {
-      // 학원 전체 단톡방은 항상 존재하도록 보장.
-      try { await getOrCreateGroupThread(academyId); } catch { /* 권한/일시 오류 무시 */ }
+    // 한 호출이 실패해도 나머지는 반영되도록 allSettled. 어떤 호출이 깨졌는지
+    // 콘솔에 분명히 남긴다 (마이그레이션 미적용 진단용).
+    try { await getOrCreateGroupThread(academyId); }
+    catch (err) { console.warn('[chat] get_or_create_group_thread failed', err?.message || err); }
 
-      const [threads, members, messages, reads] = await Promise.all([
-        listChatThreads(academyId),
-        listChatMembers(academyId),
-        listRecentChatMessages(academyId, { limit: 400 }),
-        listMyChatReads(),
-      ]);
+    const [threadsR, membersR, messagesR, readsR] = await Promise.allSettled([
+      listChatThreads(academyId),
+      listChatMembers(academyId),
+      listRecentChatMessages(academyId, { limit: 400 }),
+      listMyChatReads(),
+    ]);
+    const label = { 0: 'listChatThreads', 1: 'listChatMembers(list_academy_chat_members)', 2: 'listRecentChatMessages', 3: 'listMyChatReads' };
+    [threadsR, membersR, messagesR, readsR].forEach((r, i) => {
+      if (r.status === 'rejected') console.warn(`[chat] ${label[i]} failed`, r.reason?.message || r.reason);
+    });
+
+    const patch = { isLoading: false, loadedAt: new Date().toISOString() };
+    if (threadsR.status === 'fulfilled') patch.threads = threadsR.value || [];
+    if (membersR.status === 'fulfilled') patch.members = membersR.value || [];
+    if (messagesR.status === 'fulfilled') patch.messages = messagesR.value || [];
+    if (readsR.status === 'fulfilled') {
       const readsMap = {};
-      (reads || []).forEach((r) => { readsMap[r.thread_id] = r.last_read_at; });
-      set({
-        threads: threads || [],
-        members: members || [],
-        messages: messages || [],
-        reads: readsMap,
-        loadedAt: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.warn('[chat] loadChat failed', err);
-    } finally {
-      set({ isLoading: false });
+      (readsR.value || []).forEach((r) => { readsMap[r.thread_id] = r.last_read_at; });
+      patch.reads = readsMap;
     }
+    set(patch);
   },
 
   reloadThreads: async () => {
     const academyId = get().academyId;
-    if (!academyId) return;
+    if (!academyId) return [];
     try {
       const threads = await listChatThreads(academyId);
       set({ threads: threads || [] });
+      return threads || [];
     } catch (err) {
       console.warn('[chat] reloadThreads failed', err);
+      return [];
     }
+  },
+
+  upsertThread: (thread) => {
+    if (!thread?.id) return;
+    set((s) => {
+      const exists = s.threads.some((t) => t.id === thread.id);
+      const threads = exists
+        ? s.threads.map((t) => (t.id === thread.id ? { ...t, ...thread } : t))
+        : [thread, ...s.threads];
+      return { threads };
+    });
   },
 
   // 새 방(특히 갓 생성된 DM)의 메시지가 누락되지 않도록 방+최근 메시지 동시 갱신.
@@ -105,7 +155,10 @@ const useChatStore = create((set, get) => ({
     if (!text) return null;
     try {
       const created = await sendChatMessage({ academyId, threadId, body: text });
-      if (created?.id) get().appendMessage(created);
+      if (created?.id) {
+        get().appendMessage(created);
+        get().touchThread(threadId, created.created_at);
+      }
       return created;
     } catch (err) {
       console.warn('[chat] sendMessage failed', err);
@@ -122,6 +175,15 @@ const useChatStore = create((set, get) => ({
     });
   },
 
+  touchThread: (threadId, updatedAt = new Date().toISOString()) => {
+    if (!threadId) return;
+    set((s) => ({
+      threads: s.threads.map((t) => (
+        t.id === threadId ? { ...t, updated_at: updatedAt } : t
+      )),
+    }));
+  },
+
   markRead: async (threadId) => {
     if (!threadId) return;
     // 낙관적 갱신 — 즉시 배지 제거.
@@ -134,11 +196,48 @@ const useChatStore = create((set, get) => ({
   },
 
   // 상대와의 DM 방 확보 후 threadId 반환.
-  openDm: async (otherUserId) => {
-    const academyId = get().academyId;
+  // academyId 는 인자 우선 → 스토어 fallback (전역 loadChat 미실행 타이밍 방어).
+  openDm: async (otherUserId, academyIdArg) => {
+    const academyId = academyIdArg || get().academyId;
     if (!academyId || !otherUserId) return null;
+    if (!get().academyId) set({ academyId });
     const threadId = await getOrCreateDmThread(academyId, otherUserId);
-    await get().reloadThreads();
+    let myUserId = null;
+    try {
+      const { data } = await supabase.auth.getUser();
+      myUserId = data?.user?.id || null;
+    } catch {
+      myUserId = null;
+    }
+    if (threadId && myUserId) {
+      get().upsertThread(makeDmThread({ threadId, academyId, myUserId, otherUserId }));
+    }
+    const threads = await get().reloadThreads();
+    if (threadId && !threads.some((t) => t.id === threadId) && myUserId) {
+      get().upsertThread(makeDmThread({ threadId, academyId, myUserId, otherUserId }));
+    }
+    return threadId;
+  },
+
+  createGroup: async ({ title, memberUserIds = [], academyId: academyIdArg } = {}) => {
+    const academyId = academyIdArg || get().academyId;
+    if (!academyId) return null;
+    if (!get().academyId) set({ academyId });
+    const threadId = await createGroupChatThread(academyId, { title, memberUserIds });
+    let myUserId = null;
+    try {
+      const { data } = await supabase.auth.getUser();
+      myUserId = data?.user?.id || null;
+    } catch {
+      myUserId = null;
+    }
+    if (threadId && myUserId) {
+      get().upsertThread(makeGroupThread({ threadId, academyId, title, myUserId }));
+    }
+    const threads = await get().reloadThreads();
+    if (threadId && !threads.some((t) => t.id === threadId) && myUserId) {
+      get().upsertThread(makeGroupThread({ threadId, academyId, title, myUserId }));
+    }
     return threadId;
   },
 
@@ -146,7 +245,7 @@ const useChatStore = create((set, get) => ({
   ensureGroupThread: async () => {
     const academyId = get().academyId;
     if (!academyId) return null;
-    const existing = get().threads.find((t) => t.kind === 'group');
+    const existing = get().threads.find((t) => t.kind === 'group' && t.group_scope !== 'custom');
     if (existing) return existing.id;
     const id = await getOrCreateGroupThread(academyId);
     await get().reloadThreads();
@@ -175,6 +274,7 @@ const useChatStore = create((set, get) => ({
           const known = get().threads.some((t) => t.id === row.thread_id);
           if (known) {
             get().appendMessage(row);
+            get().touchThread(row.thread_id, row.created_at);
           } else {
             // 아직 모르는 방(갓 생성된 DM 등) → 방+메시지 갱신.
             get().scheduleThreadsReload();
