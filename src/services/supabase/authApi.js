@@ -1,4 +1,4 @@
-import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { supabase, isSupabaseConfigured, setAuthRememberPreference } from '../../lib/supabase';
 
 function assertSupabaseConfigured() {
   if (!isSupabaseConfigured || !supabase) {
@@ -22,6 +22,7 @@ export async function getCurrentUser() {
 
 export async function signUpWithEmail({ email, password, metadata } = {}) {
   assertSupabaseConfigured();
+  setAuthRememberPreference(true);
   const options = metadata && Object.keys(metadata).length > 0
     ? { data: metadata }
     : undefined;
@@ -30,8 +31,9 @@ export async function signUpWithEmail({ email, password, metadata } = {}) {
   return data;
 }
 
-export async function signInWithEmail({ email, password }) {
+export async function signInWithEmail({ email, password, remember = true }) {
   assertSupabaseConfigured();
+  setAuthRememberPreference(remember);
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
   return data;

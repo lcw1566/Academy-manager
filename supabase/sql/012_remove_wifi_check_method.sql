@@ -1,6 +1,6 @@
 -- ============================================================
 -- 012_remove_wifi_check_method.sql
--- Academy Manager — Wi-Fi 출퇴근 방식 제거 (Phase 43)
+-- Seenit — Wi-Fi 출퇴근 방식 제거 (Phase 43)
 --
 -- 배경:
 --   - Phase 41 에서 staff_check_method 로 'wifi' / 'qr' 두 가지를 지원했으나,

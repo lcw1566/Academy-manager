@@ -13,8 +13,8 @@ netsh interface portproxy delete v4tov4 listenport=$PORT listenaddress=0.0.0.0 2
 netsh interface portproxy add v4tov4 listenport=$PORT listenaddress=0.0.0.0 connectport=$PORT connectaddress=$WSL_IP
 
 # 방화벽 규칙 추가
-netsh advfirewall firewall delete rule name="클래스노트 Dev" 2>$null
-netsh advfirewall firewall add rule name="클래스노트 Dev" dir=in action=allow protocol=TCP localport=$PORT
+netsh advfirewall firewall delete rule name="Seenit Dev" 2>$null
+netsh advfirewall firewall add rule name="Seenit Dev" dir=in action=allow protocol=TCP localport=$PORT
 
 # 현재 Windows IP 확인
 $WIN_IP = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "172.*" } | Select-Object -First 1).IPAddress

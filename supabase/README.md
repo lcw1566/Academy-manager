@@ -1,6 +1,6 @@
 # Supabase 설정 가이드
 
-이 폴더에는 Academy Manager 의 Supabase 스키마 / RLS 정책을 정의한 SQL 파일이
+이 폴더에는 Seenit 의 Supabase 스키마 / RLS 정책을 정의한 SQL 파일이
 들어 있습니다. Supabase Dashboard 의 SQL Editor 에서 **번호 순서대로** 실행해주세요.
 
 ## 디렉터리 구조

@@ -1,4 +1,4 @@
-# 과외 관리 앱 (Academy Manager)
+# 씨닛 (Seenit)
 
 React + Vite + Tailwind 기반 과외 선생님용 MVP 관리 앱.
 

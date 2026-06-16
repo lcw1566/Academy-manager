@@ -57,13 +57,14 @@ function setPendingProfileInfo(info) {
   }
 }
 
-export default function AuthPage({ onAuthSuccess, onCancel }) {
-  const [mode, setMode] = useState('signIn'); // 'signIn' | 'signUp'
+export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signIn' }) {
+  const [mode, setMode] = useState(initialMode); // 'signIn' | 'signUp'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [accountType, setAccountType] = useState(null); // 'owner' | 'staff' | null
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');
+  const [rememberLogin, setRememberLogin] = useState(true);
   const [localMessage, setLocalMessage] = useState(null);
 
   const signIn = useAuthStore((s) => s.signIn);
@@ -98,7 +99,7 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
 
     try {
       if (mode === 'signIn') {
-        await signIn({ email, password });
+        await signIn({ email, password, remember: rememberLogin });
         showToast('로그인되었어요.');
         onAuthSuccess?.();
       } else {
@@ -189,7 +190,7 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
             {mode === 'signIn' ? '로그인' : '회원가입'}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Academy Manager 서버 계정으로 접속해요.
+            Seenit 서버 계정으로 접속해요.
           </p>
         </div>
 
@@ -265,6 +266,19 @@ export default function AuthPage({ onAuthSuccess, onCancel }) {
               disabled={isAuthLoading}
             />
           </div>
+
+          {mode === 'signIn' && (
+            <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+              <input
+                type="checkbox"
+                checked={rememberLogin}
+                onChange={(e) => setRememberLogin(e.target.checked)}
+                disabled={isAuthLoading}
+                className="h-4 w-4 rounded border-gray-300 accent-blue-600"
+              />
+              로그인 유지
+            </label>
+          )}
 
           {/* 회원가입 모드에서만 이름/연락처 입력 */}
           {mode === 'signUp' && (

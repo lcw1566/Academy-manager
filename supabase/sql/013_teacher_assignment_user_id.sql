@@ -1,6 +1,6 @@
 -- ============================================================
 -- 013_teacher_assignment_user_id.sql
--- Academy Manager — class_groups / class_sessions 에 teacher_user_id 추가 (Phase 44 Pilot Hotfix)
+-- Seenit — class_groups / class_sessions 에 teacher_user_id 추가 (Phase 44 Pilot Hotfix)
 --
 -- 문제:
 --   - 기존 class_groups.teacher_id, class_sessions.teacher_id 는 "local 문자열 id".

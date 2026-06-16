@@ -1,6 +1,6 @@
 -- ============================================================
 -- 004_profiles_staff_and_delete_policies.sql
--- Academy Manager — Phase 20
+-- Seenit — Phase 20
 --
 --   1. profiles.phone column
 --   2. academy_staff_profiles table (academy-specific staff settings)

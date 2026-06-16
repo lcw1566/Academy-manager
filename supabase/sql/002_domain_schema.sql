@@ -1,6 +1,6 @@
 -- ============================================================
 -- 002_domain_schema.sql
--- Academy Manager — 도메인 테이블 스키마
+-- Seenit — 도메인 테이블 스키마
 --
 --   students / class_groups / class_sessions / lesson_records
 --   attendance_records / clinic_records / payments / payrolls

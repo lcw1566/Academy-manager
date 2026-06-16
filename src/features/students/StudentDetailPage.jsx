@@ -714,19 +714,26 @@ function InfoCard({ label, children }) {
 function InfoRow({ label, value, icon, phone }) {
   const href = toTelHref(phone);
   return (
-    <div className="flex items-center gap-2">
-      {icon}
-      <span className="text-xs text-gray-400 w-14 flex-shrink-0">{label}</span>
-      <span className="text-sm text-gray-800 flex-1 min-w-0 truncate">{value || '-'}</span>
+    <div>
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="text-xs text-gray-400 w-14 flex-shrink-0">{label}</span>
+        <span className="text-sm text-gray-800 flex-1 min-w-0 truncate">{value || '-'}</span>
+        {href && (
+          <a
+            href={href}
+            className="inline-flex md:hidden items-center gap-1 h-8 px-2.5 rounded-full bg-blue-50 text-blue-600 text-xs font-bold active:bg-blue-100 flex-shrink-0"
+            aria-label={`${label} 전화하기`}
+          >
+            <Phone size={13} />
+            전화
+          </a>
+        )}
+      </div>
       {href && (
-        <a
-          href={href}
-          className="inline-flex items-center gap-1 h-8 px-2.5 rounded-full bg-blue-50 text-blue-600 text-xs font-bold active:bg-blue-100 flex-shrink-0"
-          aria-label={`${label} 전화하기`}
-        >
-          <Phone size={13} />
-          전화
-        </a>
+        <p className="mt-1 pl-20 text-[11px] font-medium text-blue-500 md:hidden">
+          모바일에서는 전화 버튼으로 바로 연결할 수 있어요.
+        </p>
       )}
     </div>
   );

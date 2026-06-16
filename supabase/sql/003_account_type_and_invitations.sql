@@ -1,6 +1,6 @@
 -- ============================================================
 -- 003_account_type_and_invitations.sql
--- Academy Manager — 계정 유형(account_type) + 학원 초대(academy_invitations)
+-- Seenit — 계정 유형(account_type) + 학원 초대(academy_invitations)
 --
 -- 전제:
 --   - 001_workspace_schema.sql 이 먼저 실행되어 있어야 한다.

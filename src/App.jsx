@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState } from 'react';
 import { AnimatePresence, MotionConfig } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import useAcademyStore from './store/useAcademyStore';
@@ -7,6 +7,7 @@ import useWorkspaceStore from './store/useWorkspaceStore';
 import useChatStore from './store/useChatStore';
 import RoleSelectPage from './features/auth/RoleSelectPage';
 import AuthPage from './features/auth/AuthPage';
+import LandingPage from './features/landing/LandingPage';
 import StaffWaitingPage from './features/auth/StaffWaitingPage';
 import WorkspaceSelectionPage, { wasWorkspacePicked, clearWorkspacePicked } from './features/auth/WorkspaceSelectionPage';
 import AppLayout from './components/AppLayout';
@@ -88,6 +89,7 @@ export default function App() {
   );
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
+  const [authEntryMode, setAuthEntryMode] = useState(null);
 
   // 채팅 (학원 직원 전용) — 로그인 + 학원 선택 시 로드/실시간 구독.
   const loadChat = useChatStore((s) => s.loadChat);
@@ -351,8 +353,15 @@ export default function App() {
     if (isSupabaseReady) {
       // auth 초기화 중에는 깜빡임 방지용 로딩 화면.
       if (!isAuthInitialized) return <LoadingScreen />;
-      // 미인증 → 로그인 화면 (RoleSelectPage 대신).
-      if (!isAuthenticated) return <AuthPage />;
+      // 미인증 → 랜딩 페이지. CTA에서 로그인/회원가입 화면을 연다.
+      if (!isAuthenticated) {
+        return (
+          <LandingPage
+            onSignIn={() => setAuthEntryMode('signIn')}
+            onSignUp={() => setAuthEntryMode('signUp')}
+          />
+        );
+      }
       // 인증됐지만 workspace 가 아직 준비 안 됨 — 권한 결정 전 화면 깜빡임 방지.
       if (!isWorkspaceReady) return <LoadingScreen />;
     }
@@ -403,6 +412,16 @@ export default function App() {
         {!isPublicCheckin && isAuthenticated && isAuthPanelOpen && (
           <div className="fixed inset-0 z-50 bg-[#F2F4F6] overflow-y-auto">
             <AuthPage onAuthSuccess={closeAuthPanel} onCancel={closeAuthPanel} />
+          </div>
+        )}
+        {!isPublicCheckin && !isAuthenticated && authEntryMode && (
+          <div className="fixed inset-0 z-50 bg-[#F2F4F6] overflow-y-auto">
+            <AuthPage
+              key={authEntryMode}
+              initialMode={authEntryMode}
+              onAuthSuccess={() => setAuthEntryMode(null)}
+              onCancel={() => setAuthEntryMode(null)}
+            />
           </div>
         )}
         <AnimatePresence>

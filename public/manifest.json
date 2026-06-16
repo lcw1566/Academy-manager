@@ -1,7 +1,7 @@
 {
-  "name": "클래스노트",
-  "short_name": "클래스노트",
-  "description": "과외 수업 관리 앱",
+  "name": "씨닛",
+  "short_name": "씨닛",
+  "description": "Seenit 학원 운영 관리 앱",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F2F4F6",

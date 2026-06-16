@@ -1,6 +1,6 @@
 -- ============================================================
 -- 015_staff_attendance_logs_self_rls.sql
--- Academy Manager — staff_attendance_logs 강사 본인 self insert/update 허용 (Phase 44.7 / Phase C)
+-- Seenit — staff_attendance_logs 강사 본인 self insert/update 허용 (Phase 44.7 / Phase C)
 --
 -- 배경:
 --   SQL 014 의 staff_attendance_logs RLS 가 insert/update owner only 로 정의되어

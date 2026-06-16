@@ -1,6 +1,6 @@
 -- ============================================================
 -- 007_profile_search_rpc.sql
--- Academy Manager — profile email 검색 RPC (Phase 32 Post-fix)
+-- Seenit — profile email 검색 RPC (Phase 32 Post-fix)
 --
 -- 배경:
 --   profiles 의 RLS 정책은 본인 row 만 select 허용한다 (001). 그래서 원장이

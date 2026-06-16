@@ -33,7 +33,7 @@ export default function RoleSelectPage() {
         {/* Logo */}
         <div className="text-center mb-10">
           <div className="text-4xl mb-3">📝</div>
-          <h1 className="text-2xl font-bold text-gray-900">클래스노트</h1>
+          <h1 className="text-2xl font-bold text-gray-900">씨닛</h1>
           <p className="text-sm text-gray-500 mt-2">어떤 역할로 시작할까요?</p>
         </div>
 

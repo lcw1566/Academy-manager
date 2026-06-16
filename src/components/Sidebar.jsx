@@ -34,7 +34,7 @@ export default function Sidebar({ tabs, badges = {} }) {
     <aside className="hidden md:flex md:flex-col w-[260px] shrink-0 bg-white border-r border-gray-100 h-screen sticky top-0">
       {/* 브랜드 + 역할 */}
       <div className="px-5 py-5 border-b border-gray-50">
-        <p className="text-base font-bold text-gray-900">클래스노트</p>
+        <p className="text-base font-bold text-gray-900">씨닛</p>
         <p className="text-xs text-gray-500 mt-1">{ROLE_LABEL[role] ?? role ?? ''}</p>
       </div>
 

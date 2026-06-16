@@ -1,6 +1,6 @@
 -- ============================================================
 -- 008_assistant_assignment.sql
--- Academy Manager — 보조강사 배정 영속화 (Phase 35)
+-- Seenit — 보조강사 배정 영속화 (Phase 35)
 --
 -- 보조강사를 반(class_groups) / 회차(class_sessions) 에 배정한 정보를
 -- 서버에 저장해서 다른 기기에서도 동일하게 보이도록 한다.

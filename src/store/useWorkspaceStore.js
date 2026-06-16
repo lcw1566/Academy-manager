@@ -67,6 +67,24 @@ import useAcademyStore from './useAcademyStore';
 // 변화를 감지할 수 있도록 store state 로도 관리한다. WorkspaceSelectionPage 의
 // markWorkspacePicked() 가 이 값을 true 로 set 하고, App.jsx 가 subscribe.
 const WORKSPACE_PICKED_SESSION_KEY = 'workspace-picked';
+const LEGACY_WORKSPACE_STORAGE_KEY = 'academy-manager-workspace';
+const WORKSPACE_STORAGE_KEY = 'seenit-workspace';
+
+function migrateWorkspaceStorageKey() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const nextValue = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+    const legacyValue = localStorage.getItem(LEGACY_WORKSPACE_STORAGE_KEY);
+    if (!nextValue && legacyValue) {
+      localStorage.setItem(WORKSPACE_STORAGE_KEY, legacyValue);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+migrateWorkspaceStorageKey();
+
 function readInitialWorkspacePicked() {
   if (typeof sessionStorage === 'undefined') return false;
   try { return sessionStorage.getItem(WORKSPACE_PICKED_SESSION_KEY) === '1'; }
@@ -1521,7 +1539,7 @@ const useWorkspaceStore = create(
       },
     }),
     {
-      name: 'academy-manager-workspace',
+      name: WORKSPACE_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       // currentAcademyId 만 영속화. 나머지는 매 세션 새로 fetch.
       partialize: (state) => ({ currentAcademyId: state.currentAcademyId }),

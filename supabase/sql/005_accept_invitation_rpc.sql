@@ -1,6 +1,6 @@
 -- ============================================================
 -- 005_accept_invitation_rpc.sql
--- Academy Manager — Phase 21 (hotfix)
+-- Seenit — Phase 21 (hotfix)
 --
 -- Why this file exists:
 --   The "academy_members insert by owner" policy from 001 means that an

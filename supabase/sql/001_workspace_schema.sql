@@ -1,6 +1,6 @@
 -- ============================================================
 -- 001_workspace_schema.sql
--- Academy Manager — workspace 기본 스키마
+-- Seenit — workspace 기본 스키마
 --   profiles / academies / academy_members
 --
 -- 실행 순서 (참조 의존성을 따라 안전하게 정렬):

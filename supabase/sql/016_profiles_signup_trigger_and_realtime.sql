@@ -1,6 +1,6 @@
 -- ============================================================
 -- 016_profiles_signup_trigger_and_realtime.sql
--- Academy Manager — 가입 직후 profile 인덱스 생성 + 협업 상태 Realtime 등록
+-- Seenit — 가입 직후 profile 인덱스 생성 + 협업 상태 Realtime 등록
 --
 -- 배경:
 --   - 원장이 이메일로 직원을 검색할 때 public.profiles 를 기준으로 찾는다.

@@ -821,21 +821,28 @@ export default function AcademyStudentDetailPage() {
 function InfoRowFull({ label, value, phone }) {
   const href = toTelHref(phone);
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5">
-      <span className="text-xs text-gray-400">{label}</span>
-      <span className="flex items-center justify-end gap-2 min-w-0">
-        <span className="text-sm font-medium text-gray-800 truncate">{value}</span>
-        {href && (
-          <a
-            href={href}
-            className="inline-flex items-center gap-1 h-8 px-2.5 rounded-full bg-blue-50 text-blue-600 text-xs font-bold active:bg-blue-100 flex-shrink-0"
-            aria-label={`${label} 전화하기`}
-          >
-            <PhoneCall size={13} />
-            전화
-          </a>
-        )}
-      </span>
+    <div className="py-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-gray-400">{label}</span>
+        <span className="flex items-center justify-end gap-2 min-w-0">
+          <span className="text-sm font-medium text-gray-800 truncate">{value}</span>
+          {href && (
+            <a
+              href={href}
+              className="inline-flex md:hidden items-center gap-1 h-8 px-2.5 rounded-full bg-blue-50 text-blue-600 text-xs font-bold active:bg-blue-100 flex-shrink-0"
+              aria-label={`${label} 전화하기`}
+            >
+              <PhoneCall size={13} />
+              전화
+            </a>
+          )}
+        </span>
+      </div>
+      {href && (
+        <p className="mt-1 text-right text-[11px] font-medium text-blue-500 md:hidden">
+          모바일에서는 전화 버튼으로 바로 연결할 수 있어요.
+        </p>
+      )}
     </div>
   );
 }

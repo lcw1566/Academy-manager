@@ -77,10 +77,10 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  signIn: async ({ email, password }) => {
+  signIn: async ({ email, password, remember = true }) => {
     set({ isAuthLoading: true, authError: null });
     try {
-      const data = await signInWithEmail({ email, password });
+      const data = await signInWithEmail({ email, password, remember });
       set({
         session: data.session ?? null,
         user: data.user ?? null,
