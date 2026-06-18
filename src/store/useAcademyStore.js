@@ -192,7 +192,17 @@ const useAcademyStore = create(
   examResults: [],
 
   // === Academy Workspace (원장/강사/보조강사 공유) ===
-  academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '', salaryPaymentDay: 10, tuitionDueDay: 1 },
+  academyProfile: {
+    name: '우리 학원',
+    ownerName: '',
+    address: '',
+    phone: '',
+    salaryPaymentDay: 10,
+    tuitionDueDay: 1,
+    academyType: 'core_subjects',
+    academySubjects: ['korean', 'english', 'math'],
+    clinicRequired: true,
+  },
   academyStudents: [],
   classGroups: [],
   classSessions: [],
@@ -858,7 +868,17 @@ const useAcademyStore = create(
       tutorProfile: defaultTutorProfile,
       geminiApiKey: '',
       // Academy workspace also reset
-      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '', salaryPaymentDay: 10, tuitionDueDay: 1 },
+      academyProfile: {
+        name: '우리 학원',
+        ownerName: '',
+        address: '',
+        phone: '',
+        salaryPaymentDay: 10,
+        tuitionDueDay: 1,
+        academyType: 'core_subjects',
+        academySubjects: ['korean', 'english', 'math'],
+        clinicRequired: true,
+      },
       academyStudents: [],
       classGroups: [],
       classSessions: [],

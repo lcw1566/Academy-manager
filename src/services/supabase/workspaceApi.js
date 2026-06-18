@@ -346,19 +346,50 @@ export async function updateAcademyBillingSettings(academyId, { salaryPaymentDay
 }
 
 
+function isMissingAcademySettingsColumnError(error) {
+  const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+  return (
+    error?.code === 'PGRST204' ||
+    message.includes('academy_type') ||
+    message.includes('academy_subjects') ||
+    message.includes('clinic_required') ||
+    message.includes('academy_onboarded_at')
+  );
+}
+
+function buildAcademySettingsPayload({ academyType, academySubjects, clinicRequired } = {}) {
+  const out = {};
+  if (academyType !== undefined) out.academy_type = academyType || null;
+  if (academySubjects !== undefined) out.academy_subjects = Array.isArray(academySubjects) ? academySubjects : [];
+  if (clinicRequired !== undefined) out.clinic_required = clinicRequired !== false;
+  out.academy_onboarded_at = new Date().toISOString();
+  return out;
+}
+
 // 학원 생성 + 본인을 owner 멤버로 등록 (2-step).
 // 진정한 원자성이 필요해지면 추후 SQL RPC로 옮길 예정.
-export async function createAcademyAsOwner({ name }) {
+export async function createAcademyAsOwner({ name, academyType, academySubjects, clinicRequired } = {}) {
   const user = await getCurrentUserOrThrow();
   const trimmed = (name ?? '').trim();
   if (!trimmed) throw new Error('학원 이름을 입력해주세요.');
 
   // Step 1: academies row 생성
-  const { data: academy, error: aErr } = await supabase
+  const basePayload = { name: trimmed, owner_id: user.id };
+  const settingsPayload = buildAcademySettingsPayload({ academyType, academySubjects, clinicRequired });
+  let { data: academy, error: aErr } = await supabase
     .from('academies')
-    .insert({ name: trimmed, owner_id: user.id })
+    .insert({ ...basePayload, ...settingsPayload })
     .select()
     .single();
+  if (aErr && isMissingAcademySettingsColumnError(aErr)) {
+    const retry = await supabase
+      .from('academies')
+      .insert(basePayload)
+      .select()
+      .single();
+    academy = retry.data;
+    aErr = retry.error;
+  }
   if (aErr) throw aErr;
 
   // Step 2: academy_members 에 owner 로 등록
@@ -379,6 +410,42 @@ export async function createAcademyAsOwner({ name }) {
   }
 
   return academy;
+}
+
+export async function updateAcademyProfileSettings(academyId, patch = {}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const dbPatch = {};
+  if (patch.name !== undefined) {
+    const trimmed = (patch.name ?? '').trim();
+    if (!trimmed) throw new Error('학원 이름을 입력해주세요.');
+    dbPatch.name = trimmed;
+  }
+  if (patch.academyType !== undefined) dbPatch.academy_type = patch.academyType || null;
+  if (patch.academySubjects !== undefined) dbPatch.academy_subjects = Array.isArray(patch.academySubjects) ? patch.academySubjects : [];
+  if (patch.clinicRequired !== undefined) dbPatch.clinic_required = patch.clinicRequired !== false;
+  if (patch.markOnboarded === true) dbPatch.academy_onboarded_at = new Date().toISOString();
+
+  if (Object.keys(dbPatch).length === 0) return null;
+
+  const runUpdate = async (payload) => supabase
+    .from('academies')
+    .update(payload)
+    .eq('id', academyId)
+    .select()
+    .maybeSingle();
+
+  let { data, error } = await runUpdate(dbPatch);
+  if (error && isMissingAcademySettingsColumnError(error)) {
+    const fallback = {};
+    if (dbPatch.name !== undefined) fallback.name = dbPatch.name;
+    if (Object.keys(fallback).length === 0) return null;
+    const retry = await runUpdate(fallback);
+    data = retry.data;
+    error = retry.error;
+  }
+  if (error) throw error;
+  return data;
 }
 
 

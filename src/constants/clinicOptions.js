@@ -45,23 +45,23 @@ export const CLINIC_OPTIONS_BY_SUBJECT = {
   ],
   english: [
     {
-      key: 'vocabulary_test',
-      title: '단어 암기 및 시험',
+      key: 'vocabulary',
+      title: '단어',
       description: '누적된 지정 단어장을 외우고 커트라인을 통과할 때까지 재시험을 봅니다.',
     },
     {
-      key: 'sentence_structure',
-      title: '문장 구문 분석',
+      key: 'reading',
+      title: '독해',
       description: '복잡한 핵심 문장의 주어, 동사, 수식어를 끊어 읽으며 직독직해를 연습합니다.',
     },
     {
-      key: 'listening_test',
-      title: '듣기 평가',
+      key: 'listening',
+      title: '듣기',
       description: '오답률이 높거나 상위 등급을 노리는 경우, 듣기 만점을 위해 주기적으로 실전 평가를 합니다.',
     },
     {
-      key: 'reading_wrong_answer',
-      title: '독해 오답 소거',
+      key: 'grammar',
+      title: '문법',
       description: '틀린 문제의 정답 근거를 지문 내에서 찾아내는 훈련을 합니다.',
     },
   ],

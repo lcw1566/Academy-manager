@@ -43,11 +43,15 @@ create table if not exists public.profiles (
 -- ============================================================
 
 create table if not exists public.academies (
-  id          uuid primary key default gen_random_uuid(),
-  name        text not null,
-  owner_id    uuid references auth.users(id) on delete cascade,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  id                    uuid primary key default gen_random_uuid(),
+  name                  text not null,
+  owner_id              uuid references auth.users(id) on delete cascade,
+  academy_type          text default 'core_subjects',
+  academy_subjects      jsonb not null default '["korean", "english", "math"]'::jsonb,
+  clinic_required       boolean not null default true,
+  academy_onboarded_at  timestamptz,
+  created_at            timestamptz not null default now(),
+  updated_at            timestamptz not null default now()
 );
 
 

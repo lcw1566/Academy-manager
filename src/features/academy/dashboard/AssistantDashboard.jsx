@@ -38,6 +38,7 @@ export default function AssistantDashboard() {
   const academyStudents = useAcademyStore((s) => s.academyStudents);
   const classGroups = useAcademyStore((s) => s.classGroups);
   const classSessions = useAcademyStore((s) => s.classSessions);
+  const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords) ?? [];
   const clinicRecords = useAcademyStore((s) => s.clinicRecords) ?? [];
   const academyAssistants = useAcademyStore((s) => s.academyAssistants);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -186,9 +187,25 @@ export default function AssistantDashboard() {
     ) || null;
   }, [academyPayrolls, currentMonth, myAssistant]);
 
-  const openClinicForStudent = (studentId, session) => {
+  const buildRelayTarget = (studentId, session) => {
     const group = classGroups.find((g) => g.id === session.classGroupId) || null;
-    setClinicTarget({ studentId, session, group });
+    const lessonRecord = academyLessonRecords.find((lr) => lr.sessionId === session.id && lr.studentId === studentId) || null;
+    return {
+      studentId,
+      classGroupId: group?.id || '',
+      classSessionId: session?.id || '',
+      date: session?.date || todayStr,
+      subject: group?.subject || '',
+      sourceSupportTags: lessonRecord?.supportTags || [],
+      sourceSupportMemo: lessonRecord?.supportMemo || '',
+      sourceLessonRecordId: lessonRecord?.id || null,
+    };
+  };
+
+  const openClinicForStudent = (studentId, session, relayStudentIds = [studentId]) => {
+    const relayTargets = relayStudentIds.map((sid) => buildRelayTarget(sid, session));
+    const initialRelayIndex = Math.max(0, relayStudentIds.findIndex((sid) => sid === studentId));
+    setClinicTarget({ relayTargets, initialRelayIndex });
   };
 
   return (
@@ -262,7 +279,7 @@ export default function AssistantDashboard() {
                         <motion.button
                           key={sid}
                           whileTap={{ scale: 0.98 }}
-                          onClick={() => openClinicForStudent(sid, session)}
+                          onClick={() => openClinicForStudent(sid, session, remaining)}
                           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50 active:bg-blue-50 text-left transition-colors"
                         >
                           <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
@@ -331,11 +348,8 @@ export default function AssistantDashboard() {
       {/* 클리닉 기록 폼 — 학생/수업/날짜/과목 자동 채움 */}
       {clinicTarget && (
         <ClinicRecordFormModal
-          presetStudentId={clinicTarget.studentId}
-          presetClassGroupId={clinicTarget.group?.id}
-          presetClassSessionId={clinicTarget.session?.id}
-          presetDate={clinicTarget.session?.date}
-          presetSubject={clinicTarget.group?.subject || ''}
+          relayTargets={clinicTarget.relayTargets}
+          initialRelayIndex={clinicTarget.initialRelayIndex}
           onClose={() => setClinicTarget(null)}
         />
       )}

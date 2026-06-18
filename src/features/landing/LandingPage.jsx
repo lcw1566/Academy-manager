@@ -127,14 +127,12 @@ export default function LandingPage({ onSignIn, onSignUp }) {
         <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 md:grid-cols-[1fr_0.8fr] md:items-center">
           <motion.div {...reveal(0, 0.35)} className="max-w-3xl">
             <p className="mb-4 inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-bold text-blue-600">
-              PC에서는 웹으로 바로, 모바일에서는 현장 업무까지
+              누구나 간편한 학원 관리 씨닛
             </p>
             <h1 className="text-[42px] font-black leading-[1.08] tracking-normal text-gray-950 md:text-[68px]">
               학원 운영,
               <br />
-              이제 하나로
-              <br />
-              끝내세요.
+              이제는 간편하게
             </h1>
             <p className="mt-5 max-w-xl text-lg font-semibold leading-relaxed text-gray-700 md:text-xl">
               학생 관리, 수업 기록, 출결, 수납, 강사 업무를 PC와 모바일에서 간편하게
@@ -210,7 +208,7 @@ export default function LandingPage({ onSignIn, onSignUp }) {
         <div className="mx-auto max-w-6xl">
           <div className="grid grid-cols-1 gap-10 md:grid-cols-[0.86fr_1.14fr] md:items-start">
             <motion.div {...reveal()}>
-              <p className="text-sm font-black text-blue-300">PC와 모바일의 역할이 분명해요</p>
+              <p className="text-sm font-black text-blue-300">PC 모바일 무엇으로든 간편하게</p>
               <h2 className="mt-3 text-3xl font-black leading-tight tracking-normal md:text-5xl">
                 사무실에서는 PC,
                 <br />
@@ -247,7 +245,7 @@ export default function LandingPage({ onSignIn, onSignUp }) {
       <section id="trust" className="bg-white px-5 py-20 md:px-6 md:py-28">
         <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 md:grid-cols-[1fr_1fr] md:items-center">
           <motion.div {...reveal()}>
-            <p className="text-sm font-black text-blue-600">가입해야 할 이유가 분명하게</p>
+            <p className="text-sm font-black text-blue-600">데이터가 곧 학원의 경쟁력으로</p>
             <h2 className="mt-3 text-3xl font-black leading-tight tracking-normal md:text-5xl">
               간편한 기록,
               <br />

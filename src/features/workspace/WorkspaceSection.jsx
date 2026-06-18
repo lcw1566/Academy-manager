@@ -8,6 +8,12 @@ import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAcademyStore from '../../store/useAcademyStore';
 import { fetchAcademySnapshot } from '../../services/supabase/hydrateApi';
 import { roleMap, appRoleToLabel } from '../../utils/format';
+import {
+  ACADEMY_SUBJECT_OPTIONS,
+  CLINIC_REQUIRED_OPTIONS,
+  DEFAULT_ACADEMY_SETTINGS,
+  inferAcademyTypeFromSubjects,
+} from '../../constants/academySettings';
 
 const ACCOUNT_TYPE_HINT = {
   tutor: {
@@ -60,11 +66,14 @@ export default function WorkspaceSection() {
   const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
   const loadServerPayrolls = useWorkspaceStore((s) => s.loadServerPayrolls);
   const showToast = useAcademyStore((s) => s.showToast);
+  const setAcademyProfile = useAcademyStore((s) => s.setAcademyProfile);
   const hydrateAcademyFromServerSnapshot = useAcademyStore((s) => s.hydrateAcademyFromServerSnapshot);
   const appRole = useAcademyStore((s) => s.role);
 
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
+  const [academySubjects, setAcademySubjects] = useState(DEFAULT_ACADEMY_SETTINGS.academySubjects);
+  const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
   const [submitting, setSubmitting] = useState(false);
   const [hydrating, setHydrating] = useState(false);
   const [acceptingId, setAcceptingId] = useState(null);
@@ -137,11 +146,19 @@ export default function WorkspaceSection() {
     e?.preventDefault?.();
     const trimmed = name.trim();
     if (!trimmed) return;
+    if (academySubjects.length === 0) {
+      showToast('운영 과목을 하나 이상 선택해주세요.', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
-      await createAcademy({ name: trimmed });
+      const academyType = inferAcademyTypeFromSubjects(academySubjects);
+      await createAcademy({ name: trimmed, academyType, academySubjects, clinicRequired });
+      setAcademyProfile({ name: trimmed, academyType, academySubjects, clinicRequired });
       showToast('학원 워크스페이스가 생성되었어요.');
       setName('');
+      setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
+      setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
       setCreating(false);
     } catch (err) {
       showToast(err?.message ?? '학원 생성에 실패했어요.', 'error');
@@ -153,6 +170,16 @@ export default function WorkspaceSection() {
   const handleCancel = () => {
     setCreating(false);
     setName('');
+    setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
+    setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
+  };
+
+  const toggleAcademySubject = (subjectId) => {
+    setAcademySubjects((prev) =>
+      prev.includes(subjectId)
+        ? prev.filter((id) => id !== subjectId)
+        : [...prev, subjectId]
+    );
   };
 
   const accountType = profile?.account_type || 'tutor';
@@ -210,7 +237,11 @@ export default function WorkspaceSection() {
           creating={creating}
           submitting={submitting}
           name={name}
+          academySubjects={academySubjects}
+          clinicRequired={clinicRequired}
           onNameChange={setName}
+          onSubjectToggle={toggleAcademySubject}
+          onClinicRequiredChange={setClinicRequired}
           onStart={() => setCreating(true)}
           onSubmit={handleSubmit}
           onCancel={handleCancel}
@@ -271,8 +302,12 @@ export default function WorkspaceSection() {
         creating ? (
           <InlineCreateForm
             name={name}
+            academySubjects={academySubjects}
+            clinicRequired={clinicRequired}
             submitting={submitting}
             onNameChange={setName}
+            onSubjectToggle={toggleAcademySubject}
+            onClinicRequiredChange={setClinicRequired}
             onSubmit={handleSubmit}
             onCancel={handleCancel}
           />
@@ -344,7 +379,8 @@ function CurrentAcademyCard({ academyName, membershipRole, lastSyncedLabel, onRe
 // "마지막 동기화 HH:mm + 새로고침" 만 노출한다. 자동 hydrate 가 정상 흐름.
 
 function EmptyCard({
-  loading, creating, submitting, name, onNameChange, onStart, onSubmit, onCancel, deemphasized,
+  loading, creating, submitting, name, academySubjects, clinicRequired,
+  onNameChange, onSubjectToggle, onClinicRequiredChange, onStart, onSubmit, onCancel, deemphasized,
 }) {
   // staff 계정은 학원을 직접 만들기보다 초대 수락 흐름을 권장하므로
   // 버튼/문구를 약하게 노출한다.
@@ -374,8 +410,12 @@ function EmptyCard({
       ) : creating ? (
         <InlineCreateForm
           name={name}
+          academySubjects={academySubjects}
+          clinicRequired={clinicRequired}
           submitting={submitting}
           onNameChange={onNameChange}
+          onSubjectToggle={onSubjectToggle}
+          onClinicRequiredChange={onClinicRequiredChange}
           onSubmit={onSubmit}
           onCancel={onCancel}
           variant="empty"
@@ -501,7 +541,8 @@ function InvitationsCard({ invitations, loading, acceptingId, onAccept, onRefres
 }
 
 function InlineCreateForm({
-  name, submitting, onNameChange, onSubmit, onCancel, variant,
+  name, academySubjects, clinicRequired, submitting,
+  onNameChange, onSubjectToggle, onClinicRequiredChange, onSubmit, onCancel, variant,
 }) {
   const containerClass =
     variant === 'empty'
@@ -516,6 +557,16 @@ function InlineCreateForm({
         placeholder="학원 이름"
         disabled={submitting}
         className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 disabled:opacity-60"
+      />
+      <SubjectChipGroup
+        subjects={academySubjects}
+        onToggle={onSubjectToggle}
+      />
+      <CreateChoiceGroup
+        label="클리닉 운영"
+        options={CLINIC_REQUIRED_OPTIONS.map((option) => ({ ...option, id: option.value }))}
+        value={clinicRequired}
+        onChange={onClinicRequiredChange}
       />
       <div className="flex gap-2 mt-2">
         <button
@@ -545,5 +596,66 @@ function InlineCreateForm({
         </button>
       </div>
     </form>
+  );
+}
+
+function SubjectChipGroup({ subjects, onToggle }) {
+  return (
+    <div className="mt-3">
+      <p className="mb-1.5 text-xs font-bold text-gray-700">운영 과목</p>
+      <div className="grid grid-cols-2 gap-1.5">
+        {ACADEMY_SUBJECT_OPTIONS.map((option) => {
+          const selected = subjects.includes(option.id);
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => onToggle(option.id)}
+              className={`rounded-xl border px-3 py-2.5 text-left ${
+                selected
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-100 bg-gray-50'
+              }`}
+            >
+              <span className="flex items-center justify-between gap-2">
+                <span className={`text-xs font-bold ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
+                  {option.label}
+                </span>
+                {selected && <Check size={13} className="text-blue-600" />}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CreateChoiceGroup({ label, options, value, onChange }) {
+  return (
+    <div className="mt-3">
+      <p className="mb-1.5 text-xs font-bold text-gray-700">{label}</p>
+      <div className="grid grid-cols-1 gap-1.5">
+        {options.map((option) => {
+          const selected = value === option.id;
+          return (
+            <button
+              key={String(option.id)}
+              type="button"
+              onClick={() => onChange(option.id)}
+              className={`rounded-xl border px-3 py-2 text-left ${
+                selected
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-100 bg-gray-50'
+              }`}
+            >
+              <p className={`text-xs font-bold ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
+                {option.label}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }

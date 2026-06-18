@@ -90,6 +90,7 @@ export default function App() {
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
   const [authEntryMode, setAuthEntryMode] = useState(null);
+  const wasAuthenticatedRef = useRef(false);
 
   // 채팅 (학원 직원 전용) — 로그인 + 학원 선택 시 로드/실시간 구독.
   const loadChat = useChatStore((s) => s.loadChat);
@@ -109,6 +110,14 @@ export default function App() {
     if (isPublicCheckin) return;
     initializeAuth();
   }, [isPublicCheckin, initializeAuth]);
+
+  useEffect(() => {
+    if (isPublicCheckin || !isAuthInitialized) return;
+    if (wasAuthenticatedRef.current && !isAuthenticated) {
+      setAuthEntryMode('signIn');
+    }
+    wasAuthenticatedRef.current = isAuthenticated;
+  }, [isPublicCheckin, isAuthInitialized, isAuthenticated]);
 
   useEffect(() => {
     if (isPublicCheckin) return;

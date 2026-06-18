@@ -123,8 +123,34 @@ export default function ClinicPage() {
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
+  // Phase 31 — 권한 게이팅. 클리닉 작성 권한이 있어야 + 버튼 노출.
+  const canEditClinic = currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canEditClinicRecords',
+  );
+  const canEditRecord = () => canEditClinic;
+  // Supabase RLS 에서 academy delete 는 owner 중심이라 서버 기록 삭제는 owner 에게만 노출.
+  // 서버에 아직 올라가지 않은 로컬 기록은 작성자도 삭제할 수 있다.
+  const canDeleteRecord = (record) => role === 'owner' || (!record?.serverId && canEditRecord(record));
+
+  const buildSupportRelayTarget = (item) => ({
+    studentId: item.studentId,
+    classGroupId: item.group?.id || '',
+    classSessionId: item.sessionId || '',
+    date: item.session?.date || todayStr,
+    subject: item.group?.subject || '',
+    sourceSupportTags: item.supportTags || [],
+    sourceSupportMemo: item.supportMemo || '',
+    sourceLessonRecordId: item.id || null,
+  });
+
   const handleDelete = async (id) => {
     const target = clinicRecords.find((r) => r.id === id);
+    if (!canDeleteRecord(target)) {
+      showToast('삭제 권한이 없어요.', 'error');
+      setDeleteConfirmId(null);
+      return;
+    }
     const serverId = target?.serverId || null;
     // Phase 33 — optimistic delete. local 이 즉시 갱신되고 server 실패는 토스트만.
     // full loadServerClinicRecords 호출 안 함 (local 이 이미 정답).
@@ -143,12 +169,6 @@ export default function ClinicPage() {
       }
     }
   };
-
-  // Phase 31 — 권한 게이팅. 클리닉 작성 권한이 있어야 + 버튼 노출.
-  const canEditClinic = currentUserCan(
-    { role, staffProfile: myStaffProfile },
-    'canEditClinicRecords',
-  );
 
   return (
     <div>
@@ -186,7 +206,7 @@ export default function ClinicPage() {
           <div className="px-4 mb-5">
             <p className="text-sm font-bold text-gray-700 mb-2">수업에서 남긴 보완 항목</p>
             <div className="flex flex-col gap-2">
-              {supportItems.map((item) => (
+              {supportItems.map((item, index) => (
                 <div key={item.id} className="bg-orange-50 rounded-2xl px-4 py-3.5 border border-orange-100">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
@@ -204,7 +224,10 @@ export default function ClinicPage() {
                     </div>
                     <motion.button
                       whileTap={{ scale: 0.97 }}
-                      onClick={() => setShowClinicFromSupport(item)}
+                      onClick={() => setShowClinicFromSupport({
+                        targets: supportItems.map(buildSupportRelayTarget),
+                        initialRelayIndex: index,
+                      })}
                       className="flex-shrink-0 text-xs font-semibold text-white bg-orange-500 px-3 py-1.5 rounded-xl"
                     >
                       클리닉 기록
@@ -287,7 +310,8 @@ export default function ClinicPage() {
                       onToggle={() => setExpandedId(expandedId === record.id ? null : record.id)}
                       onEdit={() => { setEditRecord(record); setExpandedId(null); }}
                       onDeleteRequest={() => setDeleteConfirmId(record.id)}
-                      role={role}
+                      canEditRecord={canEditRecord(record)}
+                      canDeleteRecord={canDeleteRecord(record)}
                     />
                   ))}
                 </div>
@@ -308,14 +332,8 @@ export default function ClinicPage() {
       {/* 보완 항목에서 클리닉 기록 작성 */}
       {showClinicFromSupport && (
         <ClinicRecordFormModal
-          presetClassGroupId={showClinicFromSupport.group?.id}
-          presetClassSessionId={showClinicFromSupport.sessionId}
-          presetStudentId={showClinicFromSupport.studentId}
-          presetDate={showClinicFromSupport.session?.date}
-          presetSubject={showClinicFromSupport.group?.subject || ''}
-          presetSourceSupportTags={showClinicFromSupport.supportTags || []}
-          presetSourceSupportMemo={showClinicFromSupport.supportMemo || ''}
-          presetSourceLessonRecordId={showClinicFromSupport.id || null}
+          relayTargets={showClinicFromSupport.targets}
+          initialRelayIndex={showClinicFromSupport.initialRelayIndex}
           onClose={() => setShowClinicFromSupport(null)}
         />
       )}
@@ -368,21 +386,44 @@ export default function ClinicPage() {
   );
 }
 
-function ClinicRecordCard({ record, academyStudents, classGroups, expanded, onToggle, onEdit, onDeleteRequest, role }) {
+function ClinicRecordCard({
+  record,
+  academyStudents,
+  classGroups,
+  expanded,
+  onToggle,
+  onEdit,
+  onDeleteRequest,
+  canEditRecord,
+  canDeleteRecord,
+}) {
   const student = academyStudents.find((s) => s.id === record.studentId);
   const group = classGroups.find((g) => g.id === record.classGroupId);
   const itemCount = record.items?.length || 0;
   const firstItem = record.items?.[0];
   const extraCount = itemCount - 1;
+  const isLinkedRecord = !!(
+    record.classSessionId ||
+    record.sourceLessonRecordId ||
+    record.sourceSupportMemo ||
+    record.sourceSupportTags?.length
+  );
 
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
       <button className="w-full px-4 py-3.5 text-left" onClick={onToggle}>
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-sm font-bold text-gray-900">{student?.name || '학생'}</span>
               <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">{record.subject || '기타'}</span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                isLinkedRecord
+                  ? 'bg-orange-50 text-orange-600'
+                  : 'bg-gray-100 text-gray-500'
+              }`}>
+                {isLinkedRecord ? '수업 연계' : '직접 추가'}
+              </span>
             </div>
             {firstItem && (
               <p className="text-xs text-gray-500">
@@ -411,6 +452,15 @@ function ClinicRecordCard({ record, academyStudents, classGroups, expanded, onTo
               {record.items?.map((item, idx) => (
                 <div key={item.id || idx} className="mt-3 bg-gray-50 rounded-xl px-3 py-2.5">
                   <p className="text-xs font-bold text-gray-700 mb-1">{item.title}</p>
+                  {item.materialTags?.length > 0 && (
+                    <div className="mb-1.5 flex flex-wrap gap-1">
+                      {item.materialTags.map((tag) => (
+                        <span key={tag} className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-gray-500 border border-gray-100">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {item.description && <p className="text-xs text-gray-600 mb-1">{item.description}</p>}
                   {item.result && (
                     <p className="text-xs text-blue-600 font-medium">결과: {item.result}</p>
@@ -429,23 +479,47 @@ function ClinicRecordCard({ record, academyStudents, classGroups, expanded, onTo
                 </div>
               )}
 
+              {(record.sourceSupportMemo || record.sourceSupportTags?.length > 0) && (
+                <div className="mt-3 bg-orange-50 rounded-xl px-3 py-2.5">
+                  <p className="text-xs font-semibold text-orange-700 mb-1">강사 요청</p>
+                  {record.sourceSupportTags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1.5">
+                      {record.sourceSupportTags.map((tag) => (
+                        <span key={tag} className="text-[11px] bg-white text-orange-600 border border-orange-100 px-2 py-0.5 rounded-full font-medium">
+                          {SUPPORT_TAG_LABELS[tag] || tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {record.sourceSupportMemo && (
+                    <p className="text-xs text-orange-700">{record.sourceSupportMemo}</p>
+                  )}
+                </div>
+              )}
+
               {/* 수정/삭제 버튼 */}
-              <div className="flex gap-2 mt-3">
-                <button
-                  onClick={onEdit}
-                  className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-600 text-xs font-bold rounded-xl"
-                >
-                  <Pencil size={12} />
-                  수정
-                </button>
-                <button
-                  onClick={onDeleteRequest}
-                  className="flex items-center gap-1 px-3 py-2 bg-red-50 text-red-500 text-xs font-bold rounded-xl"
-                >
-                  <Trash2 size={12} />
-                  삭제
-                </button>
-              </div>
+              {(canEditRecord || canDeleteRecord) && (
+                <div className="flex gap-2 mt-3">
+                  {canEditRecord && (
+                    <button
+                      onClick={onEdit}
+                      className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-600 text-xs font-bold rounded-xl"
+                    >
+                      <Pencil size={12} />
+                      수정
+                    </button>
+                  )}
+                  {canDeleteRecord && (
+                    <button
+                      onClick={onDeleteRequest}
+                      className="flex items-center gap-1 px-3 py-2 bg-red-50 text-red-500 text-xs font-bold rounded-xl"
+                    >
+                      <Trash2 size={12} />
+                      삭제
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
         </div>
       </div>

@@ -23,6 +23,7 @@ import {
   updateMyProfileBasic,
   getMyAcademyMemberships,
   createAcademyAsOwner,
+  updateAcademyProfileSettings,
   listMyPendingInvitations,
   acceptAcademyInvitation,
   listAcademyInvitations,
@@ -643,13 +644,13 @@ const useWorkspaceStore = create(
       },
 
       // 학원 생성 → 멤버십 재조회 → 새 학원을 current로 지정 → 서버 데이터 재조회
-      createAcademy: async ({ name }) => {
+      createAcademy: async ({ name, academyType, academySubjects, clinicRequired } = {}) => {
         if (!isSupabaseConfigured) {
           throw new Error('Supabase가 설정되지 않았어요.');
         }
         set({ isWorkspaceLoading: true, workspaceError: null });
         try {
-          const academy = await createAcademyAsOwner({ name });
+          const academy = await createAcademyAsOwner({ name, academyType, academySubjects, clinicRequired });
           const memberships = await getMyAcademyMemberships();
           set({ memberships, currentAcademyId: academy.id });
           await Promise.all([
@@ -675,6 +676,31 @@ const useWorkspaceStore = create(
           throw err;
         } finally {
           set({ isWorkspaceLoading: false });
+        }
+      },
+
+      updateAcademyProfileSettings: async (patch = {}) => {
+        if (!isSupabaseConfigured) return null;
+        const academyId = get().currentAcademyId;
+        if (!academyId) throw new Error('학원을 먼저 선택해주세요.');
+        try {
+          const updated = await updateAcademyProfileSettings(academyId, {
+            ...patch,
+            markOnboarded: true,
+          });
+          if (updated) {
+            set((s) => ({
+              memberships: (s.memberships || []).map((m) =>
+                m.academy_id === academyId
+                  ? { ...m, academy: { ...(m.academy || {}), ...updated } }
+                  : m
+              ),
+            }));
+          }
+          return updated;
+        } catch (err) {
+          set({ workspaceError: err?.message ?? '학원 설정 저장에 실패했어요.' });
+          throw err;
         }
       },
 

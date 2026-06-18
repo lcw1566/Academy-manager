@@ -16,6 +16,7 @@ import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
 import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
+import { currentUserCan } from '../../../utils/staffPermissions';
 
 
 // 역할별 탭 정의
@@ -298,15 +299,25 @@ export default function AcademyStudentDetailPage() {
   const {
     role, selectedAcademyStudentId, academyStudents, classGroups, classSessions,
     academyAttendanceRecords, academyLessonRecords, clinicTasks, clinicRecords = [], academyPayments,
-    academyTeachers, academyAssistants,
+    academyTeachers,
     deleteAcademyStudent, goBackFromAcademyStudent, showToast,
     updateAcademyPayment, addAcademyPayment, deleteAcademyPayment,
     setPaymentServerId,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authUserId = useAuthStore((s) => s.user?.id);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
   const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
+  const myStaffProfile = useMemo(
+    () => academyStaffProfiles.find((sp) => sp.user_id === authUserId) || null,
+    [academyStaffProfiles, authUserId],
+  );
+  const canEditClinicRecords = currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canEditClinicRecords',
+  );
 
   const [activeTab, setActiveTab] = useState('요약');
   const [showEdit, setShowEdit] = useState(false);
@@ -533,17 +544,14 @@ export default function AcademyStudentDetailPage() {
           </>
         )}
 
-        {/* 수업 기록 탭에서는 클리닉 추가 버튼을 제공하지 않음.
-            원장/강사는 ClassSessionPage의 학습 보완 항목으로만 남기고,
-            클리닉 기록 생성은 보조강사 클리닉 탭에서 진행. */}
+        {/* 수업 기록 탭에서는 연결된 클리닉 배지만 노출하고, 직접 작성은 클리닉 탭에서 진행. */}
       </div>
     );
   };
 
   const renderClinic = () => (
     <div className="flex flex-col gap-3">
-      {/* 클리닉 탭은 assistant 전용. 보조강사만 직접 클리닉 기록을 생성. */}
-      {role === 'assistant' && (
+      {canEditClinicRecords && (
         <motion.button type="button" whileTap={{ scale: 0.97 }} onClick={() => setShowClinicForm(true)}
           className="w-full py-3 rounded-2xl border-2 border-dashed border-blue-200 text-blue-600 text-sm font-semibold">
           + 클리닉 기록 추가
@@ -563,6 +571,15 @@ export default function AcademyStudentDetailPage() {
             {record.items?.map((item, i) => (
               <div key={item.id || i} className="mb-2 bg-gray-50 rounded-xl px-3 py-2.5">
                 <p className="text-sm font-semibold text-gray-800">{item.title}</p>
+                {item.materialTags?.length > 0 && (
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {item.materialTags.map((tag) => (
+                      <span key={tag} className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-gray-500">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {item.description && <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>}
                 {item.result && <p className="text-xs text-blue-600 font-medium mt-0.5">결과: {item.result}</p>}
               </div>

@@ -16,12 +16,18 @@
 // "학원 전환" 더보기 옵션을 누르면 sessionStorage 키를 비우고 다시 이 화면을 띄운다.
 import { useState } from 'react';
 import {
-  Building2, ChevronRight, LogOut, Plus, Inbox, Loader2, Mail,
+  Building2, ChevronLeft, ChevronRight, LogOut, Plus, Inbox, Loader2, Mail, Check,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAcademyStore from '../../store/useAcademyStore';
 import { roleMap } from '../../utils/format';
+import {
+  ACADEMY_SUBJECT_OPTIONS,
+  CLINIC_REQUIRED_OPTIONS,
+  DEFAULT_ACADEMY_SETTINGS,
+  inferAcademyTypeFromSubjects,
+} from '../../constants/academySettings';
 
 export const WORKSPACE_PICKED_KEY = 'workspace-picked';
 
@@ -52,11 +58,15 @@ export default function WorkspaceSelectionPage() {
   const signOutUser = useAuthStore((s) => s.signOutUser);
   const showToast = useAcademyStore((s) => s.showToast);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
+  const setAcademyProfile = useAcademyStore((s) => s.setAcademyProfile);
 
   const [submitting, setSubmitting] = useState(false);
   const [acceptingId, setAcceptingId] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [createStep, setCreateStep] = useState(0);
   const [newAcademyName, setNewAcademyName] = useState('');
+  const [academySubjects, setAcademySubjects] = useState(DEFAULT_ACADEMY_SETTINGS.academySubjects);
+  const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
   const isOwner = profile?.account_type === 'owner';
@@ -99,12 +109,18 @@ export default function WorkspaceSelectionPage() {
       showToast('학원 이름을 입력해주세요.', 'error');
       return;
     }
+    if (academySubjects.length === 0) {
+      showToast('운영 과목을 하나 이상 선택해주세요.', 'error');
+      return;
+    }
     if (createSubmitting) return;
     setCreateSubmitting(true);
     try {
-      await createAcademy({ name: trimmed });
+      const academyType = inferAcademyTypeFromSubjects(academySubjects);
+      await createAcademy({ name: trimmed, academyType, academySubjects, clinicRequired });
+      setAcademyProfile({ name: trimmed, academyType, academySubjects, clinicRequired });
       showToast('학원이 생성되었어요.');
-      setNewAcademyName('');
+      resetCreateForm();
       setCreating(false);
       setActiveTab('home');
       markWorkspacePicked();
@@ -113,6 +129,26 @@ export default function WorkspaceSelectionPage() {
     } finally {
       setCreateSubmitting(false);
     }
+  };
+
+  const resetCreateForm = () => {
+    setCreateStep(0);
+    setNewAcademyName('');
+    setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
+    setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
+  };
+
+  const handleCancelCreate = () => {
+    setCreating(false);
+    resetCreateForm();
+  };
+
+  const toggleAcademySubject = (subjectId) => {
+    setAcademySubjects((prev) =>
+      prev.includes(subjectId)
+        ? prev.filter((id) => id !== subjectId)
+        : [...prev, subjectId]
+    );
   };
 
   const handleSignOut = async () => {
@@ -227,34 +263,19 @@ export default function WorkspaceSelectionPage() {
               학원을 만들면 강사·보조강사를 초대하고 학생을 관리할 수 있어요.
             </p>
             {creating ? (
-              <div className="flex flex-col gap-2">
-                <input
-                  value={newAcademyName}
-                  onChange={(e) => setNewAcademyName(e.target.value)}
-                  placeholder="예: 우리 학원"
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setCreating(false); setNewAcademyName(''); }}
-                    disabled={createSubmitting}
-                    className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-700 text-xs font-bold disabled:opacity-50"
-                  >
-                    취소
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCreate}
-                    disabled={createSubmitting || !newAcademyName.trim()}
-                    className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold disabled:opacity-60 flex items-center justify-center gap-1.5"
-                  >
-                    {createSubmitting && <Loader2 size={11} className="animate-spin" />}
-                    만들기
-                  </button>
-                </div>
-              </div>
+              <AcademyCreateOnboarding
+                step={createStep}
+                name={newAcademyName}
+                subjects={academySubjects}
+                clinicRequired={clinicRequired}
+                submitting={createSubmitting}
+                onNameChange={setNewAcademyName}
+                onSubjectToggle={toggleAcademySubject}
+                onClinicRequiredChange={setClinicRequired}
+                onStepChange={setCreateStep}
+                onCancel={handleCancelCreate}
+                onCreate={handleCreate}
+              />
             ) : (
               <button
                 type="button"
@@ -297,6 +318,153 @@ export default function WorkspaceSelectionPage() {
         >
           <LogOut size={12} />
           다른 계정으로 로그인
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AcademyCreateOnboarding({
+  step,
+  name,
+  subjects,
+  clinicRequired,
+  submitting,
+  onNameChange,
+  onSubjectToggle,
+  onClinicRequiredChange,
+  onStepChange,
+  onCancel,
+  onCreate,
+}) {
+  const isNameReady = !!name.trim();
+  const isSubjectReady = subjects.length > 0;
+  const steps = [
+    { title: '학원 이름을 알려주세요', desc: '원장님과 강사들이 함께 볼 학원 이름이에요.' },
+    { title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 학원 프로필에서 바꿀 수 있어요.' },
+    { title: '클리닉을 어떻게 쓸까요?', desc: '수업 후 자습·보완 기록을 기본 흐름으로 둘지 정해주세요.' },
+  ];
+  const canGoNext = step === 0 ? isNameReady : step === 1 ? isSubjectReady : true;
+  const primaryLabel = step === steps.length - 1 ? '만들기' : '다음';
+
+  const handlePrimary = () => {
+    if (!canGoNext || submitting) return;
+    if (step < steps.length - 1) {
+      onStepChange(step + 1);
+      return;
+    }
+    onCreate();
+  };
+
+  const handleSecondary = () => {
+    if (submitting) return;
+    if (step === 0) onCancel();
+    else onStepChange(step - 1);
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-1.5">
+        {steps.map((item, index) => (
+          <span
+            key={item.title}
+            className={`h-1.5 flex-1 rounded-full ${
+              index <= step ? 'bg-blue-600' : 'bg-gray-100'
+            }`}
+          />
+        ))}
+      </div>
+
+      <div>
+        <p className="text-lg font-bold text-gray-900">{steps[step].title}</p>
+        <p className="mt-1 text-xs leading-relaxed text-gray-500">{steps[step].desc}</p>
+      </div>
+
+      {step === 0 && (
+        <input
+          value={name}
+          onChange={(e) => onNameChange(e.target.value)}
+          placeholder="예: 우리 학원"
+          className="w-full px-4 py-3.5 border border-gray-200 rounded-2xl text-base focus:outline-none focus:border-blue-500"
+          autoFocus
+        />
+      )}
+
+      {step === 1 && (
+        <div className="grid grid-cols-2 gap-2">
+          {ACADEMY_SUBJECT_OPTIONS.map((subject) => {
+            const selected = subjects.includes(subject.id);
+            return (
+              <button
+                key={subject.id}
+                type="button"
+                onClick={() => onSubjectToggle(subject.id)}
+                className={`min-h-[52px] rounded-2xl border px-4 py-3 text-left transition-colors ${
+                  selected
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-100 bg-gray-50 active:bg-gray-100'
+                }`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className={`text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
+                    {subject.label}
+                  </span>
+                  {selected && <Check size={15} className="text-blue-600" />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="flex flex-col gap-2">
+          {CLINIC_REQUIRED_OPTIONS.map((option) => {
+            const selected = clinicRequired === option.value;
+            return (
+              <button
+                key={String(option.value)}
+                type="button"
+                onClick={() => onClinicRequiredChange(option.value)}
+                className={`w-full rounded-2xl border px-4 py-3.5 text-left transition-colors ${
+                  selected
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-100 bg-gray-50 active:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className={`text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-900'}`}>
+                      {option.label}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-gray-500">{option.description}</p>
+                  </div>
+                  {selected && <Check size={16} className="mt-0.5 flex-shrink-0 text-blue-600" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={handleSecondary}
+          disabled={submitting}
+          className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold disabled:opacity-50"
+        >
+          {step > 0 && <ChevronLeft size={14} />}
+          {step === 0 ? '취소' : '이전'}
+        </button>
+        <button
+          type="button"
+          onClick={handlePrimary}
+          disabled={submitting || !canGoNext}
+          className="flex-1 py-3 rounded-xl bg-blue-600 text-white text-sm font-bold disabled:bg-blue-300 disabled:opacity-70 flex items-center justify-center gap-1.5"
+        >
+          {submitting && <Loader2 size={13} className="animate-spin" />}
+          {primaryLabel}
         </button>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle } from 'lucide-react';
+import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -32,6 +32,7 @@ const TAB_CONFIG = {
     { id: 'home',       label: '홈',    Icon: Home },
     { id: 'classes',    label: '수업',  Icon: BookOpen },
     { id: 'students',   label: '학생',  Icon: Users },
+    { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
     { id: 'staff',      label: '직원',   Icon: UserCog },
     { id: 'settlement', label: '정산',  Icon: BarChart2 },
     { id: 'chat',       label: '채팅',  Icon: MessageCircle },
@@ -41,6 +42,7 @@ const TAB_CONFIG = {
     { id: 'home',     label: '홈',   Icon: Home },
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
+    { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },

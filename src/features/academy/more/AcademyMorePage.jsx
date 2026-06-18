@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronRight, RefreshCw, LogOut, Loader2, Inbox, UserCog, Building2, Mail, Phone,
-  CheckSquare, QrCode,
+  Check, CheckSquare, QrCode,
 } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
@@ -23,6 +23,14 @@ import { clearWorkspacePicked } from '../../auth/WorkspaceSelectionPage';
 import AttendanceSettingsSheet from '../attendance/AttendanceSettingsSheet';
 import QrDisplayPage from '../attendance/QrDisplayPage';
 import { readAttendanceSettings } from '../attendance/attendanceHelpers';
+import {
+  ACADEMY_SUBJECT_OPTIONS,
+  CLINIC_REQUIRED_OPTIONS,
+  DEFAULT_ACADEMY_SETTINGS,
+  getAcademySubjectsLabel,
+  getClinicRequiredLabel,
+  inferAcademyTypeFromSubjects,
+} from '../../../constants/academySettings';
 
 export default function AcademyMorePage() {
   const role = useAcademyStore((s) => s.role);
@@ -39,6 +47,7 @@ export default function AcademyMorePage() {
   const userProfile = useWorkspaceStore((s) => s.profile);
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const updateAcademyProfileSettings = useWorkspaceStore((s) => s.updateAcademyProfileSettings);
 
   // 실제 학원 이름은 memberships 의 academy.name 우선 (academyProfile.name 의 기본값 '우리 학원'
   // 이 노출되지 않도록).
@@ -46,17 +55,36 @@ export default function AcademyMorePage() {
     () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
     [memberships, currentAcademyId],
   );
+  const currentAcademy = currentMembership?.academy || null;
   const currentAcademyName = currentMembership?.academy?.name || null;
 
   useEffect(() => {
     if (!currentAcademyId || !currentAcademyName) return;
+    const serverAcademyType = currentAcademy?.academy_type || DEFAULT_ACADEMY_SETTINGS.academyType;
+    const serverAcademySubjects = Array.isArray(currentAcademy?.academy_subjects)
+      ? currentAcademy.academy_subjects
+      : DEFAULT_ACADEMY_SETTINGS.academySubjects;
+    const serverClinicRequired = currentAcademy?.clinic_required ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired;
     const localName = academyProfile?.name;
-    if (localName === currentAcademyName) return;
+    const localAcademyType = academyProfile?.academyType || DEFAULT_ACADEMY_SETTINGS.academyType;
+    const localAcademySubjects = Array.isArray(academyProfile?.academySubjects)
+      ? academyProfile.academySubjects
+      : DEFAULT_ACADEMY_SETTINGS.academySubjects;
+    const localClinicRequired = academyProfile?.clinicRequired ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired;
+    if (
+      localName === currentAcademyName &&
+      localAcademyType === serverAcademyType &&
+      JSON.stringify(localAcademySubjects) === JSON.stringify(serverAcademySubjects) &&
+      localClinicRequired === serverClinicRequired
+    ) return;
     setAcademyProfile({
       ...(academyProfile || { ownerName: '', address: '', phone: '' }),
       name: currentAcademyName,
+      academyType: serverAcademyType,
+      academySubjects: serverAcademySubjects,
+      clinicRequired: serverClinicRequired,
     });
-  }, [currentAcademyId, currentAcademyName, academyProfile, setAcademyProfile]);
+  }, [currentAcademyId, currentAcademyName, currentAcademy?.academy_type, currentAcademy?.academy_subjects, currentAcademy?.clinic_required, academyProfile, setAcademyProfile]);
 
   const lastSyncedAt = useWorkspaceStore((s) => s.serverStudentsLoadedAt)
     || useWorkspaceStore((s) => s.serverClassGroupsLoadedAt)
@@ -68,6 +96,27 @@ export default function AcademyMorePage() {
   const isOwner = role === 'owner';
   const showSwitchAcademy = memberships.length > 1;
   const ownerHasNoAcademy = isOwner && memberships.length === 0;
+
+  const handleSaveAcademyProfile = async (data) => {
+    setAcademyProfile(data);
+    setShowProfileEdit(false);
+    try {
+      await updateAcademyProfileSettings?.({
+        name: data.name,
+        academyType: data.academyType,
+        academySubjects: data.academySubjects,
+        clinicRequired: data.clinicRequired,
+      });
+      showToast('학원 정보가 저장되었습니다.');
+    } catch (err) {
+      showToast(
+        err?.message
+          ? `로컬에는 저장했지만 서버 저장에 실패했어요: ${err.message}`
+          : '로컬에는 저장했지만 서버 저장에 실패했어요.',
+        'error',
+      );
+    }
+  };
 
   const handleSwitchAcademy = () => {
     clearWorkspacePicked();
@@ -121,11 +170,7 @@ export default function AcademyMorePage() {
         <AcademyProfileModal
           profile={academyProfile}
           onClose={() => setShowProfileEdit(false)}
-          onSave={(data) => {
-            setAcademyProfile(data);
-            showToast('학원 정보가 저장되었습니다.');
-            setShowProfileEdit(false);
-          }}
+          onSave={handleSaveAcademyProfile}
         />
       )}
 
@@ -233,6 +278,8 @@ function AcademyOwnerInfoCard({
   academyProfile, academyName, displayName, email, phone, onEditAcademy, onEditMyProfile,
 }) {
   const displayedAcademyName = academyName || academyProfile?.name || '학원';
+  const subjectsLabel = getAcademySubjectsLabel(academyProfile?.academySubjects);
+  const clinicLabel = getClinicRequiredLabel(academyProfile?.clinicRequired);
   return (
     <div className="mx-4 mt-4 bg-white rounded-2xl p-4 shadow-sm">
       <button
@@ -245,7 +292,9 @@ function AcademyOwnerInfoCard({
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-bold text-gray-900 text-base truncate">{displayedAcademyName}</p>
-          <p className="text-xs text-gray-500 mt-0.5">원장</p>
+          <p className="text-xs text-gray-500 mt-0.5 truncate">
+            원장 · {subjectsLabel} · {clinicLabel}
+          </p>
         </div>
         <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
       </button>
@@ -519,7 +568,30 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
     ownerName: profile?.ownerName || '',
     address:   profile?.address   || '',
     phone:     profile?.phone     || '',
+    academySubjects: Array.isArray(profile?.academySubjects)
+      ? profile.academySubjects
+      : DEFAULT_ACADEMY_SETTINGS.academySubjects,
+    clinicRequired: profile?.clinicRequired ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired,
   });
+  const toggleSubject = (subjectId) => {
+    setForm((f) => {
+      const current = Array.isArray(f.academySubjects) ? f.academySubjects : [];
+      return {
+        ...f,
+        academySubjects: current.includes(subjectId)
+          ? current.filter((id) => id !== subjectId)
+          : [...current, subjectId],
+      };
+    });
+  };
+  const handleSave = () => {
+    const academySubjects = Array.isArray(form.academySubjects) ? form.academySubjects : [];
+    onSave({
+      ...form,
+      academySubjects,
+      academyType: inferAcademyTypeFromSubjects(academySubjects),
+    });
+  };
   return (
     <Modal
       isOpen
@@ -528,8 +600,9 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
       footer={
         <button
           type="button"
-          onClick={() => onSave(form)}
-          className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl"
+          onClick={handleSave}
+          disabled={(form.academySubjects || []).length === 0}
+          className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl disabled:bg-blue-300"
         >
           저장
         </button>
@@ -572,6 +645,54 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
             placeholder="02-0000-0000"
             className="input"
           />
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">운영 과목</label>
+          <div className="grid grid-cols-2 gap-2">
+            {ACADEMY_SUBJECT_OPTIONS.map((option) => {
+              const selected = (form.academySubjects || []).includes(option.id);
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => toggleSubject(option.id)}
+                  className={`rounded-xl border px-3 py-2.5 text-left ${
+                    selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className={`text-xs font-bold ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
+                      {option.label}
+                    </span>
+                    {selected && <Check size={13} className="text-blue-600" />}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">클리닉(자습) 운영</label>
+          <div className="grid grid-cols-1 gap-2">
+            {CLINIC_REQUIRED_OPTIONS.map((option) => {
+              const selected = form.clinicRequired === option.value;
+              return (
+                <button
+                  key={String(option.value)}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, clinicRequired: option.value }))}
+                  className={`rounded-xl border px-3 py-2.5 text-left ${
+                    selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'
+                  }`}
+                >
+                  <p className={`text-xs font-bold ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
+                    {option.label}
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-relaxed text-gray-500">{option.description}</p>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </Modal>

@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, X, ChevronDown } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Check, ChevronDown, MessageCircle, Plus, X } from 'lucide-react';
+import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -10,9 +10,134 @@ import {
   updateClinicRecord as updateServerClinicRecord,
 } from '../../../services/supabase/domainApi';
 import { today } from '../../../utils/date';
-import { getClinicOptions, subjectToKey } from '../../../constants/clinicOptions';
+import { getClinicOptions } from '../../../constants/clinicOptions';
+import { findLocalStaffForUser } from '../../../utils/staffMatch';
 
 const SUBJECTS = ['국어', '수학', '영어', '과학', '사회', '기타'];
+
+const SUPPORT_TAG_LABELS = {
+  homework: '숙제 미완료',
+  wrong_answer: '오답 풀이 필요',
+  vocabulary: '단어 재시험',
+  reading: '본문 암기',
+  grammar: '문법 보충',
+  concept: '개념 재설명',
+  test_retry: '테스트 재응시',
+  absence_makeup: '결석 보강',
+  other: '기타',
+};
+
+const SUPPORT_TAG_TO_OPTION_KEYS = {
+  homework: ['weekly_assignment_check', 'assignment_check'],
+  wrong_answer: ['wrong_answer_analysis', 'wrong_answer_note', 'reading_wrong_answer', 'wrong_answer_review'],
+  vocabulary: ['vocabulary_test', 'vocabulary_concept_test'],
+  reading: ['sentence_structure', 'reading_wrong_answer'],
+  grammar: ['sentence_structure', 'concept_supplement'],
+  concept: ['concept_supplement', 'weak_area_supplement'],
+  test_retry: ['weekly_test', 'test'],
+  absence_makeup: ['weak_area_supplement', 'qa_session'],
+  other: ['other'],
+};
+
+function deriveSubjectFromClass({ classGroupId, classSessionId, classGroups = [], classSessions = [] }) {
+  const session = classSessionId
+    ? classSessions.find((s) => s.id === classSessionId)
+    : null;
+  const resolvedGroupId = classGroupId || session?.classGroupId || '';
+  const group = resolvedGroupId
+    ? classGroups.find((g) => g.id === resolvedGroupId)
+    : null;
+  return group?.subject || '';
+}
+
+function normalizeClinicItem(item = {}, index = 0) {
+  const title = item.title || item.activityType || '활동';
+  const rawResult = item.result || '';
+  const composedDescription = [item.description, item.memo].filter(Boolean).join('\n');
+  const materialTags = Array.isArray(item.materialTags)
+    ? item.materialTags
+    : Array.isArray(item.materials)
+      ? item.materials
+      : [];
+  return {
+    id: item.id || `item_${Date.now()}_${index}`,
+    categoryKey: item.categoryKey || item.key || 'custom',
+    activityType: item.activityType || title,
+    title,
+    materialTags,
+    description: composedDescription,
+    result: rawResult,
+    memo: '',
+  };
+}
+
+function normalizeClinicItems(items = []) {
+  return (Array.isArray(items) ? items : []).map(normalizeClinicItem);
+}
+
+function splitMaterialDraft(value) {
+  return String(value || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function mergePendingMaterialDrafts(items = [], drafts = {}) {
+  return normalizeClinicItems(items).map((item) => {
+    const pendingTags = splitMaterialDraft(drafts[item.id]);
+    if (pendingTags.length === 0) return item;
+    return {
+      ...item,
+      materialTags: Array.from(new Set([...(item.materialTags || []), ...pendingTags])),
+    };
+  });
+}
+
+function normalizeRelayTarget(target = {}) {
+  return {
+    studentId: target.studentId || '',
+    classGroupId: target.classGroupId || '',
+    classSessionId: target.classSessionId || '',
+    date: target.date || today(),
+    subject: target.subject || '',
+    sourceSupportTags: Array.isArray(target.sourceSupportTags) ? target.sourceSupportTags : [],
+    sourceSupportMemo: target.sourceSupportMemo || '',
+    sourceLessonRecordId: target.sourceLessonRecordId || null,
+  };
+}
+
+function getSuggestedOptionKeys(sourceSupportTags = [], options = []) {
+  const availableKeys = new Set(options.map((option) => option.key));
+  const suggested = new Set();
+  sourceSupportTags.forEach((tag) => {
+    (SUPPORT_TAG_TO_OPTION_KEYS[tag] || []).forEach((key) => {
+      if (availableKeys.has(key)) suggested.add(key);
+    });
+  });
+  return suggested;
+}
+
+function buildSuggestedItems(subject, sourceSupportTags = []) {
+  if (!subject || !Array.isArray(sourceSupportTags) || sourceSupportTags.length === 0) return [];
+  const options = getClinicOptions(subject);
+  const suggestedKeys = getSuggestedOptionKeys(sourceSupportTags, options);
+  return options
+    .filter((option) => suggestedKeys.has(option.key))
+    .map((option, index) => ({
+      id: `item_suggested_${Date.now()}_${index}_${option.key}`,
+      categoryKey: option.key,
+      activityType: option.title,
+      title: option.title,
+      materialTags: [],
+      description: '',
+      result: '',
+      memo: '',
+    }));
+}
+
+function looksLikeUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
 
 export default function ClinicRecordFormModal({
   editRecord,
@@ -25,6 +150,8 @@ export default function ClinicRecordFormModal({
   presetSourceSupportTags,
   presetSourceSupportMemo,
   presetSourceLessonRecordId,
+  relayTargets = [],
+  initialRelayIndex = 0,
 }) {
   const {
     addClinicRecord, updateClinicRecord, setClinicRecordServerId,
@@ -33,20 +160,153 @@ export default function ClinicRecordFormModal({
     showToast,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const authUserEmail = useAuthStore((s) => s.user?.email);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const loadServerClinicRecords = useWorkspaceStore((s) => s.loadServerClinicRecords);
 
-  const [studentId, setStudentId] = useState(editRecord?.studentId || presetStudentId || '');
-  const [date, setDate] = useState(editRecord?.date || presetDate || today());
-  const [subject, setSubject] = useState(editRecord?.subject || presetSubject || '');
-  const [classGroupId, setClassGroupId] = useState(editRecord?.classGroupId || presetClassGroupId || '');
-  const [classSessionId] = useState(editRecord?.classSessionId || presetClassSessionId || '');
-  const [selectedItems, setSelectedItems] = useState(editRecord?.items || []);
+  const normalizedRelayTargets = useMemo(
+    () => (Array.isArray(relayTargets) ? relayTargets.map(normalizeRelayTarget).filter((target) => target.studentId) : []),
+    [relayTargets],
+  );
+  const safeInitialRelayIndex = Math.max(0, Math.min(initialRelayIndex || 0, Math.max(normalizedRelayTargets.length - 1, 0)));
+  const [relayIndex, setRelayIndex] = useState(safeInitialRelayIndex);
+  const activeRelayTarget = !editRecord && normalizedRelayTargets.length > 0
+    ? normalizedRelayTargets[Math.min(relayIndex, normalizedRelayTargets.length - 1)]
+    : null;
+
+  const initialStudentId = editRecord?.studentId || activeRelayTarget?.studentId || presetStudentId || '';
+  const initialDate = editRecord?.date || activeRelayTarget?.date || presetDate || today();
+  const initialClassGroupId = editRecord?.classGroupId || activeRelayTarget?.classGroupId || presetClassGroupId || '';
+  const initialClassSessionId = editRecord?.classSessionId || activeRelayTarget?.classSessionId || presetClassSessionId || '';
+  const initialSubject =
+    editRecord?.subject ||
+    deriveSubjectFromClass({
+      classGroupId: initialClassGroupId,
+      classSessionId: initialClassSessionId,
+      classGroups,
+      classSessions,
+    }) ||
+    activeRelayTarget?.subject ||
+    presetSubject ||
+    '';
+  const initialSourceSupportTags =
+    activeRelayTarget?.sourceSupportTags
+    ?? presetSourceSupportTags
+    ?? editRecord?.sourceSupportTags
+    ?? [];
+  const initialSourceSupportMemo =
+    activeRelayTarget?.sourceSupportMemo
+    ?? presetSourceSupportMemo
+    ?? editRecord?.sourceSupportMemo
+    ?? '';
+
+  const [studentId, setStudentId] = useState(initialStudentId);
+  const [date, setDate] = useState(initialDate);
+  const [subject, setSubject] = useState(initialSubject);
+  const [classGroupId, setClassGroupId] = useState(initialClassGroupId);
+  const [classSessionId, setClassSessionId] = useState(initialClassSessionId);
+  const [selectedItems, setSelectedItems] = useState(
+    normalizeClinicItems(editRecord?.items || buildSuggestedItems(initialSubject, initialSourceSupportTags)),
+  );
   const [overallMemo, setOverallMemo] = useState(editRecord?.overallMemo || '');
+  const [materialDrafts, setMaterialDrafts] = useState({});
   const [customItemDraft, setCustomItemDraft] = useState({ title: '', description: '' });
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [showMetaEditor, setShowMetaEditor] = useState(!initialStudentId || !initialDate || !initialSubject);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const clinicOptions = subject ? getClinicOptions(subject) : [];
+  useEffect(() => {
+    if (!activeRelayTarget || editRecord) return;
+    setStudentId(activeRelayTarget.studentId);
+    setDate(activeRelayTarget.date || today());
+    const derivedSubject = deriveSubjectFromClass({
+      classGroupId: activeRelayTarget.classGroupId,
+      classSessionId: activeRelayTarget.classSessionId,
+      classGroups,
+      classSessions,
+    }) || activeRelayTarget.subject || '';
+    setSubject(derivedSubject);
+    setClassGroupId(activeRelayTarget.classGroupId || '');
+    setClassSessionId(activeRelayTarget.classSessionId || '');
+    setSelectedItems(normalizeClinicItems(buildSuggestedItems(derivedSubject, activeRelayTarget.sourceSupportTags)));
+    setOverallMemo('');
+    setMaterialDrafts({});
+    setCustomItemDraft({ title: '', description: '' });
+    setShowCustomInput(false);
+    setShowMetaEditor(false);
+  }, [activeRelayTarget, editRecord, classGroups, classSessions]);
+
+  const currentMembership = useMemo(
+    () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
+    [memberships, currentAcademyId],
+  );
+  const currentStaff = useMemo(() => {
+    if (role === 'teacher') {
+      return findLocalStaffForUser(academyTeachers, {
+        userId: authUserId,
+        memberId: currentMembership?.id,
+        email: authUserEmail,
+      });
+    }
+    if (role === 'assistant') {
+      return findLocalStaffForUser(academyAssistants, {
+        userId: authUserId,
+        memberId: currentMembership?.id,
+        email: authUserEmail,
+      });
+    }
+    return null;
+  }, [role, academyTeachers, academyAssistants, authUserId, currentMembership?.id, authUserEmail]);
+
+  const currentSourceSupportTags =
+    activeRelayTarget?.sourceSupportTags
+    ?? presetSourceSupportTags
+    ?? editRecord?.sourceSupportTags
+    ?? [];
+  const currentSourceSupportMemo =
+    activeRelayTarget?.sourceSupportMemo
+    ?? presetSourceSupportMemo
+    ?? editRecord?.sourceSupportMemo
+    ?? '';
+  const sourceLessonRecordId =
+    activeRelayTarget?.sourceLessonRecordId
+    ?? presetSourceLessonRecordId
+    ?? editRecord?.sourceLessonRecordId
+    ?? null;
+
+  const selectedStudent = academyStudents.find((s) => s.id === studentId);
+  const selectedSession = classSessions?.find((s) => s.id === classSessionId) || null;
+  const selectedGroup = classGroups.find((g) => g.id === classGroupId)
+    || classGroups.find((g) => g.id === selectedSession?.classGroupId)
+    || null;
+  const autoSubject = selectedGroup?.subject || '';
+  const effectiveSubject = subject || autoSubject;
+  const clinicOptions = effectiveSubject ? getClinicOptions(effectiveSubject) : [];
+  const suggestedOptionKeys = getSuggestedOptionKeys(currentSourceSupportTags, clinicOptions);
+  const hasTeacherRequest = currentSourceSupportTags.length > 0 || !!currentSourceSupportMemo?.trim();
+  const isRelayMode = !editRecord && normalizedRelayTargets.length > 1;
+  const hasNextRelayTarget = isRelayMode && relayIndex < normalizedRelayTargets.length - 1;
+  const nextRelayStudent = hasNextRelayTarget
+    ? academyStudents.find((s) => s.id === normalizedRelayTargets[relayIndex + 1]?.studentId)
+    : null;
+
+  useEffect(() => {
+    if (selectedSession?.classGroupId && !classGroupId) {
+      setClassGroupId(selectedSession.classGroupId);
+    }
+  }, [selectedSession?.classGroupId, classGroupId]);
+
+  useEffect(() => {
+    if (!autoSubject || autoSubject === subject) return;
+    setSubject(autoSubject);
+    setSelectedItems((prev) =>
+      prev.length > 0
+        ? prev
+        : normalizeClinicItems(buildSuggestedItems(autoSubject, currentSourceSupportTags))
+    );
+  }, [autoSubject, subject, currentSourceSupportTags]);
 
   const isItemSelected = (key) => selectedItems.some((i) => i.categoryKey === key);
 
@@ -59,7 +319,9 @@ export default function ClinicRecordFormModal({
         {
           id: `item_${Date.now()}_${option.key}`,
           categoryKey: option.key,
+          activityType: option.title,
           title: option.title,
+          materialTags: [],
           description: '',
           result: '',
           memo: '',
@@ -75,7 +337,9 @@ export default function ClinicRecordFormModal({
       {
         id: `item_custom_${Date.now()}`,
         categoryKey: 'custom',
+        activityType: customItemDraft.title.trim(),
         title: customItemDraft.title.trim(),
+        materialTags: [],
         description: customItemDraft.description.trim(),
         result: '',
         memo: '',
@@ -91,255 +355,341 @@ export default function ClinicRecordFormModal({
     );
   };
 
+  const handleClassGroupChange = (nextClassGroupId) => {
+    setClassGroupId(nextClassGroupId);
+    const nextSubject = deriveSubjectFromClass({
+      classGroupId: nextClassGroupId,
+      classSessionId,
+      classGroups,
+      classSessions,
+    });
+    if (nextSubject && nextSubject !== subject) {
+      setSubject(nextSubject);
+      setSelectedItems(normalizeClinicItems(buildSuggestedItems(nextSubject, currentSourceSupportTags)));
+    }
+  };
+
+  const addMaterialTag = (itemId) => {
+    const nextDraftTags = splitMaterialDraft(materialDrafts[itemId]);
+    if (nextDraftTags.length === 0) return;
+    setSelectedItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== itemId) return item;
+        const nextTags = Array.from(new Set([...(item.materialTags || []), ...nextDraftTags]));
+        return { ...item, materialTags: nextTags };
+      })
+    );
+    setMaterialDrafts((prev) => ({ ...prev, [itemId]: '' }));
+  };
+
+  const removeMaterialTag = (itemId, tag) => {
+    setSelectedItems((prev) =>
+      prev.map((item) =>
+        item.id === itemId
+          ? { ...item, materialTags: (item.materialTags || []).filter((t) => t !== tag) }
+          : item
+      )
+    );
+  };
+
   const removeItem = (id) => {
     setSelectedItems((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const handleSave = async () => {
+  const handleSubjectChange = (nextSubject) => {
+    setSubject(nextSubject);
+    setSelectedItems(normalizeClinicItems(buildSuggestedItems(nextSubject, currentSourceSupportTags)));
+  };
+
+  const handleSave = async (mode = 'close') => {
+    if (isSaving) return;
     if (!studentId) return alert('학생을 선택해주세요.');
     if (!date) return alert('날짜를 선택해주세요.');
-    if (!subject) return alert('과목을 선택해주세요.');
-    if (selectedItems.length === 0) return alert('클리닉 항목을 최소 1개 선택해주세요.');
+    const finalSubject = subject || autoSubject;
+    if (!finalSubject) return alert('과목을 선택해주세요.');
+    if (selectedItems.length === 0) return alert('클리닉 활동을 최소 1개 선택해주세요.');
 
-    // MVP: 첫 번째 강사/보조강사 레코드를 본인으로 간주 (계정 연동 전까지)
-    const createdById = role === 'teacher'
-      ? (academyTeachers[0]?.id || '')
-      : role === 'assistant'
-        ? (academyAssistants[0]?.id || '')
-        : '';
+    setIsSaving(true);
+    try {
+      const fallbackCreatedById = role === 'teacher'
+        ? (authUserId ? `teacher_${authUserId}` : academyTeachers[0]?.id || '')
+        : role === 'assistant'
+          ? (authUserId ? `assistant_${authUserId}` : academyAssistants[0]?.id || '')
+          : '';
+      const writerRole = editRecord?.createdByRole || role;
+      const writerId = editRecord?.createdById || currentStaff?.id || fallbackCreatedById;
+      const normalizedItemsForSave = mergePendingMaterialDrafts(selectedItems, materialDrafts);
 
-    // 학습 보완 항목 참고 정보: preset 우선, 없으면 기존 record / lessonRecord 추적
-    const sourceSupportTags =
-      presetSourceSupportTags
-      ?? editRecord?.sourceSupportTags
-      ?? [];
-    const sourceSupportMemo =
-      presetSourceSupportMemo
-      ?? editRecord?.sourceSupportMemo
-      ?? '';
-    const sourceLessonRecordId =
-      presetSourceLessonRecordId
-      ?? editRecord?.sourceLessonRecordId
-      ?? null;
+      const payload = {
+        studentId,
+        date,
+        subject: finalSubject,
+        classGroupId: classGroupId || '',
+        classSessionId: classSessionId || '',
+        sourceLessonRecordId,
+        sourceSupportTags: currentSourceSupportTags,
+        sourceSupportMemo: currentSourceSupportMemo,
+        items: normalizedItemsForSave,
+        overallMemo,
+        createdByRole: writerRole,
+        createdById: writerId,
+      };
 
-    const payload = {
-      studentId,
-      date,
-      subject,
-      classGroupId: classGroupId || '',
-      classSessionId: classSessionId || '',
-      sourceLessonRecordId,
-      sourceSupportTags,
-      sourceSupportMemo,
-      items: selectedItems,
-      overallMemo,
-      createdByRole: role,
-      createdById,
-    };
+      const student = academyStudents.find((s) => s.id === studentId);
+      const groupForServer = classGroupId
+        ? classGroups.find((g) => g.id === classGroupId)
+        : null;
+      const sessionForServer = classSessionId
+        ? classSessions?.find((cs) => cs.id === classSessionId)
+        : null;
+      const sourceLr = sourceLessonRecordId
+        ? academyLessonRecords?.find((lr) => lr.id === sourceLessonRecordId)
+        : null;
 
-    // 서버 매핑용 정보
-    const student = academyStudents.find((s) => s.id === studentId);
-    const groupForServer = classGroupId
-      ? classGroups.find((g) => g.id === classGroupId)
-      : null;
-    const sessionForServer = classSessionId
-      ? classSessions?.find((cs) => cs.id === classSessionId)
-      : null;
-    // sourceLessonRecordId 는 local id 이므로 serverId 매핑 시도
-    const sourceLr = sourceLessonRecordId
-      ? academyLessonRecords?.find((lr) => lr.id === sourceLessonRecordId)
-      : null;
+      const buildServerPayload = () => ({
+        student_id: student?.serverId,
+        class_group_id: groupForServer?.serverId || null,
+        class_session_id: sessionForServer?.serverId || null,
+        date,
+        subject: finalSubject || null,
+        teacher_id: writerId && writerRole === 'teacher' ? writerId : null,
+        assistant_id: writerId && writerRole === 'assistant' ? writerId : null,
+        source_lesson_record_id: sourceLr?.serverId || (looksLikeUuid(sourceLessonRecordId) ? sourceLessonRecordId : null),
+        source_support_tags: Array.isArray(currentSourceSupportTags) ? currentSourceSupportTags : [],
+        source_support_memo: currentSourceSupportMemo || null,
+        items: normalizedItemsForSave,
+        overall_memo: overallMemo || null,
+        created_by_role: writerRole || null,
+        created_by_id: writerId || null,
+      });
 
-    const buildServerPayload = () => ({
-      student_id: student?.serverId,
-      class_group_id: groupForServer?.serverId || null,
-      class_session_id: sessionForServer?.serverId || null,
-      date,
-      subject: subject || null,
-      teacher_id: createdById && role === 'teacher' ? createdById : null,
-      assistant_id: createdById && role === 'assistant' ? createdById : null,
-      source_lesson_record_id: sourceLr?.serverId || null,
-      source_support_tags: Array.isArray(sourceSupportTags) ? sourceSupportTags : [],
-      source_support_memo: sourceSupportMemo || null,
-      items: selectedItems,
-      overall_memo: overallMemo || null,
-      created_by_role: role || null,
-      created_by_id: createdById || null,
-    });
+      const canSyncServer = isAuthenticated && currentAcademyId && student?.serverId;
 
-    const canSyncServer = isAuthenticated && currentAcademyId && student?.serverId;
-
-    if (editRecord) {
-      updateClinicRecord(editRecord.id, payload);
-      // 서버 update — editRecord.serverId 있을 때만
-      if (editRecord.serverId && isAuthenticated && currentAcademyId) {
-        try {
-          const serverPatch = buildServerPayload();
-          // student_id 변경은 허용하지 않음 — strip 으로 안전하게 처리되지만
-          // student.serverId 가 없으면 patch 에서 제거.
-          if (!student?.serverId) delete serverPatch.student_id;
-          await updateServerClinicRecord(editRecord.serverId, serverPatch);
-          await loadServerClinicRecords();
-        } catch (err) {
-          console.error('[supabase] updateClinicRecord failed', err);
-          showToast(
-            err?.message
-              ? `클리닉 기록 서버 동기화 실패: ${err.message}`
-              : '클리닉 기록은 수정되었지만 서버 동기화는 실패했어요.',
-            'error',
-          );
-        }
-      }
-    } else {
-      const localRecord = addClinicRecord(payload);
-      // 서버 create — serverId 있는 학생만
-      if (canSyncServer && localRecord?.id) {
-        try {
-          const created = await createAcademyClinicRecord({
-            academyId: currentAcademyId,
-            ...buildServerPayload(),
-          });
-          if (created?.id) {
-            setClinicRecordServerId(localRecord.id, created.id);
+      if (editRecord) {
+        updateClinicRecord(editRecord.id, payload);
+        if (editRecord.serverId && isAuthenticated && currentAcademyId) {
+          try {
+            const serverPatch = buildServerPayload();
+            if (!student?.serverId) delete serverPatch.student_id;
+            await updateServerClinicRecord(editRecord.serverId, serverPatch);
+            await loadServerClinicRecords();
+          } catch (err) {
+            console.error('[supabase] updateClinicRecord failed', err);
+            showToast(
+              err?.message
+                ? `클리닉 기록 서버 동기화 실패: ${err.message}`
+                : '클리닉 기록은 수정되었지만 서버 동기화는 실패했어요.',
+              'error',
+            );
           }
-          await loadServerClinicRecords();
-        } catch (err) {
-          console.error('[supabase] createAcademyClinicRecord failed', err);
-          showToast(
-            err?.message
-              ? `클리닉 기록 서버 동기화 실패: ${err.message}`
-              : '클리닉 기록은 저장되었지만 서버 동기화는 실패했어요.',
-            'error',
-          );
+        }
+      } else {
+        const localRecord = addClinicRecord(payload);
+        if (canSyncServer && localRecord?.id) {
+          try {
+            const created = await createAcademyClinicRecord({
+              academyId: currentAcademyId,
+              ...buildServerPayload(),
+            });
+            if (created?.id) {
+              setClinicRecordServerId(localRecord.id, created.id);
+            }
+            await loadServerClinicRecords();
+          } catch (err) {
+            console.error('[supabase] createAcademyClinicRecord failed', err);
+            showToast(
+              err?.message
+                ? `클리닉 기록 서버 동기화 실패: ${err.message}`
+                : '클리닉 기록은 저장되었지만 서버 동기화는 실패했어요.',
+              'error',
+            );
+          }
         }
       }
+
+      if (mode === 'next' && hasNextRelayTarget) {
+        setRelayIndex((idx) => Math.min(idx + 1, normalizedRelayTargets.length - 1));
+      } else {
+        onClose();
+      }
+    } finally {
+      setIsSaving(false);
     }
-    onClose();
   };
 
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-white">
-      {/* 헤더 */}
       <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
         <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100">
           <X size={20} className="text-gray-500" />
         </button>
-        <p className="text-base font-bold text-gray-900">{editRecord ? '클리닉 기록 수정' : '클리닉 기록 추가'}</p>
-        <button
-          onClick={handleSave}
-          className="text-sm font-bold text-blue-600 px-3 py-1.5 rounded-xl active:bg-blue-50"
-        >
-          저장
-        </button>
+        <p className="text-base font-bold text-gray-900">
+          {editRecord
+            ? '클리닉 기록 수정'
+            : isRelayMode
+              ? `클리닉 기록 작성 (${relayIndex + 1} / ${normalizedRelayTargets.length})`
+              : '클리닉 기록 추가'}
+        </p>
+        <div className="w-8" />
       </div>
 
-      {/* 폼 내용 스크롤 */}
       <div className="flex-1 overflow-y-auto">
-        <div className="px-4 py-5 flex flex-col gap-5">
-
-          {/* 학생 선택 */}
-          <FormSection label="학생 *">
-            <div className="relative">
-              <select
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-                className="input appearance-none pr-8"
+        <div className="sticky top-0 z-10 bg-white/95 px-4 py-3 backdrop-blur border-b border-gray-100">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-base font-bold text-gray-900 truncate">
+                {selectedStudent?.name || '학생 선택'}
+                {selectedStudent?.grade ? <span className="text-sm text-gray-400"> · {selectedStudent.grade}</span> : null}
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowMetaEditor((v) => !v)}
+                className="mt-0.5 flex max-w-full items-center gap-1 text-left text-xs font-semibold text-gray-500"
               >
-                <option value="">학생 선택</option>
-                {academyStudents.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} {s.grade ? `(${s.grade})` : ''}</option>
-                ))}
-              </select>
-              <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <span className="truncate">
+                  {[selectedGroup?.name, effectiveSubject, date].filter(Boolean).join(' · ') || '학생·반·날짜를 선택해주세요'}
+                </span>
+                <ChevronDown size={12} className={`flex-shrink-0 transition-transform ${showMetaEditor ? 'rotate-180' : ''}`} />
+              </button>
             </div>
-          </FormSection>
-
-          {/* 날짜 */}
-          <FormSection label="날짜 *">
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="input"
-            />
-          </FormSection>
-
-          {/* 과목 */}
-          <FormSection label="과목 *">
-            <div className="flex flex-wrap gap-2">
-              {SUBJECTS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => { setSubject(s); setSelectedItems([]); }}
-                  className={`px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-colors ${
-                    subject === s
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-600 border-gray-200'
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </FormSection>
-
-          {/* 반 연결 (선택) */}
-          {classGroups.length > 0 && (
-            <FormSection label="반 연결 (선택)">
-              <div className="relative">
-                <select
-                  value={classGroupId}
-                  onChange={(e) => setClassGroupId(e.target.value)}
-                  className="input appearance-none pr-8"
-                >
-                  <option value="">반 선택 안 함</option>
-                  {classGroups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+            {hasTeacherRequest && (
+              <span className="flex-shrink-0 rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-600">
+                수업 연계
+              </span>
+            )}
+          </div>
+          {hasTeacherRequest && (
+            <div className="mt-3 rounded-xl bg-orange-50 px-3 py-2">
+              <div className="flex items-start gap-2">
+                <MessageCircle size={13} className="mt-0.5 flex-shrink-0 text-orange-500" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-orange-700">강사 요청</p>
+                  {currentSourceSupportTags.length > 0 && (
+                    <p className="mt-0.5 truncate text-[11px] font-semibold text-orange-600">
+                      {currentSourceSupportTags.map((tag) => SUPPORT_TAG_LABELS[tag] || tag).join(' · ')}
+                    </p>
+                  )}
+                  {currentSourceSupportMemo?.trim() && (
+                    <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-orange-700">{currentSourceSupportMemo}</p>
+                  )}
+                </div>
               </div>
-            </FormSection>
+            </div>
+          )}
+        </div>
+
+        <div className="px-4 py-5 flex flex-col gap-5">
+          {showMetaEditor && (
+            <div className="rounded-2xl bg-gray-50 px-4 py-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <FormSection label="학생 *">
+                  <div className="relative">
+                    <select
+                      value={studentId}
+                      onChange={(e) => setStudentId(e.target.value)}
+                      className="input appearance-none pr-8"
+                    >
+                      <option value="">학생 선택</option>
+                      {academyStudents.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name} {s.grade ? `(${s.grade})` : ''}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                  </div>
+                </FormSection>
+                <FormSection label="날짜 *">
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="input"
+                  />
+                </FormSection>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {classGroups.length > 0 && (
+                  <FormSection label="반 연결">
+                    <div className="relative">
+                      <select
+                        value={classGroupId}
+                        onChange={(e) => handleClassGroupChange(e.target.value)}
+                        className="input appearance-none pr-8"
+                      >
+                        <option value="">반 선택 안 함</option>
+                        {classGroups.map((g) => (
+                          <option key={g.id} value={g.id}>{g.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    </div>
+                  </FormSection>
+                )}
+                <FormSection label="과목 *">
+                  {autoSubject ? (
+                    <div className="flex h-11 items-center justify-between rounded-xl bg-white px-3 text-sm font-bold text-blue-600">
+                      <span>{autoSubject}</span>
+                      <Check size={15} />
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {SUBJECTS.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => handleSubjectChange(s)}
+                          className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
+                            subject === s
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white text-gray-500'
+                          }`}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </FormSection>
+              </div>
+            </div>
           )}
 
-          {/* 클리닉 항목 선택 */}
-          {subject && (
-            <FormSection label="클리닉 항목 선택 *">
-              <div className="flex flex-col gap-2">
+          {effectiveSubject && (
+            <FormSection label="오늘 한 활동을 선택해주세요 *">
+              <div className="flex flex-wrap gap-2">
                 {clinicOptions.map((option) => {
                   const selected = isItemSelected(option.key);
+                  const suggested = suggestedOptionKeys.has(option.key);
                   return (
                     <button
                       key={option.key}
                       type="button"
                       onClick={() => togglePresetItem(option)}
-                      className={`w-full text-left px-4 py-3 rounded-2xl border-2 transition-colors ${
+                      className={`text-left px-3.5 py-2.5 rounded-2xl border-2 transition-colors ${
                         selected
                           ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 bg-white'
+                          : suggested
+                            ? 'border-orange-300 bg-orange-50'
+                            : 'border-gray-200 bg-white'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <p className={`text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
-                          {option.title}
+                          {selected && '✓ '}{option.title}
                         </p>
-                        {selected && (
-                          <span className="text-xs text-blue-500 font-semibold">선택됨</span>
+                        {suggested && (
+                          <span className="flex-shrink-0 text-xs text-orange-500 font-bold">추천</span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{option.description}</p>
                     </button>
                   );
                 })}
 
-                {/* 직접 추가 */}
                 {!showCustomInput ? (
                   <button
                     type="button"
                     onClick={() => setShowCustomInput(true)}
-                    className="w-full flex items-center gap-2 px-4 py-3 rounded-2xl border-2 border-dashed border-gray-200 text-gray-500 text-sm font-semibold"
+                    className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl border-2 border-dashed border-gray-200 text-gray-500 text-sm font-semibold"
                   >
                     <Plus size={16} />
                     직접 추가
@@ -361,12 +711,14 @@ export default function ClinicRecordFormModal({
                     />
                     <div className="flex gap-2">
                       <button
+                        type="button"
                         onClick={addCustomItem}
                         className="flex-1 bg-blue-600 text-white text-xs font-bold py-2.5 rounded-xl"
                       >
                         추가
                       </button>
                       <button
+                        type="button"
                         onClick={() => { setShowCustomInput(false); setCustomItemDraft({ title: '', description: '' }); }}
                         className="px-4 bg-white text-gray-500 text-xs font-bold py-2.5 rounded-xl border border-gray-200"
                       >
@@ -379,81 +731,133 @@ export default function ClinicRecordFormModal({
             </FormSection>
           )}
 
-          {/* 선택된 항목별 세부 기록 */}
           {selectedItems.length > 0 && (
             <FormSection label="항목별 세부 기록">
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2.5">
                 {selectedItems.map((item) => (
-                  <div key={item.id} className="bg-gray-50 rounded-2xl p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-bold text-gray-800">{item.title}</p>
+                  <div
+                    key={item.id}
+                    className="grid grid-cols-1 gap-3 rounded-2xl bg-[#F8FAFC] px-3 py-3 md:grid-cols-[96px_minmax(160px,0.75fr)_minmax(260px,1.5fr)_minmax(170px,0.7fr)_32px] md:items-start md:px-4 md:py-3.5"
+                  >
+                    <div className="flex items-center justify-between gap-2 md:block">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-gray-900">{item.title}</p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-gray-400">활동</p>
+                      </div>
                       <button
+                        type="button"
                         onClick={() => removeItem(item.id)}
-                        className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-500"
+                        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-gray-400 active:bg-gray-100 md:hidden"
                       >
-                        <X size={12} />
+                        <X size={15} />
                       </button>
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <div>
-                        <label className="text-[11px] font-semibold text-gray-500 mb-1 block">구체적으로 무엇을 했나요?</label>
-                        <textarea
+
+                    <div className="min-w-0">
+                      <label className="mb-1 block text-[11px] font-bold text-gray-500">교재·자료</label>
+                      <div className="rounded-xl bg-white px-3 py-2.5 transition-colors focus-within:bg-blue-50/60">
+                          {(item.materialTags || []).length > 0 && (
+                            <div className="mb-2 flex flex-wrap gap-1.5">
+                              {item.materialTags.map((tag) => (
+                                <button
+                                  key={tag}
+                                  type="button"
+                                  onClick={() => removeMaterialTag(item.id, tag)}
+                                  className="flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-semibold text-gray-600"
+                                >
+                                  {tag}
+                                  <X size={10} />
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          <input
+                            value={materialDrafts[item.id] || ''}
+                            onChange={(e) => setMaterialDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                            onBlur={() => addMaterialTag(item.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                addMaterialTag(item.id);
+                              }
+                            }}
+                            placeholder="워드마스터 5과"
+                            className="w-full bg-transparent text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-300"
+                          />
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <label className="mb-1 block text-[11px] font-bold text-gray-500">내용</label>
+                      <div className="rounded-xl bg-white px-3 py-2.5 transition-colors focus-within:bg-blue-50/60">
+                        <input
                           value={item.description}
                           onChange={(e) => updateItemField(item.id, 'description', e.target.value)}
-                          rows={3}
-                          placeholder="세부 활동 내용을 기록해주세요..."
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 resize-none bg-white"
+                          placeholder="5과 Day 3 풀이, 틀린 단어 재시험"
+                          className="w-full bg-transparent text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-300"
                         />
                       </div>
-                      <div>
-                        <label className="text-[11px] font-semibold text-gray-500 mb-1 block">결과 (선택)</label>
+                    </div>
+
+                    <div className="min-w-0">
+                      <label className="mb-1 block text-[11px] font-bold text-gray-500">결과</label>
+                      <div className="rounded-xl bg-white px-3 py-2.5 transition-colors focus-within:bg-blue-50/60">
                         <input
                           value={item.result}
                           onChange={(e) => updateItemField(item.id, 'result', e.target.value)}
-                          placeholder="예: 24/30, 통과, 미통과"
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 bg-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] font-semibold text-gray-500 mb-1 block">메모 (선택)</label>
-                        <textarea
-                          value={item.memo}
-                          onChange={(e) => updateItemField(item.id, 'memo', e.target.value)}
-                          rows={2}
-                          placeholder="특이사항이나 다음 시간을 위한 메모..."
-                          className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-400 resize-none bg-white"
+                          placeholder="24/30"
+                          className="w-full bg-transparent text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-300"
                         />
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => removeItem(item.id)}
+                      className="hidden h-9 w-9 items-center justify-center self-end rounded-full text-gray-400 active:bg-gray-100 md:flex"
+                    >
+                      <X size={15} />
+                    </button>
                   </div>
                 ))}
               </div>
             </FormSection>
           )}
 
-          {/* 전체 메모 */}
-          <FormSection label="전체 메모 (선택)">
-            <textarea
-              value={overallMemo}
-              onChange={(e) => setOverallMemo(e.target.value)}
-              rows={3}
-              placeholder="전반적인 클리닉 소견이나 다음 시간 주의사항을 입력하세요..."
-              className="input resize-none"
-            />
-          </FormSection>
-
           <div className="h-4" />
         </div>
       </div>
 
-      {/* 하단 저장 버튼 */}
       <div className="px-4 py-4 border-t border-gray-100 bg-white">
-        <button
-          onClick={handleSave}
-          className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl text-base"
-        >
-          {editRecord ? '수정 저장' : '클리닉 기록 저장'}
-        </button>
+        {hasNextRelayTarget ? (
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={() => handleSave('next')}
+              className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl text-base disabled:opacity-60"
+            >
+              저장하고 다음 학생{nextRelayStudent?.name ? ` (${nextRelayStudent.name})` : ''}
+            </button>
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={() => handleSave('close')}
+              className="w-full bg-gray-100 text-gray-700 font-bold py-3.5 rounded-2xl text-sm disabled:opacity-60"
+            >
+              저장 후 닫기
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={() => handleSave('close')}
+            className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl text-base disabled:opacity-60"
+          >
+            {editRecord ? '수정 저장' : '클리닉 기록 저장'}
+          </button>
+        )}
       </div>
     </div>,
     document.body
