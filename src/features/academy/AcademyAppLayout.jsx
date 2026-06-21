@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
@@ -6,21 +6,22 @@ import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useChatStore, { totalUnread } from '../../store/useChatStore';
 import { currentUserCan } from '../../utils/staffPermissions';
 import AttendanceSettingsSheet from './attendance/AttendanceSettingsSheet';
-import OwnerDashboard from './dashboard/OwnerDashboard';
-import TeacherDashboard from './dashboard/TeacherDashboard';
-import AssistantDashboard from './dashboard/AssistantDashboard';
-import ClassGroupsPage from './classes/ClassGroupsPage';
-import ClassGroupDetailPage from './classes/ClassGroupDetailPage';
-import ClassSessionPage from './classes/ClassSessionPage';
-import ClinicPage from './clinic/ClinicPage';
-import AcademyStudentsPage from './students/AcademyStudentsPage';
-import AcademyStudentDetailPage from './students/AcademyStudentDetailPage';
-import AcademyMorePage from './more/AcademyMorePage';
-import SettlementPage from './settlement/SettlementPage';
-import PayrollPage from './payroll/PayrollPage';
-import StaffPage from './staff/StaffPage';
-import ChatPage from './chat/ChatPage';
 import Sidebar from '../../components/Sidebar';
+
+const OwnerDashboard = lazy(() => import('./dashboard/OwnerDashboard'));
+const TeacherDashboard = lazy(() => import('./dashboard/TeacherDashboard'));
+const AssistantDashboard = lazy(() => import('./dashboard/AssistantDashboard'));
+const ClassGroupsPage = lazy(() => import('./classes/ClassGroupsPage'));
+const ClassGroupDetailPage = lazy(() => import('./classes/ClassGroupDetailPage'));
+const ClassSessionPage = lazy(() => import('./classes/ClassSessionPage'));
+const ClinicPage = lazy(() => import('./clinic/ClinicPage'));
+const AcademyStudentsPage = lazy(() => import('./students/AcademyStudentsPage'));
+const AcademyStudentDetailPage = lazy(() => import('./students/AcademyStudentDetailPage'));
+const AcademyMorePage = lazy(() => import('./more/AcademyMorePage'));
+const SettlementPage = lazy(() => import('./settlement/SettlementPage'));
+const PayrollPage = lazy(() => import('./payroll/PayrollPage'));
+const StaffPage = lazy(() => import('./staff/StaffPage'));
+const ChatPage = lazy(() => import('./chat/ChatPage'));
 
 // Phase 40 — 기존 "근무" 탭을 "직원" 으로 통합. 직원 리스트 + 근무 스케줄 +
 // 계약/권한/배정까지 한 탭에서 처리한다. More 탭은 학원·계정 설정만 남긴다.
@@ -233,9 +234,11 @@ export default function AcademyAppLayout() {
 
       <main className="flex-1 min-w-0">
         <div className="main-content max-w-md mx-auto md:mx-0 md:max-w-none md:px-8 md:py-6 pb-24 md:pb-8">
-          <div key={pageKey}>
-            {renderContent()}
-          </div>
+          <Suspense fallback={<div className="h-[60vh]" />}>
+            <div key={pageKey}>
+              {renderContent()}
+            </div>
+          </Suspense>
         </div>
       </main>
 

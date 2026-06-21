@@ -1,7 +1,14 @@
 node_modules/
 dist/
+supabase/.temp/
+test-artifacts/
 .env
 .env.local
 .env.*.local
 *.local
 !.env.example
+
+# Push notification credentials must never be committed.
+android/app/google-services.json
+*.p8
+supabase/.env.push

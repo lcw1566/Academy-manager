@@ -278,7 +278,7 @@ export default function ClinicPage() {
                 whileTap={{ scale: 0.97 }}
                 onClick={() => setSubjectFilter(id)}
                 className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
-                  subjectFilter === id ? 'bg-orange-500 text-white' : 'bg-white text-gray-500 border border-gray-200'
+                  subjectFilter === id ? 'bg-[#0064FF] text-white' : 'bg-white text-gray-500 border border-gray-200'
                 }`}
               >
                 {label}

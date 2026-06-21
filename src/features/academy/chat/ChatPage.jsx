@@ -50,6 +50,7 @@ export default function ChatPage() {
 
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [threadSearch, setThreadSearch] = useState('');
   const [notificationPermission, setNotificationPermission] = useState('checking');
   const requestedThreadId = useChatStore((s) => s.requestedThreadId);
   const clearRequestedThread = useChatStore((s) => s.clearRequestedThread);
@@ -142,6 +143,14 @@ export default function ChatPage() {
   }, [threads, lastMsgByThread]);
 
   const selectedThread = threads.find((t) => t.id === selectedThreadId) || null;
+  const normalizedThreadSearch = threadSearch.trim().toLowerCase();
+  const visibleThreads = normalizedThreadSearch
+    ? sortedThreads.filter((thread) => {
+        const title = threadTitle(thread).toLowerCase();
+        const lastBody = (lastMsgByThread[thread.id]?.body || '').toLowerCase();
+        return title.includes(normalizedThreadSearch) || lastBody.includes(normalizedThreadSearch);
+      })
+    : sortedThreads;
 
   if (selectedThread) {
     return (
@@ -189,15 +198,32 @@ export default function ChatPage() {
             </button>
           </div>
         )}
+        <div className="px-4 pt-4">
+          <div className="flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm">
+            <Search size={16} className="text-gray-400 flex-shrink-0" />
+            <input
+              value={threadSearch}
+              onChange={(event) => setThreadSearch(event.target.value)}
+              placeholder="대화 상대 또는 메시지 검색"
+              className="flex-1 min-w-0 text-sm focus:outline-none text-gray-700 bg-transparent"
+            />
+          </div>
+        </div>
         {sortedThreads.length === 0 ? (
           <EmptyState
             icon="💬"
             title="아직 대화가 없어요"
             description="+ 버튼으로 직원과 1:1 대화를 시작해보세요."
           />
+        ) : visibleThreads.length === 0 ? (
+          <EmptyState
+            icon="🔍"
+            title="검색 결과가 없어요"
+            description="대화 상대나 검색어를 바꿔보세요."
+          />
         ) : (
           <div className="px-4 pt-4 flex flex-col gap-2">
-            {sortedThreads.map((thread) => {
+            {visibleThreads.map((thread) => {
               const last = lastMsgByThread[thread.id];
               const unread = unreadCountForThread({ messages, reads }, thread.id, authUserId);
               const isGroup = thread.kind === 'group';
@@ -267,6 +293,7 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
+  const inputRef = useRef(null);
   const isGroup = thread.kind === 'group';
   const isAcademyGroup = isGroup && thread.group_scope !== 'custom';
 
@@ -292,6 +319,7 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
     if (!text || sending) return;
     setDraft('');
     setSending(true);
+    inputRef.current?.focus({ preventScroll: true });
     try {
       await sendMessage({ threadId: thread.id, body: text });
     } catch (err) {
@@ -299,6 +327,7 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
       showToast?.(err?.message ? `메시지 전송 실패: ${err.message}` : '메시지를 보내지 못했어요.', 'error');
     } finally {
       setSending(false);
+      requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
     }
   };
 
@@ -367,6 +396,7 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
       {/* 입력 */}
       <div className="flex items-end gap-2 px-3 py-3 bg-white border-t border-gray-100 flex-shrink-0">
         <textarea
+          ref={inputRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -381,6 +411,7 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
         />
         <motion.button
           whileTap={{ scale: 0.92 }}
+          onPointerDown={(event) => event.preventDefault()}
           onClick={handleSend}
           disabled={!draft.trim() || sending}
           className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${

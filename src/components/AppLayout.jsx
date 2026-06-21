@@ -1,15 +1,16 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import useAcademyStore from '../store/useAcademyStore';
 import BottomNav, { PRIVATE_TABS } from './BottomNav';
 import Sidebar from './Sidebar';
-import DashboardPage from '../features/dashboard/DashboardPage';
-import ClassesPage from '../features/classes/ClassesPage';
-import ClassDetailPage from '../features/classes/ClassDetailPage';
-import LessonGroupDetailPage from '../features/classes/LessonGroupDetailPage';
-import StudentsPage from '../features/students/StudentsPage';
-import StudentDetailPage from '../features/students/StudentDetailPage';
-import PaymentsPage from '../features/payments/PaymentsPage';
-import MorePage from '../features/more/MorePage';
+
+const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage'));
+const ClassesPage = lazy(() => import('../features/classes/ClassesPage'));
+const ClassDetailPage = lazy(() => import('../features/classes/ClassDetailPage'));
+const LessonGroupDetailPage = lazy(() => import('../features/classes/LessonGroupDetailPage'));
+const StudentsPage = lazy(() => import('../features/students/StudentsPage'));
+const StudentDetailPage = lazy(() => import('../features/students/StudentDetailPage'));
+const PaymentsPage = lazy(() => import('../features/payments/PaymentsPage'));
+const MorePage = lazy(() => import('../features/more/MorePage'));
 
 const PRIVATE_TAB_IDS = ['home', 'classes', 'students', 'payments', 'more'];
 
@@ -78,9 +79,11 @@ export default function AppLayout() {
 
       <main className="flex-1 min-w-0">
         <div className="main-content max-w-md mx-auto md:mx-0 md:max-w-none md:px-8 md:py-6 pb-24 md:pb-8">
-          <div key={pageKey}>
-            {renderContent()}
-          </div>
+          <Suspense fallback={<div className="h-[60vh]" />}>
+            <div key={pageKey}>
+              {renderContent()}
+            </div>
+          </Suspense>
         </div>
       </main>
       <BottomNav />
