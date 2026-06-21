@@ -16,7 +16,11 @@ function urlBase64ToUint8Array(value) {
 async function registerWebPush() {
   const publicKey = import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY;
   if (!publicKey || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
-  const registration = await navigator.serviceWorker.register('/push-sw.js');
+  await navigator.serviceWorker.register('/push-sw.js');
+  // 최초 설치 직후에는 registration 객체가 아직 installing/waiting 상태일 수
+  // 있다. active worker가 준비되기 전에 subscribe하면 Chrome이
+  // "no active Service Worker"로 거부하므로 ready까지 기다린다.
+  const registration = await navigator.serviceWorker.ready;
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({
