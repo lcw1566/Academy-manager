@@ -8,20 +8,42 @@ import { currentUserCan } from '../../utils/staffPermissions';
 import AttendanceSettingsSheet from './attendance/AttendanceSettingsSheet';
 import Sidebar from '../../components/Sidebar';
 
-const OwnerDashboard = lazy(() => import('./dashboard/OwnerDashboard'));
-const TeacherDashboard = lazy(() => import('./dashboard/TeacherDashboard'));
-const AssistantDashboard = lazy(() => import('./dashboard/AssistantDashboard'));
-const ClassGroupsPage = lazy(() => import('./classes/ClassGroupsPage'));
-const ClassGroupDetailPage = lazy(() => import('./classes/ClassGroupDetailPage'));
-const ClassSessionPage = lazy(() => import('./classes/ClassSessionPage'));
-const ClinicPage = lazy(() => import('./clinic/ClinicPage'));
-const AcademyStudentsPage = lazy(() => import('./students/AcademyStudentsPage'));
-const AcademyStudentDetailPage = lazy(() => import('./students/AcademyStudentDetailPage'));
-const AcademyMorePage = lazy(() => import('./more/AcademyMorePage'));
-const SettlementPage = lazy(() => import('./settlement/SettlementPage'));
-const PayrollPage = lazy(() => import('./payroll/PayrollPage'));
-const StaffPage = lazy(() => import('./staff/StaffPage'));
-const ChatPage = lazy(() => import('./chat/ChatPage'));
+const loadOwnerDashboard = () => import('./dashboard/OwnerDashboard');
+const loadTeacherDashboard = () => import('./dashboard/TeacherDashboard');
+const loadAssistantDashboard = () => import('./dashboard/AssistantDashboard');
+const loadClassGroupsPage = () => import('./classes/ClassGroupsPage');
+const loadClassGroupDetailPage = () => import('./classes/ClassGroupDetailPage');
+const loadClassSessionPage = () => import('./classes/ClassSessionPage');
+const loadClinicPage = () => import('./clinic/ClinicPage');
+const loadAcademyStudentsPage = () => import('./students/AcademyStudentsPage');
+const loadAcademyStudentDetailPage = () => import('./students/AcademyStudentDetailPage');
+const loadAcademyMorePage = () => import('./more/AcademyMorePage');
+const loadSettlementPage = () => import('./settlement/SettlementPage');
+const loadPayrollPage = () => import('./payroll/PayrollPage');
+const loadStaffPage = () => import('./staff/StaffPage');
+const loadChatPage = () => import('./chat/ChatPage');
+
+const OwnerDashboard = lazy(loadOwnerDashboard);
+const TeacherDashboard = lazy(loadTeacherDashboard);
+const AssistantDashboard = lazy(loadAssistantDashboard);
+const ClassGroupsPage = lazy(loadClassGroupsPage);
+const ClassGroupDetailPage = lazy(loadClassGroupDetailPage);
+const ClassSessionPage = lazy(loadClassSessionPage);
+const ClinicPage = lazy(loadClinicPage);
+const AcademyStudentsPage = lazy(loadAcademyStudentsPage);
+const AcademyStudentDetailPage = lazy(loadAcademyStudentDetailPage);
+const AcademyMorePage = lazy(loadAcademyMorePage);
+const SettlementPage = lazy(loadSettlementPage);
+const PayrollPage = lazy(loadPayrollPage);
+const StaffPage = lazy(loadStaffPage);
+const ChatPage = lazy(loadChatPage);
+
+const COMMON_ACADEMY_TAB_LOADERS = [
+  loadClassGroupsPage,
+  loadAcademyStudentsPage,
+  loadChatPage,
+  loadAcademyMorePage,
+];
 
 // Phase 40 — 기존 "근무" 탭을 "직원" 으로 통합. 직원 리스트 + 근무 스케줄 +
 // 계약/권한/배정까지 한 탭에서 처리한다. More 탭은 학원·계정 설정만 남긴다.
@@ -98,6 +120,22 @@ export default function AcademyAppLayout() {
   const goBackFromClassGroup = useAcademyStore((s) => s.goBackFromClassGroup);
   const goBackFromClassSession = useAcademyStore((s) => s.goBackFromClassSession);
   const goBackFromAcademyStudent = useAcademyStore((s) => s.goBackFromAcademyStudent);
+
+  useEffect(() => {
+    const roleLoaders = role === 'owner'
+      ? [loadClinicPage, loadStaffPage, loadSettlementPage]
+      : role === 'teacher'
+      ? [loadClinicPage, loadPayrollPage]
+      : [loadPayrollPage];
+    const preload = () => [...COMMON_ACADEMY_TAB_LOADERS, ...roleLoaders]
+      .forEach((load) => load().catch(() => {}));
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(preload, { timeout: 2500 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(preload, 1200);
+    return () => window.clearTimeout(id);
+  }, [role]);
 
   // Phase 41 — owner 가 출결 onboarding 을 마치지 않았으면 1회성 모달 노출.
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];

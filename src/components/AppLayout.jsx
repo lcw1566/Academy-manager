@@ -3,14 +3,30 @@ import useAcademyStore from '../store/useAcademyStore';
 import BottomNav, { PRIVATE_TABS } from './BottomNav';
 import Sidebar from './Sidebar';
 
-const DashboardPage = lazy(() => import('../features/dashboard/DashboardPage'));
-const ClassesPage = lazy(() => import('../features/classes/ClassesPage'));
-const ClassDetailPage = lazy(() => import('../features/classes/ClassDetailPage'));
-const LessonGroupDetailPage = lazy(() => import('../features/classes/LessonGroupDetailPage'));
-const StudentsPage = lazy(() => import('../features/students/StudentsPage'));
-const StudentDetailPage = lazy(() => import('../features/students/StudentDetailPage'));
-const PaymentsPage = lazy(() => import('../features/payments/PaymentsPage'));
-const MorePage = lazy(() => import('../features/more/MorePage'));
+const loadDashboardPage = () => import('../features/dashboard/DashboardPage');
+const loadClassesPage = () => import('../features/classes/ClassesPage');
+const loadClassDetailPage = () => import('../features/classes/ClassDetailPage');
+const loadLessonGroupDetailPage = () => import('../features/classes/LessonGroupDetailPage');
+const loadStudentsPage = () => import('../features/students/StudentsPage');
+const loadStudentDetailPage = () => import('../features/students/StudentDetailPage');
+const loadPaymentsPage = () => import('../features/payments/PaymentsPage');
+const loadMorePage = () => import('../features/more/MorePage');
+
+const DashboardPage = lazy(loadDashboardPage);
+const ClassesPage = lazy(loadClassesPage);
+const ClassDetailPage = lazy(loadClassDetailPage);
+const LessonGroupDetailPage = lazy(loadLessonGroupDetailPage);
+const StudentsPage = lazy(loadStudentsPage);
+const StudentDetailPage = lazy(loadStudentDetailPage);
+const PaymentsPage = lazy(loadPaymentsPage);
+const MorePage = lazy(loadMorePage);
+
+const PRIVATE_TAB_LOADERS = [
+  loadClassesPage,
+  loadStudentsPage,
+  loadPaymentsPage,
+  loadMorePage,
+];
 
 const PRIVATE_TAB_IDS = ['home', 'classes', 'students', 'payments', 'more'];
 
@@ -26,6 +42,18 @@ export default function AppLayout() {
   const goBackFromClass = useAcademyStore((s) => s.goBackFromClass);
   const goBackFromStudent = useAcademyStore((s) => s.goBackFromStudent);
   const goBackFromRepeatGroup = useAcademyStore((s) => s.goBackFromRepeatGroup);
+
+  // 첫 화면 렌더를 막지 않고, 브라우저가 한가해진 뒤 주요 탭만 미리 받는다.
+  // 상세 화면은 실제 선택 시 로드해 초기 데이터 사용량을 제한한다.
+  useEffect(() => {
+    const preload = () => PRIVATE_TAB_LOADERS.forEach((load) => load().catch(() => {}));
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(preload, { timeout: 2500 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = window.setTimeout(preload, 1200);
+    return () => window.clearTimeout(id);
+  }, []);
 
   useEffect(() => {
     if (!PRIVATE_TAB_IDS.includes(activeTab)) {
