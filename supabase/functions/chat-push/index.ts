@@ -157,8 +157,18 @@ Deno.serve(async (req) => {
       .select('id, academy_id, thread_id, sender_id, body')
       .eq('id', messageId)
       .single();
-    if (messageError || !message || message.sender_id !== userData.user.id) {
+    if (messageError || !message) {
+      console.error('[chat-push] message lookup failed', {
+        code: messageError?.code,
+        message: messageError?.message,
+        details: messageError?.details,
+        hint: messageError?.hint,
+      });
       return Response.json({ error: 'Message not found' }, { status: 404, headers: corsHeaders });
+    }
+    if (message.sender_id !== userData.user.id) {
+      console.error('[chat-push] sender mismatch');
+      return Response.json({ error: 'Forbidden' }, { status: 403, headers: corsHeaders });
     }
 
     const { data: thread, error: threadError } = await admin
@@ -210,6 +220,12 @@ Deno.serve(async (req) => {
     };
 
     const typedDevices = (devices || []) as PushDevice[];
+    console.log('[chat-push] delivery plan', {
+      recipients: recipientIds.length,
+      fcm: typedDevices.filter((device) => device.provider === 'fcm').length,
+      apns: typedDevices.filter((device) => device.provider === 'apns').length,
+      webpush: typedDevices.filter((device) => device.provider === 'webpush').length,
+    });
     const fcmDevices = typedDevices.filter((device) => device.provider === 'fcm');
     const apnsDevices = typedDevices.filter((device) => device.provider === 'apns');
     const fcmToken = fcmDevices.length ? await getFcmAccessToken() : null;
@@ -228,6 +244,14 @@ Deno.serve(async (req) => {
     if (invalidIds.length) {
       await admin.from('push_devices').update({ enabled: false }).in('id', invalidIds);
     }
+
+    results.filter((result) => !result.ok).forEach((result) => {
+      console.error('[chat-push] provider delivery failed', {
+        provider: result.device.provider,
+        status: result.status,
+        error: result.text.slice(0, 500),
+      });
+    });
 
     return Response.json({
       sent: results.filter((result) => result.ok).length,
