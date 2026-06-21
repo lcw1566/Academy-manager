@@ -7,6 +7,7 @@ import {
   signOut,
   subscribeAuthStateChange,
 } from '../services/supabase/authApi';
+import { disableCurrentPushDevice } from '../services/pushNotifications';
 
 let authSubscription = null;
 
@@ -98,6 +99,11 @@ const useAuthStore = create((set, get) => ({
   signOutUser: async () => {
     set({ isAuthLoading: true, authError: null });
     try {
+      try {
+        await disableCurrentPushDevice();
+      } catch (pushError) {
+        console.warn('[push] device disable on sign-out failed', pushError?.message || pushError);
+      }
       await signOut();
       set({ session: null, user: null, isAuthenticated: false });
     } catch (err) {

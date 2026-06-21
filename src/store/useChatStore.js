@@ -22,6 +22,7 @@ import {
   markThreadRead,
   listMyChatReads,
 } from '../services/supabase/chatApi';
+import { requestChatPush } from '../services/supabase/pushApi';
 
 function makeDmThread({ threadId, academyId, myUserId, otherUserId }) {
   const [dmUserA, dmUserB] = myUserId < otherUserId
@@ -67,6 +68,12 @@ const useChatStore = create((set, get) => ({
   loadedAt: null,
   realtimeChannel: null,
   realtimeTimer: null,
+  activeThreadId: null,
+  requestedThreadId: null,
+
+  setActiveThreadId: (threadId) => set({ activeThreadId: threadId || null }),
+  openThreadFromNotification: (threadId) => set({ requestedThreadId: threadId || null }),
+  clearRequestedThread: () => set({ requestedThreadId: null }),
 
   // ─── load ──────────────────────────────────────────────────
   loadChat: async (academyId) => {
@@ -158,6 +165,9 @@ const useChatStore = create((set, get) => ({
       if (created?.id) {
         get().appendMessage(created);
         get().touchThread(threadId, created.created_at);
+        requestChatPush(created.id).catch((pushError) => {
+          console.warn('[push] chat notification request failed', pushError?.message || pushError);
+        });
       }
       return created;
     } catch (err) {
@@ -318,7 +328,16 @@ const useChatStore = create((set, get) => ({
 
   clearChat: () => {
     get().stopChatRealtime();
-    set({ academyId: null, threads: [], messages: [], members: [], reads: {}, loadedAt: null });
+    set({
+      academyId: null,
+      threads: [],
+      messages: [],
+      members: [],
+      reads: {},
+      loadedAt: null,
+      activeThreadId: null,
+      requestedThreadId: null,
+    });
   },
 }));
 

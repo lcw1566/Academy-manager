@@ -19,6 +19,7 @@ import { fetchAcademySnapshot } from './services/supabase/hydrateApi';
 import { runMonthEndScheduleGeneration } from './services/monthlyScheduleAutomation';
 import { membershipRoleToAppRole } from './utils/format';
 import { tossSpring } from './utils/motion';
+import { initializePushNotifications, showForegroundChatNotification } from './services/pushNotifications';
 
 const ACADEMY_ROLES = ['owner', 'teacher', 'assistant'];
 
@@ -97,6 +98,88 @@ export default function App() {
   const startChatRealtime = useChatStore((s) => s.startChatRealtime);
   const stopChatRealtime = useChatStore((s) => s.stopChatRealtime);
   const clearChat = useChatStore((s) => s.clearChat);
+  const chatMessages = useChatStore((s) => s.messages);
+  const chatThreads = useChatStore((s) => s.threads);
+  const chatMembers = useChatStore((s) => s.members);
+  const chatLoadedAt = useChatStore((s) => s.loadedAt);
+  const activeChatThreadId = useChatStore((s) => s.activeThreadId);
+  const openThreadFromNotification = useChatStore((s) => s.openThreadFromNotification);
+  const setActiveTab = useAcademyStore((s) => s.setActiveTab);
+  const activeTab = useAcademyStore((s) => s.activeTab);
+  const seenChatMessageIdsRef = useRef(new Set());
+  const chatNotificationReadyRef = useRef(false);
+
+  const openChatNotification = (threadId) => {
+    if (!threadId) return;
+    openThreadFromNotification(threadId);
+    setActiveTab('chat');
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    initializePushNotifications((data) => openChatNotification(data?.threadId || data?.thread_id))
+      .catch((err) => console.warn('[push] initialization failed', err?.message || err));
+    return undefined;
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated || typeof window === 'undefined') return undefined;
+    const openFromPayload = (threadId) => openChatNotification(threadId);
+    const url = new URL(window.location.href);
+    const initialThreadId = url.searchParams.get('chatThread');
+    if (initialThreadId) {
+      openFromPayload(initialThreadId);
+      url.searchParams.delete('chatThread');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    }
+    const handleServiceWorkerMessage = (event) => {
+      if (event.data?.type === 'OPEN_CHAT_THREAD') openFromPayload(event.data.threadId);
+    };
+    navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage);
+  }, [isAuthenticated]);
+
+  // 웹이 열려 있을 때 들어오는 새 메시지는 OS 알림으로 표시한다. 초기 채팅
+  // hydrate 결과는 기준선으로만 저장해 과거 메시지가 한꺼번에 울리지 않게 한다.
+  useEffect(() => {
+    if (!chatLoadedAt) {
+      chatNotificationReadyRef.current = false;
+      seenChatMessageIdsRef.current = new Set();
+      return;
+    }
+    if (!chatNotificationReadyRef.current) {
+      seenChatMessageIdsRef.current = new Set(chatMessages.map((message) => message.id));
+      chatNotificationReadyRef.current = true;
+      return;
+    }
+
+    for (const message of chatMessages) {
+      if (seenChatMessageIdsRef.current.has(message.id)) continue;
+      seenChatMessageIdsRef.current.add(message.id);
+      if (message.sender_id === authUserId) continue;
+      if (activeTab === 'chat' && activeChatThreadId === message.thread_id) continue;
+
+      const thread = chatThreads.find((item) => item.id === message.thread_id);
+      const sender = chatMembers.find((member) => member.user_id === message.sender_id);
+      const title = thread?.kind === 'group'
+        ? (thread.title || (thread.group_scope === 'custom' ? '단톡방' : '학원 전체'))
+        : (sender?.display_name || sender?.email || '새 채팅');
+      showForegroundChatNotification({
+        title,
+        body: message.body,
+        threadId: message.thread_id,
+        onClick: () => openChatNotification(message.thread_id),
+      });
+    }
+  }, [
+    chatLoadedAt,
+    chatMessages,
+    chatThreads,
+    chatMembers,
+    authUserId,
+    activeTab,
+    activeChatThreadId,
+  ]);
 
   // server count loaders 완료 여부 — auto-hydrate 진입 가드.
   const serverStudentsLoadedAt = useWorkspaceStore((s) => s.serverStudentsLoadedAt);

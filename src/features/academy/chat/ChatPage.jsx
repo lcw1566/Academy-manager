@@ -1,13 +1,14 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, ChevronLeft, Send, Users, Megaphone, Search, Check, Loader2 } from 'lucide-react';
+import { Plus, ChevronLeft, Send, Users, Megaphone, Search, Check, Loader2, Bell } from 'lucide-react';
 import useChatStore, { unreadCountForThread } from '../../../store/useChatStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
+import { checkNotificationPermission, requestNotificationPermission } from '../../../services/pushNotifications';
 
 const ROLE_LABELS = { owner: '원장', teacher: '강사', assistant: '보조강사' };
 
@@ -49,6 +50,39 @@ export default function ChatPage() {
 
   const [selectedThreadId, setSelectedThreadId] = useState(null);
   const [showPicker, setShowPicker] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState('checking');
+  const requestedThreadId = useChatStore((s) => s.requestedThreadId);
+  const clearRequestedThread = useChatStore((s) => s.clearRequestedThread);
+  const setActiveThreadId = useChatStore((s) => s.setActiveThreadId);
+
+  useEffect(() => {
+    checkNotificationPermission()
+      .then(setNotificationPermission)
+      .catch(() => setNotificationPermission('unsupported'));
+  }, []);
+
+  useEffect(() => {
+    if (!requestedThreadId) return;
+    if (threads.some((thread) => thread.id === requestedThreadId)) {
+      setSelectedThreadId(requestedThreadId);
+      clearRequestedThread();
+    }
+  }, [requestedThreadId, threads, clearRequestedThread]);
+
+  useEffect(() => {
+    setActiveThreadId(selectedThreadId);
+    return () => setActiveThreadId(null);
+  }, [selectedThreadId, setActiveThreadId]);
+
+  const enableNotifications = async () => {
+    try {
+      const permission = await requestNotificationPermission();
+      setNotificationPermission(permission);
+    } catch (err) {
+      console.warn('[push] permission request failed', err?.message || err);
+      setNotificationPermission('denied');
+    }
+  };
 
   // 채팅 탭을 열 때 직접 로드 — 전역 effect 타이밍에 의존하지 않는다.
   // (현재 학원에 대해 아직 로드 안 됐으면 1회 로드.)
@@ -138,6 +172,23 @@ export default function ChatPage() {
       />
 
       <div className="pt-14 md:pt-0 pb-6">
+        {(notificationPermission === 'default' || notificationPermission === 'prompt' || notificationPermission === 'prompt-with-rationale') && (
+          <div className="px-4 pt-4">
+            <button
+              type="button"
+              onClick={enableNotifications}
+              className="w-full flex items-center gap-3 rounded-2xl bg-blue-50 px-4 py-3 text-left"
+            >
+              <span className="w-9 h-9 rounded-full bg-white flex items-center justify-center shadow-sm">
+                <Bell size={17} className="text-[#0064FF]" />
+              </span>
+              <span className="flex-1">
+                <span className="block text-sm font-bold text-gray-900">채팅 알림 켜기</span>
+                <span className="block text-xs text-gray-500 mt-0.5">새 메시지를 바로 알려드릴게요.</span>
+              </span>
+            </button>
+          </div>
+        )}
         {sortedThreads.length === 0 ? (
           <EmptyState
             icon="💬"
@@ -145,7 +196,7 @@ export default function ChatPage() {
             description="+ 버튼으로 직원과 1:1 대화를 시작해보세요."
           />
         ) : (
-          <div className="px-3 pt-3 flex flex-col gap-1">
+          <div className="px-4 pt-4 flex flex-col gap-2">
             {sortedThreads.map((thread) => {
               const last = lastMsgByThread[thread.id];
               const unread = unreadCountForThread({ messages, reads }, thread.id, authUserId);
@@ -159,7 +210,7 @@ export default function ChatPage() {
                   key={thread.id}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setSelectedThreadId(thread.id)}
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl active:bg-gray-50 text-left"
+                  className="w-full flex items-center gap-3 bg-white rounded-2xl p-4 shadow-sm text-left"
                 >
                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${isGroup ? 'bg-blue-50' : 'bg-gray-100'}`}>
                     {isGroup
