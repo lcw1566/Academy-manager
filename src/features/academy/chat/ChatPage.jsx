@@ -10,7 +10,7 @@ import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import { checkNotificationPermission, requestNotificationPermission } from '../../../services/pushNotifications';
 
-const ROLE_LABELS = { owner: '원장', teacher: '강사', assistant: '보조강사' };
+const ROLE_LABELS = { owner: '원장', teacher: '강사', assistant: '보조강사', manager: '운영 매니저' };
 
 function formatTime(iso) {
   if (!iso) return '';

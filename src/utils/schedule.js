@@ -441,9 +441,11 @@ export function plannedToClassSessionShape(plannedItems = [], classGroups = []) 
 }
 
 // planned staff items 를 academyStaffShifts 모양으로 변환 (UI 호환).
-// 입력: buildPlannedStaffSchedule 결과 + academyTeachers/academyAssistants
+// 입력: buildPlannedStaffSchedule 결과 + academyTeachers/academyAssistants/academyManagers
 //   (staff_user_id → local staffId 매핑용).
-export function plannedToStaffShiftShape(plannedItems = [], { academyTeachers = [], academyAssistants = [] } = {}) {
+export function plannedToStaffShiftShape(plannedItems = [], {
+  academyTeachers = [], academyAssistants = [], academyManagers = [],
+} = {}) {
   const teacherByUserId = new Map();
   for (const t of academyTeachers) {
     if (t?.serverUserId) teacherByUserId.set(t.serverUserId, t);
@@ -452,16 +454,22 @@ export function plannedToStaffShiftShape(plannedItems = [], { academyTeachers = 
   for (const a of academyAssistants) {
     if (a?.serverUserId) assistantByUserId.set(a.serverUserId, a);
   }
+  const managerByUserId = new Map();
+  for (const m of academyManagers) {
+    if (m?.serverUserId) managerByUserId.set(m.serverUserId, m);
+  }
   const out = [];
   for (const p of plannedItems) {
     const role = p.staffRole;
     let localStaff = null;
     if (role === 'teacher') localStaff = teacherByUserId.get(p.staffUserId) || null;
     else if (role === 'assistant') localStaff = assistantByUserId.get(p.staffUserId) || null;
+    else if (role === 'manager') localStaff = managerByUserId.get(p.staffUserId) || null;
     else {
-      // role 미상 (extra exception 등) — teacher/assistant 양쪽 lookup.
+      // role 미상 (extra exception 등) — 등록된 모든 직원군에서 lookup.
       localStaff = teacherByUserId.get(p.staffUserId)
         || assistantByUserId.get(p.staffUserId)
+        || managerByUserId.get(p.staffUserId)
         || null;
     }
     out.push({

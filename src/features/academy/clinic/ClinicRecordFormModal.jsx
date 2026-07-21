@@ -156,7 +156,7 @@ export default function ClinicRecordFormModal({
   const {
     addClinicRecord, updateClinicRecord, setClinicRecordServerId,
     academyStudents, classGroups, classSessions, academyLessonRecords,
-    academyTeachers, academyAssistants, role,
+    academyTeachers, academyAssistants, academyManagers = [], role,
     showToast,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -257,8 +257,15 @@ export default function ClinicRecordFormModal({
         email: authUserEmail,
       });
     }
+    if (role === 'manager') {
+      return findLocalStaffForUser(academyManagers, {
+        userId: authUserId,
+        memberId: currentMembership?.id,
+        email: authUserEmail,
+      });
+    }
     return null;
-  }, [role, academyTeachers, academyAssistants, authUserId, currentMembership?.id, authUserEmail]);
+  }, [role, academyTeachers, academyAssistants, academyManagers, authUserId, currentMembership?.id, authUserEmail]);
 
   const currentSourceSupportTags =
     activeRelayTarget?.sourceSupportTags
@@ -415,6 +422,8 @@ export default function ClinicRecordFormModal({
         ? (authUserId ? `teacher_${authUserId}` : academyTeachers[0]?.id || '')
         : role === 'assistant'
           ? (authUserId ? `assistant_${authUserId}` : academyAssistants[0]?.id || '')
+          : role === 'manager'
+            ? (authUserId ? `manager_${authUserId}` : academyManagers[0]?.id || '')
           : '';
       const writerRole = editRecord?.createdByRole || role;
       const writerId = editRecord?.createdById || currentStaff?.id || fallbackCreatedById;

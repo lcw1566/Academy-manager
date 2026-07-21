@@ -24,7 +24,16 @@ supabase/
     ├── 013_teacher_assignment_user_id.sql (담당 강사 user_id 영속화)
     ├── 014_schedule_rules_refactor.sql (룰 기반 스케줄)
     ├── 015_staff_attendance_logs_self_rls.sql (직원 본인 근태 로그 RLS)
-    └── 016_profiles_signup_trigger_and_realtime.sql (가입 즉시 profile 생성 + Realtime 등록)
+    ├── 016_profiles_signup_trigger_and_realtime.sql (가입 즉시 profile 생성 + Realtime 등록)
+    ├── 017_domain_realtime_publication.sql (도메인 테이블 Realtime 등록)
+    ├── 018_student_pin_public_checkin.sql (학생 PIN 공개 체크인)
+    ├── 019_academy_chat.sql (학원 직원 채팅)
+    ├── 020_academy_chat_members_rpc.sql (채팅 멤버 디렉터리 RPC)
+    ├── 021_academy_onboarding_settings.sql (학원 온보딩 설정)
+    ├── 022_chat_push_notifications.sql (채팅 푸시 기기 등록)
+    ├── 023_chat_push_service_role_grants.sql (푸시 함수 권한)
+    ├── 024_academy_drive.sql (공유 드라이브 비공개 Storage + 파일별 다운로드 정책)
+    └── 025_operations_manager_role.sql (운영 매니저 역할 + 데스크 운영 권한/RLS)
 ```
 
 ## 실행 순서 요약
@@ -47,6 +56,15 @@ supabase/
 | 14 | `014_schedule_rules_refactor.sql` | 직원/수업 룰 기반 스케줄 테이블 |
 | 15 | `015_staff_attendance_logs_self_rls.sql` | 직원 본인 근태 로그 조회/기록 RLS |
 | 16 | `016_profiles_signup_trigger_and_realtime.sql` | auth.users 가입 직후 profiles row 생성, 초대/멤버 Realtime 등록 |
+| 17 | `017_domain_realtime_publication.sql` | 도메인 테이블 Realtime publication 등록 |
+| 18 | `018_student_pin_public_checkin.sql` | 학생 PIN 기반 공개 등·하원 처리 |
+| 19 | `019_academy_chat.sql` | 학원 직원 채팅 테이블·RLS·RPC |
+| 20 | `020_academy_chat_members_rpc.sql` | 직원용 채팅 멤버 디렉터리 RPC |
+| 21 | `021_academy_onboarding_settings.sql` | 학원 온보딩 설정 컬럼 |
+| 22 | `022_chat_push_notifications.sql` | 채팅 푸시 기기 등록 및 정책 |
+| 23 | `023_chat_push_service_role_grants.sql` | 채팅 푸시 함수용 서비스 역할 권한 |
+| 24 | `024_academy_drive.sql` | 비공개 `academy-drive` 버킷, `academy_drive_files` 메타데이터, 원장 관리 RLS |
+| 25 | `025_operations_manager_role.sql` | 운영 매니저 초대·근무표·학생/수납·공유 드라이브 관리. 학원 삭제·최종 설정·급여 관리는 원장 전용 |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -54,6 +72,27 @@ supabase/
 > ⚠ **002 는 001 의 helper function 에 의존합니다.**
 > `public.set_updated_at`, `public.is_member_of_academy`, `public.is_owner_of_academy`
 > 가 없으면 002 실행 시 에러가 납니다. 반드시 001 → 002 순서로 실행하세요.
+
+### 공유 드라이브 배포 (024)
+
+1. 기존 SQL을 적용한 뒤 `supabase/sql/024_academy_drive.sql` 전체를 SQL Editor에서 실행합니다.
+2. Supabase CLI로 Edge Function을 배포합니다.
+
+   ```bash
+   supabase functions deploy academy-drive-file
+   ```
+
+3. 함수에는 Supabase가 기본 제공하는 `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+   `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다. 서비스 역할 키는 브라우저 환경변수에
+   절대 넣지 않습니다.
+
+이후 학원 멤버는 자료 목록을 볼 수 있고, 원장은 업로드·삭제·파일별 다운로드 허용을
+관리합니다. 직원의 파일 열람/인쇄/다운로드 URL은 `academy-drive-file` 함수가 활성
+멤버십과 `download_allowed`를 확인한 뒤 60초 동안만 발급합니다.
+
+앱 안 열람·인쇄 형식은 PDF, 이미지, Word `.docx`, 한글 `.hwp`/`.hwpx`,
+텍스트·CSV입니다. `.doc`, Excel, PowerPoint 등도 드라이브에 안전하게 보관·권한
+관리할 수 있으며, 서식 그대로 앱 안에서 인쇄해야 하는 자료는 PDF로 변환해 올리면 됩니다.
 
 ---
 

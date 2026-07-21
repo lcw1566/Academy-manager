@@ -2,16 +2,25 @@ import { useState, useMemo } from 'react';
 import { Plus, Search, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
+import useWorkspaceStore from '../../../store/useWorkspaceStore';
+import { currentUserCan } from '../../../utils/staffPermissions';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
 
 export default function AcademyStudentsPage() {
   const { role, academyStudents, classGroups, clinicTasks, navigateToAcademyStudent } = useAcademyStore();
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
 
-  const isOwner = role === 'owner';
+  const myStaffProfile = academyStaffProfiles.find((profile) => profile.user_id === authUserId) || null;
+  const canManageStudents = role === 'owner' || currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageStudents',
+  );
 
   const filtered = useMemo(() =>
     academyStudents.filter((s) => !search || s.name.includes(search) || s.school?.includes(search)),
@@ -29,7 +38,7 @@ export default function AcademyStudentsPage() {
       <Header
         title="학생"
         right={
-          isOwner ? (
+          canManageStudents ? (
             <motion.button whileTap={{ scale: 0.97 }} onClick={() => setShowForm(true)}
               className="h-9 w-9 md:w-auto md:px-4 flex items-center justify-center gap-1.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold shadow-sm active:bg-[#0050CC]">
               <Plus size={14} />
@@ -64,9 +73,9 @@ export default function AcademyStudentsPage() {
           <EmptyState
             icon="👤"
             title={academyStudents.length === 0 ? '학생이 없어요' : '검색 결과가 없어요'}
-            description={academyStudents.length === 0 && isOwner ? '학생을 등록하고 반에 배정해요.' : ''}
+            description={academyStudents.length === 0 && canManageStudents ? '학생을 등록하고 반에 배정해요.' : ''}
             action={
-              academyStudents.length === 0 && isOwner ? (
+              academyStudents.length === 0 && canManageStudents ? (
                 <button onClick={() => setShowForm(true)} className="bg-blue-600 text-white text-sm font-semibold px-6 py-2.5 rounded-xl">
                   학생 등록
                 </button>

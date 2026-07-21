@@ -23,6 +23,7 @@ import {
 } from '../../../utils/date';
 import { hhmmToMin } from '../../../utils/shiftCoverage';
 import { getTeacherDisplayName } from '../../../utils/format';
+import { currentUserCan } from '../../../utils/staffPermissions';
 import ClassGroupFormModal, {
   mapClassSessionToServerPayload,
   matchSessionPairs,
@@ -88,6 +89,15 @@ export default function ClassGroupDetailPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authUserId = useAuthStore((s) => s.user?.id);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const myStaffProfile = useMemo(
+    () => academyStaffProfiles.find((profile) => profile.user_id === authUserId) || null,
+    [academyStaffProfiles, authUserId],
+  );
+  const canManageClasses = currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageClasses',
+  );
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
 
@@ -266,7 +276,7 @@ export default function ClassGroupDetailPage() {
       <Header
         title={group.name}
         onBack={goBackFromClassGroup}
-        right={role === 'owner' ? (
+        right={canManageClasses ? (
           <div className="flex items-center gap-1">
             <motion.button
               type="button"

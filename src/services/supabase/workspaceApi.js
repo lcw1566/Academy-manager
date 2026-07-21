@@ -164,8 +164,8 @@ function normalizeEmail(email) {
 }
 
 function assertInviteRole(role) {
-  if (!['teacher', 'assistant'].includes(role)) {
-    throw new Error('초대 역할은 강사 또는 보조강사여야 해요.');
+  if (!['teacher', 'assistant', 'manager'].includes(role)) {
+    throw new Error('초대 역할은 강사, 보조강사 또는 운영 매니저여야 해요.');
   }
 }
 
@@ -532,8 +532,8 @@ export async function upsertAcademyStaffProfile({ academyId, userId, ...rest }) 
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
   if (!userId) throw new Error('userId가 필요해요.');
-  if (rest.role && !['teacher', 'assistant'].includes(rest.role)) {
-    throw new Error('role 은 teacher 또는 assistant 여야 해요.');
+  if (rest.role && !['teacher', 'assistant', 'manager'].includes(rest.role)) {
+    throw new Error('role 은 teacher, assistant 또는 manager 여야 해요.');
   }
   const payload = {
     academy_id: academyId,
@@ -543,6 +543,25 @@ export async function upsertAcademyStaffProfile({ academyId, userId, ...rest }) 
   const { data, error } = await supabase
     .from('academy_staff_profiles')
     .upsert(payload, { onConflict: 'academy_id,user_id' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// 실제 앱 역할은 academy_members.role 이 source of truth다. 직원 프로필의
+// role만 바꾸면 다음 로그인 때 이전 역할로 돌아가므로, 원장이 역할을 변경할 때는
+// 두 테이블을 함께 갱신한다. RLS는 owner만 이 변경을 허용한다.
+export async function updateAcademyMemberRole({ academyId, userId, role }) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!userId) throw new Error('userId가 필요해요.');
+  assertInviteRole(role);
+  const { data, error } = await supabase
+    .from('academy_members')
+    .update({ role })
+    .eq('academy_id', academyId)
+    .eq('user_id', userId)
     .select()
     .single();
   if (error) throw error;

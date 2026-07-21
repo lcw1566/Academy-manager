@@ -134,6 +134,7 @@ async function syncStaffShifts({ academyId, targetMonth }) {
     exceptions: workspaceState.staffWorkExceptions || [],
     academyTeachers: academyState.academyTeachers || [],
     academyAssistants: academyState.academyAssistants || [],
+    academyManagers: academyState.academyManagers || [],
   }) || [];
 
   for (const shift of created) {

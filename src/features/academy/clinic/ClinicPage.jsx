@@ -131,7 +131,11 @@ export default function ClinicPage() {
   const canEditRecord = () => canEditClinic;
   // Supabase RLS 에서 academy delete 는 owner 중심이라 서버 기록 삭제는 owner 에게만 노출.
   // 서버에 아직 올라가지 않은 로컬 기록은 작성자도 삭제할 수 있다.
-  const canDeleteRecord = (record) => role === 'owner' || (!record?.serverId && canEditRecord(record));
+  const canDeleteRecord = (record) => (
+    role === 'owner'
+    || role === 'manager'
+    || (!record?.serverId && canEditRecord(record))
+  );
 
   const buildSupportRelayTarget = (item) => ({
     studentId: item.studentId,

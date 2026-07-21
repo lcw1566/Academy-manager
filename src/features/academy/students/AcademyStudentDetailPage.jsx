@@ -24,6 +24,7 @@ const TABS_BY_ROLE = {
   owner:     ['요약', '수업 기록', '클리닉 기록', '정산'],
   teacher:   ['요약', '수업 기록', '클리닉 기록'],
   assistant: ['요약', '클리닉 기록'],
+  manager:   ['요약', '수업 기록', '클리닉 기록', '정산'],
 };
 
 function nowHHMM() {
@@ -318,6 +319,10 @@ export default function AcademyStudentDetailPage() {
     { role, staffProfile: myStaffProfile },
     'canEditClinicRecords',
   );
+  const canManageStudents = currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageStudents',
+  );
 
   const [activeTab, setActiveTab] = useState('요약');
   const [showEdit, setShowEdit] = useState(false);
@@ -432,7 +437,7 @@ export default function AcademyStudentDetailPage() {
           {student.phone && <InfoRowFull label="연락처" value={student.phone} phone={student.phone} />}
           {student.parentName && <InfoRowFull label="학부모" value={student.parentName} />}
           {student.parentPhone && <InfoRowFull label="학부모 연락처" value={student.parentPhone} phone={student.parentPhone} />}
-          {role === 'owner' && student.checkinPin && <InfoRowFull label="등하원 PIN" value={student.checkinPin} />}
+          {canManageStudents && student.checkinPin && <InfoRowFull label="등하원 PIN" value={student.checkinPin} />}
           {student.memo && <InfoRowFull label="메모" value={student.memo} />}
         </div>
       </div>
@@ -771,7 +776,7 @@ export default function AcademyStudentDetailPage() {
       <Header
         title={student.name}
         onBack={goBackFromAcademyStudent}
-        right={role === 'owner' ? (
+        right={canManageStudents ? (
           <div className="flex items-center gap-1">
             <button
               type="button"

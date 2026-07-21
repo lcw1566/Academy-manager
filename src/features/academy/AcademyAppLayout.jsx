@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList } from 'lucide-react';
+import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -22,6 +22,7 @@ const loadSettlementPage = () => import('./settlement/SettlementPage');
 const loadPayrollPage = () => import('./payroll/PayrollPage');
 const loadStaffPage = () => import('./staff/StaffPage');
 const loadChatPage = () => import('./chat/ChatPage');
+const loadDrivePage = () => import('./drive/DrivePage');
 
 const OwnerDashboard = lazy(loadOwnerDashboard);
 const TeacherDashboard = lazy(loadTeacherDashboard);
@@ -37,19 +38,21 @@ const SettlementPage = lazy(loadSettlementPage);
 const PayrollPage = lazy(loadPayrollPage);
 const StaffPage = lazy(loadStaffPage);
 const ChatPage = lazy(loadChatPage);
+const DrivePage = lazy(loadDrivePage);
 
 const COMMON_ACADEMY_TAB_LOADERS = [
   loadClassGroupsPage,
   loadAcademyStudentsPage,
   loadChatPage,
+  loadDrivePage,
   loadAcademyMorePage,
 ];
 
 // Phase 40 — 기존 "근무" 탭을 "직원" 으로 통합. 직원 리스트 + 근무 스케줄 +
 // 계약/권한/배정까지 한 탭에서 처리한다. More 탭은 학원·계정 설정만 남긴다.
 //
-// Phase 44 (Pilot Hotfix) — 직원 탭은 owner 전용. teacher/assistant 는 본인
-// 출퇴근만 Home 카드에서 처리하므로 별도 탭 불필요.
+// 강사/보조강사는 본인 출퇴근만 Home 카드에서 처리한다. 운영 매니저는
+// 데스크 실무를 위해 직원·정산·공유자료 탭에 접근하되, 원장 전용 설정은 제외한다.
 const TAB_CONFIG = {
   owner: [
     { id: 'home',       label: '홈',    Icon: Home },
@@ -58,6 +61,7 @@ const TAB_CONFIG = {
     { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
     { id: 'staff',      label: '직원',   Icon: UserCog },
     { id: 'settlement', label: '정산',  Icon: BarChart2 },
+    { id: 'drive',      label: '드라이브', Icon: FolderOpen },
     { id: 'chat',       label: '채팅',  Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
@@ -67,6 +71,7 @@ const TAB_CONFIG = {
     { id: 'students', label: '학생', Icon: Users },
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
+    { id: 'drive',    label: '드라이브', Icon: FolderOpen },
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
@@ -79,8 +84,20 @@ const TAB_CONFIG = {
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
+    { id: 'drive',    label: '드라이브', Icon: FolderOpen },
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
+  ],
+  manager: [
+    { id: 'home',       label: '홈',    Icon: Home },
+    { id: 'classes',    label: '수업',  Icon: BookOpen },
+    { id: 'students',   label: '학생',  Icon: Users },
+    { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
+    { id: 'staff',      label: '직원',  Icon: UserCog },
+    { id: 'settlement', label: '정산',  Icon: BarChart2 },
+    { id: 'drive',      label: '드라이브', Icon: FolderOpen },
+    { id: 'chat',       label: '채팅', Icon: MessageCircle },
+    { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
 };
 
@@ -126,6 +143,8 @@ export default function AcademyAppLayout() {
       ? [loadClinicPage, loadStaffPage, loadSettlementPage]
       : role === 'teacher'
       ? [loadClinicPage, loadPayrollPage]
+      : role === 'manager'
+      ? [loadClinicPage, loadStaffPage, loadSettlementPage]
       : [loadPayrollPage];
     const preload = () => [...COMMON_ACADEMY_TAB_LOADERS, ...roleLoaders]
       .forEach((load) => load().catch(() => {}));
@@ -167,10 +186,13 @@ export default function AcademyAppLayout() {
         return currentUserCan({ role, staffProfile: myStaffProfile }, 'canViewStudents');
       }
       if (tab.id === 'settlement') {
-        // 정산 탭은 owner 기본만 노출 (TAB_CONFIG.owner 에만 포함). owner 의 정산에는
-        // 수납 관리도 포함되므로 owner 한정 + 향후 staff 에게 부여 시 canViewPayments 사용.
+        // 운영 매니저는 수납 실무만, 원장은 급여/설정까지 관리한다.
         if (role === 'owner') return true;
         return currentUserCan({ role, staffProfile: myStaffProfile }, 'canViewPayments');
+      }
+      if (tab.id === 'staff') {
+        return role === 'owner'
+          || currentUserCan({ role, staffProfile: myStaffProfile }, 'canManageStaff');
       }
       return true;
     });
@@ -236,6 +258,7 @@ export default function AcademyAppLayout() {
     if (role === 'owner')     return <OwnerDashboard />;
     if (role === 'teacher')   return <TeacherDashboard />;
     if (role === 'assistant') return <AssistantDashboard />;
+    if (role === 'manager')   return <OwnerDashboard operationsOnly />;
     return <OwnerDashboard />;
   };
 
@@ -246,10 +269,11 @@ export default function AcademyAppLayout() {
       if (activeTab === 'classes')    return selectedClassGroupId ? <ClassGroupDetailPage /> : <ClassGroupsPage />;
       if (activeTab === 'students')   return selectedAcademyStudentId ? <AcademyStudentDetailPage /> : <AcademyStudentsPage />;
       if (activeTab === 'clinic')     return <ClinicPage />;
-      if (activeTab === 'settlement') return <SettlementPage />;
+      if (activeTab === 'settlement') return <SettlementPage operationsOnly={role === 'manager'} />;
       if (activeTab === 'payroll')    return <PayrollPage />;
       if (activeTab === 'staff')      return <StaffPage />;
       if (activeTab === 'chat')       return <ChatPage />;
+      if (activeTab === 'drive')      return <DrivePage />;
       // Phase 40 호환 — 이전 버전 store 에 'work' 가 저장되어 있어도 staff 로 매핑.
       if (activeTab === 'work')       return <StaffPage />;
       if (activeTab === 'more')       return <AcademyMorePage />;

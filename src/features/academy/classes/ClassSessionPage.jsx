@@ -519,18 +519,26 @@ export default function ClassSessionPage() {
   const canEditLessonRecords =
     role === 'owner'
       ? true
+      : role === 'manager'
+        ? currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
       : role === 'teacher'
         && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
         && isMyAssignedSession;
   const canEditAttendance =
     role === 'owner'
       ? true
+      : role === 'manager'
+        ? currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance')
       : role === 'teacher'
         && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance')
         && isMyAssignedSession;
   // 기존 canEdit (lesson record 입력/저장) → 권한 기반.
   const canEdit = canEditLessonRecords;
   const isOwnerRole = role === 'owner';
+  const canManageSession = role === 'owner' || (
+    role === 'manager'
+    && currentUserCan({ role, staffProfile: myStaffProfile }, 'canManageClasses')
+  );
 
   const substituteTeacher = useMemo(() => {
     if (!session?.substituteTeacherId) return null;
@@ -747,7 +755,7 @@ export default function ClassSessionPage() {
             </div>
 
             {/* Phase 30 — 대체 강사 */}
-            {(substituteTeacher || isOwnerRole) && (
+            {(substituteTeacher || canManageSession) && (
               <div className="mt-3 pt-3 border-t border-gray-50">
                 {substituteTeacher ? (
                   <div className="flex items-center gap-2">
@@ -762,7 +770,7 @@ export default function ClassSessionPage() {
                         <p className="text-[11px] text-gray-500 truncate">{session.substituteReason}</p>
                       )}
                     </div>
-                    {isOwnerRole && (
+                    {canManageSession && (
                       <button
                         type="button"
                         onClick={() => setSubstituteModalOpen(true)}
@@ -786,7 +794,7 @@ export default function ClassSessionPage() {
             )}
 
             {/* Phase 44.7 / Phase C — 회차 변경 (휴강/시간변경/보강) */}
-            {isOwnerRole && (
+            {canManageSession && (
               <div className="mt-2">
                 <button
                   type="button"

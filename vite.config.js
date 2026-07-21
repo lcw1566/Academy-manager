@@ -18,6 +18,10 @@ export default defineConfig({
           if (id.includes('/lucide-react/')) return 'icons-vendor';
           if (id.includes('/@capacitor/')) return 'capacitor-vendor';
           if (id.includes('/qrcode/') || id.includes('/jsqr/')) return 'qr-vendor';
+          // 공유 드라이브에서만 동적으로 불러오는 문서 렌더러. 기본 앱 번들에
+          // HWP/HWPX·DOCX 파서를 섞지 않아 초기 로딩을 유지한다.
+          if (id.includes('/docx-preview/') || id.includes('/jszip/')) return 'document-docx-vendor';
+          if (id.includes('/@ssabrojs/hwpxjs/')) return 'document-hangul-vendor';
           return 'vendor';
         },
       },

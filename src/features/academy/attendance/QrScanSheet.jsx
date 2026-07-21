@@ -48,6 +48,7 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
   const role = useAcademyStore((s) => s.role);
   const academyTeachers = useAcademyStore((s) => s.academyTeachers) ?? [];
   const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
+  const academyManagers = useAcademyStore((s) => s.academyManagers) ?? [];
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
   const academyStudents = useAcademyStore((s) => s.academyStudents) ?? [];
   const updateAcademyStaffShift = useAcademyStore((s) => s.updateAcademyStaffShift);
@@ -67,10 +68,10 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
   );
   const myStaff = useMemo(
     () => findLocalStaffForUser(
-      role === 'assistant' ? academyAssistants : academyTeachers,
+      role === 'assistant' ? academyAssistants : role === 'manager' ? academyManagers : academyTeachers,
       { userId: authUserId, memberId: myMembership?.id, email: authUserEmail },
     ),
-    [academyTeachers, academyAssistants, role, authUserId, myMembership?.id, authUserEmail],
+    [academyTeachers, academyAssistants, academyManagers, role, authUserId, myMembership?.id, authUserEmail],
   );
 
   const [paste, setPaste] = useState('');
@@ -240,7 +241,9 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
 
   const handleStaffCheckin = async () => {
     const staffUserId = myStaff?.serverUserId || authUserId;
-    const staffRoleForLog = myStaff?._role || staffRoleFallback || (role === 'assistant' ? 'assistant' : 'teacher');
+    const staffRoleForLog = myStaff?._role || staffRoleFallback || (
+      role === 'assistant' ? 'assistant' : role === 'manager' ? 'manager' : 'teacher'
+    );
     if (!staffUserId) {
       setResult({ ok: false, title: '로그인 정보를 확인할 수 없어요.', detail: '다시 로그인한 뒤 시도해주세요.' });
       return;

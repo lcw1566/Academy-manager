@@ -21,7 +21,7 @@ import { membershipRoleToAppRole } from './utils/format';
 import { tossSpring } from './utils/motion';
 import { initializePushNotifications, showForegroundChatNotification } from './services/pushNotifications';
 
-const ACADEMY_ROLES = ['owner', 'teacher', 'assistant'];
+const ACADEMY_ROLES = ['owner', 'teacher', 'assistant', 'manager'];
 
 function isPublicCheckinRequest() {
   if (typeof window === 'undefined') return false;

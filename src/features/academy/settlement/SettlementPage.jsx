@@ -16,6 +16,7 @@ import { updateAcademyBillingSettings } from '../../../services/supabase/workspa
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
 import { formatMonth } from '../../../utils/date';
+import { currentUserCan } from '../../../utils/staffPermissions';
 
 // local 수납 → server payments 컬럼 매핑. student.serverId 없으면 null 반환.
 function mapLocalPaymentToServerPayload({ payment, student, group }) {
@@ -86,10 +87,10 @@ function getMonthDateRange(month) {
   };
 }
 
-export default function SettlementPage() {
+export default function SettlementPage({ operationsOnly = false }) {
   const {
-    academyStudents, classGroups, academyPayments,
-    academyTeachers, academyAssistants, academyPayrolls,
+    role, academyStudents, classGroups, academyPayments,
+    academyTeachers, academyAssistants, academyManagers = [], academyPayrolls,
     academyProfile, setAcademyProfile,
     updateAcademyPayment, addAcademyPayment, deleteAcademyPayment,
     generatePayrollsForMonth, markPayrollPaid,
@@ -98,11 +99,21 @@ export default function SettlementPage() {
     showToast,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authUserId = useAuthStore((s) => s.user?.id);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
   const loadServerPayrolls = useWorkspaceStore((s) => s.loadServerPayrolls);
   const loadMemberships = useWorkspaceStore((s) => s.loadMemberships);
   const loadStaffAttendanceLogs = useWorkspaceStore((s) => s.loadStaffAttendanceLogs);
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const myStaffProfile = useMemo(
+    () => academyStaffProfiles.find((profile) => profile.user_id === authUserId) || null,
+    [academyStaffProfiles, authUserId],
+  );
+  const canManagePayments = role === 'owner' || currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManagePayments',
+  );
   // Phase 39 — memberships 에 academy:academies(*) 로 fetch 되므로 최신값 우선 사용.
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const myAcademy = useMemo(
@@ -187,9 +198,10 @@ export default function SettlementPage() {
   const getGroupName = (id) => classGroups.find((g) => g.id === id)?.name || '';
   const getStaffName = (payroll) => {
     if (payroll.staffType === 'teacher') return academyTeachers.find((t) => t.id === payroll.staffId)?.name || '강사';
-    return academyAssistants.find((a) => a.id === payroll.staffId)?.name || '보조강사';
+    if (payroll.staffType === 'assistant') return academyAssistants.find((a) => a.id === payroll.staffId)?.name || '보조강사';
+    return academyManagers.find((m) => m.id === payroll.staffId)?.name || '운영 매니저';
   };
-  const getStaffTypeLabel = (type) => type === 'teacher' ? '강사' : '보조강사';
+  const getStaffTypeLabel = (type) => type === 'teacher' ? '강사' : type === 'assistant' ? '보조강사' : '운영 매니저';
   const getHourlyModeLabel = () => '실제 근퇴 기준';
 
   const unpaidStudents = useMemo(
@@ -203,6 +215,7 @@ export default function SettlementPage() {
   const canSyncServer = isAuthenticated && currentAcademyId;
 
   const handleTogglePaid = async (payment) => {
+    if (!canManagePayments) return;
     const nextStatus = payment.status === 'paid' ? 'unpaid' : 'paid';
     const todayStr = new Date().toISOString().slice(0, 10);
     const patch = nextStatus === 'paid'
@@ -289,6 +302,7 @@ export default function SettlementPage() {
   };
 
   const handleAddPayment = async () => {
+    if (!canManagePayments) return;
     if (!addForm.studentId || !addForm.amount) return;
     const group = classGroups.find((g) => g.id === addForm.classGroupId);
     const student = academyStudents.find((s) => s.id === addForm.studentId);
@@ -332,6 +346,7 @@ export default function SettlementPage() {
   };
 
   const handleDeletePayment = async (payment) => {
+    if (!canManagePayments) return;
     const serverId = payment.serverId || null;
     deleteAcademyPayment(payment.id);
     if (serverId && canSyncServer) {
@@ -455,7 +470,7 @@ export default function SettlementPage() {
 
         {/* 요약 카드 */}
         <div className="px-4 mb-4 flex gap-2">
-          <div className="grid grid-cols-3 gap-2 flex-1 min-w-0">
+          <div className={`grid ${operationsOnly ? 'grid-cols-2' : 'grid-cols-3'} gap-2 flex-1 min-w-0`}>
             <div className="bg-white rounded-2xl p-3 shadow-sm text-center col-span-1">
               <p className="text-lg font-bold text-blue-600">{paymentSummary.paid.toLocaleString()}</p>
               <p className="text-[10px] text-gray-400 mt-0.5">수납 완료</p>
@@ -464,14 +479,14 @@ export default function SettlementPage() {
               <p className="text-lg font-bold text-red-500">{paymentSummary.unpaid.toLocaleString()}</p>
               <p className="text-[10px] text-gray-400 mt-0.5">미납</p>
             </div>
-            <div className={`rounded-2xl p-3 shadow-sm text-center col-span-1 ${netSummary >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+            {!operationsOnly && <div className={`rounded-2xl p-3 shadow-sm text-center col-span-1 ${netSummary >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
               <p className={`text-lg font-bold ${netSummary >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {netSummary.toLocaleString()}
               </p>
               <p className="text-[10px] text-gray-400 mt-0.5">급여 차감 후</p>
-            </div>
+            </div>}
           </div>
-          <button
+          {!operationsOnly && <button
             type="button"
             aria-label="정산 설정"
             title="정산 설정"
@@ -483,11 +498,11 @@ export default function SettlementPage() {
             }`}
           >
             <Settings size={18} />
-          </button>
+          </button>}
         </div>
 
         {/* 세그먼트 */}
-        <div className="px-4 mb-4 flex gap-1 bg-gray-100 rounded-2xl p-1">
+        {!operationsOnly && <div className="px-4 mb-4 flex gap-1 bg-gray-100 rounded-2xl p-1">
           <button onClick={() => setSegment('payments')}
             className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors ${segment === 'payments' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>
             수납
@@ -496,7 +511,7 @@ export default function SettlementPage() {
             className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-colors ${segment === 'payroll' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>
             급여
           </button>
-        </div>
+        </div>}
 
         {/* Phase 39 — 정산 설정 (학원별 급여/수강료 일자) */}
         {segment === 'settings' && (
@@ -552,7 +567,7 @@ export default function SettlementPage() {
               </p>
             </div>
             {/* 액션 버튼 */}
-            <div className="flex gap-2">
+            {canManagePayments && <div className="flex gap-2">
               <motion.button whileTap={{ scale: 0.97 }}
                 onClick={handleAutoGeneratePayments}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-blue-50 text-blue-600 text-xs font-bold rounded-xl">
@@ -563,10 +578,10 @@ export default function SettlementPage() {
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-gray-100 text-gray-700 text-xs font-bold rounded-xl">
                 <Plus size={13} /> 직접 추가
               </motion.button>
-            </div>
+            </div>}
 
             {/* 수납 직접 추가 폼 */}
-            {showAddPayment && (
+            {canManagePayments && showAddPayment && (
               <div className="bg-white rounded-2xl p-4 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-sm font-bold text-gray-800">수납 항목 추가</p>
@@ -624,16 +639,16 @@ export default function SettlementPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <p className="font-bold text-gray-900">{p.amount?.toLocaleString()}원</p>
-                    <motion.button whileTap={{ scale: 0.95 }}
+                    {canManagePayments && <motion.button whileTap={{ scale: 0.95 }}
                       onClick={() => handleTogglePaid(p)}
                       className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${p.status === 'paid' ? 'bg-green-500' : 'border-2 border-gray-200'}`}>
                       {p.status === 'paid' && <Check size={14} className="text-white" />}
-                    </motion.button>
-                    <motion.button whileTap={{ scale: 0.95 }}
+                    </motion.button>}
+                    {canManagePayments && <motion.button whileTap={{ scale: 0.95 }}
                       onClick={() => handleDeletePayment(p)}
                       className="w-7 h-7 rounded-full flex items-center justify-center text-red-300 active:bg-red-50">
                       <Trash2 size={13} />
-                    </motion.button>
+                    </motion.button>}
                   </div>
                 </div>
               ))

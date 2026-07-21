@@ -120,3 +120,49 @@ input[type="month"].input {
 .scroll-soft::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* 공유 드라이브 — docx-preview가 생성하는 문서 페이지의 기본 여백/그림자.
+   인쇄 시에는 아래 @media print 규칙으로 모달과 앱 셸을 제외하고 문서만 출력한다. */
+.drive-docx-host .drive-docx-preview-wrapper {
+  background: transparent;
+  padding: 0;
+}
+
+.drive-docx-host .drive-docx-preview {
+  margin: 0 auto 16px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.16);
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  .drive-print-area,
+  .drive-print-area * {
+    visibility: visible !important;
+  }
+
+  .drive-print-area {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: white !important;
+  }
+
+  .drive-docx-host .drive-docx-preview-wrapper {
+    background: white !important;
+    padding: 0 !important;
+  }
+
+  .drive-docx-host .drive-docx-preview {
+    margin: 0 auto !important;
+    box-shadow: none !important;
+  }
+}

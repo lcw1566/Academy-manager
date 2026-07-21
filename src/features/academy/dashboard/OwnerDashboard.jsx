@@ -30,13 +30,14 @@ function formatTimeRange(start, end) {
   return `${s || '-'} - ${e || '-'}`;
 }
 
-export default function OwnerDashboard() {
+export default function OwnerDashboard({ operationsOnly = false }) {
   const academyStudents = useAcademyStore((s) => s.academyStudents);
   const classGroups = useAcademyStore((s) => s.classGroups);
   const classSessions = useAcademyStore((s) => s.classSessions);
   const clinicRecords = useAcademyStore((s) => s.clinicRecords) ?? [];
   const academyTeachers = useAcademyStore((s) => s.academyTeachers);
   const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
+  const academyManagers = useAcademyStore((s) => s.academyManagers) ?? [];
   const academyPayments = useAcademyStore((s) => s.academyPayments);
   const academyProfile = useAcademyStore((s) => s.academyProfile);
   const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords) ?? [];
@@ -64,7 +65,7 @@ export default function OwnerDashboard() {
 
   const recentAttendanceEvents = useMemo(() => {
     const staffByUserId = new Map(
-      [...academyTeachers, ...academyAssistants]
+      [...academyTeachers, ...academyAssistants, ...academyManagers]
         .filter((staff) => staff?.serverUserId)
         .map((staff) => [staff.serverUserId, staff]),
     );
@@ -84,7 +85,7 @@ export default function OwnerDashboard() {
           time: formatClock(isClockOut ? log.actual_end_time : log.actual_start_time),
         };
       });
-  }, [staffAttendanceLogs, academyTeachers, academyAssistants, todayStr]);
+  }, [staffAttendanceLogs, academyTeachers, academyAssistants, academyManagers, todayStr]);
 
   // Phase 44.6 / Phase B — 향후 60일 윈도우 안에서 룰+예외로 planned 세션 산출 후
   // 기존 classSessions 와 머지. 14일 너머에도 자연스럽게 예정 세션이 노출됨.
@@ -150,12 +151,13 @@ export default function OwnerDashboard() {
     const plannedShaped = plannedToStaffShiftShape(plannedRaw, {
       academyTeachers,
       academyAssistants,
+      academyManagers,
     });
     const actualToday = academyStaffShifts.filter(
       (sh) => sh.date === todayStr && sh.status !== 'canceled',
     );
     return mergePlannedAndActualStaffShifts(plannedShaped, actualToday);
-  }, [staffWorkRules, staffWorkExceptions, academyStaffShifts, academyTeachers, academyAssistants, todayStr]);
+  }, [staffWorkRules, staffWorkExceptions, academyStaffShifts, academyTeachers, academyAssistants, academyManagers, todayStr]);
   const todayShifts = mergedTodayShifts;
   const todayShiftStaffIds = useMemo(
     () => [...new Set(todayShifts.map((sh) => sh.staffId).filter(Boolean))],
@@ -307,12 +309,14 @@ export default function OwnerDashboard() {
           value={unpaidPayments.length > 0 ? formatCurrency(unpaidAmount) : '없음'}
           color={unpaidPayments.length > 0 ? 'text-red-500' : 'text-gray-900'}
         />
-        <SummaryCard
-          label="급여 확인 필요"
-          value={pendingPayrolls.length > 0 ? `${pendingPayrolls.length}건` : '없음'}
-          color={pendingPayrolls.length > 0 ? 'text-amber-600' : 'text-gray-900'}
-          onClick={() => setActiveTab('settlement')}
-        />
+        {!operationsOnly && (
+          <SummaryCard
+            label="급여 확인 필요"
+            value={pendingPayrolls.length > 0 ? `${pendingPayrolls.length}건` : '없음'}
+            color={pendingPayrolls.length > 0 ? 'text-amber-600' : 'text-gray-900'}
+            onClick={() => setActiveTab('settlement')}
+          />
+        )}
       </div>
 
       {/* Phase 41 — 오늘 출결 요약 카드 */}

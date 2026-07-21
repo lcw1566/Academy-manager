@@ -18,6 +18,7 @@ const ROLE_LABEL = {
   owner: '원장',
   teacher: '강사',
   assistant: '보조강사',
+  manager: '운영 매니저',
 };
 
 export default function Sidebar({ tabs, badges = {} }) {

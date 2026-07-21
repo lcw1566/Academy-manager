@@ -4,7 +4,8 @@
 //
 // 데이터 위치:
 //   - server : academy_staff_profiles.permissions (jsonb), .scope (jsonb)
-//   - local  : academyTeachers[i].permissions / scope, academyAssistants[i].permissions / scope
+//   - local  : academyTeachers[i].permissions / scope, academyAssistants[i].permissions / scope,
+//              academyManagers[i].permissions / scope
 //
 // 빈 객체({}) 는 "기본 권한" 으로 해석한다 — 역할별 default 가 적용된다.
 // 명시적 false 가 있으면 차단, 명시적 true 가 있으면 허용.
@@ -14,6 +15,8 @@
 // 역할별 기본 권한 (PERMISSION_DEFAULTS)
 //   teacher:  학생/수업/출결 편집 + 급여 조회
 //   assistant: 클리닉 편집 + 학생/급여 조회 (수업/출결 편집은 default off)
+//   manager:   데스크 실무 운영(학생·수납·직원·공유자료)을 담당하되 원장 전용
+//              학원 삭제/최종 설정/급여 관리는 포함하지 않는다.
 export const PERMISSION_DEFAULTS = {
   teacher: {
     canViewStudents: true,
@@ -32,6 +35,25 @@ export const PERMISSION_DEFAULTS = {
     canViewPayroll: true,
     canViewPayments: false,
     canManageClasses: false,
+    canManageStudents: false,
+    canManagePayments: false,
+    canManageStaff: false,
+    canManageStaffPermissions: false,
+    canManageDrive: false,
+  },
+  manager: {
+    canViewStudents: true,
+    canEditLessonRecords: true,
+    canEditAttendance: true,
+    canEditClinicRecords: true,
+    canViewPayroll: false,
+    canViewPayments: true,
+    canManageClasses: true,
+    canManageStudents: true,
+    canManagePayments: true,
+    canManageStaff: true,
+    canManageStaffPermissions: true,
+    canManageDrive: true,
   },
 };
 
@@ -43,6 +65,11 @@ export const PERMISSION_LABELS = {
   canViewPayroll: '본인 급여 조회',
   canViewPayments: '학원 수납 정보 조회',
   canManageClasses: '반/회차 생성·수정',
+  canManageStudents: '학생 등록·수정·삭제',
+  canManagePayments: '수납 생성·수정·삭제',
+  canManageStaff: '직원 초대·근무표 관리',
+  canManageStaffPermissions: '강사·보조강사 권한 설정',
+  canManageDrive: '공유 자료 등록·삭제·다운로드 정책',
 };
 
 export const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS);
@@ -65,10 +92,10 @@ export function staffCan(staff, permissionKey, role = 'teacher') {
 
 // 현재 사용자(role + matched staffProfile) 기준으로 권한 체크.
 // - role='owner' 면 항상 true
-// - role='teacher'/'assistant' 면 staffProfile.permissions 로 판단 (없으면 default)
+// - role='teacher'/'assistant'/'manager' 면 staffProfile.permissions 로 판단 (없으면 default)
 export function currentUserCan({ role, staffProfile }, permissionKey) {
   if (role === 'owner') return true;
-  if (role !== 'teacher' && role !== 'assistant') return true;
+  if (!['teacher', 'assistant', 'manager'].includes(role)) return true;
   return staffCan({ role, permissions: staffProfile?.permissions }, permissionKey, role);
 }
 

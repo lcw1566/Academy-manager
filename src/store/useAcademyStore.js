@@ -210,6 +210,7 @@ const useAcademyStore = create(
   clinicRecords: [],
   academyTeachers: [],
   academyAssistants: [],
+  academyManagers: [],
   academyPayments: [],
   academyLessonRecords: [],
   academyAttendanceRecords: [],
@@ -234,7 +235,7 @@ const useAcademyStore = create(
 
   // ─── Auth ──────────────────────────────────────────
   setRole: (role) => {
-    const ACADEMY_ROLES = ['owner', 'teacher', 'assistant'];
+    const ACADEMY_ROLES = ['owner', 'teacher', 'assistant', 'manager'];
     set({
       role,
       currentMode: ACADEMY_ROLES.includes(role) ? 'academy' : 'private',
@@ -886,6 +887,7 @@ const useAcademyStore = create(
       clinicRecords: [],
       academyTeachers: [],
       academyAssistants: [],
+      academyManagers: [],
       academyPayments: [],
       academyLessonRecords: [],
       academyAttendanceRecords: [],
@@ -1027,6 +1029,7 @@ const useAcademyStore = create(
     exceptions = [],
     academyTeachers = [],
     academyAssistants = [],
+    academyManagers = [],
   } = {}) => {
     if (!month) return [];
     const fromDate = monthStartYMD(month);
@@ -1042,6 +1045,7 @@ const useAcademyStore = create(
     const planned = plannedToStaffShiftShape(plannedRaw, {
       academyTeachers,
       academyAssistants,
+      academyManagers,
     });
     if (planned.length === 0) return [];
 
@@ -1356,10 +1360,33 @@ const useAcademyStore = create(
     set((s) => ({ academyAssistants: s.academyAssistants.filter((a) => a.id !== assistantId) }));
     get().showToast('보조강사가 삭제되었습니다.');
   },
+
+  // ─── Academy Operations Managers ───────────────────
+  // 운영 매니저는 데스크 실무를 담당하는 별도 직원군이다. 강사/보조강사와
+  // 동일하게 근무표·급여 데이터에는 포함되지만 수업/클리닉 배정에는 쓰지 않는다.
+  addManager: (manager) => {
+    const newManager = { ...manager, id: `mgr${Date.now()}`, status: manager.status || 'active' };
+    set((s) => ({ academyManagers: [...s.academyManagers, newManager] }));
+    get().showToast('운영 매니저가 추가되었습니다.');
+    return newManager;
+  },
+  updateManager: (managerId, updates) => {
+    set((s) => ({ academyManagers: s.academyManagers.map((m) => (m.id === managerId ? { ...m, ...updates } : m)) }));
+    get().showToast('운영 매니저 정보가 수정되었습니다.');
+  },
+  deleteManager: (managerId) => {
+    set((s) => ({ academyManagers: s.academyManagers.filter((m) => m.id !== managerId) }));
+    get().showToast('운영 매니저가 삭제되었습니다.');
+  },
   changeLocalStaffRole: (staffId, fromRole, toRole, updates = {}) => {
     if (!staffId || fromRole === toRole) return null;
-    const fromKey = fromRole === 'assistant' ? 'academyAssistants' : 'academyTeachers';
-    const toKey = toRole === 'assistant' ? 'academyAssistants' : 'academyTeachers';
+    const collectionKey = (staffRole) => (
+      staffRole === 'assistant' ? 'academyAssistants'
+        : staffRole === 'manager' ? 'academyManagers'
+          : 'academyTeachers'
+    );
+    const fromKey = collectionKey(fromRole);
+    const toKey = collectionKey(toRole);
     let moved = null;
     set((s) => {
       const source = (s[fromKey] || []).find((staff) => staff.id === staffId);
@@ -1516,6 +1543,50 @@ const useAcademyStore = create(
         return { academyAssistants: next };
       }
       return { academyAssistants: [...s.academyAssistants, merged] };
+    });
+    return saved;
+  },
+
+  upsertLocalManagerFromServerStaff: (payload = {}) => {
+    const {
+      userId, memberId, email, displayName, phone,
+      subject, subjects, wageType, hourlyWage, monthlySalary, memo, status,
+    } = payload;
+    if (!userId) return null;
+    const normalizedEmail = (email || '').trim().toLowerCase() || null;
+    let saved = null;
+    set((s) => {
+      const idx = s.academyManagers.findIndex((m) =>
+        (m.serverUserId && m.serverUserId === userId) ||
+        (memberId && m.academyMemberId && m.academyMemberId === memberId) ||
+        (normalizedEmail && (m.email || '').trim().toLowerCase() === normalizedEmail)
+      );
+      const existing = idx >= 0 ? s.academyManagers[idx] : null;
+      const merged = {
+        ...(existing || {}),
+        id: existing?.id || `manager_${userId}`,
+        serverUserId: userId,
+        academyMemberId: memberId || existing?.academyMemberId || null,
+        email: normalizedEmail,
+        name: displayName || existing?.name || normalizedEmail || '(이름 없음)',
+        phone: phone || existing?.phone || '',
+        subject: subject !== undefined ? subject : (existing?.subject ?? '운영'),
+        subjects: Array.isArray(subjects) ? subjects : (Array.isArray(existing?.subjects) ? existing.subjects : []),
+        wageType: wageType || existing?.wageType || 'hourly',
+        hourlyWage: hourlyWage !== undefined && hourlyWage !== null ? toWonInteger(hourlyWage) : (existing?.hourlyWage ?? 0),
+        monthlySalary: monthlySalary !== undefined && monthlySalary !== null ? toWonInteger(monthlySalary) : (existing?.monthlySalary ?? 0),
+        hourlyMode: 'actualAttendance',
+        memo: memo !== undefined ? memo : (existing?.memo ?? ''),
+        status: status || existing?.status || 'active',
+        source: 'server',
+      };
+      saved = merged;
+      if (existing) {
+        const next = s.academyManagers.slice();
+        next[idx] = merged;
+        return { academyManagers: next };
+      }
+      return { academyManagers: [...s.academyManagers, merged] };
     });
     return saved;
   },
@@ -1677,7 +1748,7 @@ const useAcademyStore = create(
   // 클리닉 카운트(completedClinicCount) 는 보조강사 카드에 참고 정보로만 남는다.
   // Phase 44.7 / Phase C — staff_attendance_logs 의 approved 실제 시간만 시급제 금액에 반영.
   generatePayrollsForMonth: (month, opts = {}) => {
-    const { academyTeachers, academyAssistants, classSessions, clinicTasks } = get();
+    const { academyTeachers, academyAssistants, academyManagers, classSessions, clinicTasks } = get();
     const computeActualShiftHours = get().computeStaffActualHoursForMonth;
     const computeFromLogs = get().computeStaffHoursFromLogs;
     const attendanceLogs = Array.isArray(opts?.attendanceLogs) ? opts.attendanceLogs : [];
@@ -1771,6 +1842,25 @@ const useAcademyStore = create(
         approvedLogHours, pendingLogHours,
         amount, status: 'scheduled', paidDate: '', memo: '',
         createdAt: new Date().toISOString(),
+      }));
+    });
+
+    academyManagers.forEach((manager, i) => {
+      const approvedLogHours = computeFromLogs(manager.serverUserId, month, attendanceLogs, { approvedOnly: true });
+      const pendingLogHours = computeFromLogs(manager.serverUserId, month, attendanceLogs, { approvedOnly: false });
+      const localActualHours = manager.serverUserId ? 0 : computeActualShiftHours(manager.id, month);
+      const actualHours = manager.serverUserId ? approvedLogHours : localActualHours;
+      const amount = manager.wageType === 'hourly'
+        ? Math.round((manager.hourlyWage || 0) * actualHours)
+        : (manager.monthlySalary || 0);
+      payrolls.push(keepLockedFields({
+        id: `pr${ts}m${i}`, staffType: 'manager', staffId: manager.id, month,
+        wageType: manager.wageType || 'monthly', hourlyMode: 'actualAttendance',
+        hourlyWage: manager.hourlyWage || 0, monthlySalary: manager.monthlySalary || 0,
+        totalHours: actualHours, shiftHours: actualHours, lessonHours: 0, gapHours: actualHours,
+        completedSessionCount: 0, completedClinicCount: 0,
+        approvedLogHours, pendingLogHours,
+        amount, status: 'scheduled', paidDate: '', memo: '', createdAt: new Date().toISOString(),
       }));
     });
 
@@ -1995,6 +2085,9 @@ const useAcademyStore = create(
       (s.academyAssistants || []).forEach((a) => {
         if (a.serverUserId) localStaffByUserId.set(`${a.serverUserId}__assistant`, a.id);
       });
+      (s.academyManagers || []).forEach((m) => {
+        if (m.serverUserId) localStaffByUserId.set(`${m.serverUserId}__manager`, m.id);
+      });
       const indexByServerId = new Map(
         next.map((sh, i) => [sh.serverId, i]).filter(([id]) => id),
       );
@@ -2133,6 +2226,7 @@ const useAcademyStore = create(
       clinicRecords: [],
       academyTeachers: [],
       academyAssistants: [],
+      academyManagers: [],
       academyPayments: [],
       academyLessonRecords: [],
       academyAttendanceRecords: [],
@@ -2159,6 +2253,7 @@ const useAcademyStore = create(
       clinicRecords: [],
       academyTeachers: [],
       academyAssistants: [],
+      academyManagers: [],
       academyPayments: [],
       academyLessonRecords: [],
       academyAttendanceRecords: [],
@@ -2364,6 +2459,7 @@ const useAcademyStore = create(
         clinicRecords: s.clinicRecords || [],
         academyTeachers: s.academyTeachers,
         academyAssistants: s.academyAssistants,
+        academyManagers: s.academyManagers,
         academyPayments: s.academyPayments,
         academyLessonRecords: s.academyLessonRecords,
         academyAttendanceRecords: s.academyAttendanceRecords,

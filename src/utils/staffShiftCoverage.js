@@ -20,6 +20,7 @@ export function buildEffectiveStaffShifts({
   toDate,
   academyTeachers = [],
   academyAssistants = [],
+  academyManagers = [],
   staffUserId,
 } = {}) {
   const actualInRange = (actualShifts || []).filter((sh) => inRange(sh.date, fromDate, toDate));
@@ -33,6 +34,7 @@ export function buildEffectiveStaffShifts({
   const shaped = plannedToStaffShiftShape(planned, {
     academyTeachers,
     academyAssistants,
+    academyManagers,
   });
   return mergePlannedAndActualStaffShifts(shaped, actualInRange);
 }

@@ -1098,7 +1098,7 @@ const useWorkspaceStore = create(
         }
       },
 
-      // academy_staff_profiles 로드 — 원장 또는 본인 row 만 보임.
+      // academy_staff_profiles 로드 — 원장/운영 매니저 또는 본인 row 만 보임.
       // 성공 시 자동으로 로컬 강사/보조강사 mirror 동기화.
       loadAcademyStaffProfiles: async () => {
         if (!isSupabaseConfigured) {
@@ -1130,7 +1130,7 @@ const useWorkspaceStore = create(
         }
       },
 
-      // Owner 가 학원-특정 강사 설정 저장 → academy_staff_profiles upsert.
+      // 원장 또는 권한 있는 운영 매니저가 학원-특정 직원 설정 저장 → upsert.
       // 성공 시 store cache + 로컬 강사/보조강사 mirror 도 갱신.
       saveAcademyStaffProfile: async ({ academyId, userId, ...rest } = {}) => {
         if (!isSupabaseConfigured) {
@@ -1156,8 +1156,7 @@ const useWorkspaceStore = create(
         return saved;
       },
 
-      // Mirror accepted academy members into the local academyTeachers /
-      // academyAssistants arrays based on academy_staff_profiles role.
+      // Mirror accepted academy members into local staff arrays based on role.
       //
       // We only mirror members that ALSO have an academy_staff_profiles row —
       // a freshly accepted invitation without owner-side configuration has
@@ -1177,8 +1176,9 @@ const useWorkspaceStore = create(
         const academyState = useAcademyStore.getState();
         const upsertTeacher = academyState.upsertLocalTeacherFromServerStaff;
         const upsertAssistant = academyState.upsertLocalAssistantFromServerStaff;
+        const upsertManager = academyState.upsertLocalManagerFromServerStaff;
         const reconcileShiftLocalIds = academyState.reconcileStaffShiftLocalIds;
-        if (typeof upsertTeacher !== 'function' || typeof upsertAssistant !== 'function') {
+        if (typeof upsertTeacher !== 'function' || typeof upsertAssistant !== 'function' || typeof upsertManager !== 'function') {
           return { mirrored: 0, skipped: memberProfiles.length };
         }
 
@@ -1226,6 +1226,9 @@ const useWorkspaceStore = create(
             mirrored += 1;
           } else if (role === 'assistant') {
             upsertAssistant(payload);
+            mirrored += 1;
+          } else if (role === 'manager') {
+            upsertManager(payload);
             mirrored += 1;
           } else {
             skipped += 1;

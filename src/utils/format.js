@@ -46,6 +46,7 @@ export const roleMap = {
   owner: '학원 원장',
   teacher: '학원 강사',
   assistant: '보조강사',
+  manager: '운영 매니저',
 };
 
 export const classTypeColors = {
@@ -133,6 +134,7 @@ export function membershipRoleToAppRole(role) {
   if (role === 'owner') return 'owner';
   if (role === 'teacher') return 'teacher';
   if (role === 'assistant') return 'assistant';
+  if (role === 'manager') return 'manager';
   return null;
 }
 
@@ -142,6 +144,7 @@ export function appRoleToLabel(role) {
   if (role === 'owner') return '원장';
   if (role === 'teacher') return '강사';
   if (role === 'assistant') return '보조강사';
+  if (role === 'manager') return '운영 매니저';
   if (role === 'tutor') return '과외 선생님';
   return '';
 }

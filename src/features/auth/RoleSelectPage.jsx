@@ -22,6 +22,13 @@ const roles = [
     desc: '학생 클리닉과 학습 보완, 급여를 관리해요.',
     badge: '학원',
   },
+  {
+    id: 'manager',
+    emoji: '🗂️',
+    title: '운영 매니저',
+    desc: '학생·수납·직원·공유자료 등 데스크 운영을 관리해요.',
+    badge: '학원',
+  },
 ];
 
 export default function RoleSelectPage() {
@@ -63,7 +70,7 @@ export default function RoleSelectPage() {
 
         <div className="mt-6 bg-blue-50 rounded-2xl px-4 py-3">
           <p className="text-xs text-blue-700 font-semibold mb-1">학원 모드 안내</p>
-          <p className="text-xs text-blue-600">원장·강사·보조강사는 같은 학원 데이터를 공유합니다.</p>
+          <p className="text-xs text-blue-600">원장·강사·보조강사·운영 매니저는 같은 학원 데이터를 공유합니다.</p>
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">

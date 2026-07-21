@@ -16,7 +16,7 @@ import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAcademyStore from '../../store/useAcademyStore';
 
-const INVITE_ROLE_LABEL = { teacher: '강사', assistant: '보조강사' };
+const INVITE_ROLE_LABEL = { teacher: '강사', assistant: '보조강사', manager: '운영 매니저' };
 
 export default function StaffWaitingPage() {
   const userEmail = useAuthStore((s) => s.user?.email);

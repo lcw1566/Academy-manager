@@ -39,7 +39,7 @@ const ACCOUNT_TYPE_HINT = {
   },
 };
 
-const INVITE_ROLE_LABEL = { teacher: '강사', assistant: '보조강사' };
+const INVITE_ROLE_LABEL = { teacher: '강사', assistant: '보조강사', manager: '운영 매니저' };
 
 export default function WorkspaceSection() {
   const isSupabaseReady = useAuthStore((s) => s.isSupabaseReady);
