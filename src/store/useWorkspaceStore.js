@@ -71,6 +71,16 @@ const WORKSPACE_PICKED_SESSION_KEY = 'workspace-picked';
 const LEGACY_WORKSPACE_STORAGE_KEY = 'academy-manager-workspace';
 const WORKSPACE_STORAGE_KEY = 'seenit-workspace';
 
+function ensureCurrentAcademyDataScope(academyId) {
+  const userId = useAuthStore.getState().user?.id;
+  if (!userId || !academyId) return;
+  useAcademyStore.getState().ensureAcademyDataScope?.(userId, academyId);
+}
+
+function isCurrentAcademy(get, academyId) {
+  return get().currentAcademyId === academyId;
+}
+
 function migrateWorkspaceStorageKey() {
   if (typeof localStorage === 'undefined') return;
   try {
@@ -322,6 +332,7 @@ const useWorkspaceStore = create(
           ]);
 
           if (get().currentAcademyId) {
+            const refreshAcademyId = get().currentAcademyId;
             const academyStore = useAcademyStore.getState();
             const hydrateSnapshot = academyStore.hydrateAcademyFromServerSnapshot;
 
@@ -352,6 +363,7 @@ const useWorkspaceStore = create(
               get().loadServerPayrolls(),
             ]);
 
+            if (get().currentAcademyId !== refreshAcademyId) return;
             if (typeof hydrateSnapshot === 'function') {
               hydrateSnapshot(
                 {
@@ -366,7 +378,9 @@ const useWorkspaceStore = create(
                 },
                 {
                   strategy: 'serverWins',
-                  preserveLocalOnly: false,
+                  // 권한이 회수된 직원 기기에 과거 캐시가 남지 않게 owner만
+                  // local-only 항목을 보존한다.
+                  preserveLocalOnly: academyStore.role === 'owner',
                 },
               );
             }
@@ -632,6 +646,7 @@ const useWorkspaceStore = create(
             currentAcademyId = memberships[0]?.academy_id ?? null;
           }
 
+          ensureCurrentAcademyDataScope(currentAcademyId);
           set({ memberships, currentAcademyId });
           return memberships;
         } catch (err) {
@@ -652,6 +667,7 @@ const useWorkspaceStore = create(
         try {
           const academy = await createAcademyAsOwner({ name, academyType, academySubjects, clinicRequired });
           const memberships = await getMyAcademyMemberships();
+          ensureCurrentAcademyDataScope(academy.id);
           set({ memberships, currentAcademyId: academy.id });
           await Promise.all([
             get().loadServerStudents(),
@@ -710,6 +726,7 @@ const useWorkspaceStore = create(
           return;
         }
         if (academyId === get().currentAcademyId) return;
+        ensureCurrentAcademyDataScope(academyId);
         set({ currentAcademyId: academyId });
         // 학원 전환 시 서버 데이터 갱신
         get().loadServerStudents();
@@ -741,19 +758,21 @@ const useWorkspaceStore = create(
         set({ isServerStudentsLoading: true, serverStudentsError: null });
         try {
           const list = await listAcademyStudents(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverStudents: list,
             serverStudentsLoadedAt: new Date().toISOString(),
           });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             serverStudentsError:
               err?.message ?? '서버 학생을 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isServerStudentsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isServerStudentsLoading: false });
         }
       },
 
@@ -771,19 +790,21 @@ const useWorkspaceStore = create(
         set({ isServerClassGroupsLoading: true, serverClassGroupsError: null });
         try {
           const list = await listAcademyClassGroups(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverClassGroups: list,
             serverClassGroupsLoadedAt: new Date().toISOString(),
           });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             serverClassGroupsError:
               err?.message ?? '서버 반을 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isServerClassGroupsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isServerClassGroupsLoading: false });
         }
       },
 
@@ -801,19 +822,21 @@ const useWorkspaceStore = create(
         set({ isServerClassSessionsLoading: true, serverClassSessionsError: null });
         try {
           const list = await listAcademyClassSessions(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverClassSessions: list,
             serverClassSessionsLoadedAt: new Date().toISOString(),
           });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             serverClassSessionsError:
               err?.message ?? '서버 수업 회차를 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isServerClassSessionsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isServerClassSessionsLoading: false });
         }
       },
 
@@ -831,19 +854,21 @@ const useWorkspaceStore = create(
         set({ isServerLessonRecordsLoading: true, serverLessonRecordsError: null });
         try {
           const list = await listAcademyLessonRecords(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverLessonRecords: list,
             serverLessonRecordsLoadedAt: new Date().toISOString(),
           });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             serverLessonRecordsError:
               err?.message ?? '서버 수업 기록을 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isServerLessonRecordsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isServerLessonRecordsLoading: false });
         }
       },
 
@@ -861,19 +886,21 @@ const useWorkspaceStore = create(
         set({ isServerPayrollsLoading: true, serverPayrollsError: null });
         try {
           const list = await listAcademyPayrolls(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverPayrolls: list,
             serverPayrollsLoadedAt: new Date().toISOString(),
           });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             serverPayrollsError:
               err?.message ?? '서버 급여 기록을 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isServerPayrollsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isServerPayrollsLoading: false });
         }
       },
 
@@ -893,6 +920,7 @@ const useWorkspaceStore = create(
         set({ isServerStaffShiftsLoading: true, serverStaffShiftsError: null });
         try {
           const list = await listAcademyStaffShifts(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverStaffShifts: list,
             serverStaffShiftsLoadedAt: new Date().toISOString(),
@@ -902,12 +930,13 @@ const useWorkspaceStore = create(
           if (typeof mirror === 'function') mirror(list);
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             serverStaffShiftsError: err?.message ?? '근무표를 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isServerStaffShiftsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isServerStaffShiftsLoading: false });
         }
       },
 
@@ -925,19 +954,21 @@ const useWorkspaceStore = create(
         set({ isServerPaymentsLoading: true, serverPaymentsError: null });
         try {
           const list = await listAcademyPayments(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverPayments: list,
             serverPaymentsLoadedAt: new Date().toISOString(),
           });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             serverPaymentsError:
               err?.message ?? '서버 수납 기록을 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isServerPaymentsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isServerPaymentsLoading: false });
         }
       },
 
@@ -955,19 +986,21 @@ const useWorkspaceStore = create(
         set({ isServerClinicRecordsLoading: true, serverClinicRecordsError: null });
         try {
           const list = await listAcademyClinicRecords(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverClinicRecords: list,
             serverClinicRecordsLoadedAt: new Date().toISOString(),
           });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             serverClinicRecordsError:
               err?.message ?? '서버 클리닉 기록을 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isServerClinicRecordsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isServerClinicRecordsLoading: false });
         }
       },
 
@@ -985,19 +1018,21 @@ const useWorkspaceStore = create(
         set({ isServerAttendanceRecordsLoading: true, serverAttendanceRecordsError: null });
         try {
           const list = await listAcademyAttendanceRecords(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverAttendanceRecords: list,
             serverAttendanceRecordsLoadedAt: new Date().toISOString(),
           });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             serverAttendanceRecordsError:
               err?.message ?? '서버 출결을 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isServerAttendanceRecordsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isServerAttendanceRecordsLoading: false });
         }
       },
 
@@ -1018,17 +1053,19 @@ const useWorkspaceStore = create(
         set({ isAcademyMemberProfilesLoading: true, academyMemberProfilesError: null });
         try {
           const list = await listAcademyMemberProfiles(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({ academyMemberProfiles: list });
           get().syncLocalStaffFromServerMembers();
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             academyMemberProfilesError:
               err?.message ?? '학원 멤버 프로필을 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isAcademyMemberProfilesLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isAcademyMemberProfilesLoading: false });
         }
       },
 
@@ -1048,18 +1085,20 @@ const useWorkspaceStore = create(
         set({ isAcademyInvitationsLoading: true, academyInvitationsError: null });
         try {
           const list = await listAcademyInvitations(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({ academyInvitations: list });
           // Hotfix — invitation 캐시가 갱신되면 sync 를 한 번 더 돌려서
           // staff_profile 미설정 멤버도 invitation.role 로 mirror 가능하도록.
           try { get().syncLocalStaffFromServerMembers(); } catch { /* ignore */ }
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             academyInvitationsError: err?.message ?? '학원 초대 목록을 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isAcademyInvitationsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isAcademyInvitationsLoading: false });
         }
       },
 
@@ -1113,6 +1152,7 @@ const useWorkspaceStore = create(
         set({ isAcademyStaffProfilesLoading: true, academyStaffProfilesError: null });
         try {
           const list = await listAcademyStaffProfiles(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({ academyStaffProfiles: list });
           // member profiles + staff profiles 가 모두 있어야 의미가 있다.
           // 둘 중 어느 쪽이 먼저 끝나든 mirror 를 호출하면 다른 쪽이 아직
@@ -1120,13 +1160,14 @@ const useWorkspaceStore = create(
           get().syncLocalStaffFromServerMembers();
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             academyStaffProfilesError:
               err?.message ?? '학원 강사 설정을 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isAcademyStaffProfilesLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isAcademyStaffProfilesLoading: false });
         }
       },
 
@@ -1270,6 +1311,7 @@ const useWorkspaceStore = create(
         }
         const result = await acceptAcademyInvitation(invitationId);
         const memberships = await getMyAcademyMemberships();
+        ensureCurrentAcademyDataScope(result.academyId);
         set({ memberships, currentAcademyId: result.academyId });
         // 받은 초대 목록 갱신 (방금 수락한 건은 pending 에서 빠짐)
         await get().loadMyPendingInvitations();
@@ -1324,13 +1366,15 @@ const useWorkspaceStore = create(
         set({ isStaffWorkRulesLoading: true, staffWorkRulesError: null });
         try {
           const list = await listStaffWorkRules(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({ staffWorkRules: list, staffWorkRulesLoadedAt: new Date().toISOString() });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({ staffWorkRulesError: err?.message ?? '근무 규칙을 불러오지 못했어요.' });
           return [];
         } finally {
-          set({ isStaffWorkRulesLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isStaffWorkRulesLoading: false });
         }
       },
 
@@ -1341,13 +1385,15 @@ const useWorkspaceStore = create(
         set({ isStaffWorkExceptionsLoading: true, staffWorkExceptionsError: null });
         try {
           const list = await listStaffWorkExceptions(academyId, { fromDate, toDate });
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({ staffWorkExceptions: list, staffWorkExceptionsLoadedAt: new Date().toISOString() });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({ staffWorkExceptionsError: err?.message ?? '근무 예외를 불러오지 못했어요.' });
           return [];
         } finally {
-          set({ isStaffWorkExceptionsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isStaffWorkExceptionsLoading: false });
         }
       },
 
@@ -1395,13 +1441,15 @@ const useWorkspaceStore = create(
         set({ isClassScheduleRulesLoading: true, classScheduleRulesError: null });
         try {
           const list = await listClassScheduleRules(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({ classScheduleRules: list, classScheduleRulesLoadedAt: new Date().toISOString() });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({ classScheduleRulesError: err?.message ?? '수업 스케줄 규칙을 불러오지 못했어요.' });
           return [];
         } finally {
-          set({ isClassScheduleRulesLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isClassScheduleRulesLoading: false });
         }
       },
 
@@ -1412,13 +1460,15 @@ const useWorkspaceStore = create(
         set({ isClassSessionExceptionsLoading: true, classSessionExceptionsError: null });
         try {
           const list = await listClassSessionExceptions(academyId, { fromDate, toDate });
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({ classSessionExceptions: list, classSessionExceptionsLoadedAt: new Date().toISOString() });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({ classSessionExceptionsError: err?.message ?? '수업 예외를 불러오지 못했어요.' });
           return [];
         } finally {
-          set({ isClassSessionExceptionsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isClassSessionExceptionsLoading: false });
         }
       },
 
@@ -1429,13 +1479,15 @@ const useWorkspaceStore = create(
         set({ isStaffAttendanceLogsLoading: true, staffAttendanceLogsError: null });
         try {
           const list = await listStaffAttendanceLogs(academyId, { fromDate, toDate, limit });
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({ staffAttendanceLogs: list, staffAttendanceLogsLoadedAt: new Date().toISOString() });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({ staffAttendanceLogsError: err?.message ?? '실제 출근 로그를 불러오지 못했어요.' });
           return [];
         } finally {
-          set({ isStaffAttendanceLogsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isStaffAttendanceLogsLoading: false });
         }
       },
 
@@ -1498,19 +1550,21 @@ const useWorkspaceStore = create(
         set({ isStudentCheckEventsLoading: true, studentCheckEventsError: null });
         try {
           const list = await listStudentCheckEvents(academyId, { sinceDateYMD, limit });
+          if (!isCurrentAcademy(get, academyId)) return list;
           set({
             studentCheckEvents: list,
             studentCheckEventsLoadedAt: new Date().toISOString(),
           });
           return list;
         } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
           set({
             studentCheckEventsError:
               err?.message ?? '학생 체크인 이벤트를 불러오지 못했어요.',
           });
           return [];
         } finally {
-          set({ isStudentCheckEventsLoading: false });
+          if (isCurrentAcademy(get, academyId)) set({ isStudentCheckEventsLoading: false });
         }
       },
 

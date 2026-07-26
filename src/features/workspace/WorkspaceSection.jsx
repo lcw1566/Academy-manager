@@ -101,17 +101,23 @@ export default function WorkspaceSection() {
       return;
     }
     const ok = window.confirm(
-      'Supabase의 최신 데이터를 기준으로 이 기기 데이터를 새로 맞춥니다. 로컬에만 남아 있던 중복 데이터는 사라질 수 있어요. 계속할까요?'
+      appRole === 'owner'
+        ? 'Supabase의 최신 데이터로 이 기기를 동기화합니다. 아직 서버에 저장되지 않은 원장 기기의 항목은 보존됩니다. 계속할까요?'
+        : 'Supabase의 최신 데이터와 권한을 기준으로 이 기기를 다시 맞춥니다. 서버에 없는 임시 항목은 정리됩니다. 계속할까요?'
     );
     if (!ok) return;
     setHydrating(true);
     try {
       // 1) snapshot fetch — 어느 한 테이블이라도 실패하면 throw → hydrate 시도하지 않음
       const snapshot = await fetchAcademySnapshot(currentAcademyId);
-      // 2) localStorage 반영. Supabase 를 원본으로 보고 로컬-only row 는 제거한다.
+      if (useWorkspaceStore.getState().currentAcademyId !== currentAcademyId) {
+        showToast('학원이 변경되어 이전 학원의 동기화를 취소했어요.', 'error');
+        return;
+      }
+      // 2) localStorage 반영. 서버 저장 실패로 남은 local-only row는 유실 방지를 위해 보존한다.
       const counts = hydrateAcademyFromServerSnapshot(snapshot, {
         strategy: 'serverWins',
-        preserveLocalOnly: false,
+        preserveLocalOnly: useAcademyStore.getState().role === 'owner',
       });
       // 3) 서버 카운트도 재조회 (snapshot fetch 직후라 사실상 동일하지만 일관성 유지)
       await Promise.all([

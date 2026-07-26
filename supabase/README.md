@@ -35,7 +35,8 @@ supabase/
     ├── 024_academy_drive.sql (공유 드라이브 비공개 Storage + 파일별 다운로드 정책)
     ├── 025_operations_manager_role.sql (운영 매니저 역할 + 데스크 운영 권한/RLS)
     ├── 026_deferred_staff_role_assignment.sql (직원 초대 수락 후 역할 배정/RLS)
-    └── 027_attendance_choices_and_invitation_display.sql (출결 선택 + 초대 학원명 RPC)
+    ├── 027_attendance_choices_and_invitation_display.sql (출결 선택 + 초대 학원명 RPC)
+    └── 028_role_permissions_and_payroll_privacy.sql (역할별 RLS + 급여/근태 개인정보 보호)
 ```
 
 ## 실행 순서 요약
@@ -69,6 +70,7 @@ supabase/
 | 25 | `025_operations_manager_role.sql` | 운영 매니저 초대·근무표·학생/수납·공유 드라이브 관리. 학원 삭제·최종 설정·급여 관리는 원장 전용 |
 | 26 | `026_deferred_staff_role_assignment.sql` | 역할 없는 직원 초대, 수락 후 역할 배정 대기, 원장/운영 매니저의 활성화 권한 및 보안 경계 |
 | 27 | `027_attendance_choices_and_invitation_display.sql` | 직원 직접 기록/QR 선택, 초대받은 사용자에게 학원 이름을 안전하게 표시하는 RPC |
+| 28 | `028_role_permissions_and_payroll_privacy.sql` | 화면 권한을 DB RLS에서도 강제, 직원 급여 본인 조회 및 근태 승인 조작 차단 |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -97,6 +99,18 @@ supabase/
 - 학생 등하원을 `선생님 직접 체크 / QR` 중 선택할 수 있습니다.
 - 초대 카드에는 `academies` RLS를 넓히지 않고 실제 학원 이름만 표시합니다.
 - 새 초대는 원장이 역할을 먼저 선택하고, 직원은 수락 즉시 해당 역할로 참여합니다.
+
+### 역할 권한·급여 개인정보 보호 배포 (028)
+
+`027_attendance_choices_and_invitation_display.sql`까지 실행한 환경에서
+`supabase/sql/028_role_permissions_and_payroll_privacy.sql`을 실행하세요.
+
+- 직원 화면의 권한 토글을 DB RLS에서도 강제합니다.
+- 수납은 권한 있는 원장/운영 매니저만 조회·변경합니다.
+- 급여는 원장은 전체, 직원은 `staff_user_id`가 일치하는 본인 행만 조회합니다.
+- 일반 직원은 자기 근태 로그를 `approved/rejected`로 바꿀 수 없습니다.
+- 예전 급여 중 `teacher_<uuid>` 형태가 아닌 로컬 ID 행은 자동 연결할 수 없습니다.
+  해당 직원에게 과거 급여가 보이지 않으면 원장 계정에서 해당 월 급여를 다시 생성하세요.
 
 ### 공유 드라이브 배포 (024)
 

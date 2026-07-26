@@ -10,7 +10,7 @@
 ## 0. 사전 준비
 
 - [ ] [`deployment-checklist.md`](./deployment-checklist.md) 완료
-- [ ] [`supabase-migration-checklist.md`](./supabase-migration-checklist.md) 의 001~005 적용 완료
+- [ ] [`supabase/README.md`](../supabase/README.md) 순서대로 001~028 적용 완료
 - [ ] Vercel 배포 URL 확인
 - [ ] 테스트 계정 4개 준비 (다른 이메일 사용 권장)
   - owner@example.com

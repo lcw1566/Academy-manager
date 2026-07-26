@@ -31,11 +31,12 @@
 
 Dashboard → SQL Editor 에서 **번호 순서대로 현재 최신 파일까지** 실행:
 
-- [ ] 신규 환경: [`supabase/README.md`](../supabase/README.md)의 실행 순서대로 `001`~`027`
-- [ ] 기존 환경: 마지막 적용 번호 다음 파일부터 `027`까지
+- [ ] 신규 환경: [`supabase/README.md`](../supabase/README.md)의 실행 순서대로 `001`~`028`
+- [ ] 기존 환경: 마지막 적용 번호 다음 파일부터 `028`까지
 - [ ] `025_operations_manager_role.sql`
 - [ ] `026_deferred_staff_role_assignment.sql`
 - [ ] `027_attendance_choices_and_invitation_display.sql`
+- [ ] `028_role_permissions_and_payroll_privacy.sql`
 
 각 SQL 은 idempotent — 재실행해도 안전합니다.
 
@@ -66,6 +67,13 @@ Project Settings → Environment Variables 에서 **Production / Preview / Devel
 - [ ] 두 변수 모두 입력 완료
 - [ ] **service_role key 가 들어있지 않은지 다시 확인**
 - [ ] Save → 다음 배포부터 자동 적용
+
+## 6. Supabase 이메일 인증
+
+- [ ] Authentication → Providers → Email에서 **Confirm email** 활성화
+- [ ] Authentication → URL Configuration의 **Site URL**을 실제 Vercel 운영 주소로 설정
+- [ ] Preview 주소를 쓸 경우 허용할 Redirect URL도 등록
+- [ ] 새 이메일로 가입 → 인증 전 로그인 차단 → 메일 링크 인증 → 로그인 성공 확인
 
 ## 6. 첫 배포
 

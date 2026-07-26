@@ -39,6 +39,18 @@ export async function signInWithEmail({ email, password, remember = true }) {
   return data;
 }
 
+export async function resendSignUpConfirmation(email) {
+  assertSupabaseConfigured();
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) throw new Error('이메일을 입력해주세요.');
+  const { data, error } = await supabase.auth.resend({
+    type: 'signup',
+    email: normalizedEmail,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function signOut() {
   assertSupabaseConfigured();
   const { error } = await supabase.auth.signOut();

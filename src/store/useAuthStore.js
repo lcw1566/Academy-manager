@@ -4,6 +4,7 @@ import {
   getCurrentSession,
   signUpWithEmail,
   signInWithEmail,
+  resendSignUpConfirmation,
   signOut,
   subscribeAuthStateChange,
 } from '../services/supabase/authApi';
@@ -90,6 +91,18 @@ const useAuthStore = create((set, get) => ({
       return data;
     } catch (err) {
       set({ authError: err?.message ?? '로그인에 실패했습니다.' });
+      throw err;
+    } finally {
+      set({ isAuthLoading: false });
+    }
+  },
+
+  resendConfirmation: async (email) => {
+    set({ isAuthLoading: true, authError: null });
+    try {
+      return await resendSignUpConfirmation(email);
+    } catch (err) {
+      set({ authError: err?.message ?? '인증 메일 재발송에 실패했습니다.' });
       throw err;
     } finally {
       set({ isAuthLoading: false });

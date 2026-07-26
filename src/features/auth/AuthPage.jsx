@@ -69,9 +69,11 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
   const [phone, setPhone] = useState('');
   const [rememberLogin, setRememberLogin] = useState(true);
   const [localMessage, setLocalMessage] = useState(null);
+  const [verificationEmail, setVerificationEmail] = useState('');
 
   const signIn = useAuthStore((s) => s.signIn);
   const signUp = useAuthStore((s) => s.signUp);
+  const resendConfirmation = useAuthStore((s) => s.resendConfirmation);
   const isAuthLoading = useAuthStore((s) => s.isAuthLoading);
   const authError = useAuthStore((s) => s.authError);
   const isSupabaseReady = useAuthStore((s) => s.isSupabaseReady);
@@ -127,6 +129,7 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
         });
         if (!data?.session) {
           // 이메일 인증 필요 — 패널은 유지하고 안내 표시
+          setVerificationEmail(email.trim().toLowerCase());
           setLocalMessage({
             type: 'success',
             text: '인증 메일이 발송되었어요. 이메일 인증 후 로그인해주세요.',
@@ -153,6 +156,21 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
     }
   };
 
+  const handleResendConfirmation = async () => {
+    if (!verificationEmail || isAuthLoading) return;
+    setLocalMessage(null);
+    clearAuthError();
+    try {
+      await resendConfirmation(verificationEmail);
+      setLocalMessage({
+        type: 'success',
+        text: '인증 메일을 다시 보냈어요. 스팸함도 확인해주세요.',
+      });
+    } catch {
+      // store.authError가 안내 문구를 제공한다.
+    }
+  };
+
   // Supabase 미설정 — 이론상 호출되지 않지만 방어
   if (!isSupabaseReady) {
     return (
@@ -175,6 +193,7 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
   const switchMode = (next) => {
     setMode(next);
     setLocalMessage(null);
+    setVerificationEmail('');
     clearAuthError();
     if (next === 'signIn') {
       // 로그인 모드로 돌아오면 선택 상태 초기화 (재가입 시 다시 선택하도록)
@@ -359,7 +378,17 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
                   ? 'bg-red-50 text-red-600'
                   : 'bg-emerald-50 text-emerald-700'
               }`}>
-                {authError || localMessage?.text}
+                <p>{authError || localMessage?.text}</p>
+                {verificationEmail && !authError && (
+                  <button
+                    type="button"
+                    onClick={handleResendConfirmation}
+                    disabled={isAuthLoading}
+                    className="mt-2 font-black underline underline-offset-2 disabled:opacity-50"
+                  >
+                    인증 메일 다시 보내기
+                  </button>
+                )}
               </div>
             )}
 

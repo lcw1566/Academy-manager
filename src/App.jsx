@@ -78,6 +78,8 @@ export default function App() {
   const profile = useWorkspaceStore((s) => s.profile);
   const authUserId = useAuthStore((s) => s.user?.id);
   const ensureAcademyDataOwner = useAcademyStore((s) => s.ensureAcademyDataOwner);
+  const ensureAcademyDataScope = useAcademyStore((s) => s.ensureAcademyDataScope);
+  const clearAcademyDataCache = useAcademyStore((s) => s.clearAcademyDataCache);
   const memberships = useWorkspaceStore((s) => s.memberships);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
@@ -203,6 +205,7 @@ export default function App() {
 
   useEffect(() => {
     if (isPublicCheckin) return;
+    if (!isAuthInitialized) return;
     if (isAuthenticated) {
       // Phase 29: 인증된 사용자가 academy-store 의 마지막 소유자와 다르면
       // 학원 로컬 데이터를 리셋. 같은 브라우저에서 다른 계정이 로그인한 경우
@@ -211,6 +214,7 @@ export default function App() {
       if (authUserId) ensureAcademyDataOwner(authUserId);
       initializeWorkspace();
     } else {
+      clearAcademyDataCache();
       clearWorkspace();
       clearChat();
       // Phase 27: 로그아웃 시 자동 역할 ref 초기화. 다음 사용자의 권장 역할이
@@ -219,7 +223,19 @@ export default function App() {
       // Phase 28: 학원 선택 sessionStorage 도 비워서 다음 사용자가 다시 선택할 수 있게.
       clearWorkspacePicked();
     }
-  }, [isPublicCheckin, isAuthenticated, authUserId, ensureAcademyDataOwner, initializeWorkspace, clearWorkspace, clearChat]);
+  }, [
+    isPublicCheckin, isAuthInitialized, isAuthenticated, authUserId, ensureAcademyDataOwner,
+    clearAcademyDataCache, initializeWorkspace, clearWorkspace, clearChat,
+  ]);
+
+  useEffect(() => {
+    if (isPublicCheckin || !isAuthenticated) return;
+    if (!authUserId || !currentAcademyId) return;
+    ensureAcademyDataScope(authUserId, currentAcademyId);
+  }, [
+    isPublicCheckin, isAuthenticated, authUserId, currentAcademyId,
+    ensureAcademyDataScope,
+  ]);
 
   useEffect(() => {
     if (isPublicCheckin) return undefined;
@@ -343,9 +359,8 @@ export default function App() {
   //   - 같은 세션에서 자동 hydrate 한 적 없음
   //
   // 학원 단위 sessionStorage 키 ('auto-hydrated-<academyId>') 로 중복 실행 차단.
-  // Supabase 연결 환경에서는 서버 snapshot 을 원본으로 삼아 localStorage 를 교체한다.
-  // 이렇게 해야 localhost / Vercel 처럼 origin 이 달라도 로컬 찌꺼기가 중복 표시되지 않는다.
-  // 실패해도 키를 표시해 같은 세션 내 반복 시도를 막는다 (앱은 현재 로컬 데이터로 동작).
+  // 서버 snapshot 과 매칭되는 항목은 최신 값으로 교체하고, 아직 서버 저장에 실패한
+  // local-only 항목은 보존한다. 조회 자체가 실패하면 세션 성공 표시도 남기지 않는다.
   const hydratingRef = useRef(false);
   const monthEndGenerationRef = useRef(null);
   useEffect(() => {
@@ -366,9 +381,13 @@ export default function App() {
     (async () => {
       try {
         const snapshot = await fetchAcademySnapshot(currentAcademyId);
+        // fetch 도중 사용자가 다른 학원으로 전환했다면 이전 학원 snapshot을 적용하지 않는다.
+        if (useWorkspaceStore.getState().currentAcademyId !== currentAcademyId) return;
         const counts = hydrateAcademyFromServerSnapshot(snapshot, {
           strategy: 'serverWins',
-          preserveLocalOnly: false,
+          // RLS로 조회 권한이 회수된 직원 기기에 예전 학생/수납 캐시가 남지 않게
+          // local-only 보존은 전체 데이터 관리자인 원장에게만 허용한다.
+          preserveLocalOnly: useAcademyStore.getState().role === 'owner',
         });
         const total =
           (counts?.students || 0) + (counts?.classGroups || 0) +
@@ -378,11 +397,11 @@ export default function App() {
         if (total > 0) {
           showToast(`접속 완료!`);
         }
+        markAutoHydratedThisSession(currentAcademyId);
       } catch (err) {
         console.error('[auto-hydrate] fetchAcademySnapshot failed', err);
         showToast('데이터 동기화에 실패했어요.', 'error');
       } finally {
-        markAutoHydratedThisSession(currentAcademyId);
         hydratingRef.current = false;
       }
     })();

@@ -217,6 +217,7 @@ export function mapServerPayrollToLocal(p) {
     serverId: p.id,
     staffType: p.staff_type,
     staffId: p.staff_id,
+    staffUserId: p.staff_user_id ?? null,
     month: p.month,
     wageType: p.wage_type ?? 'monthly',
     hourlyWage: Math.max(0, Math.round(Number(p.hourly_wage) || 0)),

@@ -39,6 +39,7 @@ function mapLocalPayrollToServerPayload(payroll) {
   return {
     staff_type: payroll.staffType,
     staff_id: payroll.staffId,
+    staff_user_id: payroll.staffUserId || null,
     month: payroll.month,
     wage_type: payroll.wageType || null,
     hourly_wage: Number(payroll.hourlyWage) || 0,

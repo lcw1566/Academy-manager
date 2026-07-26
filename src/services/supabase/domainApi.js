@@ -1087,7 +1087,7 @@ function sanitizePaymentPayload(input, { strip = [] } = {}) {
 
 const PAYROLL_ALLOWED_FIELDS = new Set([
   'id', 'academy_id', 'user_id', 'mode',
-  'staff_type', 'staff_id', 'month',
+  'staff_type', 'staff_id', 'staff_user_id', 'month',
   'wage_type', 'hourly_wage', 'monthly_salary',
   'total_hours', 'completed_session_count', 'completed_clinic_count',
   'amount', 'status', 'paid_date', 'memo',

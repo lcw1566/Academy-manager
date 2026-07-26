@@ -143,6 +143,50 @@ const defaultTutorProfile = {
   studentHomeworkPrompt: DEFAULT_STUDENT_HOMEWORK_PROMPT,
 };
 
+function createDefaultAcademyProfile() {
+  return {
+    name: '우리 학원',
+    ownerName: '',
+    address: '',
+    phone: '',
+    salaryPaymentDay: 10,
+    tuitionDueDay: 1,
+    academyType: 'core_subjects',
+    academySubjects: ['korean', 'english', 'math'],
+    clinicRequired: true,
+  };
+}
+
+function createEmptyAcademyScopeState({
+  ownerUserId = null,
+  ownerAcademyId = null,
+} = {}) {
+  return {
+    academyProfile: createDefaultAcademyProfile(),
+    academyStudents: [],
+    classGroups: [],
+    classSessions: [],
+    clinicTasks: [],
+    clinicRecords: [],
+    academyTeachers: [],
+    academyAssistants: [],
+    academyManagers: [],
+    academyPayments: [],
+    academyLessonRecords: [],
+    academyAttendanceRecords: [],
+    academyStudentEvents: [],
+    academyExamResults: [],
+    academyConsultations: [],
+    academyPayrolls: [],
+    academyStaffShifts: [],
+    selectedClassGroupId: null,
+    selectedClassSessionId: null,
+    selectedAcademyStudentId: null,
+    academyDataOwnerUserId: ownerUserId,
+    academyDataOwnerAcademyId: ownerAcademyId,
+  };
+}
+
 const useAcademyStore = create(
   persist(
     (set, get) => ({
@@ -192,17 +236,7 @@ const useAcademyStore = create(
   examResults: [],
 
   // === Academy Workspace (원장/강사/보조강사 공유) ===
-  academyProfile: {
-    name: '우리 학원',
-    ownerName: '',
-    address: '',
-    phone: '',
-    salaryPaymentDay: 10,
-    tuitionDueDay: 1,
-    academyType: 'core_subjects',
-    academySubjects: ['korean', 'english', 'math'],
-    clinicRequired: true,
-  },
+  academyProfile: createDefaultAcademyProfile(),
   academyStudents: [],
   classGroups: [],
   classSessions: [],
@@ -229,6 +263,8 @@ const useAcademyStore = create(
   // 있었다. 이 필드에 마지막으로 academy 데이터를 쓴 auth.users.id 를 기록해
   // 두고, 다른 사용자로 로그인되면 academy-scoped 데이터를 모두 비운다.
   academyDataOwnerUserId: null,
+  // 같은 계정이 여러 학원에 소속된 경우에도 캐시가 섞이지 않도록 현재 학원도 함께 기록한다.
+  academyDataOwnerAcademyId: null,
 
   // === Toast ===
   toast: null,
@@ -1766,6 +1802,7 @@ const useAcademyStore = create(
       if (existing.status === 'completed') {
         return {
           ...existing,
+          staffUserId: existing.staffUserId || draft.staffUserId || null,
           memo: existing.memo || draft.memo,
           recalculatedAt: new Date().toISOString(),
         };
@@ -1805,6 +1842,7 @@ const useAcademyStore = create(
         : (teacher.monthlySalary || teacher.monthlyWage || 0);
       payrolls.push(keepLockedFields({
         id: `pr${ts}t${i}`, staffType: 'teacher', staffId: teacher.id, month,
+        staffUserId: teacher.serverUserId || null,
         wageType: teacher.wageType || 'monthly', hourlyMode: 'actualAttendance',
         hourlyWage: teacher.hourlyWage || 0,
         monthlySalary: teacher.monthlySalary || 0,
@@ -1834,6 +1872,7 @@ const useAcademyStore = create(
         : (assistant.monthlySalary || 0);
       payrolls.push(keepLockedFields({
         id: `pr${ts}a${i}`, staffType: 'assistant', staffId: assistant.id, month,
+        staffUserId: assistant.serverUserId || null,
         wageType: assistant.wageType || 'monthly', hourlyMode: 'actualAttendance',
         hourlyWage: assistant.hourlyWage || 0,
         monthlySalary: assistant.monthlySalary || 0,
@@ -1855,6 +1894,7 @@ const useAcademyStore = create(
         : (manager.monthlySalary || 0);
       payrolls.push(keepLockedFields({
         id: `pr${ts}m${i}`, staffType: 'manager', staffId: manager.id, month,
+        staffUserId: manager.serverUserId || null,
         wageType: manager.wageType || 'monthly', hourlyMode: 'actualAttendance',
         hourlyWage: manager.hourlyWage || 0, monthlySalary: manager.monthlySalary || 0,
         totalHours: actualHours, shiftHours: actualHours, lessonHours: 0, gapHours: actualHours,
@@ -2004,7 +2044,12 @@ const useAcademyStore = create(
       );
       const mergedClinic = mergeByIdOrServerId(s.clinicRecords, newClinic);
       const mergedPayments = mergeByIdOrServerId(s.academyPayments, newPayments);
-      const mergedPayrolls = mergeByIdOrServerId(s.academyPayrolls, newPayrolls);
+      // 급여는 RLS가 owner=전체, staff=본인 행만 반환한다. 일반 직원에게 예전에
+      // 캐시된 다른 직원 급여가 남지 않도록 owner만 local-only 급여를 보존한다.
+      const mergedPayrolls = mergeByIdOrServerId(
+        preserveLocalOnly && s.role === 'owner' ? s.academyPayrolls : [],
+        newPayrolls,
+      );
 
       counts = {
         students: newStudents.length,
@@ -2207,65 +2252,45 @@ const useAcademyStore = create(
     return totalMinutes / 60;
   },
 
-  // ─── Account scoping (Phase 29) ──────────────────────
-  // 로그인된 사용자가 변경되었을 때 academy-scoped 로컬 데이터만 비운다.
-  // tutor / private 데이터는 건드리지 않는다 (사용자가 명시적 fresh 가입한 게
-  // 아니라 로그인만 바뀐 경우라도, 개인 워크스페이스는 그 자체로 격리되도록).
-  // App.jsx 가 인증 직후 호출.
+  // ─── Account / academy scoping ───────────────────────
+  // 사용자 또는 현재 학원이 달라지면 academy-scoped 캐시를 먼저 비운다.
+  // 서버 fetch 전에 동기적으로 실행되어 이전 학원의 학생/급여가 화면에 섞이는 것을 막는다.
+  ensureAcademyDataScope: (userId, academyId) => {
+    if (!userId || !academyId) return;
+    const state = get();
+    if (
+      state.academyDataOwnerUserId === userId &&
+      state.academyDataOwnerAcademyId === academyId
+    ) {
+      return;
+    }
+    set(createEmptyAcademyScopeState({
+      ownerUserId: userId,
+      ownerAcademyId: academyId,
+    }));
+  },
+
+  // 구버전 호출부/저장 데이터 호환용. 사용자만 먼저 확정된 시점에는 계정 간
+  // 유출만 차단하고, 학원 ID는 loadMemberships 이후 ensureAcademyDataScope가 채운다.
   ensureAcademyDataOwner: (userId) => {
     if (!userId) return;
     const current = get().academyDataOwnerUserId;
     if (current === userId) return;
-    // 다른 사용자였거나 처음 로그인. academy 데이터를 깨끗하게 리셋.
-    set({
-      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '', salaryPaymentDay: 10, tuitionDueDay: 1 },
-      academyStudents: [],
-      classGroups: [],
-      classSessions: [],
-      clinicTasks: [],
-      clinicRecords: [],
-      academyTeachers: [],
-      academyAssistants: [],
-      academyManagers: [],
-      academyPayments: [],
-      academyLessonRecords: [],
-      academyAttendanceRecords: [],
-      academyStudentEvents: [],
-      academyExamResults: [],
-      academyConsultations: [],
-      academyPayrolls: [],
-      academyStaffShifts: [],
-      selectedClassGroupId: null,
-      selectedClassSessionId: null,
-      selectedAcademyStudentId: null,
-      academyDataOwnerUserId: userId,
-    });
+    set(createEmptyAcademyScopeState({ ownerUserId: userId }));
+  },
+
+  // 로그아웃/세션 만료 시 개인정보가 브라우저 localStorage에 남지 않도록 조용히 제거한다.
+  clearAcademyDataCache: () => {
+    set(createEmptyAcademyScopeState());
   },
 
   // ─── Academy Reset ────────────────────────────────
   resetAcademyData: () => {
-    set({
-      academyProfile: { name: '우리 학원', ownerName: '', address: '', phone: '', salaryPaymentDay: 10, tuitionDueDay: 1 },
-      academyStudents: [],
-      classGroups: [],
-      classSessions: [],
-      clinicTasks: [],
-      clinicRecords: [],
-      academyTeachers: [],
-      academyAssistants: [],
-      academyManagers: [],
-      academyPayments: [],
-      academyLessonRecords: [],
-      academyAttendanceRecords: [],
-      academyStudentEvents: [],
-      academyExamResults: [],
-      academyConsultations: [],
-      academyPayrolls: [],
-      // Clear academy-related navigation state too
-      selectedClassGroupId: null,
-      selectedClassSessionId: null,
-      selectedAcademyStudentId: null,
-    });
+    const state = get();
+    set(createEmptyAcademyScopeState({
+      ownerUserId: state.academyDataOwnerUserId,
+      ownerAcademyId: state.academyDataOwnerAcademyId,
+    }));
     get().showToast('학원 데이터가 초기화되었어요.');
   },
 
@@ -2470,6 +2495,7 @@ const useAcademyStore = create(
         academyStaffShifts: s.academyStaffShifts,
         // Phase 29 — 학원 데이터 소유자 (cross-account leak 방지용 marker)
         academyDataOwnerUserId: s.academyDataOwnerUserId,
+        academyDataOwnerAcademyId: s.academyDataOwnerAcademyId,
       }),
       // Migrate persisted profile to add prompt fields if missing
       onRehydrateStorage: () => (state) => {

@@ -9,8 +9,8 @@
 ## 1. 사전 준비
 
 ### 1.1 Supabase
-- [ ] [`supabase-final-migration-checklist.md`](./supabase-final-migration-checklist.md) 의 001 ~ 008 모두 실행 완료
-- [ ] 마지막 한 줄 확인 SQL (`tables=16, functions=6`) 통과
+- [ ] [`supabase/README.md`](../supabase/README.md) 순서대로 001 ~ 028 모두 실행 완료
+- [ ] `028_role_permissions_and_payroll_privacy.sql` 실행 후 역할별 권한 테스트 통과
 - [ ] 프로젝트 anon key 가 클라이언트 환경 변수에 들어 있음 (`VITE_SUPABASE_ANON_KEY`)
 - [ ] **service_role 키는 어디에도 노출되어 있지 않음** (env / git history / 빌드 산출물 모두 확인)
 
