@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Plus, ChevronLeft, Send, Users, Megaphone, Search, Check, Loader2, Bell } from 'lucide-react';
 import useChatStore, { unreadCountForThread } from '../../../store/useChatStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -9,6 +9,7 @@ import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import { checkNotificationPermission, requestNotificationPermission } from '../../../services/pushNotifications';
+import { tossSpring } from '../../../utils/motion';
 
 const ROLE_LABELS = { owner: '원장', teacher: '강사', assistant: '보조강사', manager: '운영 매니저' };
 
@@ -294,6 +295,8 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const previousMessageCountRef = useRef(0);
+  const reduceMotion = useReducedMotion();
   const isGroup = thread.kind === 'group';
   const isAcademyGroup = isGroup && thread.group_scope !== 'custom';
 
@@ -311,8 +314,16 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [threadMessages.length]);
+    if (!el) return;
+    const firstPositioning = previousMessageCountRef.current === 0;
+    previousMessageCountRef.current = threadMessages.length;
+    requestAnimationFrame(() => {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: reduceMotion || firstPositioning ? 'auto' : 'smooth',
+      });
+    });
+  }, [threadMessages.length, reduceMotion]);
 
   const handleSend = async () => {
     const text = draft.trim();
@@ -321,7 +332,7 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
     setSending(true);
     inputRef.current?.focus({ preventScroll: true });
     try {
-      await sendMessage({ threadId: thread.id, body: text });
+      await sendMessage({ threadId: thread.id, body: text, senderId: authUserId });
     } catch (err) {
       setDraft(text); // 실패 시 입력 복원
       showToast?.(err?.message ? `메시지 전송 실패: ${err.message}` : '메시지를 보내지 못했어요.', 'error');
@@ -333,7 +344,12 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
 
   if (typeof document === 'undefined') return null;
   return createPortal(
-    <div className="fixed inset-0 z-50 flex flex-col h-[100dvh] bg-[#F2F4F6]">
+    <motion.div
+      initial={reduceMotion ? false : { opacity: 0, x: 14, scale: 0.995 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      transition={tossSpring.soft}
+      className="fixed inset-0 z-50 flex flex-col h-[100dvh] bg-[#F2F4F6]"
+    >
       {/* 헤더 */}
       <div className="flex items-center gap-2 px-2 py-3 bg-white border-b border-gray-100 flex-shrink-0">
         <button onClick={onBack} className="w-9 h-9 flex items-center justify-center rounded-full active:bg-gray-100">
@@ -356,41 +372,73 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
 
       {/* 메시지 */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
-        {threadMessages.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center text-center">
-            <div className="text-4xl mb-2">👋</div>
-            <p className="text-sm text-gray-400">첫 메시지를 보내보세요</p>
-          </div>
-        )}
-        {threadMessages.map((m, idx) => {
-          const mine = m.sender_id === authUserId;
-          const prev = threadMessages[idx - 1];
-          const showSender = isGroup && !mine && (!prev || prev.sender_id !== m.sender_id);
-          const senderName = memberMap[m.sender_id]?.name || '직원';
-          const senderRole = memberMap[m.sender_id]?.role;
-          return (
-            <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-              {showSender && (
-                <p className="text-[11px] text-gray-500 font-medium mb-0.5 ml-1">
-                  {senderName}
-                  {senderRole ? ` · ${ROLE_LABELS[senderRole] || ''}` : ''}
-                </p>
-              )}
-              <div className={`flex items-end gap-1.5 max-w-[80%] ${mine ? 'flex-row-reverse' : ''}`}>
-                <div
-                  className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
-                    mine
-                      ? 'bg-[#0064FF] text-white rounded-br-md'
-                      : 'bg-white text-gray-900 rounded-bl-md shadow-sm'
-                  }`}
-                >
-                  {m.body}
+        <AnimatePresence initial={false} mode="popLayout">
+          {threadMessages.length === 0 && (
+            <motion.div
+              key="empty-chat"
+              initial={reduceMotion ? false : { opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: -6 }}
+              transition={tossSpring.soft}
+              className="flex-1 flex flex-col items-center justify-center text-center"
+            >
+              <div className="text-4xl mb-2">👋</div>
+              <p className="text-sm text-gray-400">첫 메시지를 보내보세요</p>
+            </motion.div>
+          )}
+          {threadMessages.map((m, idx) => {
+            const mine = m.sender_id === authUserId;
+            const sendingMessage = m.delivery_state === 'sending';
+            const prev = threadMessages[idx - 1];
+            const showSender = isGroup && !mine && (!prev || prev.sender_id !== m.sender_id);
+            const senderName = memberMap[m.sender_id]?.name || '직원';
+            const senderRole = memberMap[m.sender_id]?.role;
+            return (
+              <motion.div
+                layout="position"
+                key={m.client_animation_id || m.id}
+                initial={reduceMotion ? false : {
+                  opacity: 0,
+                  x: mine ? 14 : -10,
+                  y: 12,
+                  scale: 0.9,
+                }}
+                animate={{ opacity: sendingMessage ? 0.82 : 1, x: 0, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -5, scale: 0.94 }}
+                transition={tossSpring.soft}
+                className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}
+              >
+                {showSender && (
+                  <motion.p
+                    initial={reduceMotion ? false : { opacity: 0, y: 3 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={tossSpring.fade}
+                    className="text-[11px] text-gray-500 font-medium mb-0.5 ml-1"
+                  >
+                    {senderName}
+                    {senderRole ? ` · ${ROLE_LABELS[senderRole] || ''}` : ''}
+                  </motion.p>
+                )}
+                <div className={`flex items-end gap-1.5 max-w-[80%] ${mine ? 'flex-row-reverse' : ''}`}>
+                  <motion.div
+                    layout
+                    transition={tossSpring.layout}
+                    className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                      mine
+                        ? 'bg-[#0064FF] text-white rounded-br-md shadow-sm shadow-blue-500/10'
+                        : 'bg-white text-gray-900 rounded-bl-md shadow-sm'
+                    }`}
+                  >
+                    {m.body}
+                  </motion.div>
+                  <span className="text-[10px] text-gray-400 flex-shrink-0 mb-0.5">
+                    {sendingMessage ? '전송 중' : formatTime(m.created_at)}
+                  </span>
                 </div>
-                <span className="text-[10px] text-gray-400 flex-shrink-0 mb-0.5">{formatTime(m.created_at)}</span>
-              </div>
-            </div>
-          );
-        })}
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
       </div>
 
       {/* 입력 */}
@@ -410,18 +458,30 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
           className="flex-1 resize-none max-h-32 bg-gray-100 rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100"
         />
         <motion.button
-          whileTap={{ scale: 0.92 }}
+          whileTap={draft.trim() && !sending ? { scale: 0.84, y: 2 } : undefined}
+          animate={{
+            scale: draft.trim() || sending ? 1 : 0.9,
+            rotate: sending ? -8 : 0,
+          }}
+          transition={tossSpring.tap}
           onPointerDown={(event) => event.preventDefault()}
           onClick={handleSend}
           disabled={!draft.trim() || sending}
           className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-colors ${
-            draft.trim() && !sending ? 'bg-[#0064FF] text-white' : 'bg-gray-200 text-gray-400'
+            draft.trim() || sending ? 'bg-[#0064FF] text-white' : 'bg-gray-200 text-gray-400'
           }`}
+          aria-label={sending ? '메시지 전송 중' : '메시지 보내기'}
         >
-          <Send size={17} />
+          <motion.span
+            animate={sending ? { x: 2, y: -2, scale: 0.88 } : { x: 0, y: 0, scale: 1 }}
+            transition={tossSpring.tap}
+            className="flex items-center justify-center"
+          >
+            <Send size={17} />
+          </motion.span>
         </motion.button>
       </div>
-    </div>,
+    </motion.div>,
     document.body,
   );
 }

@@ -155,15 +155,42 @@ const useChatStore = create((set, get) => ({
   },
 
   // ─── send / read ───────────────────────────────────────────
-  sendMessage: async ({ threadId, body }) => {
+  sendMessage: async ({ threadId, body, senderId }) => {
     const academyId = get().academyId;
     if (!academyId || !threadId) return null;
     const text = (body || '').trim();
     if (!text) return null;
+    const optimisticId = `pending:${threadId}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    const optimistic = {
+      id: optimisticId,
+      academy_id: academyId,
+      thread_id: threadId,
+      sender_id: senderId || null,
+      body: text,
+      created_at: new Date().toISOString(),
+      delivery_state: 'sending',
+    };
+    // 네트워크 응답을 기다리지 않고 즉시 말풍선을 그린다.
+    get().appendMessage(optimistic);
+    get().touchThread(threadId, optimistic.created_at);
     try {
       const created = await sendChatMessage({ academyId, threadId, body: text });
       if (created?.id) {
-        get().appendMessage(created);
+        // realtime INSERT가 먼저 도착했어도 실제 ID 한 건만 남긴다.
+        set((s) => {
+          const messages = s.messages
+            .filter((message) => message.id !== optimisticId && message.id !== created.id)
+            .map((message) =>
+              message.client_animation_id === optimisticId
+                ? { ...message, client_animation_id: null }
+                : message
+            );
+          return {
+            messages: [...messages, { ...created, client_animation_id: optimisticId }].sort(
+              (a, b) => new Date(a.created_at) - new Date(b.created_at),
+            ),
+          };
+        });
         get().touchThread(threadId, created.created_at);
         requestChatPush(created.id).catch((pushError) => {
           console.warn('[push] chat notification request failed', pushError?.message || pushError);
@@ -171,6 +198,16 @@ const useChatStore = create((set, get) => ({
       }
       return created;
     } catch (err) {
+      // 응답만 끊기고 realtime INSERT는 도착한 경우 실제 전송 성공으로 취급한다.
+      const realtimeConfirmed = get().messages.find(
+        (message) =>
+          message.client_animation_id === optimisticId &&
+          message.delivery_state !== 'sending',
+      );
+      if (realtimeConfirmed) return realtimeConfirmed;
+      set((s) => ({
+        messages: s.messages.filter((message) => message.id !== optimisticId),
+      }));
       console.warn('[chat] sendMessage failed', err);
       throw err;
     }
@@ -181,6 +218,27 @@ const useChatStore = create((set, get) => ({
     if (!msg?.id) return;
     set((s) => {
       if (s.messages.some((m) => m.id === msg.id)) return s;
+      if (msg.delivery_state !== 'sending') {
+        const pending = s.messages.find(
+          (message) =>
+            message.delivery_state === 'sending' &&
+            message.thread_id === msg.thread_id &&
+            message.sender_id === msg.sender_id &&
+            message.body === msg.body &&
+            Math.abs(
+              new Date(message.created_at).getTime() - new Date(msg.created_at).getTime(),
+            ) < 30_000,
+        );
+        if (pending) {
+          return {
+            messages: s.messages.map((message) =>
+              message.id === pending.id
+                ? { ...msg, client_animation_id: pending.id }
+                : message
+            ),
+          };
+        }
+      }
       return { messages: [...s.messages, msg] };
     });
   },
