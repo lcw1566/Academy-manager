@@ -69,7 +69,8 @@ export async function updateMyProfileBasic({ displayName, phone } = {}) {
 // default_role 도 매핑해 함께 저장한다 (앱 호환).
 //   tutor -> default_role='tutor'
 //   owner -> default_role='owner'
-//   staff -> default_role='teacher' (학원 멤버십에서 teacher/assistant 가 갈리므로 기본값을 teacher 로 둔다)
+//   staff -> default_role='teacher' (레거시 호환용 기본값일 뿐, 실제 학원 접근과
+//            역할은 academy_members의 active 멤버십 및 역할 배정으로 결정한다)
 export async function updateMyProfileAccountType({ accountType, defaultRole, displayName } = {}) {
   if (!accountType) throw new Error('accountType이 필요해요.');
   if (!['tutor', 'owner', 'staff'].includes(accountType)) {
@@ -163,26 +164,40 @@ function normalizeEmail(email) {
   return (email ?? '').trim().toLowerCase();
 }
 
-function assertInviteRole(role) {
+function assertStaffRole(role) {
   if (!['teacher', 'assistant', 'manager'].includes(role)) {
-    throw new Error('초대 역할은 강사, 보조강사 또는 운영 매니저여야 해요.');
+    throw new Error('직원 역할은 강사, 보조강사 또는 운영 매니저여야 해요.');
   }
 }
 
-// 원장이 강사/보조강사를 초대.
-// 같은 (academy_id, email, role) 가 이미 존재하면 status 를 'pending' 으로 되살린다.
-// (취소했다가 다시 초대하는 시나리오 지원)
-export async function createAcademyInvitation({ academyId, email, role }) {
+// 원장 또는 운영 매니저가 "직원"으로 초대한다.
+// 초대에는 실제 직무를 넣지 않고 pending 역할만 저장한다. 수락 뒤 원장/운영
+// 매니저가 강사·보조강사(원장은 운영 매니저도 가능)를 배정해야 활성화된다.
+// 같은 (academy_id, email, pending) 초대가 있으면 status 를 되살린다.
+export async function createAcademyInvitation({ academyId, email }) {
   const user = await getCurrentUserOrThrow();
   if (!academyId) throw new Error('academyId가 필요해요.');
   const cleanedEmail = normalizeEmail(email);
   if (!cleanedEmail) throw new Error('이메일을 입력해주세요.');
-  assertInviteRole(role);
+
+  // 수락 완료 초대를 다시 pending으로 되돌리면 이미 활성화된 직원의 상태를
+  // 혼동시킬 수 있다. 같은 역할 없는 초대는 취소/미수락 상태에서만 재발송한다.
+  const { data: existing, error: existingError } = await supabase
+    .from('academy_invitations')
+    .select('id, status')
+    .eq('academy_id', academyId)
+    .eq('email', cleanedEmail)
+    .eq('role', 'pending')
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing?.status === 'accepted') {
+    throw new Error('이 직원은 이미 초대를 수락했어요. 역할 배정 목록 또는 직원 목록을 확인해주세요.');
+  }
 
   const payload = {
     academy_id: academyId,
     email: cleanedEmail,
-    role,
+    role: 'pending',
     status: 'pending',
     invited_by: user.id,
     accepted_user_id: null,
@@ -295,7 +310,7 @@ export async function addAcademyMemberByUserId({ academyId, userId, role }) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
   if (!userId) throw new Error('userId가 필요해요.');
-  assertInviteRole(role);
+  assertStaffRole(role);
   const { data, error } = await supabase
     .from('academy_members')
     .upsert(
@@ -473,6 +488,18 @@ export async function listAcademyMemberProfiles(academyId) {
   return data ?? [];
 }
 
+// 초대를 수락해 역할 배정을 기다리는 직원 목록. SQL 026의 security definer
+// RPC가 운영 권한을 검증하고, 필요한 프로필 정보만 반환한다.
+export async function listAcademyRoleAssignmentCandidates(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const { data, error } = await supabase.rpc('list_academy_role_assignment_candidates', {
+    p_academy_id: academyId,
+  });
+  if (error) throw error;
+  return data ?? [];
+}
+
 
 // ────────────────────────────────────────────────────────────────
 // academy_staff_profiles (SQL 004)
@@ -556,7 +583,7 @@ export async function updateAcademyMemberRole({ academyId, userId, role }) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
   if (!userId) throw new Error('userId가 필요해요.');
-  assertInviteRole(role);
+  assertStaffRole(role);
   const { data, error } = await supabase
     .from('academy_members')
     .update({ role })
@@ -566,6 +593,24 @@ export async function updateAcademyMemberRole({ academyId, userId, role }) {
     .single();
   if (error) throw error;
   return data;
+}
+
+// pending 직원에게 실제 역할을 부여하고 active 멤버십으로 전환한다.
+// SQL 026 RPC가 owner/manager 권한과 "pending → 활성 역할" 전이를 검증한다.
+export async function assignAcademyMemberRole({ academyId, userId, role }) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!userId) throw new Error('userId가 필요해요.');
+  assertStaffRole(role);
+  const { data, error } = await supabase.rpc('assign_academy_member_role', {
+    p_academy_id: academyId,
+    p_user_id: userId,
+    p_role: role,
+  });
+  if (error) throw new Error(error.message || '역할 배정에 실패했어요.');
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) throw new Error('역할 배정 결과가 없어요.');
+  return row;
 }
 
 // Soft-delete via status='inactive' (no delete policy on the table).

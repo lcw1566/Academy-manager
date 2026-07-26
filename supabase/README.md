@@ -33,7 +33,8 @@ supabase/
     ├── 022_chat_push_notifications.sql (채팅 푸시 기기 등록)
     ├── 023_chat_push_service_role_grants.sql (푸시 함수 권한)
     ├── 024_academy_drive.sql (공유 드라이브 비공개 Storage + 파일별 다운로드 정책)
-    └── 025_operations_manager_role.sql (운영 매니저 역할 + 데스크 운영 권한/RLS)
+    ├── 025_operations_manager_role.sql (운영 매니저 역할 + 데스크 운영 권한/RLS)
+    └── 026_deferred_staff_role_assignment.sql (직원 초대 수락 후 역할 배정/RLS)
 ```
 
 ## 실행 순서 요약
@@ -65,9 +66,20 @@ supabase/
 | 23 | `023_chat_push_service_role_grants.sql` | 채팅 푸시 함수용 서비스 역할 권한 |
 | 24 | `024_academy_drive.sql` | 비공개 `academy-drive` 버킷, `academy_drive_files` 메타데이터, 원장 관리 RLS |
 | 25 | `025_operations_manager_role.sql` | 운영 매니저 초대·근무표·학생/수납·공유 드라이브 관리. 학원 삭제·최종 설정·급여 관리는 원장 전용 |
+| 26 | `026_deferred_staff_role_assignment.sql` | 역할 없는 직원 초대, 수락 후 역할 배정 대기, 원장/운영 매니저의 활성화 권한 및 보안 경계 |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
+
+### 직원 초대·역할 배정 배포 (026)
+
+`025_operations_manager_role.sql`까지 실행한 환경에서
+`supabase/sql/026_deferred_staff_role_assignment.sql`을 실행하세요.
+
+- 가입 화면은 **원장 / 직원**만 선택합니다.
+- 직원 초대는 역할 없이 발송되고, 수락자는 `역할 배정 대기` 상태가 됩니다.
+- 원장은 강사·보조강사·운영 매니저를 배정할 수 있으며, 운영 매니저는 강사·보조강사만 배정할 수 있습니다.
+- 배정 전 멤버십은 `pending / invited`라 기존 active-member RLS를 통과하지 못합니다.
 
 > ⚠ **002 는 001 의 helper function 에 의존합니다.**
 > `public.set_updated_at`, `public.is_member_of_academy`, `public.is_owner_of_academy`

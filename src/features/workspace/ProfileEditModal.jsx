@@ -19,7 +19,7 @@ import useAuthStore from '../../store/useAuthStore';
 const ACCOUNT_TYPE_LABEL = {
   tutor: '과외 선생님',
   owner: '학원 원장',
-  staff: '강사 / 보조강사',
+  staff: '직원',
 };
 
 export default function ProfileEditModal({ isOpen, onClose, onSaved }) {

@@ -31,15 +31,17 @@ const ACCOUNT_TYPE_HINT = {
     iconColor: 'text-emerald-600',
   },
   staff: {
-    title: '강사 / 보조강사 계정',
-    desc: '학원 초대를 수락하면 수업과 클리닉을 확인할 수 있어요.',
+    title: '직원 계정',
+    desc: '학원 초대를 수락한 뒤 원장 또는 운영 매니저가 역할을 배정해요.',
     Icon: Users,
     iconBg: 'bg-purple-50',
     iconColor: 'text-purple-600',
   },
 };
 
-const INVITE_ROLE_LABEL = { teacher: '강사', assistant: '보조강사', manager: '운영 매니저' };
+const INVITE_ROLE_LABEL = {
+  teacher: '강사', assistant: '보조강사', manager: '운영 매니저', pending: '직원',
+};
 
 export default function WorkspaceSection() {
   const isSupabaseReady = useAuthStore((s) => s.isSupabaseReady);
@@ -511,7 +513,11 @@ function InvitationsCard({ invitations, loading, acceptingId, onAccept, onRefres
                   <p className="text-sm font-bold text-gray-900 truncate">
                     {academyName}
                   </p>
-                  <p className="text-xs text-gray-500 mt-0.5">{roleLabel} 역할</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {inv.role === 'pending'
+                      ? '직원 초대 · 수락 후 역할 배정'
+                      : `${roleLabel} 역할`}
+                  </p>
                 </div>
                 <button
                   type="button"

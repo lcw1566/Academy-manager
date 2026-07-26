@@ -9,7 +9,7 @@ import { formatPhoneNumber } from '../../utils/format';
 const ACCOUNT_TYPES = [
   {
     id: 'owner',
-    title: '학원 원장',
+    title: '원장',
     desc: '학원 워크스페이스를 만들고 강사와 학생을 함께 관리해요.',
     Icon: Building2,
     iconBg: 'bg-emerald-50',
@@ -18,8 +18,8 @@ const ACCOUNT_TYPES = [
   },
   {
     id: 'staff',
-    title: '강사 / 보조강사',
-    desc: '학원 초대를 수락하면 담당 수업과 클리닉을 관리할 수 있어요.',
+    title: '직원',
+    desc: '학원 초대를 수락한 뒤 원장 또는 운영 매니저가 역할을 배정해요.',
     Icon: Users,
     iconBg: 'bg-purple-50',
     iconColor: 'text-purple-600',
@@ -114,6 +114,8 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
             display_name: trimmedName,
             phone: cleanedPhone,
             account_type: accountType,
+            // staff의 default_role은 기존 데이터 호환용이다. 실제 학원 역할은
+            // 초대 수락 뒤 academy_members에서 원장/운영 매니저가 배정한다.
             default_role:
               accountType === 'staff'
                 ? 'teacher'

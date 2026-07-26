@@ -90,7 +90,11 @@ export default function WorkspaceSelectionPage() {
     try {
       const result = await acceptInvitation(invitationId);
       const academyName = result?.academy?.name ?? '학원';
-      showToast(`${academyName}에 참여했어요.`);
+      showToast(
+        result?.role === 'pending'
+          ? `${academyName} 초대를 수락했어요. 역할 배정을 기다려주세요.`
+          : `${academyName}에 참여했어요.`,
+      );
       // 새 학원 자동 진입.
       if (result?.academyId) {
         setActiveTab('home');
@@ -194,7 +198,9 @@ export default function WorkspaceSelectionPage() {
                       {inv.academy?.name || '학원'}
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      {roleMap[inv.role] || inv.role} 초대
+                      {inv.role === 'pending'
+                        ? '직원 초대 · 수락 후 역할 배정'
+                        : `${roleMap[inv.role] || inv.role} 초대`}
                     </p>
                   </div>
                   <button

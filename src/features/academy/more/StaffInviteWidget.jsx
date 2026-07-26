@@ -1,7 +1,6 @@
 // StaffInviteWidget
 //
-// 원장이 강사/보조강사를 "앱 내부 초대" 로 부르는 위젯.
-// TeacherFormModal / AssistantFormModal 에 끼워 넣어 쓴다.
+// 원장 또는 운영 매니저가 직원을 "앱 내부 초대" 로 부르는 위젯.
 //
 // 이메일은 **계정 식별자** 일 뿐, 실제 메일은 발송되지 않는다.
 // 초대는 academy_invitations 테이블에 pending row 로 저장되며,
@@ -11,7 +10,8 @@
 //   1) 원장이 이메일 입력
 //   2) "계정 검색" → findProfileByEmail (best-effort; RLS 차단 가능)
 //   3) "앱 초대 보내기" → createAcademyInvitation (pending row 생성)
-//   4) 강사/보조강사가 같은 이메일로 로그인한 뒤 "받은 초대" 에서 수락
+//   4) 직원이 같은 이메일로 로그인한 뒤 "받은 초대" 에서 수락
+//   5) 원장/운영 매니저가 역할을 배정하면 학원 접근이 활성화됨
 //
 // 안전 가드:
 //   - 본인이 본인을 초대하는 케이스 차단 (원장 == 입력 이메일)
@@ -26,14 +26,11 @@ import {
   listAcademyInvitations,
 } from '../../../services/supabase/workspaceApi';
 
-const ROLE_LABEL = { teacher: '강사', assistant: '보조강사' };
-
 function normalizeEmail(value) {
   return (value ?? '').trim().toLowerCase();
 }
 
 export default function StaffInviteWidget({
-  role,            // 'teacher' | 'assistant'
   initialEmail,    // 폼에 기존에 저장된 이메일 (있으면 prefill)
   onEmailChange,   // 폼에 이메일 값을 다시 반영 (저장 시 함께 persist)
   onInviteSent,    // 초대 row 생성 시 inviteStatus='pending' 등 폼에 반영
@@ -60,7 +57,7 @@ export default function StaffInviteWidget({
     setExistingInvite(null);
   }, [initialEmail]);
 
-  // 학원에 이미 같은 (email, role) 의 invitation 이 있는지 조회 (정보용)
+  // 학원에 이미 같은 이메일의 역할 없는 직원 초대가 있는지 조회 (정보용)
   useEffect(() => {
     if (!currentAcademyId || !isAuthenticated) return;
     const cleaned = normalizeEmail(initialEmail || '');
@@ -74,7 +71,7 @@ export default function StaffInviteWidget({
         const list = await listAcademyInvitations(currentAcademyId);
         if (cancelled) return;
         const match = list.find(
-          (inv) => normalizeEmail(inv.email) === cleaned && inv.role === role,
+          (inv) => normalizeEmail(inv.email) === cleaned && inv.role === 'pending',
         );
         setExistingInvite(match || null);
       } catch {
@@ -82,7 +79,7 @@ export default function StaffInviteWidget({
       }
     })();
     return () => { cancelled = true; };
-  }, [currentAcademyId, isAuthenticated, initialEmail, role]);
+  }, [currentAcademyId, isAuthenticated, initialEmail]);
 
   const cleanedEmail = normalizeEmail(email);
   const isMyOwnEmail =
@@ -151,7 +148,6 @@ export default function StaffInviteWidget({
       const inv = await createAcademyInvitation({
         academyId: currentAcademyId,
         email: cleanedEmail,
-        role,
       });
       setExistingInvite(inv);
       // Phase 33 — 즉시 store 에 반영해서 "대기 중인 초대" 카드가 곧바로 등장.
@@ -160,7 +156,7 @@ export default function StaffInviteWidget({
       setFeedback({
         type: 'success',
         text:
-          '직원 초대를 보냈어요. 상대 화면에도 곧 “받은 초대”로 갱신됩니다.',
+          '직원 초대를 보냈어요. 수락하면 역할 배정 대기 목록에 나타납니다.',
       });
       onInviteSent?.({ email: cleanedEmail, status: inv.status });
     } catch (err) {
@@ -218,7 +214,7 @@ export default function StaffInviteWidget({
       {/* 현재 invitation 상태 표시 */}
       {inviteStatusLabel && (
         <div className={`text-xs font-semibold rounded-xl px-3 py-2 ${inviteStatusTone}`}>
-          {ROLE_LABEL[role]} {inviteStatusLabel}
+          직원 {inviteStatusLabel}
         </div>
       )}
 
@@ -266,7 +262,7 @@ export default function StaffInviteWidget({
       )}
 
       <p className="text-[11px] text-gray-400 leading-relaxed mt-1">
-        실제 메일 발송 없이, 해당 이메일 계정의 앱 “받은 초대”에 표시되는 방식이에요.
+        수락 뒤 원장 또는 운영 매니저가 역할을 배정해야 학원 기능을 사용할 수 있어요.
       </p>
     </div>
   );

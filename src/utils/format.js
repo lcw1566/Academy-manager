@@ -47,6 +47,7 @@ export const roleMap = {
   teacher: '학원 강사',
   assistant: '보조강사',
   manager: '운영 매니저',
+  pending: '역할 배정 대기',
 };
 
 export const classTypeColors = {

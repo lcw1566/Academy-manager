@@ -14,7 +14,7 @@
 //   - academy_member_profiles (서버 — 이메일/이름/연락처)
 //   - academyStaffShifts     (로컬 근무표)
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus, ChevronLeft, ChevronRight, Pencil,
   Clock, Search, Users as UsersIcon, GraduationCap, Mail, X as XIcon,
@@ -44,7 +44,11 @@ import {
   updateAcademyStaffShift as updateServerStaffShift,
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
-import { updateAcademyMemberRole } from '../../../services/supabase/workspaceApi';
+import {
+  assignAcademyMemberRole,
+  listAcademyRoleAssignmentCandidates,
+  updateAcademyMemberRole,
+} from '../../../services/supabase/workspaceApi';
 import {
   buildRecurringStaffWorkPreview,
   saveRecurringStaffWorkSchedule,
@@ -198,13 +202,43 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
 
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const refreshWorkspaceCollaborationState = useWorkspaceStore(
+    (s) => s.refreshWorkspaceCollaborationState,
+  );
 
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all'); // all | teacher | assistant | manager | pending
   const [selectedKey, setSelectedKey] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteRole, setInviteRole] = useState('teacher');
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [roleCandidates, setRoleCandidates] = useState([]);
+  const [isRoleCandidatesLoading, setIsRoleCandidatesLoading] = useState(false);
+
+  const loadRoleCandidates = useCallback(async () => {
+    if (!currentAcademyId) {
+      setRoleCandidates([]);
+      return [];
+    }
+    setIsRoleCandidatesLoading(true);
+    try {
+      const list = await listAcademyRoleAssignmentCandidates(currentAcademyId);
+      setRoleCandidates(list);
+      return list;
+    } catch (err) {
+      // SQL 026 미적용 같은 서버 상태는 기존 초대 기능을 막지 않도록 콘솔에만 남긴다.
+      console.warn('[staff] role-assignment candidates failed', err);
+      setRoleCandidates([]);
+      return [];
+    } finally {
+      setIsRoleCandidatesLoading(false);
+    }
+  }, [currentAcademyId]);
+
+  // 초대 수락 시 invitation/membership 실시간 갱신이 일어나면 후보도 다시 읽는다.
+  useEffect(() => {
+    loadRoleCandidates();
+  }, [loadRoleCandidates, academyInvitations]);
 
   const todayStr = todayDate();
   const weekDates = useMemo(() => getWeekDates(todayStr), [todayStr]);
@@ -256,6 +290,15 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
     const q = search.trim().toLowerCase();
     const items = [];
     if (filter === 'pending') {
+      for (const candidate of roleCandidates) {
+        const matches = [candidate.display_name, candidate.email, candidate.phone]
+          .some((value) => (value || '').toLowerCase().includes(q));
+        if (q && !matches) continue;
+        items.push({
+          kind: 'candidate', id: candidate.member_id,
+          key: `candidate_${candidate.member_id}`, candidate,
+        });
+      }
       for (const inv of pendingInvitations) {
         if (q && !(inv.email || '').toLowerCase().includes(q)) continue;
         items.push({ kind: 'pending', id: inv.id, key: `inv_${inv.id}`, inv });
@@ -270,6 +313,15 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
         items.push({ kind: 'staff', id: s.id, key: `staff_${s.id}`, staff: s });
       }
       if (filter === 'all') {
+        for (const candidate of roleCandidates) {
+          const matches = [candidate.display_name, candidate.email, candidate.phone]
+            .some((value) => (value || '').toLowerCase().includes(q));
+          if (q && !matches) continue;
+          items.push({
+            kind: 'candidate', id: candidate.member_id,
+            key: `candidate_${candidate.member_id}`, candidate,
+          });
+        }
         for (const inv of pendingInvitations) {
           if (q && !(inv.email || '').toLowerCase().includes(q)) continue;
           items.push({ kind: 'pending', id: inv.id, key: `inv_${inv.id}`, inv });
@@ -277,7 +329,7 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
       }
     }
     return items;
-  }, [allStaff, pendingInvitations, filter, search]);
+  }, [allStaff, pendingInvitations, roleCandidates, filter, search]);
 
   const selectedItem = useMemo(() => {
     if (!selectedKey) return visibleItems[0] || null;
@@ -352,6 +404,12 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
                 <Plus size={14} /> 직원 초대
               </button>
 
+              {isRoleCandidatesLoading && (filter === 'all' || filter === 'pending') && (
+                <div className="mb-2 px-1 text-[11px] text-[#8B95A1] flex items-center gap-1">
+                  <Loader2 size={11} className="animate-spin" /> 역할 배정 대기자를 확인하고 있어요.
+                </div>
+              )}
+
               {visibleItems.length === 0 ? (
                 <div className="py-8 text-center">
                   <UsersIcon size={20} className="text-gray-300 mx-auto mb-2" />
@@ -385,6 +443,17 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
                   inv={selectedItem.inv}
                   onBack={handleBackToList}
                 />
+              ) : selectedItem.kind === 'candidate' ? (
+                <RoleAssignmentDetail
+                  candidate={selectedItem.candidate}
+                  canAssignManager={canInviteManagers}
+                  onBack={handleBackToList}
+                  onAssigned={async () => {
+                    await refreshWorkspaceCollaborationState?.({ reason: 'staff-role-assigned' });
+                    await loadRoleCandidates();
+                    setSelectedKey(null);
+                  }}
+                />
               ) : (
                 <StaffDetailPanel
                   staff={selectedItem.staff}
@@ -401,7 +470,7 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
         </div>
       </div>
 
-      {/* 직원 초대 — 이메일 + 역할 선택 */}
+      {/* 직원 초대 — 이메일만 입력하고, 수락 뒤 역할 배정 */}
       {inviteOpen && (
         <Modal
           isOpen
@@ -420,11 +489,11 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
           <div className="flex flex-col gap-4">
             <div className="bg-blue-50 rounded-2xl px-4 py-3">
               <p className="text-xs text-blue-700 leading-relaxed">
-                직원으로 초대할 이메일을 입력해주세요. 수락 후 역할과 급여 조건을 바로 설정할 수 있어요.
+                직원으로 초대할 이메일을 입력해주세요. 수락 후 역할 배정 대기 목록에서
+                강사·보조강사(원장은 운영 매니저도 가능)로 설정할 수 있어요.
               </p>
             </div>
-            <RoleChoice value={inviteRole} onChange={setInviteRole} allowManager={canInviteManagers} />
-            <StaffInviteWidget role={inviteRole} />
+            <StaffInviteWidget />
           </div>
         </Modal>
       )}
@@ -434,6 +503,39 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
 
 // ─── 직원/초대 카드 ────────────────────────────────────────────────
 function StaffRosterCard({ item, active, summary, onClick }) {
+  if (item.kind === 'candidate') {
+    const candidate = item.candidate;
+    const name = candidate.display_name || candidate.email || '(이름 없음)';
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`relative w-full text-left rounded-2xl px-3 py-3 bg-white transition-colors ${
+          active ? 'text-[#3182F6]' : 'text-[#191F28] active:bg-[#F8F9FA]'
+        }`}
+      >
+        {active && (
+          <span className="hidden md:block absolute left-0 top-3 bottom-3 w-[3px] rounded-full bg-[#3182F6]" />
+        )}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center flex-shrink-0 text-sm font-bold text-orange-600">
+            {name.charAt(0).toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-bold truncate ${active ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+              {name}
+            </p>
+            <p className="text-[11px] text-[#8B95A1] mt-0.5 truncate">
+              {candidate.email || '이메일 없음'} · 역할 배정 대기
+            </p>
+          </div>
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700">
+            배정 필요
+          </span>
+        </div>
+      </button>
+    );
+  }
   if (item.kind === 'pending') {
     const inv = item.inv;
     return (
@@ -456,7 +558,7 @@ function StaffRosterCard({ item, active, summary, onClick }) {
               {inv.email}
             </p>
             <p className="text-[11px] text-[#8B95A1] mt-0.5">
-              {STAFF_ROLE_LABELS[inv.role] || '강사'} · 초대 대기
+              {inv.role === 'pending' ? '직원 · 역할 미지정' : `${STAFF_ROLE_LABELS[inv.role] || '직원'} · 초대 대기`}
             </p>
           </div>
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">
@@ -558,6 +660,100 @@ function RoleChoice({ value, onChange, allowManager = false }) {
   );
 }
 
+// ─── 수락 후 역할 배정 대기 직원 ─────────────────────────────────
+function RoleAssignmentDetail({ candidate, canAssignManager = false, onBack, onAssigned }) {
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const saveAcademyStaffProfile = useWorkspaceStore((s) => s.saveAcademyStaffProfile);
+  const showToast = useAcademyStore((s) => s.showToast);
+  const [role, setRole] = useState('teacher');
+  const [saving, setSaving] = useState(false);
+  const name = candidate?.display_name || candidate?.email || '(이름 없음)';
+
+  const handleAssign = async () => {
+    if (!currentAcademyId || !candidate?.user_id || !candidate?.member_id || saving) return;
+    setSaving(true);
+    try {
+      // 프로필을 먼저 준비해 역할 활성화 직후에도 근무/권한 설정이 일관되게 보이게 한다.
+      await saveAcademyStaffProfile({
+        academyId: currentAcademyId,
+        userId: candidate.user_id,
+        memberId: candidate.member_id,
+        role,
+        subjects: [],
+        wageType: 'hourly',
+        hourlyWage: 0,
+        monthlySalary: 0,
+        memo: null,
+        status: 'active',
+        permissions: {},
+        scope: {},
+      });
+      await assignAcademyMemberRole({
+        academyId: currentAcademyId,
+        userId: candidate.user_id,
+        role,
+      });
+      try {
+        await onAssigned?.();
+      } catch (err) {
+        console.warn('[staff] post-assignment refresh failed', err);
+      }
+      showToast(`${name}님에게 ${STAFF_ROLE_LABELS[role]} 역할을 배정했어요.`);
+    } catch (err) {
+      showToast(err?.message ?? '역할 배정에 실패했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onBack}
+        className="md:hidden flex items-center gap-1 text-sm font-semibold text-[#4E5968] mb-3"
+      >
+        <ChevronLeft size={16} /> 목록으로
+      </button>
+      <div className="bg-white rounded-2xl p-5 md:p-6 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-full bg-orange-50 flex items-center justify-center text-base font-bold text-orange-600 flex-shrink-0">
+            {name.charAt(0).toUpperCase()}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-lg font-bold text-[#191F28] truncate">{name}</p>
+            <p className="text-xs text-[#8B95A1] mt-0.5 truncate">
+              {candidate.email || '이메일 정보 없음'}
+              {candidate.phone ? ` · ${candidate.phone}` : ''}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-2xl bg-orange-50 px-4 py-3 flex items-start gap-2">
+          <Clock size={14} className="text-orange-600 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-orange-700 leading-relaxed">
+            초대 수락은 완료됐어요. 아래 역할을 배정하면 이 직원이 바로 학원 기능을 사용할 수 있어요.
+          </p>
+        </div>
+
+        <div className="mt-5">
+          <RoleChoice value={role} onChange={setRole} allowManager={canAssignManager} />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleAssign}
+          disabled={saving}
+          className="mt-5 w-full py-3 rounded-xl bg-[#0064FF] text-white text-sm font-bold flex items-center justify-center gap-1.5 disabled:opacity-60"
+        >
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+          {saving ? '역할 배정 중…' : `${STAFF_ROLE_LABELS[role]}로 역할 배정`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── 대기 중인 초대 상세 ───────────────────────────────────────────
 function PendingInvitationDetail({ inv, onBack }) {
   const [cancelling, setCancelling] = useState(false);
@@ -594,7 +790,9 @@ function PendingInvitationDetail({ inv, onBack }) {
           <div className="flex-1 min-w-0">
             <p className="text-lg font-bold text-[#191F28] truncate">{inv.email}</p>
             <p className="text-xs text-[#8B95A1] mt-0.5">
-              {STAFF_ROLE_LABELS[inv.role] || '강사'} · 초대 대기 중
+              {inv.role === 'pending'
+                ? '직원 · 초대 대기 중'
+                : `${STAFF_ROLE_LABELS[inv.role] || '직원'} · 초대 대기 중`}
             </p>
           </div>
         </div>
@@ -602,6 +800,7 @@ function PendingInvitationDetail({ inv, onBack }) {
           <Clock size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-amber-700 leading-relaxed">
             상대가 같은 이메일로 로그인하면 앱 안에서 초대를 수락할 수 있어요.
+            역할은 수락 뒤 배정합니다.
           </p>
         </div>
         <button

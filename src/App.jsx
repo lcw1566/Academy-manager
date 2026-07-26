@@ -81,7 +81,6 @@ export default function App() {
   const memberships = useWorkspaceStore((s) => s.memberships);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
-  const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
   const workspacePicked = useWorkspaceStore((s) => s.workspacePicked);
   const startWorkspaceRealtime = useWorkspaceStore((s) => s.startWorkspaceRealtime);
   const stopWorkspaceRealtime = useWorkspaceStore((s) => s.stopWorkspaceRealtime);
@@ -269,7 +268,9 @@ export default function App() {
   // 학원 멤버십이 있는 사용자(owner/teacher/assistant)만. 과외(tutor) 단독
   // 사용자는 currentAcademyId 멤버십이 없어 자연히 제외된다.
   const hasAcademyMembership = useMemo(
-    () => !!currentAcademyId && memberships.some((m) => m.academy_id === currentAcademyId),
+    () => !!currentAcademyId && memberships.some(
+      (m) => m.academy_id === currentAcademyId && m.status === 'active',
+    ),
     [currentAcademyId, memberships],
   );
   useEffect(() => {
@@ -308,7 +309,9 @@ export default function App() {
     if (!isAuthenticated) return;
     if (!isWorkspaceReady) return; // memberships 가 아직 로딩 중일 수 있음
 
-    const currentMembership = memberships.find((m) => m.academy_id === currentAcademyId);
+    const currentMembership = memberships.find(
+      (m) => m.academy_id === currentAcademyId && m.status === 'active',
+    );
     let nextRole = null;
     if (currentMembership) {
       nextRole = membershipRoleToAppRole(currentMembership.role);
@@ -458,17 +461,20 @@ export default function App() {
       if (!isWorkspaceReady) return <LoadingScreen />;
     }
 
-    // Phase 25 — staff 계정 + 멤버십 없음 + 받은 초대도 없음: 전용 대기 화면.
-    // (받은 초대가 있으면 WorkspaceSelectionPage 가 처리하므로 분기 안 탐.)
+    // 직원은 active 멤버십이 생기기 전까지 전용 대기 화면에 머문다. 새 역할 없는
+    // 초대를 수락하면 pending/invited 멤버십이 생기며, 원장/운영 매니저가 역할을
+    // 배정하기 전에는 일반 학원 화면·채팅에 접근할 수 없다.
+    const activeMemberships = memberships.filter((membership) => membership.status === 'active');
+    const roleAssignmentMembership = memberships.find(
+      (membership) => membership.status === 'invited' && membership.role === 'pending',
+    );
     if (
       isAuthenticated &&
       isWorkspaceReady &&
       profile?.account_type === 'staff' &&
-      memberships.length === 0 &&
-      myPendingInvitations.length === 0 &&
-      !ACADEMY_ROLES.includes(role)
+      activeMemberships.length === 0
     ) {
-      return <StaffWaitingPage />;
+      return <StaffWaitingPage assignmentMembership={roleAssignmentMembership} />;
     }
 
     // Phase 32 — academy 모드 사용자(owner/teacher/assistant) 는 이번 세션에서
