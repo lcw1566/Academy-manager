@@ -4,7 +4,6 @@ import { Clock, FileText, Users as UsersIcon, AlertCircle, CheckSquare, QrCode }
 import useAcademyStore from '../../../store/useAcademyStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { today, formatDateShort, greetingByTime } from '../../../utils/date';
-import { formatCurrency } from '../../../utils/format';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import { classifyShiftStatus, readAttendanceSettings } from '../attendance/attendanceHelpers';
 import QrDisplayPage from '../attendance/QrDisplayPage';
@@ -38,10 +37,8 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const academyTeachers = useAcademyStore((s) => s.academyTeachers);
   const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
   const academyManagers = useAcademyStore((s) => s.academyManagers) ?? [];
-  const academyPayments = useAcademyStore((s) => s.academyPayments);
   const academyProfile = useAcademyStore((s) => s.academyProfile);
   const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords) ?? [];
-  const academyPayrolls = useAcademyStore((s) => s.academyPayrolls) ?? [];
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
   const navigateToClassGroup = useAcademyStore((s) => s.navigateToClassGroup);
   const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
@@ -126,13 +123,6 @@ export default function OwnerDashboard({ operationsOnly = false }) {
     [clinicRecords, todayStr]
   );
 
-  const currentMonth = todayStr.slice(0, 7);
-  const unpaidPayments = useMemo(
-    () => academyPayments.filter((p) => p.month === currentMonth && p.status === 'unpaid'),
-    [academyPayments, currentMonth]
-  );
-  const unpaidAmount = useMemo(() => unpaidPayments.reduce((s, p) => s + (p.amount || 0), 0), [unpaidPayments]);
-
   const todayStudentIds = useMemo(
     () => [...new Set(todaySessions.flatMap((s) => s.studentIds || []))],
     [todaySessions]
@@ -191,12 +181,6 @@ export default function OwnerDashboard({ operationsOnly = false }) {
       return !hasRecord;
     });
   }, [classSessions, academyLessonRecords, todayStr]);
-
-  // 급여 확인 필요 — 이번 달 status='scheduled' (미지급)
-  const pendingPayrolls = useMemo(
-    () => academyPayrolls.filter((p) => p.month === currentMonth && p.status !== 'paid'),
-    [academyPayrolls, currentMonth],
-  );
 
   // pending 초대
   const pendingInvitations = useMemo(
@@ -306,15 +290,16 @@ export default function OwnerDashboard({ operationsOnly = false }) {
         />
         <SummaryCard
           label="이달 미납"
-          value={unpaidPayments.length > 0 ? formatCurrency(unpaidAmount) : '없음'}
-          color={unpaidPayments.length > 0 ? 'text-red-500' : 'text-gray-900'}
+          value="준비 중"
+          onClick={() => setActiveTab('settlement')}
+          pilotLocked
         />
         {!operationsOnly && (
           <SummaryCard
             label="급여 확인 필요"
-            value={pendingPayrolls.length > 0 ? `${pendingPayrolls.length}건` : '없음'}
-            color={pendingPayrolls.length > 0 ? 'text-amber-600' : 'text-gray-900'}
+            value="준비 중"
             onClick={() => setActiveTab('settlement')}
+            pilotLocked
           />
         )}
       </div>
@@ -462,11 +447,27 @@ function AttendanceChip({ label, value, tone = 'gray' }) {
   );
 }
 
-function SummaryCard({ label, value, color = 'text-gray-900', onClick }) {
+function SummaryCard({ label, value, color = 'text-gray-900', onClick, pilotLocked = false }) {
   return (
-    <button onClick={onClick} className="bg-white rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-transform">
-      <p className="text-xs text-gray-500 mb-1 font-medium">{label}</p>
-      <p className={`text-2xl font-bold leading-none ${color}`}>{value}</p>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={pilotLocked ? `${label}, 추후 제공 예정` : label}
+      className={`bg-white rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-all ${
+        pilotLocked ? 'opacity-50 grayscale' : ''
+      }`}
+    >
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <p className="text-xs text-gray-500 font-medium">{label}</p>
+        {pilotLocked && (
+          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-400">
+            추후 제공
+          </span>
+        )}
+      </div>
+      <p className={`${pilotLocked ? 'text-lg text-gray-500' : `text-2xl ${color}`} font-bold leading-none`}>
+        {value}
+      </p>
     </button>
   );
 }

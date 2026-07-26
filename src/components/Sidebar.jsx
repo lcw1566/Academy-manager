@@ -45,13 +45,19 @@ export default function Sidebar({ tabs, badges = {} }) {
           const IconComponent = tab.Icon || tab.icon;
           const active = activeTab === tab.id;
           const badge = badges[tab.id] || 0;
+          const pilotLocked = tab.pilotLocked === true;
           return (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors ${
-                active
+              aria-label={pilotLocked ? `${tab.label}, 추후 제공 예정` : tab.label}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
+                pilotLocked
+                  ? active
+                    ? 'bg-gray-100 text-gray-500 opacity-70'
+                    : 'text-gray-400 opacity-55 hover:bg-gray-50'
+                  : active
                   ? 'bg-blue-50 text-blue-600'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
@@ -63,8 +69,13 @@ export default function Sidebar({ tabs, badges = {} }) {
                 />
               )}
               <span className="text-sm font-semibold">{tab.label}</span>
+              {pilotLocked && (
+                <span className="ml-auto rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-400">
+                  준비 중
+                </span>
+              )}
               {badge > 0 && (
-                <span className="ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                <span className={`${pilotLocked ? '' : 'ml-auto'} min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center`}>
                   {badge > 99 ? '99+' : badge}
                 </span>
               )}

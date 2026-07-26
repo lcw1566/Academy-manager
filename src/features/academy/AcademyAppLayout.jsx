@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen } from 'lucide-react';
+import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen, Clock3 } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -18,11 +18,9 @@ const loadClinicPage = () => import('./clinic/ClinicPage');
 const loadAcademyStudentsPage = () => import('./students/AcademyStudentsPage');
 const loadAcademyStudentDetailPage = () => import('./students/AcademyStudentDetailPage');
 const loadAcademyMorePage = () => import('./more/AcademyMorePage');
-const loadSettlementPage = () => import('./settlement/SettlementPage');
 const loadPayrollPage = () => import('./payroll/PayrollPage');
 const loadStaffPage = () => import('./staff/StaffPage');
 const loadChatPage = () => import('./chat/ChatPage');
-const loadDrivePage = () => import('./drive/DrivePage');
 
 const OwnerDashboard = lazy(loadOwnerDashboard);
 const TeacherDashboard = lazy(loadTeacherDashboard);
@@ -34,17 +32,14 @@ const ClinicPage = lazy(loadClinicPage);
 const AcademyStudentsPage = lazy(loadAcademyStudentsPage);
 const AcademyStudentDetailPage = lazy(loadAcademyStudentDetailPage);
 const AcademyMorePage = lazy(loadAcademyMorePage);
-const SettlementPage = lazy(loadSettlementPage);
 const PayrollPage = lazy(loadPayrollPage);
 const StaffPage = lazy(loadStaffPage);
 const ChatPage = lazy(loadChatPage);
-const DrivePage = lazy(loadDrivePage);
 
 const COMMON_ACADEMY_TAB_LOADERS = [
   loadClassGroupsPage,
   loadAcademyStudentsPage,
   loadChatPage,
-  loadDrivePage,
   loadAcademyMorePage,
 ];
 
@@ -60,8 +55,8 @@ const TAB_CONFIG = {
     { id: 'students',   label: '학생',  Icon: Users },
     { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
     { id: 'staff',      label: '직원',   Icon: UserCog },
-    { id: 'settlement', label: '정산',  Icon: BarChart2 },
-    { id: 'drive',      label: '드라이브', Icon: FolderOpen },
+    { id: 'settlement', label: '정산',  Icon: BarChart2, pilotLocked: true },
+    { id: 'drive',      label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',       label: '채팅',  Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
@@ -71,7 +66,7 @@ const TAB_CONFIG = {
     { id: 'students', label: '학생', Icon: Users },
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
-    { id: 'drive',    label: '드라이브', Icon: FolderOpen },
+    { id: 'drive',    label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
@@ -84,7 +79,7 @@ const TAB_CONFIG = {
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
-    { id: 'drive',    label: '드라이브', Icon: FolderOpen },
+    { id: 'drive',    label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
@@ -94,8 +89,8 @@ const TAB_CONFIG = {
     { id: 'students',   label: '학생',  Icon: Users },
     { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
     { id: 'staff',      label: '직원',  Icon: UserCog },
-    { id: 'settlement', label: '정산',  Icon: BarChart2 },
-    { id: 'drive',      label: '드라이브', Icon: FolderOpen },
+    { id: 'settlement', label: '정산',  Icon: BarChart2, pilotLocked: true },
+    { id: 'drive',      label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',       label: '채팅', Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
@@ -124,6 +119,46 @@ function FallbackScreen() {
   );
 }
 
+const PILOT_LOCKED_FEATURES = {
+  settlement: {
+    title: '정산',
+    description: '수납과 급여를 더 안전하게 관리할 수 있도록 파일럿 이후에 정식으로 제공할 예정이에요.',
+  },
+  drive: {
+    title: '드라이브',
+    description: '학원 자료 공유와 권한 관리를 충분히 검증한 뒤 정식으로 제공할 예정이에요.',
+  },
+};
+
+function PilotLockedFeature({ featureId, onReturn }) {
+  const feature = PILOT_LOCKED_FEATURES[featureId] || PILOT_LOCKED_FEATURES.drive;
+  return (
+    <div className="min-h-[70vh] flex items-center justify-center px-5 py-16">
+      <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white px-6 py-8 text-center shadow-sm">
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-400">
+          <Clock3 size={26} strokeWidth={2} />
+        </div>
+        <span className="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-500">
+          파일럿 이후 제공 예정
+        </span>
+        <h1 className="mt-4 text-xl font-black text-gray-900">{feature.title} 기능을 준비하고 있어요</h1>
+        <p className="mt-2 text-sm font-medium leading-6 text-gray-500">{feature.description}</p>
+        <div className="mt-6 rounded-2xl bg-blue-50 px-4 py-4 text-left">
+          <p className="text-xs font-bold text-blue-600">이번 테스트 집중 기능</p>
+          <p className="mt-1 text-sm font-bold text-gray-800">스케줄링 · 학생 정보 · 클리닉 기록</p>
+        </div>
+        <button
+          type="button"
+          onClick={onReturn}
+          className="mt-6 h-12 w-full rounded-2xl bg-[#0064FF] text-sm font-black text-white active:bg-[#0050CC]"
+        >
+          테스트 기능으로 돌아가기
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function AcademyAppLayout() {
   const role = useAcademyStore((s) => s.role);
   const activeTab = useAcademyStore((s) => s.activeTab);
@@ -140,11 +175,11 @@ export default function AcademyAppLayout() {
 
   useEffect(() => {
     const roleLoaders = role === 'owner'
-      ? [loadClinicPage, loadStaffPage, loadSettlementPage]
+      ? [loadClinicPage, loadStaffPage]
       : role === 'teacher'
       ? [loadClinicPage, loadPayrollPage]
       : role === 'manager'
-      ? [loadClinicPage, loadStaffPage, loadSettlementPage]
+      ? [loadClinicPage, loadStaffPage]
       : [loadPayrollPage];
     const preload = () => [...COMMON_ACADEMY_TAB_LOADERS, ...roleLoaders]
       .forEach((load) => load().catch(() => {}));
@@ -269,11 +304,15 @@ export default function AcademyAppLayout() {
       if (activeTab === 'classes')    return selectedClassGroupId ? <ClassGroupDetailPage /> : <ClassGroupsPage />;
       if (activeTab === 'students')   return selectedAcademyStudentId ? <AcademyStudentDetailPage /> : <AcademyStudentsPage />;
       if (activeTab === 'clinic')     return <ClinicPage />;
-      if (activeTab === 'settlement') return <SettlementPage operationsOnly={role === 'manager'} />;
+      if (activeTab === 'settlement') {
+        return <PilotLockedFeature featureId="settlement" onReturn={() => setActiveTab('classes')} />;
+      }
       if (activeTab === 'payroll')    return <PayrollPage />;
       if (activeTab === 'staff')      return <StaffPage />;
       if (activeTab === 'chat')       return <ChatPage />;
-      if (activeTab === 'drive')      return <DrivePage />;
+      if (activeTab === 'drive') {
+        return <PilotLockedFeature featureId="drive" onReturn={() => setActiveTab('classes')} />;
+      }
       // Phase 40 호환 — 이전 버전 store 에 'work' 가 저장되어 있어도 staff 로 매핑.
       if (activeTab === 'work')       return <StaffPage />;
       if (activeTab === 'more')       return <AcademyMorePage />;
@@ -320,7 +359,7 @@ export default function AcademyAppLayout() {
           Phase 39 — 6개 탭이 들어가도록 아이콘/너비 살짝 축소. */}
       <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
         <div className="max-w-md mx-auto flex pt-2">
-          {tabs.filter((t) => t.mobileBottomNav !== false).map(({ id, label, Icon }) => {
+          {tabs.filter((t) => t.mobileBottomNav !== false).map(({ id, label, Icon, pilotLocked }) => {
             const active = activeTab === id;
             const badge = id === 'chat' ? chatUnread : 0;
             return (
@@ -329,17 +368,28 @@ export default function AcademyAppLayout() {
                 type="button"
                 onClick={() => setActiveTab(id)}
                 aria-current={active ? 'page' : undefined}
-                className="flex-1 min-w-0 flex flex-col items-center gap-0.5 pb-1 active:scale-[0.98] transition-transform"
+                className={`flex-1 min-w-0 flex flex-col items-center gap-0.5 pb-1 active:scale-[0.98] transition-all ${
+                  pilotLocked ? 'opacity-45 grayscale' : ''
+                }`}
+                aria-label={pilotLocked ? `${label}, 추후 제공 예정` : label}
               >
-                <div className={`relative flex items-center justify-center w-9 h-7 rounded-2xl transition-colors ${active ? 'bg-blue-50' : ''}`}>
-                  <Icon size={19} className={active ? 'text-blue-600' : 'text-gray-400'} strokeWidth={active ? 2.5 : 1.8} />
+                <div className={`relative flex items-center justify-center w-9 h-7 rounded-2xl transition-colors ${
+                  active && !pilotLocked ? 'bg-blue-50' : active ? 'bg-gray-100' : ''
+                }`}>
+                  <Icon
+                    size={19}
+                    className={active && !pilotLocked ? 'text-blue-600' : 'text-gray-400'}
+                    strokeWidth={active ? 2.5 : 1.8}
+                  />
                   {badge > 0 && (
                     <span className="absolute -top-0.5 right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
                       {badge > 99 ? '99+' : badge}
                     </span>
                   )}
                 </div>
-                <span className={`text-[9.5px] font-medium ${active ? 'text-blue-600' : 'text-gray-400'}`}>{label}</span>
+                <span className={`text-[9.5px] font-medium ${
+                  active && !pilotLocked ? 'text-blue-600' : 'text-gray-400'
+                }`}>{label}</span>
               </button>
             );
           })}
