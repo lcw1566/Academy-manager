@@ -32,6 +32,12 @@ export default function QrDisplayPage({ onClose }) {
   const settings = readAttendanceSettings(academy);
   const academyName = academy?.name || '학원';
   const token = settings.attendanceQrToken;
+  const qrAudience =
+    settings.staffCheckMethod === 'qr' && settings.studentCheckMethod === 'qr'
+      ? '직원 출퇴근과 학생 등하원'
+      : settings.staffCheckMethod === 'qr'
+      ? '직원 출퇴근'
+      : '학생 등하원';
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -138,7 +144,7 @@ export default function QrDisplayPage({ onClose }) {
               {academyName}
             </h1>
             <p className="mt-2 text-sm md:text-base text-[#6B7684] font-medium">
-              출퇴근과 등하원을 한 번에 기록해요.
+              {qrAudience}을 기록해요.
             </p>
           </div>
 
@@ -166,7 +172,7 @@ export default function QrDisplayPage({ onClose }) {
                   카메라로 QR을 비추면 바로 체크인돼요.
                 </p>
                 <p className="mt-2 text-sm text-[#6B7684] leading-relaxed">
-                  직원은 출퇴근, 학생은 등하원 기록으로 자동 분류됩니다.
+                  현재 학원에서 선택한 {qrAudience} 방식으로 처리됩니다.
                 </p>
               </div>
 

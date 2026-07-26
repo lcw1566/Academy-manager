@@ -1,5 +1,8 @@
 import { useState } from 'react';
-import { X, Building2, Users } from 'lucide-react';
+import { motion } from 'framer-motion';
+import {
+  X, Building2, Users, GraduationCap, CheckCircle2, ShieldCheck, Sparkles,
+} from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useAcademyStore from '../../store/useAcademyStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -19,7 +22,7 @@ const ACCOUNT_TYPES = [
   {
     id: 'staff',
     title: '직원',
-    desc: '학원 초대를 수락한 뒤 원장 또는 운영 매니저가 역할을 배정해요.',
+    desc: '학원에서 보낸 역할 초대를 수락하고 바로 함께 일해요.',
     Icon: Users,
     iconBg: 'bg-purple-50',
     iconColor: 'text-purple-600',
@@ -183,191 +186,244 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
     isAuthLoading || (mode === 'signUp' && (!accountType || !displayName.trim()));
 
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center px-6 py-10 bg-[#F2F4F6]">
+    <div className="relative min-h-screen overflow-hidden bg-white text-gray-950">
       <CloseButton onClick={onCancel} />
 
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">
-            {mode === 'signIn' ? '로그인' : '회원가입'}
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Seenit 서버 계정으로 접속해요.
-          </p>
+      <header className="absolute inset-x-0 top-0 z-10">
+        <div className="mx-auto flex h-16 max-w-6xl items-center px-5 md:px-6">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white">
+              <GraduationCap size={18} />
+            </span>
+            <span className="text-base font-black">씨닛</span>
+          </div>
         </div>
+      </header>
 
-        <form
-          onSubmit={handleSubmit}
-          className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4"
+      <main className="mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center gap-10 px-5 pb-12 pt-24 md:grid-cols-[0.9fr_1.1fr] md:px-6 md:py-24">
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45 }}
+          className="hidden md:block"
         >
-          {/* 회원가입 모드에서만 계정 유형 선택 */}
-          {mode === 'signUp' && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-2">
-                계정 유형
-              </label>
-              <div className="flex flex-col gap-2">
-                {ACCOUNT_TYPES.map(({ id, title, desc, Icon, iconBg, iconColor, borderActive }) => {
-                  const active = accountType === id;
-                  return (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setAccountType(id)}
-                      disabled={isAuthLoading}
-                      className={`w-full flex items-start gap-3 rounded-2xl p-3 text-left border-2 transition-colors ${
-                        active
-                          ? borderActive
-                          : 'border-gray-200 bg-white active:bg-gray-50'
-                      }`}
-                    >
-                      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${iconBg}`}>
-                        <Icon size={16} className={iconColor} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-bold ${active ? 'text-gray-900' : 'text-gray-800'}`}>
-                          {title}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">
-                          {desc}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
+          <p className="inline-flex rounded-full bg-blue-50 px-3 py-1 text-sm font-bold text-blue-600">
+            누구나 간편한 학원 관리
+          </p>
+          <h1 className="mt-5 text-5xl font-black leading-[1.12]">
+            학원 운영을
+            <br />
+            한곳에서 간편하게
+          </h1>
+          <p className="mt-5 max-w-md text-base font-semibold leading-relaxed text-gray-600">
+            학생, 수업, 출결, 수납과 직원 업무를 PC와 모바일에서 같은 기준으로 관리하세요.
+          </p>
+          <div className="mt-8 space-y-3">
+            {[
+              '원장과 직원이 같은 데이터를 공유해요.',
+              '초대받은 역할로 바로 학원에 참여해요.',
+              '학생과 직원의 출결 방식을 직접 선택해요.',
+            ].map((item) => (
+              <div key={item} className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                <CheckCircle2 size={18} className="text-blue-600" />
+                {item}
               </div>
-            </div>
-          )}
+            ))}
+          </div>
+          <AuthPromotionSlot />
+        </motion.section>
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-              이메일
-            </label>
-            <input
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-              placeholder="you@example.com"
-              disabled={isAuthLoading}
-            />
+        <motion.section
+          key={mode}
+          initial={{ opacity: 0, x: 18 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.35 }}
+          className="mx-auto w-full max-w-lg"
+        >
+          <div className="mb-7">
+            <p className="text-sm font-black text-blue-600">
+              {mode === 'signIn' ? '다시 만나서 반가워요' : '씨닛을 시작해볼까요?'}
+            </p>
+            <h2 className="mt-2 text-3xl font-black">
+              {mode === 'signIn' ? '로그인' : '회원가입'}
+            </h2>
+            <p className="mt-2 text-sm font-semibold text-gray-500">
+              {mode === 'signIn'
+                ? '학원 워크스페이스로 안전하게 이어집니다.'
+                : '원장 또는 직원 중 내 계정 유형을 선택해주세요.'}
+            </p>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-              비밀번호
-            </label>
-            <input
-              type="password"
-              autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-              placeholder="6자 이상"
-              disabled={isAuthLoading}
-            />
-          </div>
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-4 rounded-[28px] bg-[#F7F8FA] p-5 shadow-sm ring-1 ring-gray-100 md:p-7"
+          >
+            {mode === 'signUp' && (
+              <div>
+                <label className="mb-2 block text-xs font-bold text-gray-600">계정 유형</label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {ACCOUNT_TYPES.map(({ id, title, desc, Icon, iconBg, iconColor, borderActive }) => {
+                    const active = accountType === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setAccountType(id)}
+                        disabled={isAuthLoading}
+                        className={`flex min-h-[104px] items-start gap-3 rounded-2xl border-2 bg-white p-3.5 text-left transition-colors ${
+                          active ? borderActive : 'border-transparent active:bg-gray-50'
+                        }`}
+                      >
+                        <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl ${iconBg}`}>
+                          <Icon size={18} className={iconColor} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-black text-gray-900">{title}</span>
+                          <span className="mt-1 block text-xs leading-relaxed text-gray-500">{desc}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
-          {mode === 'signIn' && (
-            <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+            <AuthField label="이메일">
               <input
-                type="checkbox"
-                checked={rememberLogin}
-                onChange={(e) => setRememberLogin(e.target.checked)}
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="h-[52px] w-full rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold outline-none transition-colors focus:border-blue-500"
+                placeholder="you@example.com"
                 disabled={isAuthLoading}
-                className="h-4 w-4 rounded border-gray-300 accent-blue-600"
               />
-              로그인 유지
-            </label>
-          )}
+            </AuthField>
 
-          {/* 회원가입 모드에서만 이름/연락처 입력 */}
-          {mode === 'signUp' && (
-            <>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                  이름
-                </label>
-                <input
-                  type="text"
-                  autoComplete="name"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                  placeholder="홍길동"
-                  disabled={isAuthLoading}
-                />
+            <AuthField label="비밀번호">
+              <input
+                type="password"
+                autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold outline-none transition-colors focus:border-blue-500"
+                placeholder="6자 이상"
+                disabled={isAuthLoading}
+              />
+            </AuthField>
+
+            {mode === 'signUp' && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <AuthField label="이름">
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold outline-none transition-colors focus:border-blue-500"
+                    placeholder="홍길동"
+                    disabled={isAuthLoading}
+                  />
+                </AuthField>
+                <AuthField label="연락처" optional>
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
+                    className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold outline-none transition-colors focus:border-blue-500"
+                    placeholder="010-0000-0000"
+                    disabled={isAuthLoading}
+                  />
+                </AuthField>
               </div>
+            )}
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                  연락처 <span className="text-gray-400 font-normal">(선택)</span>
-                </label>
+            {mode === 'signIn' && (
+              <label className="flex items-center gap-2 text-sm font-bold text-gray-700">
                 <input
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(formatPhoneNumber(e.target.value))}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                  placeholder="010-0000-0000"
+                  type="checkbox"
+                  checked={rememberLogin}
+                  onChange={(e) => setRememberLogin(e.target.checked)}
                   disabled={isAuthLoading}
+                  className="h-4 w-4 rounded border-gray-300 accent-blue-600"
                 />
-              </div>
-            </>
-          )}
+                로그인 유지
+              </label>
+            )}
 
-          {(authError || localMessage) && (
-            <div
-              className={`text-xs rounded-xl px-3 py-2.5 ${
+            {(authError || localMessage) && (
+              <div className={`rounded-2xl px-4 py-3 text-xs font-semibold leading-relaxed ${
                 authError || localMessage?.type === 'error'
                   ? 'bg-red-50 text-red-600'
-                  : 'bg-green-50 text-green-700'
-              }`}
-            >
-              {authError || localMessage?.text}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={submitDisabled}
-            className="w-full py-3 rounded-xl bg-blue-600 text-white text-sm font-bold disabled:opacity-60"
-          >
-            {isAuthLoading
-              ? '처리 중...'
-              : mode === 'signIn'
-              ? '로그인'
-              : '회원가입'}
-          </button>
-
-          <div className="text-center text-xs text-gray-500">
-            {mode === 'signIn' ? (
-              <>
-                계정이 없으면{' '}
-                <button
-                  type="button"
-                  onClick={() => switchMode('signUp')}
-                  className="text-blue-600 font-semibold"
-                >
-                  회원가입
-                </button>
-              </>
-            ) : (
-              <>
-                이미 계정이 있으면{' '}
-                <button
-                  type="button"
-                  onClick={() => switchMode('signIn')}
-                  className="text-blue-600 font-semibold"
-                >
-                  로그인
-                </button>
-              </>
+                  : 'bg-emerald-50 text-emerald-700'
+              }`}>
+                {authError || localMessage?.text}
+              </div>
             )}
+
+            <button
+              type="submit"
+              disabled={submitDisabled}
+              className="w-full rounded-2xl bg-blue-600 py-3.5 text-sm font-black text-white shadow-lg shadow-blue-600/15 transition-all hover:-translate-y-0.5 hover:shadow-xl disabled:translate-y-0 disabled:opacity-50"
+            >
+              {isAuthLoading ? '처리 중...' : mode === 'signIn' ? '로그인' : '회원가입'}
+            </button>
+
+            <div className="text-center text-xs font-semibold text-gray-500">
+              {mode === 'signIn' ? '계정이 없으면 ' : '이미 계정이 있으면 '}
+              <button
+                type="button"
+                onClick={() => switchMode(mode === 'signIn' ? 'signUp' : 'signIn')}
+                className="font-black text-blue-600"
+              >
+                {mode === 'signIn' ? '회원가입' : '로그인'}
+              </button>
+            </div>
+          </form>
+
+          <div className="mt-5 md:hidden">
+            <AuthPromotionSlot compact />
           </div>
-        </form>
+        </motion.section>
+      </main>
+    </div>
+  );
+}
+
+function AuthField({ label, optional = false, children }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-bold text-gray-600">
+        {label}
+        {optional && <span className="ml-1 font-medium text-gray-400">(선택)</span>}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+function AuthPromotionSlot({ compact = false }) {
+  return (
+    <div
+      data-ad-slot="auth-promotion"
+      className={`${compact ? 'p-4' : 'mt-10 p-5'} rounded-3xl bg-blue-600 text-white shadow-lg shadow-blue-600/15`}
+    >
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-white/15">
+          <Sparkles size={19} />
+        </span>
+        <div>
+          <div className="flex items-center gap-1.5">
+            <p className="text-xs font-black text-blue-100">씨닛 활용 팁</p>
+            <ShieldCheck size={13} className="text-blue-100" />
+          </div>
+          <p className="mt-1 text-sm font-black">직원은 초대받은 역할로 바로 시작해요.</p>
+          <p className="mt-1 text-xs font-semibold leading-relaxed text-blue-100">
+            씨닛의 새로운 기능과 학원 운영 팁을 이곳에서 빠르게 확인하세요.
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -380,7 +436,7 @@ function CloseButton({ onClick }) {
       type="button"
       onClick={onClick}
       aria-label="닫기"
-      className="absolute top-4 left-4 w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm active:scale-95 transition-transform"
+    className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-gray-100 transition-transform active:scale-95"
     >
       <X size={18} className="text-gray-600" />
     </button>

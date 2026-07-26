@@ -170,38 +170,48 @@ function assertStaffRole(role) {
   }
 }
 
-// 원장 또는 운영 매니저가 "직원"으로 초대한다.
-// 초대에는 실제 직무를 넣지 않고 pending 역할만 저장한다. 수락 뒤 원장/운영
-// 매니저가 강사·보조강사(원장은 운영 매니저도 가능)를 배정해야 활성화된다.
-// 같은 (academy_id, email, pending) 초대가 있으면 status 를 되살린다.
-export async function createAcademyInvitation({ academyId, email }) {
+// 원장 또는 운영 매니저가 역할을 정해 직원을 초대한다.
+// 직원은 수락만 하면 바로 active 멤버가 된다. SQL 026의 pending 초대는 기존
+// 초대와 예외 상황을 위한 호환 경로로 계속 지원한다.
+export async function createAcademyInvitation({ academyId, email, role = 'teacher' }) {
   const user = await getCurrentUserOrThrow();
   if (!academyId) throw new Error('academyId가 필요해요.');
   const cleanedEmail = normalizeEmail(email);
   if (!cleanedEmail) throw new Error('이메일을 입력해주세요.');
+  assertStaffRole(role);
 
-  // 수락 완료 초대를 다시 pending으로 되돌리면 이미 활성화된 직원의 상태를
-  // 혼동시킬 수 있다. 같은 역할 없는 초대는 취소/미수락 상태에서만 재발송한다.
-  const { data: existing, error: existingError } = await supabase
+  // 한 이메일에 역할별 초대가 여러 장 생기지 않도록 현재 열린 초대를 먼저 찾는다.
+  const { data: existingRows, error: existingError } = await supabase
     .from('academy_invitations')
-    .select('id, status')
+    .select('id, status, role')
     .eq('academy_id', academyId)
     .eq('email', cleanedEmail)
-    .eq('role', 'pending')
-    .maybeSingle();
+    .order('created_at', { ascending: false });
   if (existingError) throw existingError;
-  if (existing?.status === 'accepted') {
-    throw new Error('이 직원은 이미 초대를 수락했어요. 역할 배정 목록 또는 직원 목록을 확인해주세요.');
+  if ((existingRows || []).some((row) => row.status === 'accepted')) {
+    throw new Error('이 직원은 이미 초대를 수락했어요. 직원 목록에서 역할을 변경해주세요.');
   }
 
   const payload = {
     academy_id: academyId,
     email: cleanedEmail,
-    role: 'pending',
+    role,
     status: 'pending',
     invited_by: user.id,
     accepted_user_id: null,
   };
+
+  const openInvite = (existingRows || []).find((row) => row.status === 'pending');
+  if (openInvite) {
+    const { data, error } = await supabase
+      .from('academy_invitations')
+      .update(payload)
+      .eq('id', openInvite.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
 
   const { data, error } = await supabase
     .from('academy_invitations')
@@ -227,13 +237,34 @@ export async function listAcademyInvitations(academyId) {
   return data ?? [];
 }
 
-// 강사/보조강사가 본인 이메일로 받은 pending 초대 조회.
-// academy 정보도 함께 join (이름 표시용).
-// RLS: 본인 이메일과 일치하는 invitation 만 보임.
+// 직원이 본인 이메일로 받은 pending 초대 조회.
+// SQL 027 RPC가 academies RLS를 넓히지 않고 학원 이름을 함께 반환한다.
+// 아직 027을 적용하지 않은 환경에서는 기존 join 쿼리로 fallback한다.
 export async function listMyPendingInvitations() {
   const user = await getCurrentUserOrThrow();
   const cleanedEmail = normalizeEmail(user.email);
   if (!cleanedEmail) return [];
+
+  const { data: rpcData, error: rpcError } = await supabase
+    .rpc('list_my_pending_academy_invitations');
+  if (!rpcError) {
+    return (rpcData || []).map((row) => ({
+      id: row.invitation_id,
+      academy_id: row.academy_id,
+      email: row.email,
+      role: row.role,
+      status: row.status,
+      invited_by: row.invited_by,
+      accepted_user_id: row.accepted_user_id,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      academy: {
+        id: row.academy_id,
+        name: row.academy_name,
+      },
+    }));
+  }
+
   const { data, error } = await supabase
     .from('academy_invitations')
     .select('*, academy:academies(id, name, owner_id)')
@@ -634,8 +665,8 @@ export async function deactivateAcademyStaffProfile({ academyId, userId }) {
 // Phase 41 — 출결·등하원 설정 (academies columns)
 // ────────────────────────────────────────────────────────────────
 
-// Phase 43 — 선생님 출퇴근은 'qr' 단일 옵션. wifi 제거.
-const STAFF_CHECK_METHODS = new Set(['qr']);
+// SQL 027 — 직원은 직접 기록 또는 QR을 선택한다. wifi는 계속 지원하지 않는다.
+const STAFF_CHECK_METHODS = new Set(['manual', 'qr']);
 const STUDENT_CHECK_METHODS = new Set(['teacher_manual', 'qr']);
 
 // SQL 011 의 새 컬럼을 한 번에 업데이트. owner 만 update RLS 통과.
@@ -647,7 +678,7 @@ export async function updateAcademyAttendanceSettings(academyId, patch = {}) {
 
   if (patch.staffCheckMethod !== undefined) {
     if (!STAFF_CHECK_METHODS.has(patch.staffCheckMethod)) {
-      throw new Error("staff_check_method 는 'qr' 이어야 해요.");
+      throw new Error("staff_check_method 는 'manual' 또는 'qr' 이어야 해요.");
     }
     dbPatch.staff_check_method = patch.staffCheckMethod;
   }

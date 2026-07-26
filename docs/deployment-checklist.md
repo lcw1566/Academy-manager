@@ -29,13 +29,13 @@
 
 [`supabase-migration-checklist.md`](./supabase-migration-checklist.md) 참조.
 
-Dashboard → SQL Editor 에서 **번호 순서대로**:
+Dashboard → SQL Editor 에서 **번호 순서대로 현재 최신 파일까지** 실행:
 
-1. [ ] `supabase/sql/001_workspace_schema.sql`
-2. [ ] `supabase/sql/002_domain_schema.sql`
-3. [ ] `supabase/sql/003_account_type_and_invitations.sql`
-4. [ ] `supabase/sql/004_profiles_staff_and_delete_policies.sql`
-5. [ ] `supabase/sql/005_accept_invitation_rpc.sql`
+- [ ] 신규 환경: [`supabase/README.md`](../supabase/README.md)의 실행 순서대로 `001`~`027`
+- [ ] 기존 환경: 마지막 적용 번호 다음 파일부터 `027`까지
+- [ ] `025_operations_manager_role.sql`
+- [ ] `026_deferred_staff_role_assignment.sql`
+- [ ] `027_attendance_choices_and_invitation_display.sql`
 
 각 SQL 은 idempotent — 재실행해도 안전합니다.
 

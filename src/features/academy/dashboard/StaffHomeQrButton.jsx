@@ -5,14 +5,21 @@ import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { today as todayDate } from '../../../utils/date';
 import QrScanSheet from '../attendance/QrScanSheet';
+import { readAttendanceSettings } from '../attendance/attendanceHelpers';
 
 export default function StaffHomeQrButton({ staff, staffRole }) {
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
   const staffAttendanceLogs = useWorkspaceStore((s) => s.staffAttendanceLogs) ?? [];
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const authUserId = useAuthStore((s) => s.user?.id);
   const [open, setOpen] = useState(false);
   const todayStr = todayDate();
   const staffUserId = staff?.serverUserId || authUserId;
+  const attendanceSettings = useMemo(() => {
+    const academy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
+    return readAttendanceSettings(academy);
+  }, [memberships, currentAcademyId]);
 
   const status = useMemo(() => {
     if (!staff?.id && !staffUserId) return 'hidden';
@@ -33,7 +40,7 @@ export default function StaffHomeQrButton({ staff, staffRole }) {
     return 'in';
   }, [academyStaffShifts, staff?.id, staffAttendanceLogs, staffUserId, todayStr]);
 
-  if (status === 'hidden') return null;
+  if (status === 'hidden' || attendanceSettings.staffCheckMethod !== 'qr') return null;
 
   const label = status === 'done' ? '퇴근 완료' : status === 'out' ? '퇴근하기' : '출근하기';
 

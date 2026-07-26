@@ -354,11 +354,12 @@ function OwnerMoreSections({
   const currentAcademy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
   const attendance = readAttendanceSettings(currentAcademy);
   const methodSubtitle = (() => {
+    const staffLabel = attendance.staffCheckMethod === 'qr' ? 'QR' : '직접 기록';
     const studentLabel = attendance.studentCheckMethod === 'qr' ? 'QR' : '선생님 직접 체크';
-    return `직원 QR · 학생 ${studentLabel}`;
+    return `직원 ${staffLabel} · 학생 ${studentLabel}`;
   })();
-  // Phase 43 — staff 는 항상 QR. 공용 QR 화면은 항상 노출 가치 있음.
-  const isQrInUse = true;
+  const isQrInUse =
+    attendance.staffCheckMethod === 'qr' || attendance.studentCheckMethod === 'qr';
 
   const handleRefresh = async () => {
     if (refreshing) return;

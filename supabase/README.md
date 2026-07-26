@@ -34,7 +34,8 @@ supabase/
     ├── 023_chat_push_service_role_grants.sql (푸시 함수 권한)
     ├── 024_academy_drive.sql (공유 드라이브 비공개 Storage + 파일별 다운로드 정책)
     ├── 025_operations_manager_role.sql (운영 매니저 역할 + 데스크 운영 권한/RLS)
-    └── 026_deferred_staff_role_assignment.sql (직원 초대 수락 후 역할 배정/RLS)
+    ├── 026_deferred_staff_role_assignment.sql (직원 초대 수락 후 역할 배정/RLS)
+    └── 027_attendance_choices_and_invitation_display.sql (출결 선택 + 초대 학원명 RPC)
 ```
 
 ## 실행 순서 요약
@@ -67,6 +68,7 @@ supabase/
 | 24 | `024_academy_drive.sql` | 비공개 `academy-drive` 버킷, `academy_drive_files` 메타데이터, 원장 관리 RLS |
 | 25 | `025_operations_manager_role.sql` | 운영 매니저 초대·근무표·학생/수납·공유 드라이브 관리. 학원 삭제·최종 설정·급여 관리는 원장 전용 |
 | 26 | `026_deferred_staff_role_assignment.sql` | 역할 없는 직원 초대, 수락 후 역할 배정 대기, 원장/운영 매니저의 활성화 권한 및 보안 경계 |
+| 27 | `027_attendance_choices_and_invitation_display.sql` | 직원 직접 기록/QR 선택, 초대받은 사용자에게 학원 이름을 안전하게 표시하는 RPC |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -77,13 +79,24 @@ supabase/
 `supabase/sql/026_deferred_staff_role_assignment.sql`을 실행하세요.
 
 - 가입 화면은 **원장 / 직원**만 선택합니다.
-- 직원 초대는 역할 없이 발송되고, 수락자는 `역할 배정 대기` 상태가 됩니다.
+- 026은 역할 미지정 초대의 `역할 배정 대기` 경로를 지원합니다.
 - 원장은 강사·보조강사·운영 매니저를 배정할 수 있으며, 운영 매니저는 강사·보조강사만 배정할 수 있습니다.
 - 배정 전 멤버십은 `pending / invited`라 기존 active-member RLS를 통과하지 못합니다.
+- 027 적용 후 신규 UI는 역할을 먼저 정해 초대하므로 직원이 수락 즉시 활성화됩니다.
 
 > ⚠ **002 는 001 의 helper function 에 의존합니다.**
 > `public.set_updated_at`, `public.is_member_of_academy`, `public.is_owner_of_academy`
 > 가 없으면 002 실행 시 에러가 납니다. 반드시 001 → 002 순서로 실행하세요.
+
+### 출결 선택·초대 학원명 배포 (027)
+
+`026_deferred_staff_role_assignment.sql`까지 실행한 환경에서
+`supabase/sql/027_attendance_choices_and_invitation_display.sql`을 실행하세요.
+
+- 직원 출퇴근을 `직접 기록 / QR` 중 선택할 수 있습니다.
+- 학생 등하원을 `선생님 직접 체크 / QR` 중 선택할 수 있습니다.
+- 초대 카드에는 `academies` RLS를 넓히지 않고 실제 학원 이름만 표시합니다.
+- 새 초대는 원장이 역할을 먼저 선택하고, 직원은 수락 즉시 해당 역할로 참여합니다.
 
 ### 공유 드라이브 배포 (024)
 

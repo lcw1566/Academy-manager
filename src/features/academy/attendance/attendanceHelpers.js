@@ -6,12 +6,11 @@ import { hhmmToMin } from '../../../utils/shiftCoverage';
 
 // memberships[i].academy 로부터 출결 설정을 읽어 일관된 default 값을 반환.
 //
-// Phase 43 — Wi-Fi 모드 제거. staff_check_method 는 항상 'qr' 단일 옵션.
-// (DB 컬럼은 SQL 012 에서 default 'qr' / check 'qr' only 로 좁혀짐.)
+// SQL 027 — Wi-Fi는 제거한 채 직원 출퇴근을 직접 기록 또는 QR로 선택한다.
 export function readAttendanceSettings(academy) {
   if (!academy) {
     return {
-      staffCheckMethod: 'qr',
+      staffCheckMethod: 'manual',
       studentCheckMethod: 'teacher_manual',
       staffManualOverrideEnabled: true,
       studentManualOverrideEnabled: true,
@@ -20,7 +19,7 @@ export function readAttendanceSettings(academy) {
     };
   }
   return {
-    staffCheckMethod: 'qr',
+    staffCheckMethod: academy.staff_check_method || 'manual',
     studentCheckMethod: academy.student_check_method || 'teacher_manual',
     staffManualOverrideEnabled: academy.staff_manual_override_enabled !== false,
     studentManualOverrideEnabled: academy.student_manual_override_enabled !== false,

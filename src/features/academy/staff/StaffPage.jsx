@@ -470,7 +470,7 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
         </div>
       </div>
 
-      {/* 직원 초대 — 이메일만 입력하고, 수락 뒤 역할 배정 */}
+      {/* 직원 초대 — 역할을 먼저 정하고, 직원은 수락만 하면 바로 참여 */}
       {inviteOpen && (
         <Modal
           isOpen
@@ -489,11 +489,11 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
           <div className="flex flex-col gap-4">
             <div className="bg-blue-50 rounded-2xl px-4 py-3">
               <p className="text-xs text-blue-700 leading-relaxed">
-                직원으로 초대할 이메일을 입력해주세요. 수락 후 역할 배정 대기 목록에서
-                강사·보조강사(원장은 운영 매니저도 가능)로 설정할 수 있어요.
+                역할과 이메일을 선택해 초대하세요. 상대방은 초대를 수락하면
+                선택한 역할로 바로 학원에 참여해요.
               </p>
             </div>
-            <StaffInviteWidget />
+            <StaffInviteWidget canInviteManagers={canInviteManagers} />
           </div>
         </Modal>
       )}
@@ -800,7 +800,9 @@ function PendingInvitationDetail({ inv, onBack }) {
           <Clock size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
           <p className="text-xs text-amber-700 leading-relaxed">
             상대가 같은 이메일로 로그인하면 앱 안에서 초대를 수락할 수 있어요.
-            역할은 수락 뒤 배정합니다.
+            {inv.role === 'pending'
+              ? ' 이전 방식의 초대라 수락 뒤 역할을 한 번 정해야 해요.'
+              : ` 수락하면 바로 ${STAFF_ROLE_LABELS[inv.role] || '직원'}로 참여해요.`}
           </p>
         </div>
         <button

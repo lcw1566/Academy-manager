@@ -23,6 +23,7 @@ import {
   mergePlannedAndActualStaffShifts,
   plannedToStaffShiftShape,
 } from '../../../utils/schedule';
+import { readAttendanceSettings } from '../attendance/attendanceHelpers';
 
 function nowHHmm() {
   const d = new Date();
@@ -51,6 +52,7 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
   const showToast = useAcademyStore((s) => s.showToast);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
   // Phase 44.6 / Phase B — 룰/예외 데이터.
   const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
@@ -62,6 +64,10 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
   const [busy, setBusy] = useState(false);
 
   const todayStr = todayDate();
+  const attendanceSettings = useMemo(() => {
+    const academy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
+    return readAttendanceSettings(academy);
+  }, [memberships, currentAcademyId]);
 
   // Phase 44.6 / Phase B — 본인 오늘 shift: 룰 기반 planned + 기존 shift 머지에서 1건.
   const myTodayShift = useMemo(() => {
@@ -104,6 +110,9 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
   const canUseLogs = !!staff?.serverUserId;
   // log 가 있으면 isPlanned 여도 출퇴근 가능. log 와 legacy 둘 다 없는 경우만 비활성.
   const isCheckinDisabled = myTodayShift.isPlanned && !canUseLogs;
+  const canUseManualClock =
+    attendanceSettings.staffCheckMethod === 'manual'
+    && attendanceSettings.staffManualOverrideEnabled;
 
   // 공용 helper — 오늘 로그 upsert.
   const upsertTodayLog = async (fields, { source = 'manual' } = {}) => {
@@ -211,26 +220,32 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
           </p>
         )}
 
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={clockedIn || busy || isCheckinDisabled}
-            onClick={handleClockIn}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white text-blue-700 text-xs font-bold border border-blue-200 active:bg-blue-100 disabled:opacity-50"
-          >
-            <LogIn size={12} />
-            {clockedIn ? '출근 완료' : '출근'}
-          </button>
-          <button
-            type="button"
-            disabled={!clockedIn || clockedOut || busy || isCheckinDisabled}
-            onClick={handleClockOut}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white text-emerald-700 text-xs font-bold border border-emerald-200 active:bg-emerald-100 disabled:opacity-50"
-          >
-            <LogOut size={12} />
-            {clockedOut ? '퇴근 완료' : '퇴근'}
-          </button>
-        </div>
+        {canUseManualClock ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={clockedIn || busy || isCheckinDisabled}
+              onClick={handleClockIn}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white text-blue-700 text-xs font-bold border border-blue-200 active:bg-blue-100 disabled:opacity-50"
+            >
+              <LogIn size={12} />
+              {clockedIn ? '출근 완료' : '출근'}
+            </button>
+            <button
+              type="button"
+              disabled={!clockedIn || clockedOut || busy || isCheckinDisabled}
+              onClick={handleClockOut}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white text-emerald-700 text-xs font-bold border border-emerald-200 active:bg-emerald-100 disabled:opacity-50"
+            >
+              <LogOut size={12} />
+              {clockedOut ? '퇴근 완료' : '퇴근'}
+            </button>
+          </div>
+        ) : (
+          <p className="rounded-xl bg-white/70 px-3 py-2 text-center text-[11px] font-semibold text-gray-600">
+            홈 상단의 QR 출퇴근 버튼을 이용해주세요.
+          </p>
+        )}
       </div>
     </div>
   );

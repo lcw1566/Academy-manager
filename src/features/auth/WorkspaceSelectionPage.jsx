@@ -15,8 +15,10 @@
 //
 // "학원 전환" 더보기 옵션을 누르면 sessionStorage 키를 비우고 다시 이 화면을 띄운다.
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Building2, ChevronLeft, ChevronRight, LogOut, Plus, Inbox, Loader2, Mail, Check,
+  QrCode, MousePointerClick, Users,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -28,6 +30,7 @@ import {
   DEFAULT_ACADEMY_SETTINGS,
   inferAcademyTypeFromSubjects,
 } from '../../constants/academySettings';
+import { generateQrToken } from '../academy/attendance/attendanceHelpers';
 
 export const WORKSPACE_PICKED_KEY = 'workspace-picked';
 
@@ -55,6 +58,7 @@ export default function WorkspaceSelectionPage() {
   const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
   const acceptInvitation = useWorkspaceStore((s) => s.acceptInvitation);
   const createAcademy = useWorkspaceStore((s) => s.createAcademy);
+  const saveAttendanceSettings = useWorkspaceStore((s) => s.saveAttendanceSettings);
   const signOutUser = useAuthStore((s) => s.signOutUser);
   const showToast = useAcademyStore((s) => s.showToast);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -67,6 +71,8 @@ export default function WorkspaceSelectionPage() {
   const [newAcademyName, setNewAcademyName] = useState('');
   const [academySubjects, setAcademySubjects] = useState(DEFAULT_ACADEMY_SETTINGS.academySubjects);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
+  const [staffCheckMethod, setStaffCheckMethod] = useState('manual');
+  const [studentCheckMethod, setStudentCheckMethod] = useState('teacher_manual');
   const [createSubmitting, setCreateSubmitting] = useState(false);
 
   const isOwner = profile?.account_type === 'owner';
@@ -122,8 +128,28 @@ export default function WorkspaceSelectionPage() {
     try {
       const academyType = inferAcademyTypeFromSubjects(academySubjects);
       await createAcademy({ name: trimmed, academyType, academySubjects, clinicRequired });
+      let attendanceSettingsSaved = true;
+      try {
+        const usesQr = staffCheckMethod === 'qr' || studentCheckMethod === 'qr';
+        await saveAttendanceSettings({
+          staffCheckMethod,
+          studentCheckMethod,
+          staffManualOverrideEnabled: staffCheckMethod === 'manual',
+          studentManualOverrideEnabled: true,
+          ...(usesQr ? { attendanceQrToken: generateQrToken() } : {}),
+          markOnboarded: true,
+        });
+      } catch (attendanceError) {
+        attendanceSettingsSaved = false;
+        console.warn('[onboarding] attendance settings save failed', attendanceError);
+      }
       setAcademyProfile({ name: trimmed, academyType, academySubjects, clinicRequired });
-      showToast('학원이 생성되었어요.');
+      showToast(
+        attendanceSettingsSaved
+          ? '학원 설정이 완료되었어요.'
+          : '학원은 생성됐어요. 출결 설정을 다시 확인해주세요.',
+        attendanceSettingsSaved ? 'success' : 'error',
+      );
       resetCreateForm();
       setCreating(false);
       setActiveTab('home');
@@ -140,6 +166,8 @@ export default function WorkspaceSelectionPage() {
     setNewAcademyName('');
     setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
+    setStaffCheckMethod('manual');
+    setStudentCheckMethod('teacher_manual');
   };
 
   const handleCancelCreate = () => {
@@ -274,10 +302,14 @@ export default function WorkspaceSelectionPage() {
                 name={newAcademyName}
                 subjects={academySubjects}
                 clinicRequired={clinicRequired}
+                staffCheckMethod={staffCheckMethod}
+                studentCheckMethod={studentCheckMethod}
                 submitting={createSubmitting}
                 onNameChange={setNewAcademyName}
                 onSubjectToggle={toggleAcademySubject}
                 onClinicRequiredChange={setClinicRequired}
+                onStaffCheckMethodChange={setStaffCheckMethod}
+                onStudentCheckMethodChange={setStudentCheckMethod}
                 onStepChange={setCreateStep}
                 onCancel={handleCancelCreate}
                 onCreate={handleCreate}
@@ -335,10 +367,14 @@ function AcademyCreateOnboarding({
   name,
   subjects,
   clinicRequired,
+  staffCheckMethod,
+  studentCheckMethod,
   submitting,
   onNameChange,
   onSubjectToggle,
   onClinicRequiredChange,
+  onStaffCheckMethodChange,
+  onStudentCheckMethodChange,
   onStepChange,
   onCancel,
   onCreate,
@@ -349,6 +385,8 @@ function AcademyCreateOnboarding({
     { title: '학원 이름을 알려주세요', desc: '원장님과 강사들이 함께 볼 학원 이름이에요.' },
     { title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 학원 프로필에서 바꿀 수 있어요.' },
     { title: '클리닉을 어떻게 쓸까요?', desc: '수업 후 자습·보완 기록을 기본 흐름으로 둘지 정해주세요.' },
+    { title: '직원 출퇴근은 어떻게 기록할까요?', desc: '파일럿에서는 직접 기록이 기본이에요. 준비가 되면 QR로 바꿀 수 있어요.' },
+    { title: '학생 등하원은 어떻게 기록할까요?', desc: '학생과 선생님이 가장 편한 방식을 골라주세요.' },
   ];
   const canGoNext = step === 0 ? isNameReady : step === 1 ? isSubjectReady : true;
   const primaryLabel = step === steps.length - 1 ? '만들기' : '다음';
@@ -370,15 +408,19 @@ function AcademyCreateOnboarding({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-1.5">
-        {steps.map((item, index) => (
-          <span
-            key={item.title}
-            className={`h-1.5 flex-1 rounded-full ${
-              index <= step ? 'bg-blue-600' : 'bg-gray-100'
-            }`}
+      <div>
+        <div className="mb-2 flex items-center justify-between text-[11px] font-bold">
+          <span className="text-blue-600">학원 설정</span>
+          <span className="text-gray-400">{step + 1} / {steps.length}</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-blue-100">
+          <motion.div
+            className="h-full rounded-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.45)]"
+            initial={false}
+            animate={{ width: `${((step + 1) / steps.length) * 100}%` }}
+            transition={{ type: 'spring', stiffness: 180, damping: 24 }}
           />
-        ))}
+        </div>
       </div>
 
       <div>
@@ -453,6 +495,44 @@ function AcademyCreateOnboarding({
         </div>
       )}
 
+      {step === 3 && (
+        <div className="flex flex-col gap-2">
+          <AttendanceMethodChoice
+            selected={staffCheckMethod === 'manual'}
+            Icon={MousePointerClick}
+            title="직접 출퇴근 기록"
+            description="직원이 앱에서 출근·퇴근 버튼을 눌러요."
+            onClick={() => onStaffCheckMethodChange('manual')}
+          />
+          <AttendanceMethodChoice
+            selected={staffCheckMethod === 'qr'}
+            Icon={QrCode}
+            title="QR로 출퇴근"
+            description="학원 공용 QR을 스캔해야 출퇴근이 기록돼요."
+            onClick={() => onStaffCheckMethodChange('qr')}
+          />
+        </div>
+      )}
+
+      {step === 4 && (
+        <div className="flex flex-col gap-2">
+          <AttendanceMethodChoice
+            selected={studentCheckMethod === 'teacher_manual'}
+            Icon={Users}
+            title="선생님이 직접 체크"
+            description="수업 화면에서 출석·지각·결석을 입력해요."
+            onClick={() => onStudentCheckMethodChange('teacher_manual')}
+          />
+          <AttendanceMethodChoice
+            selected={studentCheckMethod === 'qr'}
+            Icon={QrCode}
+            title="학생 QR 등하원"
+            description="학생이 공용 QR과 PIN으로 등·하원을 기록해요."
+            onClick={() => onStudentCheckMethodChange('qr')}
+          />
+        </div>
+      )}
+
       <div className="flex gap-2">
         <button
           type="button"
@@ -474,5 +554,34 @@ function AcademyCreateOnboarding({
         </button>
       </div>
     </div>
+  );
+}
+
+function AttendanceMethodChoice({ selected, Icon, title, description, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full rounded-2xl border px-4 py-4 text-left transition-colors ${
+        selected
+          ? 'border-blue-500 bg-blue-50'
+          : 'border-gray-100 bg-gray-50 active:bg-gray-100'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl ${
+          selected ? 'bg-blue-600 text-white' : 'bg-white text-gray-500'
+        }`}>
+          <Icon size={18} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className={`block text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-900'}`}>
+            {title}
+          </span>
+          <span className="mt-1 block text-xs leading-relaxed text-gray-500">{description}</span>
+        </span>
+        {selected && <Check size={16} className="flex-shrink-0 text-blue-600" />}
+      </div>
+    </button>
   );
 }
