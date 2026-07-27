@@ -21,7 +21,7 @@ const ROLE_LABEL = {
   manager: '운영 매니저',
 };
 
-export default function Sidebar({ tabs, badges = {} }) {
+export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds = [] }) {
   const role = useAcademyStore((s) => s.role);
   const activeTab = useAcademyStore((s) => s.activeTab);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -43,14 +43,17 @@ export default function Sidebar({ tabs, badges = {} }) {
       <nav className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-0.5">
         {(tabs || []).map((tab) => {
           const IconComponent = tab.Icon || tab.icon;
-          const active = activeTab === tab.id;
+          const active = activeTab === tab.id || activeTabIds.includes(tab.id);
           const badge = badges[tab.id] || 0;
           const pilotLocked = tab.pilotLocked === true;
           return (
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                const handled = onTabSelect?.(tab) === true;
+                if (!handled) setActiveTab(tab.id);
+              }}
               aria-label={pilotLocked ? `${tab.label}, 추후 제공 예정` : tab.label}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
                 pilotLocked

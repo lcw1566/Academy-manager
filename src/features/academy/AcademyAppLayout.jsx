@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen, Clock3 } from 'lucide-react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen, Clock3, Pin, X } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -159,6 +160,66 @@ function PilotLockedFeature({ featureId, onReturn }) {
   );
 }
 
+function DesktopChatWindow({ pinned, onPinnedChange, onClose }) {
+  const windowRef = useRef(null);
+
+  useEffect(() => {
+    if (pinned) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!windowRef.current?.contains(event.target)) onClose();
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick);
+  }, [pinned, onClose]);
+
+  return (
+    <motion.aside
+      ref={windowRef}
+      initial={{ opacity: 0, y: 24, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 18, scale: 0.97 }}
+      transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+      className="fixed bottom-5 right-5 z-[60] hidden h-[min(720px,calc(100vh-40px))] w-[420px] flex-col overflow-hidden rounded-[24px] border border-gray-200 bg-[#F2F4F6] shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:flex"
+      aria-label="PC 채팅 창"
+    >
+      <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-4">
+        <MessageCircle size={16} className="text-[#0064FF]" />
+        <p className="flex-1 text-sm font-extrabold text-gray-900">씨닛 채팅</p>
+        {pinned && (
+          <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-600">
+            고정됨
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => onPinnedChange(!pinned)}
+          aria-pressed={pinned}
+          aria-label={pinned ? '채팅 창 고정 해제' : '채팅 창 고정'}
+          title={pinned ? '고정 해제' : '다른 메뉴를 눌러도 유지'}
+          className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+            pinned ? 'bg-blue-50 text-[#0064FF]' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-700'
+          }`}
+        >
+          <Pin size={15} className={pinned ? 'fill-current' : ''} />
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="채팅 창 닫기"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+        >
+          <X size={17} />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1">
+        <Suspense fallback={<div className="h-full bg-[#F2F4F6]" />}>
+          <ChatPage displayMode="floating" />
+        </Suspense>
+      </div>
+    </motion.aside>
+  );
+}
+
 export default function AcademyAppLayout() {
   const role = useAcademyStore((s) => s.role);
   const activeTab = useAcademyStore((s) => s.activeTab);
@@ -172,6 +233,34 @@ export default function AcademyAppLayout() {
   const goBackFromClassGroup = useAcademyStore((s) => s.goBackFromClassGroup);
   const goBackFromClassSession = useAcademyStore((s) => s.goBackFromClassSession);
   const goBackFromAcademyStudent = useAcademyStore((s) => s.goBackFromAcademyStudent);
+  const [desktopChatOpen, setDesktopChatOpen] = useState(false);
+  const [desktopChatPinned, setDesktopChatPinned] = useState(true);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches,
+  );
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)');
+    const syncViewport = (event) => setIsDesktopViewport(event.matches);
+    setIsDesktopViewport(media.matches);
+    media.addEventListener('change', syncViewport);
+    return () => media.removeEventListener('change', syncViewport);
+  }, []);
+
+  // 모바일에서 열었던 채팅 탭을 PC에서 복원할 때는 전체 화면 대신 플로팅 창으로 전환한다.
+  useEffect(() => {
+    if (!isDesktopViewport || activeTab !== 'chat') return;
+    setDesktopChatOpen(true);
+    setActiveTab('home');
+  }, [isDesktopViewport, activeTab, setActiveTab]);
+
+  // PC 플로팅 창을 연 채 모바일 폭으로 전환하면 보이지 않는 창으로 읽음 처리되지 않도록
+  // 기존 모바일 전체 화면 채팅으로 자연스럽게 넘긴다.
+  useEffect(() => {
+    if (isDesktopViewport || !desktopChatOpen) return;
+    setDesktopChatOpen(false);
+    setActiveTab('chat');
+  }, [isDesktopViewport, desktopChatOpen, setActiveTab]);
 
   useEffect(() => {
     const roleLoaders = role === 'owner'
@@ -328,10 +417,21 @@ export default function AcademyAppLayout() {
     }
   };
 
+  const handleDesktopTabSelect = (tab) => {
+    if (tab.id !== 'chat') return false;
+    setDesktopChatOpen(true);
+    return true;
+  };
+
   return (
     <div className="min-h-screen bg-[#F2F4F6] md:flex">
       {/* PC 사이드바 — md 이상에서만 표시 */}
-      <Sidebar tabs={tabs} badges={{ chat: chatUnread }} />
+      <Sidebar
+        tabs={tabs}
+        badges={{ chat: chatUnread }}
+        onTabSelect={handleDesktopTabSelect}
+        activeTabIds={desktopChatOpen ? ['chat'] : []}
+      />
 
       <main className="flex-1 min-w-0">
         <div className="main-content max-w-md mx-auto md:mx-0 md:max-w-none md:px-8 md:py-6 pb-24 md:pb-8">
@@ -354,6 +454,16 @@ export default function AcademyAppLayout() {
           onClose={() => setAttendanceOnboardingDismissed(true)}
         />
       )}
+
+      <AnimatePresence>
+        {desktopChatOpen && (
+          <DesktopChatWindow
+            pinned={desktopChatPinned}
+            onPinnedChange={setDesktopChatPinned}
+            onClose={() => setDesktopChatOpen(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Bottom Nav — 모바일 전용 (md 이상에서는 좌측 사이드바가 대체).
           Phase 39 — 6개 탭이 들어가도록 아이콘/너비 살짝 축소. */}

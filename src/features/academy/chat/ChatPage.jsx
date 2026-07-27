@@ -35,7 +35,8 @@ function formatThreadStamp(iso) {
   return `${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
 
-export default function ChatPage() {
+export default function ChatPage({ displayMode = 'page' }) {
+  const isFloating = displayMode === 'floating';
   const authUserId = useAuthStore((s) => s.user?.id);
   const threads = useChatStore((s) => s.threads);
   const messages = useChatStore((s) => s.messages);
@@ -161,12 +162,13 @@ export default function ChatPage() {
         memberMap={memberMap}
         authUserId={authUserId}
         onBack={() => setSelectedThreadId(null)}
+        displayMode={displayMode}
       />
     );
   }
 
   return (
-    <div>
+    <div className={isFloating ? 'relative flex h-full min-h-0 flex-col overflow-hidden' : ''}>
       <Header
         title="채팅"
         right={
@@ -181,7 +183,7 @@ export default function ChatPage() {
         }
       />
 
-      <div className="pt-14 md:pt-0 pb-6">
+      <div className={isFloating ? 'min-h-0 flex-1 overflow-y-auto pb-6' : 'pt-14 pb-6 md:pt-0'}>
         {(notificationPermission === 'default' || notificationPermission === 'prompt' || notificationPermission === 'prompt-with-rationale') && (
           <div className="px-4 pt-4">
             <button
@@ -279,6 +281,7 @@ export default function ChatPage() {
           academyId={currentAcademyId}
           onClose={() => setShowPicker(false)}
           onPicked={(threadId) => { setShowPicker(false); setSelectedThreadId(threadId); }}
+          displayMode={displayMode}
         />
       )}
     </div>
@@ -286,7 +289,7 @@ export default function ChatPage() {
 }
 
 // ─── 대화방 ─────────────────────────────────────────────────────
-function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
+function ChatRoom({ thread, title, memberMap, authUserId, onBack, displayMode = 'page' }) {
   const messages = useChatStore((s) => s.messages);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const markRead = useChatStore((s) => s.markRead);
@@ -297,6 +300,7 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
   const inputRef = useRef(null);
   const previousMessageCountRef = useRef(0);
   const reduceMotion = useReducedMotion();
+  const isFloating = displayMode === 'floating';
   const isGroup = thread.kind === 'group';
   const isAcademyGroup = isGroup && thread.group_scope !== 'custom';
 
@@ -342,13 +346,14 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
     }
   };
 
-  if (typeof document === 'undefined') return null;
-  return createPortal(
+  const room = (
     <motion.div
       initial={reduceMotion ? false : { opacity: 0, x: 14, scale: 0.995 }}
       animate={{ opacity: 1, x: 0, scale: 1 }}
       transition={tossSpring.soft}
-      className="fixed inset-0 z-50 flex flex-col h-[100dvh] bg-[#F2F4F6]"
+      className={isFloating
+        ? 'flex h-full min-h-0 flex-col bg-[#F2F4F6]'
+        : 'fixed inset-0 z-50 flex h-[100dvh] flex-col bg-[#F2F4F6]'}
     >
       {/* 헤더 */}
       <div className="flex items-center gap-2 px-2 py-3 bg-white border-b border-gray-100 flex-shrink-0">
@@ -481,13 +486,15 @@ function ChatRoom({ thread, title, memberMap, authUserId, onBack }) {
           </motion.span>
         </motion.button>
       </div>
-    </motion.div>,
-    document.body,
+    </motion.div>
   );
+  if (isFloating) return room;
+  if (typeof document === 'undefined') return null;
+  return createPortal(room, document.body);
 }
 
 // ─── DM 상대 선택 ───────────────────────────────────────────────
-function MemberPickerSheet({ memberMap, authUserId, academyId, onClose, onPicked }) {
+function MemberPickerSheet({ memberMap, authUserId, academyId, onClose, onPicked, displayMode = 'page' }) {
   const openDm = useChatStore((s) => s.openDm);
   const createGroup = useChatStore((s) => s.createGroup);
   const showToast = useAcademyStore((s) => s.showToast);
@@ -497,6 +504,7 @@ function MemberPickerSheet({ memberMap, authUserId, academyId, onClose, onPicked
   const [selectedIds, setSelectedIds] = useState([]);
   const [groupTitle, setGroupTitle] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
+  const isFloating = displayMode === 'floating';
 
   const candidates = useMemo(() => {
     const list = Object.entries(memberMap)
@@ -561,15 +569,14 @@ function MemberPickerSheet({ memberMap, authUserId, academyId, onClose, onPicked
     }
   };
 
-  if (typeof document === 'undefined') return null;
-  return createPortal(
+  const picker = (
     <AnimatePresence>
       <motion.div
         key="dim"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/40 z-40"
+        className={`${isFloating ? 'absolute' : 'fixed'} inset-0 z-40 bg-black/40`}
         onClick={onClose}
       />
       <motion.div
@@ -578,7 +585,7 @@ function MemberPickerSheet({ memberMap, authUserId, academyId, onClose, onPicked
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
         transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-        className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-8 max-h-[80vh] flex flex-col"
+        className={`${isFloating ? 'absolute max-h-[88%]' : 'fixed max-h-[80vh]'} bottom-0 left-0 right-0 z-50 flex flex-col rounded-t-3xl bg-white px-4 pb-8 pt-5`}
       >
         <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
         <p className="text-base font-bold text-gray-900 mb-3">새 대화</p>
@@ -670,7 +677,9 @@ function MemberPickerSheet({ memberMap, authUserId, academyId, onClose, onPicked
           </button>
         )}
       </motion.div>
-    </AnimatePresence>,
-    document.body,
+    </AnimatePresence>
   );
+  if (isFloating) return picker;
+  if (typeof document === 'undefined') return null;
+  return createPortal(picker, document.body);
 }
