@@ -291,14 +291,14 @@ export default function OwnerDashboard({ operationsOnly = false }) {
         <SummaryCard
           label="이달 미납"
           value="준비 중"
-          onClick={() => setActiveTab('settlement')}
+          onClick={() => setActiveTab('payments')}
           pilotLocked
         />
         {!operationsOnly && (
           <SummaryCard
             label="급여 확인 필요"
             value="준비 중"
-            onClick={() => setActiveTab('settlement')}
+            onClick={() => setActiveTab('owner-payroll')}
             pilotLocked
           />
         )}

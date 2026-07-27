@@ -48,7 +48,7 @@ const COMMON_ACADEMY_TAB_LOADERS = [
 // 계약/권한/배정까지 한 탭에서 처리한다. More 탭은 학원·계정 설정만 남긴다.
 //
 // 강사/보조강사는 본인 출퇴근만 Home 카드에서 처리한다. 운영 매니저는
-// 데스크 실무를 위해 직원·정산·공유자료 탭에 접근하되, 원장 전용 설정은 제외한다.
+// 데스크 실무를 위해 직원·수납·공유자료 탭에 접근하되, 원장 전용 급여는 제외한다.
 const TAB_CONFIG = {
   owner: [
     { id: 'home',       label: '홈',    Icon: Home },
@@ -56,7 +56,8 @@ const TAB_CONFIG = {
     { id: 'students',   label: '학생',  Icon: Users },
     { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
     { id: 'staff',      label: '직원',   Icon: UserCog },
-    { id: 'settlement', label: '정산',  Icon: BarChart2, pilotLocked: true },
+    { id: 'payments',   label: '수납',  Icon: CreditCard, pilotLocked: true },
+    { id: 'owner-payroll', label: '급여', Icon: BarChart2, pilotLocked: true },
     { id: 'drive',      label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',       label: '채팅',  Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
@@ -90,7 +91,7 @@ const TAB_CONFIG = {
     { id: 'students',   label: '학생',  Icon: Users },
     { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
     { id: 'staff',      label: '직원',  Icon: UserCog },
-    { id: 'settlement', label: '정산',  Icon: BarChart2, pilotLocked: true },
+    { id: 'payments',   label: '수납',  Icon: CreditCard, pilotLocked: true },
     { id: 'drive',      label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',       label: '채팅', Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
@@ -121,9 +122,13 @@ function FallbackScreen() {
 }
 
 const PILOT_LOCKED_FEATURES = {
-  settlement: {
-    title: '정산',
-    description: '수납과 급여를 더 안전하게 관리할 수 있도록 파일럿 이후에 정식으로 제공할 예정이에요.',
+  payments: {
+    title: '수납',
+    description: '학생별 수납 내역을 더 안전하게 관리할 수 있도록 파일럿 이후에 정식으로 제공할 예정이에요.',
+  },
+  'owner-payroll': {
+    title: '급여',
+    description: '직원별 급여 계산과 지급 관리를 충분히 검증한 뒤 정식으로 제공할 예정이에요.',
   },
   drive: {
     title: '드라이브',
@@ -309,8 +314,8 @@ export default function AcademyAppLayout() {
       if (tab.id === 'students') {
         return currentUserCan({ role, staffProfile: myStaffProfile }, 'canViewStudents');
       }
-      if (tab.id === 'settlement') {
-        // 운영 매니저는 수납 실무만, 원장은 급여/설정까지 관리한다.
+      if (tab.id === 'payments') {
+        // 운영 매니저는 수납 실무만, 원장은 수납과 급여를 별도 탭으로 관리한다.
         if (role === 'owner') return true;
         return currentUserCan({ role, staffProfile: myStaffProfile }, 'canViewPayments');
       }
@@ -336,6 +341,10 @@ export default function AcademyAppLayout() {
     const validTabIds = tabs.map((t) => t.id);
     if (activeTab === 'work' && validTabIds.includes('staff')) {
       setActiveTab('staff');
+      return;
+    }
+    if (activeTab === 'settlement' && validTabIds.includes('payments')) {
+      setActiveTab('payments');
       return;
     }
     if (!validTabIds.includes(activeTab) && !HIDDEN_VALID_TABS.includes(activeTab)) {
@@ -393,8 +402,11 @@ export default function AcademyAppLayout() {
       if (activeTab === 'classes')    return selectedClassGroupId ? <ClassGroupDetailPage /> : <ClassGroupsPage />;
       if (activeTab === 'students')   return selectedAcademyStudentId ? <AcademyStudentDetailPage /> : <AcademyStudentsPage />;
       if (activeTab === 'clinic')     return <ClinicPage />;
-      if (activeTab === 'settlement') {
-        return <PilotLockedFeature featureId="settlement" onReturn={() => setActiveTab('classes')} />;
+      if (activeTab === 'payments' || activeTab === 'settlement') {
+        return <PilotLockedFeature featureId="payments" onReturn={() => setActiveTab('classes')} />;
+      }
+      if (activeTab === 'owner-payroll') {
+        return <PilotLockedFeature featureId="owner-payroll" onReturn={() => setActiveTab('classes')} />;
       }
       if (activeTab === 'payroll')    return <PayrollPage />;
       if (activeTab === 'staff')      return <StaffPage />;

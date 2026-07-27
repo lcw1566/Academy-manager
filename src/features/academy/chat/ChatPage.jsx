@@ -169,21 +169,46 @@ export default function ChatPage({ displayMode = 'page' }) {
 
   return (
     <div className={isFloating ? 'relative flex h-full min-h-0 flex-col overflow-hidden' : ''}>
-      <Header
-        title="채팅"
-        right={
-          <motion.button
-            whileTap={{ scale: 0.97 }}
-            onClick={() => setShowPicker(true)}
-            className="h-9 w-9 md:w-auto md:px-4 flex items-center justify-center gap-1.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold shadow-sm active:bg-[#0050CC]"
-          >
-            <Plus size={16} />
-            <span className="hidden md:inline">새 대화</span>
-          </motion.button>
-        }
-      />
+      {!isFloating && (
+        <Header
+          title="채팅"
+          right={
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setShowPicker(true)}
+              className="h-9 w-9 md:w-auto md:px-4 flex items-center justify-center gap-1.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold shadow-sm active:bg-[#0050CC]"
+            >
+              <Plus size={16} />
+              <span className="hidden md:inline">새 대화</span>
+            </motion.button>
+          }
+        />
+      )}
 
       <div className={isFloating ? 'min-h-0 flex-1 overflow-y-auto pb-6' : 'pt-14 pb-6 md:pt-0'}>
+        {isFloating && (
+          <div className="flex items-center gap-2 px-4 pt-4">
+            <div className="flex h-11 min-w-0 flex-1 items-center gap-3 rounded-2xl bg-white px-4 shadow-sm">
+              <Search size={16} className="flex-shrink-0 text-gray-400" />
+              <input
+                value={threadSearch}
+                onChange={(event) => setThreadSearch(event.target.value)}
+                placeholder="대화 상대 또는 메시지 검색"
+                aria-label="대화 검색"
+                className="min-w-0 flex-1 bg-transparent text-sm text-gray-700 focus:outline-none"
+              />
+            </div>
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setShowPicker(true)}
+              className="flex h-11 flex-shrink-0 items-center justify-center gap-1.5 rounded-2xl bg-[#0064FF] px-3.5 text-sm font-bold text-white shadow-sm active:bg-[#0050CC]"
+            >
+              <Plus size={16} />
+              새 대화
+            </motion.button>
+          </div>
+        )}
         {(notificationPermission === 'default' || notificationPermission === 'prompt' || notificationPermission === 'prompt-with-rationale') && (
           <div className="px-4 pt-4">
             <button
@@ -201,17 +226,19 @@ export default function ChatPage({ displayMode = 'page' }) {
             </button>
           </div>
         )}
-        <div className="px-4 pt-4">
-          <div className="flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm">
-            <Search size={16} className="text-gray-400 flex-shrink-0" />
-            <input
-              value={threadSearch}
-              onChange={(event) => setThreadSearch(event.target.value)}
-              placeholder="대화 상대 또는 메시지 검색"
-              className="flex-1 min-w-0 text-sm focus:outline-none text-gray-700 bg-transparent"
-            />
+        {!isFloating && (
+          <div className="px-4 pt-4">
+            <div className="flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm">
+              <Search size={16} className="text-gray-400 flex-shrink-0" />
+              <input
+                value={threadSearch}
+                onChange={(event) => setThreadSearch(event.target.value)}
+                placeholder="대화 상대 또는 메시지 검색"
+                className="flex-1 min-w-0 text-sm focus:outline-none text-gray-700 bg-transparent"
+              />
+            </div>
           </div>
-        </div>
+        )}
         {sortedThreads.length === 0 ? (
           <EmptyState
             icon="💬"
