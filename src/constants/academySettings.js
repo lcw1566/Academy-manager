@@ -50,10 +50,17 @@ export const CLINIC_REQUIRED_OPTIONS = [
   },
 ];
 
+export const TUITION_POLICY_OPTIONS = [
+  { id: 'school_level', label: '학교급별', description: '초등·중등·고등 기준' },
+  { id: 'grade', label: '학년별', description: '초1·중2·고3 기준' },
+  { id: 'class', label: '반별', description: '반마다 직접 설정' },
+];
+
 export const DEFAULT_ACADEMY_SETTINGS = {
   academyType: 'core_subjects',
   academySubjects: ['korean', 'english', 'math'],
   clinicRequired: true,
+  tuitionPolicy: 'class',
 };
 
 export function inferAcademyTypeFromSubjects(subjects = []) {
@@ -82,4 +89,16 @@ export function getAcademySubjectsLabel(subjects = []) {
   if (labels.length === 0) return '과목 미설정';
   if (labels.length <= 3) return labels.join(' · ');
   return `${labels.slice(0, 3).join(' · ')} 외 ${labels.length - 3}`;
+}
+
+export function getTuitionPolicyLabel(policy) {
+  return TUITION_POLICY_OPTIONS.find((option) => option.id === policy)?.label || '반별';
+}
+
+export function getSchoolLevelKey(level = '') {
+  const value = String(level).trim();
+  if (value.startsWith('초')) return '초등';
+  if (value.startsWith('중')) return '중등';
+  if (value.startsWith('고')) return '고등';
+  return value ? '기타' : '';
 }

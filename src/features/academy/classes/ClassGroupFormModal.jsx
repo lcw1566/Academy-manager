@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronRight, AlertTriangle, Check } from 'lucide-react';
+import { ChevronRight, AlertTriangle, Check, Search } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import OptionSelectSheet from '../../../components/OptionSelectSheet';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -22,6 +22,8 @@ import { hhmmToMin } from '../../../utils/shiftCoverage';
 import {
   ACADEMY_SUBJECT_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
+  getSchoolLevelKey,
+  getTuitionPolicyLabel,
 } from '../../../constants/academySettings';
 import {
   buildEffectiveStaffShifts,
@@ -259,7 +261,8 @@ function classifyTeacherAvailability({
 export default function ClassGroupFormModal({ editGroup, onClose }) {
   const {
     addClassGroup, updateClassGroup, setClassGroupServerId, setClassSessionServerIds,
-    academyStudents, academyTeachers, academyAssistants = [], academyProfile, showToast,
+    academyStudents, academyTeachers, academyAssistants = [], academyProfile, classGroups,
+    showToast,
     setActiveTab,
   } = useAcademyStore();
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
@@ -276,7 +279,11 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   // Phase 37 — 과목/학년 bottom sheet 열림 상태.
   const [subjectSheetOpen, setSubjectSheetOpen] = useState(false);
   const [levelSheetOpen, setLevelSheetOpen] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [studentSchoolFilter, setStudentSchoolFilter] = useState('');
+  const [studentGradeFilter, setStudentGradeFilter] = useState('');
   const ownerLabel = academyProfile?.ownerName?.trim() || '원장';
+  const tuitionPolicy = academyProfile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
   const subjectOptions = useMemo(() => {
     const configuredSubjectIds = Array.isArray(academyProfile?.academySubjects)
       && academyProfile.academySubjects.length > 0
@@ -394,10 +401,35 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     });
 
   const setStudentBilling = (id, value) =>
-    setForm((f) => ({
-      ...f,
-      studentBillings: { ...f.studentBillings, [id]: value },
+    setForm((f) => {
+      const studentBillings = { ...f.studentBillings };
+      if (value === '') delete studentBillings[id];
+      else studentBillings[id] = value;
+      return { ...f, studentBillings };
+    });
+
+  const findRecentTuition = (level) => {
+    if (!level || tuitionPolicy === 'class') return '';
+    const basis = tuitionPolicy === 'school_level' ? getSchoolLevelKey(level) : level;
+    const matched = [...(classGroups || [])].reverse().find((group) => {
+      if (group.id === editGroup?.id || Number(group.monthlyFee) <= 0) return false;
+      const groupBasis = tuitionPolicy === 'school_level'
+        ? getSchoolLevelKey(group.level)
+        : group.level;
+      return groupBasis === basis;
+    });
+    return matched ? String(matched.monthlyFee) : '';
+  };
+
+  const handleLevelSelect = (level) => {
+    setForm((current) => ({
+      ...current,
+      level,
+      monthlyFee: !editGroup && !current.monthlyFee
+        ? findRecentTuition(level)
+        : current.monthlyFee,
     }));
+  };
 
   const handleSave = async () => {
     if (submitting) return;
@@ -624,6 +656,32 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   };
 
   const selectedStudents = academyStudents.filter((s) => form.studentIds.includes(s.id));
+  const studentSchools = useMemo(
+    () => [...new Set(academyStudents.map((student) => student.school).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'ko')),
+    [academyStudents],
+  );
+  const studentGrades = useMemo(
+    () => [...new Set(academyStudents.map((student) => student.grade).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true })),
+    [academyStudents],
+  );
+  const filteredStudents = useMemo(() => {
+    const keyword = studentSearch.trim().toLowerCase();
+    return academyStudents.filter((student) => {
+      const matchesSearch = !keyword
+        || String(student.name || '').toLowerCase().includes(keyword)
+        || String(student.school || '').toLowerCase().includes(keyword);
+      const matchesSchool = !studentSchoolFilter || student.school === studentSchoolFilter;
+      const matchesGrade = !studentGradeFilter || student.grade === studentGradeFilter;
+      return matchesSearch && matchesSchool && matchesGrade;
+    });
+  }, [academyStudents, studentSearch, studentSchoolFilter, studentGradeFilter]);
+  const tuitionBasisLabel = tuitionPolicy === 'school_level'
+    ? (getSchoolLevelKey(form.level) || '학교급')
+    : tuitionPolicy === 'grade'
+      ? (form.level || '학년')
+      : '반';
 
   // Phase 37 — 시간/날짜 inline validation. 종료가 시작보다 빠르면 에러 메시지만 표시
   // (저장은 막지 않음 — 사용자가 잠시 잘못 입력한 중간 상태를 막으면 UX 가 답답해짐).
@@ -720,33 +778,30 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             </Field>
           </div>
 
-          <div className="rounded-2xl bg-[#F7F8FA] p-3.5">
-            <p className="mb-3 text-xs font-bold text-[#4E5968]">담당 및 장소</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="담당 강사">
-                <select
-                  value={form.teacherId}
-                  onChange={(e) => set('teacherId', e.target.value)}
-                  className="input bg-white"
-                >
-                  <option value="">강사 선택</option>
-                  <option value={OWNER_TEACHER_ID}>{ownerLabel} (원장 본인)</option>
-                  {academyTeachers.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-                <AvailabilityBanner status={teacherAvailability} onGoToStaff={goToStaffSchedule} />
-              </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="담당 강사">
+              <select
+                value={form.teacherId}
+                onChange={(e) => set('teacherId', e.target.value)}
+                className="input"
+              >
+                <option value="">강사 선택</option>
+                <option value={OWNER_TEACHER_ID}>{ownerLabel} (원장 본인)</option>
+                {academyTeachers.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <AvailabilityBanner status={teacherAvailability} onGoToStaff={goToStaffSchedule} />
+            </Field>
 
-              <Field label="강의실 (선택)">
-                <input
-                  value={form.room}
-                  onChange={(e) => set('room', e.target.value)}
-                  placeholder="예: 1강의실"
-                  className="input bg-white"
-                />
-              </Field>
-            </div>
+            <Field label="강의실">
+              <input
+                value={form.room}
+                onChange={(e) => set('room', e.target.value)}
+                placeholder="강의실 선택"
+                className="input"
+              />
+            </Field>
           </div>
 
         </div>
@@ -919,73 +974,102 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         <div className="md:col-span-2 flex flex-col gap-4">
           {academyStudents.length > 0 && (
             <Field label={`학생 배정 (${form.studentIds.length}/${academyStudents.length})`}>
-              <div className="flex flex-col gap-2">
-                {academyStudents.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => toggleStudent(s.id)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-colors ${
-                      form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
-                    }`}
-                  >
-                    <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`} />
-                    <span className="text-sm font-medium text-gray-800 flex-1">{(s.name || '?')}</span>
-                    {s.grade && <span className="text-xs text-gray-400">{s.grade}</span>}
-                  </button>
-                ))}
+              <div className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-[minmax(0,1fr)_150px_130px]">
+                <div className="relative col-span-2 md:col-span-1">
+                  <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={studentSearch}
+                    onChange={(event) => setStudentSearch(event.target.value)}
+                    placeholder="학생 검색"
+                    aria-label="학생 검색"
+                    className="input pl-9"
+                  />
+                </div>
+                <select
+                  value={studentSchoolFilter}
+                  onChange={(event) => setStudentSchoolFilter(event.target.value)}
+                  aria-label="학교 필터"
+                  className="input"
+                >
+                  <option value="">학교 전체</option>
+                  {studentSchools.map((school) => (
+                    <option key={school} value={school}>{school}</option>
+                  ))}
+                </select>
+                <select
+                  value={studentGradeFilter}
+                  onChange={(event) => setStudentGradeFilter(event.target.value)}
+                  aria-label="학년 필터"
+                  className="input"
+                >
+                  <option value="">학년 전체</option>
+                  {studentGrades.map((grade) => (
+                    <option key={grade} value={grade}>{grade}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-1">
+                {filteredStudents.length === 0 ? (
+                  <p className="py-5 text-center text-xs text-gray-400">검색 결과 없음</p>
+                ) : filteredStudents.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => toggleStudent(s.id)}
+                      className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                        form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
+                      }`}
+                    >
+                      <span className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`} />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{s.name || '?'}</span>
+                      {s.school && <span className="max-w-32 truncate text-xs text-gray-400">{s.school}</span>}
+                      {s.grade && <span className="flex-shrink-0 text-xs text-gray-400">{s.grade}</span>}
+                    </button>
+                  ))}
               </div>
             </Field>
           )}
 
-          <Field label="수강료 설정">
-            <div className="flex gap-2 mb-3">
-              {[
-                { value: 'same', label: '동일 수강료' },
-                { value: 'perStudent', label: '학생별 수강료' },
-              ].map(({ value, label }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => set('billingMode', value)}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors ${
-                    form.billingMode === value
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 bg-white text-gray-500'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {form.billingMode === 'same' ? (
+          <Field label={`월 수강료 · ${getTuitionPolicyLabel(tuitionPolicy)}`}>
+            <div className="flex gap-2">
               <input
                 type="number"
                 value={form.monthlyFee}
                 onChange={(e) => set('monthlyFee', e.target.value)}
-                placeholder="월 수강료 (원)"
-                className="input"
+                placeholder={`${tuitionBasisLabel} 기준 금액`}
+                className="input min-w-0 flex-1"
               />
-            ) : (
-              <div className="flex flex-col gap-2">
-                {selectedStudents.length === 0 ? (
-                  <p className="text-xs text-gray-400 text-center py-2">위에서 학생을 먼저 배정해주세요</p>
-                ) : (
-                  selectedStudents.map((s) => (
-                    <div key={s.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
-                      <span className="text-sm font-medium text-gray-800 flex-1">{s.name}</span>
-                      <input
-                        type="number"
-                        value={form.studentBillings[s.id] ?? ''}
-                        onChange={(e) => setStudentBilling(s.id, e.target.value)}
-                        placeholder="수강료"
-                        className="w-28 border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-right focus:outline-none focus:border-blue-400"
-                      />
-                      <span className="text-xs text-gray-400">원</span>
-                    </div>
-                  ))
-                )}
+              {selectedStudents.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => set('billingMode', form.billingMode === 'perStudent' ? 'same' : 'perStudent')}
+                  className={`flex-shrink-0 rounded-xl border px-3 text-xs font-bold ${
+                    form.billingMode === 'perStudent'
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 bg-white text-gray-500'
+                  }`}
+                >
+                  학생별 예외
+                </button>
+              )}
+            </div>
+
+            {form.billingMode === 'perStudent' && selectedStudents.length > 0 && (
+              <div className="mt-2 flex flex-col gap-1.5">
+                {selectedStudents.map((s) => (
+                  <div key={s.id} className="flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-2.5">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{s.name}</span>
+                    <input
+                      type="number"
+                      value={form.studentBillings[s.id] ?? ''}
+                      onChange={(e) => setStudentBilling(s.id, e.target.value)}
+                      placeholder={form.monthlyFee || '기본 금액'}
+                      aria-label={`${s.name} 예외 수강료`}
+                      className="w-32 rounded-lg border border-gray-200 px-2 py-1.5 text-right text-sm focus:border-blue-400 focus:outline-none"
+                    />
+                    <span className="text-xs text-gray-400">원</span>
+                  </div>
+                ))}
               </div>
             )}
           </Field>
@@ -1032,7 +1116,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         title="학년/레벨 선택"
         groups={LEVEL_GROUPS}
         value={form.level}
-        onSelect={(v) => set('level', v)}
+        onSelect={handleLevelSelect}
       />
 
       {/* Phase 35 — 반 생성 후 근무표 자동 추가 제안 */}

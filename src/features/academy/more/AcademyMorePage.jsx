@@ -27,6 +27,7 @@ import {
   ACADEMY_SUBJECT_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
+  TUITION_POLICY_OPTIONS,
   getAcademySubjectsLabel,
   getClinicRequiredLabel,
   inferAcademyTypeFromSubjects,
@@ -65,17 +66,20 @@ export default function AcademyMorePage() {
       ? currentAcademy.academy_subjects
       : DEFAULT_ACADEMY_SETTINGS.academySubjects;
     const serverClinicRequired = currentAcademy?.clinic_required ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired;
+    const serverTuitionPolicy = currentAcademy?.tuition_policy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
     const localName = academyProfile?.name;
     const localAcademyType = academyProfile?.academyType || DEFAULT_ACADEMY_SETTINGS.academyType;
     const localAcademySubjects = Array.isArray(academyProfile?.academySubjects)
       ? academyProfile.academySubjects
       : DEFAULT_ACADEMY_SETTINGS.academySubjects;
     const localClinicRequired = academyProfile?.clinicRequired ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired;
+    const localTuitionPolicy = academyProfile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
     if (
       localName === currentAcademyName &&
       localAcademyType === serverAcademyType &&
       JSON.stringify(localAcademySubjects) === JSON.stringify(serverAcademySubjects) &&
-      localClinicRequired === serverClinicRequired
+      localClinicRequired === serverClinicRequired &&
+      localTuitionPolicy === serverTuitionPolicy
     ) return;
     setAcademyProfile({
       ...(academyProfile || { ownerName: '', address: '', phone: '' }),
@@ -83,8 +87,18 @@ export default function AcademyMorePage() {
       academyType: serverAcademyType,
       academySubjects: serverAcademySubjects,
       clinicRequired: serverClinicRequired,
+      tuitionPolicy: serverTuitionPolicy,
     });
-  }, [currentAcademyId, currentAcademyName, currentAcademy?.academy_type, currentAcademy?.academy_subjects, currentAcademy?.clinic_required, academyProfile, setAcademyProfile]);
+  }, [
+    currentAcademyId,
+    currentAcademyName,
+    currentAcademy?.academy_type,
+    currentAcademy?.academy_subjects,
+    currentAcademy?.clinic_required,
+    currentAcademy?.tuition_policy,
+    academyProfile,
+    setAcademyProfile,
+  ]);
 
   const lastSyncedAt = useWorkspaceStore((s) => s.serverStudentsLoadedAt)
     || useWorkspaceStore((s) => s.serverClassGroupsLoadedAt)
@@ -106,6 +120,7 @@ export default function AcademyMorePage() {
         academyType: data.academyType,
         academySubjects: data.academySubjects,
         clinicRequired: data.clinicRequired,
+        tuitionPolicy: data.tuitionPolicy,
       });
       showToast('학원 정보가 저장되었습니다.');
     } catch (err) {
@@ -573,6 +588,7 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
       ? profile.academySubjects
       : DEFAULT_ACADEMY_SETTINGS.academySubjects,
     clinicRequired: profile?.clinicRequired ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired,
+    tuitionPolicy: profile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy,
   });
   const toggleSubject = (subjectId) => {
     setForm((f) => {
@@ -667,6 +683,28 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
                     </span>
                     {selected && <Check size={13} className="text-blue-600" />}
                   </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">수강료 기준</label>
+          <div className="grid grid-cols-3 gap-2">
+            {TUITION_POLICY_OPTIONS.map((option) => {
+              const selected = form.tuitionPolicy === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, tuitionPolicy: option.id }))}
+                  className={`rounded-xl border px-2 py-2.5 text-center ${
+                    selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'
+                  }`}
+                >
+                  <p className={`text-xs font-bold ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
+                    {option.label}
+                  </p>
                 </button>
               );
             })}

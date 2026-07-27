@@ -154,6 +154,7 @@ function createDefaultAcademyProfile() {
     academyType: 'core_subjects',
     academySubjects: ['korean', 'english', 'math'],
     clinicRequired: true,
+    tuitionPolicy: 'class',
   };
 }
 
@@ -915,6 +916,7 @@ const useAcademyStore = create(
         academyType: 'core_subjects',
         academySubjects: ['korean', 'english', 'math'],
         clinicRequired: true,
+        tuitionPolicy: 'class',
       },
       academyStudents: [],
       classGroups: [],
@@ -1759,7 +1761,10 @@ const useAcademyStore = create(
     const { classGroups, classSessions, academyPayments } = get();
     const newPayments = [];
     for (const group of classGroups) {
-      if (!group.monthlyFee || group.monthlyFee <= 0) continue;
+      const baseAmount = Number(group.monthlyFee) || 0;
+      const hasPositiveOverride = group.billingMode === 'perStudent'
+        && Object.values(group.studentBillings || {}).some((amount) => Number(amount) > 0);
+      if (baseAmount <= 0 && !hasPositiveOverride) continue;
       const monthSessions = classSessions.filter(
         (s) => s.classGroupId === group.id && s.date?.startsWith(month) && s.status !== 'canceled'
       );
@@ -1770,12 +1775,16 @@ const useAcademyStore = create(
           (p) => p.classGroupId === group.id && p.studentId === studentId && p.month === month
         );
         if (exists) continue;
+        const hasOverride = group.billingMode === 'perStudent'
+          && Object.prototype.hasOwnProperty.call(group.studentBillings || {}, studentId);
+        const amount = hasOverride ? Number(group.studentBillings[studentId]) || 0 : baseAmount;
+        if (amount <= 0) continue;
         newPayments.push({
           id: `ap${Date.now()}_${group.id}_${studentId}`,
           studentId,
           classGroupId: group.id,
           month,
-          amount: group.monthlyFee,
+          amount,
           status: 'unpaid',
           createdAt: new Date().toISOString(),
         });

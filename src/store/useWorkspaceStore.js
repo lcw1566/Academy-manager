@@ -77,6 +77,19 @@ function ensureCurrentAcademyDataScope(academyId) {
   useAcademyStore.getState().ensureAcademyDataScope?.(userId, academyId);
 }
 
+function syncAcademyProfileFromServer(academy) {
+  if (!academy) return;
+  useAcademyStore.getState().setAcademyProfile?.({
+    name: academy.name || '우리 학원',
+    academyType: academy.academy_type || 'core_subjects',
+    academySubjects: Array.isArray(academy.academy_subjects)
+      ? academy.academy_subjects
+      : ['korean', 'english', 'math'],
+    clinicRequired: academy.clinic_required !== false,
+    tuitionPolicy: academy.tuition_policy || 'class',
+  });
+}
+
 function isCurrentAcademy(get, academyId) {
   return get().currentAcademyId === academyId;
 }
@@ -647,6 +660,9 @@ const useWorkspaceStore = create(
           }
 
           ensureCurrentAcademyDataScope(currentAcademyId);
+          syncAcademyProfileFromServer(
+            memberships.find((membership) => membership.academy_id === currentAcademyId)?.academy,
+          );
           set({ memberships, currentAcademyId });
           return memberships;
         } catch (err) {
@@ -659,15 +675,28 @@ const useWorkspaceStore = create(
       },
 
       // 학원 생성 → 멤버십 재조회 → 새 학원을 current로 지정 → 서버 데이터 재조회
-      createAcademy: async ({ name, academyType, academySubjects, clinicRequired } = {}) => {
+      createAcademy: async ({
+        name,
+        academyType,
+        academySubjects,
+        clinicRequired,
+        tuitionPolicy,
+      } = {}) => {
         if (!isSupabaseConfigured) {
           throw new Error('Supabase가 설정되지 않았어요.');
         }
         set({ isWorkspaceLoading: true, workspaceError: null });
         try {
-          const academy = await createAcademyAsOwner({ name, academyType, academySubjects, clinicRequired });
+          const academy = await createAcademyAsOwner({
+            name,
+            academyType,
+            academySubjects,
+            clinicRequired,
+            tuitionPolicy,
+          });
           const memberships = await getMyAcademyMemberships();
           ensureCurrentAcademyDataScope(academy.id);
+          syncAcademyProfileFromServer(academy);
           set({ memberships, currentAcademyId: academy.id });
           await Promise.all([
             get().loadServerStudents(),
@@ -727,6 +756,9 @@ const useWorkspaceStore = create(
         }
         if (academyId === get().currentAcademyId) return;
         ensureCurrentAcademyDataScope(academyId);
+        syncAcademyProfileFromServer(
+          memberships.find((membership) => membership.academy_id === academyId)?.academy,
+        );
         set({ currentAcademyId: academyId });
         // 학원 전환 시 서버 데이터 갱신
         get().loadServerStudents();

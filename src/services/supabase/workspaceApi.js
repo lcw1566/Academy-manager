@@ -399,29 +399,47 @@ function isMissingAcademySettingsColumnError(error) {
     message.includes('academy_type') ||
     message.includes('academy_subjects') ||
     message.includes('clinic_required') ||
+    message.includes('tuition_policy') ||
     message.includes('academy_onboarded_at')
   );
 }
 
-function buildAcademySettingsPayload({ academyType, academySubjects, clinicRequired } = {}) {
+function buildAcademySettingsPayload({
+  academyType,
+  academySubjects,
+  clinicRequired,
+  tuitionPolicy,
+} = {}) {
   const out = {};
   if (academyType !== undefined) out.academy_type = academyType || null;
   if (academySubjects !== undefined) out.academy_subjects = Array.isArray(academySubjects) ? academySubjects : [];
   if (clinicRequired !== undefined) out.clinic_required = clinicRequired !== false;
+  if (tuitionPolicy !== undefined) out.tuition_policy = tuitionPolicy || 'class';
   out.academy_onboarded_at = new Date().toISOString();
   return out;
 }
 
 // 학원 생성 + 본인을 owner 멤버로 등록 (2-step).
 // 진정한 원자성이 필요해지면 추후 SQL RPC로 옮길 예정.
-export async function createAcademyAsOwner({ name, academyType, academySubjects, clinicRequired } = {}) {
+export async function createAcademyAsOwner({
+  name,
+  academyType,
+  academySubjects,
+  clinicRequired,
+  tuitionPolicy,
+} = {}) {
   const user = await getCurrentUserOrThrow();
   const trimmed = (name ?? '').trim();
   if (!trimmed) throw new Error('학원 이름을 입력해주세요.');
 
   // Step 1: academies row 생성
   const basePayload = { name: trimmed, owner_id: user.id };
-  const settingsPayload = buildAcademySettingsPayload({ academyType, academySubjects, clinicRequired });
+  const settingsPayload = buildAcademySettingsPayload({
+    academyType,
+    academySubjects,
+    clinicRequired,
+    tuitionPolicy,
+  });
   let { data: academy, error: aErr } = await supabase
     .from('academies')
     .insert({ ...basePayload, ...settingsPayload })
@@ -470,6 +488,7 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
   if (patch.academyType !== undefined) dbPatch.academy_type = patch.academyType || null;
   if (patch.academySubjects !== undefined) dbPatch.academy_subjects = Array.isArray(patch.academySubjects) ? patch.academySubjects : [];
   if (patch.clinicRequired !== undefined) dbPatch.clinic_required = patch.clinicRequired !== false;
+  if (patch.tuitionPolicy !== undefined) dbPatch.tuition_policy = patch.tuitionPolicy || 'class';
   if (patch.markOnboarded === true) dbPatch.academy_onboarded_at = new Date().toISOString();
 
   if (Object.keys(dbPatch).length === 0) return null;

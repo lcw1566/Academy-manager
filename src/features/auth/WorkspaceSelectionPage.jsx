@@ -28,6 +28,7 @@ import {
   ACADEMY_SUBJECT_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
+  TUITION_POLICY_OPTIONS,
   inferAcademyTypeFromSubjects,
 } from '../../constants/academySettings';
 import { generateQrToken } from '../academy/attendance/attendanceHelpers';
@@ -71,6 +72,7 @@ export default function WorkspaceSelectionPage() {
   const [newAcademyName, setNewAcademyName] = useState('');
   const [academySubjects, setAcademySubjects] = useState(DEFAULT_ACADEMY_SETTINGS.academySubjects);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
+  const [tuitionPolicy, setTuitionPolicy] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
   const [staffCheckMethod, setStaffCheckMethod] = useState('manual');
   const [studentCheckMethod, setStudentCheckMethod] = useState('teacher_manual');
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -127,7 +129,13 @@ export default function WorkspaceSelectionPage() {
     setCreateSubmitting(true);
     try {
       const academyType = inferAcademyTypeFromSubjects(academySubjects);
-      await createAcademy({ name: trimmed, academyType, academySubjects, clinicRequired });
+      await createAcademy({
+        name: trimmed,
+        academyType,
+        academySubjects,
+        clinicRequired,
+        tuitionPolicy,
+      });
       let attendanceSettingsSaved = true;
       try {
         const usesQr = staffCheckMethod === 'qr' || studentCheckMethod === 'qr';
@@ -143,7 +151,13 @@ export default function WorkspaceSelectionPage() {
         attendanceSettingsSaved = false;
         console.warn('[onboarding] attendance settings save failed', attendanceError);
       }
-      setAcademyProfile({ name: trimmed, academyType, academySubjects, clinicRequired });
+      setAcademyProfile({
+        name: trimmed,
+        academyType,
+        academySubjects,
+        clinicRequired,
+        tuitionPolicy,
+      });
       showToast(
         attendanceSettingsSaved
           ? '학원 설정이 완료되었어요.'
@@ -166,6 +180,7 @@ export default function WorkspaceSelectionPage() {
     setNewAcademyName('');
     setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
+    setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
     setStaffCheckMethod('manual');
     setStudentCheckMethod('teacher_manual');
   };
@@ -302,12 +317,14 @@ export default function WorkspaceSelectionPage() {
                 name={newAcademyName}
                 subjects={academySubjects}
                 clinicRequired={clinicRequired}
+                tuitionPolicy={tuitionPolicy}
                 staffCheckMethod={staffCheckMethod}
                 studentCheckMethod={studentCheckMethod}
                 submitting={createSubmitting}
                 onNameChange={setNewAcademyName}
                 onSubjectToggle={toggleAcademySubject}
                 onClinicRequiredChange={setClinicRequired}
+                onTuitionPolicyChange={setTuitionPolicy}
                 onStaffCheckMethodChange={setStaffCheckMethod}
                 onStudentCheckMethodChange={setStudentCheckMethod}
                 onStepChange={setCreateStep}
@@ -367,12 +384,14 @@ function AcademyCreateOnboarding({
   name,
   subjects,
   clinicRequired,
+  tuitionPolicy,
   staffCheckMethod,
   studentCheckMethod,
   submitting,
   onNameChange,
   onSubjectToggle,
   onClinicRequiredChange,
+  onTuitionPolicyChange,
   onStaffCheckMethodChange,
   onStudentCheckMethodChange,
   onStepChange,
@@ -384,9 +403,10 @@ function AcademyCreateOnboarding({
   const steps = [
     { title: '학원 이름을 알려주세요', desc: '원장님과 강사들이 함께 볼 학원 이름이에요.' },
     { title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 학원 프로필에서 바꿀 수 있어요.' },
-    { title: '클리닉을 어떻게 쓸까요?', desc: '수업 후 자습·보완 기록을 기본 흐름으로 둘지 정해주세요.' },
-    { title: '직원 출퇴근은 어떻게 기록할까요?', desc: '파일럿에서는 직접 기록이 기본이에요. 준비가 되면 QR로 바꿀 수 있어요.' },
-    { title: '학생 등하원은 어떻게 기록할까요?', desc: '학생과 선생님이 가장 편한 방식을 골라주세요.' },
+    { title: '수강료 기준은 무엇인가요?', desc: '반을 만들 때 같은 기준의 최근 금액을 불러와요.' },
+    { title: '클리닉을 어떻게 쓸까요?', desc: '수업 후 자습·보완 기록의 기본값이에요.' },
+    { title: '직원 출퇴근은 어떻게 기록할까요?', desc: '직접 기록하거나 QR을 사용할 수 있어요.' },
+    { title: '학생 등하원은 어떻게 기록할까요?', desc: '학원에 맞는 방식을 골라주세요.' },
   ];
   const canGoNext = step === 0 ? isNameReady : step === 1 ? isSubjectReady : true;
   const primaryLabel = step === steps.length - 1 ? '만들기' : '다음';
@@ -466,6 +486,29 @@ function AcademyCreateOnboarding({
       )}
 
       {step === 2 && (
+        <div className="grid grid-cols-3 gap-2">
+          {TUITION_POLICY_OPTIONS.map((option) => {
+            const selected = tuitionPolicy === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => onTuitionPolicyChange(option.id)}
+                className={`rounded-2xl border px-2 py-3 text-center ${
+                  selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'
+                }`}
+              >
+                <p className={`text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-900'}`}>
+                  {option.label}
+                </p>
+                <p className="mt-1 text-[10px] text-gray-500">{option.description}</p>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {step === 3 && (
         <div className="flex flex-col gap-2">
           {CLINIC_REQUIRED_OPTIONS.map((option) => {
             const selected = clinicRequired === option.value;
@@ -495,7 +538,7 @@ function AcademyCreateOnboarding({
         </div>
       )}
 
-      {step === 3 && (
+      {step === 4 && (
         <div className="flex flex-col gap-2">
           <AttendanceMethodChoice
             selected={staffCheckMethod === 'manual'}
@@ -514,7 +557,7 @@ function AcademyCreateOnboarding({
         </div>
       )}
 
-      {step === 4 && (
+      {step === 5 && (
         <div className="flex flex-col gap-2">
           <AttendanceMethodChoice
             selected={studentCheckMethod === 'teacher_manual'}
