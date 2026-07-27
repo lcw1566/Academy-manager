@@ -12,7 +12,6 @@ import {
   ACADEMY_SUBJECT_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
-  TUITION_POLICY_OPTIONS,
   inferAcademyTypeFromSubjects,
 } from '../../constants/academySettings';
 import TuitionRateFields from '../academy/onboarding/TuitionRateFields';
@@ -80,7 +79,7 @@ export default function WorkspaceSection() {
   const [phone, setPhone] = useState('');
   const [academySubjects, setAcademySubjects] = useState([]);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
-  const [tuitionPolicy, setTuitionPolicy] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
+  const tuitionPolicy = DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
   const [tuitionRates, setTuitionRates] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
   const [submitting, setSubmitting] = useState(false);
   const [hydrating, setHydrating] = useState(false);
@@ -193,7 +192,6 @@ export default function WorkspaceSection() {
       setPhone('');
       setAcademySubjects([]);
       setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
-      setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
       setTuitionRates(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
       setCreating(false);
     } catch (err) {
@@ -210,7 +208,6 @@ export default function WorkspaceSection() {
     setPhone('');
     setAcademySubjects([]);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
-    setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
     setTuitionRates(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
   };
 
@@ -281,14 +278,12 @@ export default function WorkspaceSection() {
           phone={phone}
           academySubjects={academySubjects}
           clinicRequired={clinicRequired}
-          tuitionPolicy={tuitionPolicy}
           tuitionRates={tuitionRates}
           onNameChange={setName}
           onAddressChange={setAddress}
           onPhoneChange={setPhone}
           onSubjectToggle={toggleAcademySubject}
           onClinicRequiredChange={setClinicRequired}
-          onTuitionPolicyChange={setTuitionPolicy}
           onTuitionRatesChange={setTuitionRates}
           onStart={() => setCreating(true)}
           onSubmit={handleSubmit}
@@ -354,7 +349,6 @@ export default function WorkspaceSection() {
             phone={phone}
             academySubjects={academySubjects}
             clinicRequired={clinicRequired}
-            tuitionPolicy={tuitionPolicy}
             tuitionRates={tuitionRates}
             submitting={submitting}
             onNameChange={setName}
@@ -362,7 +356,6 @@ export default function WorkspaceSection() {
             onPhoneChange={setPhone}
             onSubjectToggle={toggleAcademySubject}
             onClinicRequiredChange={setClinicRequired}
-            onTuitionPolicyChange={setTuitionPolicy}
             onTuitionRatesChange={setTuitionRates}
             onSubmit={handleSubmit}
             onCancel={handleCancel}
@@ -435,9 +428,9 @@ function CurrentAcademyCard({ academyName, membershipRole, lastSyncedLabel, onRe
 // "마지막 동기화 HH:mm + 새로고침" 만 노출한다. 자동 hydrate 가 정상 흐름.
 
 function EmptyCard({
-  loading, creating, submitting, name, address, phone, academySubjects, clinicRequired, tuitionPolicy, tuitionRates,
+  loading, creating, submitting, name, address, phone, academySubjects, clinicRequired, tuitionRates,
   onNameChange, onAddressChange, onPhoneChange,
-  onSubjectToggle, onClinicRequiredChange, onTuitionPolicyChange, onTuitionRatesChange,
+  onSubjectToggle, onClinicRequiredChange, onTuitionRatesChange,
   onStart, onSubmit, onCancel, deemphasized,
 }) {
   // staff 계정은 학원을 직접 만들기보다 초대 수락 흐름을 권장하므로
@@ -472,7 +465,6 @@ function EmptyCard({
           phone={phone}
           academySubjects={academySubjects}
           clinicRequired={clinicRequired}
-          tuitionPolicy={tuitionPolicy}
           tuitionRates={tuitionRates}
           submitting={submitting}
           onNameChange={onNameChange}
@@ -480,7 +472,6 @@ function EmptyCard({
           onPhoneChange={onPhoneChange}
           onSubjectToggle={onSubjectToggle}
           onClinicRequiredChange={onClinicRequiredChange}
-          onTuitionPolicyChange={onTuitionPolicyChange}
           onTuitionRatesChange={onTuitionRatesChange}
           onSubmit={onSubmit}
           onCancel={onCancel}
@@ -611,9 +602,9 @@ function InvitationsCard({ invitations, loading, acceptingId, onAccept, onRefres
 }
 
 function InlineCreateForm({
-  name, address, phone, academySubjects, clinicRequired, tuitionPolicy, tuitionRates, submitting,
+  name, address, phone, academySubjects, clinicRequired, tuitionRates, submitting,
   onNameChange, onAddressChange, onPhoneChange,
-  onSubjectToggle, onClinicRequiredChange, onTuitionPolicyChange, onTuitionRatesChange,
+  onSubjectToggle, onClinicRequiredChange, onTuitionRatesChange,
   onSubmit, onCancel, variant,
 }) {
   const containerClass =
@@ -651,19 +642,10 @@ function InlineCreateForm({
         subjects={academySubjects}
         onToggle={onSubjectToggle}
       />
-      <CreateChoiceGroup
-        label="수강료 기준"
-        options={TUITION_POLICY_OPTIONS}
-        value={tuitionPolicy}
-        onChange={onTuitionPolicyChange}
-        columns={3}
-      />
       <TuitionRateFields
-        policy={tuitionPolicy}
         rates={tuitionRates}
         onChange={onTuitionRatesChange}
         subjects={academySubjects}
-        compact
       />
       <CreateChoiceGroup
         label="클리닉 운영"

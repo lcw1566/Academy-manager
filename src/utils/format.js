@@ -3,6 +3,31 @@ export const formatCurrency = (amount) => {
   return new Intl.NumberFormat('ko-KR').format(amount) + '원';
 };
 
+export function formatKoreanCurrency(amount) {
+  const value = Math.floor(Number(amount));
+  if (!Number.isFinite(value) || value <= 0) return '0원';
+
+  const units = [
+    { value: 100000000, label: '억' },
+    { value: 10000, label: '만' },
+    { value: 1000, label: '천' },
+    { value: 100, label: '백' },
+    { value: 10, label: '십' },
+  ];
+  let remainder = value;
+  const parts = [];
+
+  for (const unit of units) {
+    const count = Math.floor(remainder / unit.value);
+    if (count > 0) {
+      parts.push(`${count.toLocaleString('ko-KR')}${unit.label}`);
+      remainder %= unit.value;
+    }
+  }
+  if (remainder > 0) parts.push(String(remainder));
+  return `${parts.join(' ')}원`;
+}
+
 export const attendanceStatusMap = {
   present: { label: '출석', color: 'text-green-700', bg: 'bg-green-50', activeBg: 'bg-green-500', activeText: 'text-white' },
   late:    { label: '지각', color: 'text-orange-700', bg: 'bg-orange-50', activeBg: 'bg-orange-500', activeText: 'text-white' },

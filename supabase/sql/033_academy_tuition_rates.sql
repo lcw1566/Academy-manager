@@ -4,12 +4,16 @@
 --
 -- 예시:
 -- {
+--   "subject_mode": true,
 --   "school_level": { "elementary": 200000, "middle": 250000 },
---   "grade": { "중1": 230000, "중2": 250000 },
+--   "grade": { "중3": 270000 },
 --   "subject_rates": {
 --     "school_level": {
 --       "english": { "middle": 280000 },
 --       "math": { "middle": 300000 }
+--     },
+--     "grade": {
+--       "english": { "중3": 310000 }
 --     }
 --   }
 -- }

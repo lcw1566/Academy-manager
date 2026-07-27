@@ -28,10 +28,8 @@ import {
   ACADEMY_SUBJECT_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
-  TUITION_POLICY_OPTIONS,
   getAcademySubjectsLabel,
   getClinicRequiredLabel,
-  getTuitionPolicyLabel,
   inferAcademyTypeFromSubjects,
 } from '../../../constants/academySettings';
 
@@ -391,7 +389,7 @@ function OwnerMoreSections({
 }) {
   const showToast = useAcademyStore((s) => s.showToast);
   const [refreshing, setRefreshing] = useState(false);
-  const academySettingsSubtitle = `${getAcademySubjectsLabel(academyProfile?.academySubjects)} · 수강료 ${getTuitionPolicyLabel(academyProfile?.tuitionPolicy)}`;
+  const academySettingsSubtitle = `${getAcademySubjectsLabel(academyProfile?.academySubjects)} · 수강료 설정`;
 
   const handleRefresh = async () => {
     if (refreshing) return;
@@ -601,7 +599,7 @@ function AcademyProfileModal({
       ? profile.academySubjects
       : DEFAULT_ACADEMY_SETTINGS.academySubjects,
     clinicRequired: profile?.clinicRequired ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired,
-    tuitionPolicy: profile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy,
+    tuitionPolicy: DEFAULT_ACADEMY_SETTINGS.tuitionPolicy,
     tuitionRates: profile?.tuitionRates || DEFAULT_ACADEMY_SETTINGS.tuitionRates,
   }), [profile]);
   const [form, setForm] = useState(initialForm);
@@ -717,32 +715,11 @@ function AcademyProfileModal({
           </div>
         </div>
         <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">수강료 기준</label>
-          <div className="grid grid-cols-3 gap-2">
-            {TUITION_POLICY_OPTIONS.map((option) => {
-              const selected = form.tuitionPolicy === option.id;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, tuitionPolicy: option.id }))}
-                  className={`rounded-xl border px-2 py-2.5 text-center ${
-                    selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'
-                  }`}
-                >
-                  <p className={`text-xs font-bold ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
-                    {option.label}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">수강료 설정</label>
           <TuitionRateFields
-            policy={form.tuitionPolicy}
             rates={form.tuitionRates}
             onChange={(tuitionRates) => setForm((current) => ({ ...current, tuitionRates }))}
             subjects={form.academySubjects}
-            compact
           />
         </div>
         <div>

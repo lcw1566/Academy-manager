@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, Plus, X } from 'lucide-react';
 import {
   ACADEMY_SUBJECT_OPTIONS,
   TUITION_RATE_GROUPS,
 } from '../../../constants/academySettings';
+import { formatKoreanCurrency } from '../../../utils/format';
 
 function digitsOnly(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 9);
@@ -16,165 +17,6 @@ function displayAmount(value) {
     : '';
 }
 
-function hasAmounts(table) {
-  return table && Object.values(table).some((value) => Number(value) > 0);
-}
-
-export default function TuitionRateFields({
-  policy,
-  rates = {},
-  onChange,
-  compact = false,
-  subjects = [],
-}) {
-  const subjectOptions = useMemo(
-    () => (Array.isArray(subjects) ? subjects : [])
-      .map((subjectId) => ACADEMY_SUBJECT_OPTIONS.find((option) => option.id === subjectId))
-      .filter(Boolean),
-    [subjects],
-  );
-  const subjectTables = rates?.subject_rates?.[policy] || {};
-  const configuredSubjectIds = subjectOptions
-    .filter((subject) => hasAmounts(subjectTables[subject.id]))
-    .map((subject) => subject.id);
-  const [showSubjectRates, setShowSubjectRates] = useState(configuredSubjectIds.length > 0);
-  const [activeSubjectId, setActiveSubjectId] = useState(
-    configuredSubjectIds[0] || subjectOptions[0]?.id || '',
-  );
-
-  useEffect(() => {
-    if (!subjectOptions.some((subject) => subject.id === activeSubjectId)) {
-      setActiveSubjectId(configuredSubjectIds[0] || subjectOptions[0]?.id || '');
-    }
-  }, [activeSubjectId, configuredSubjectIds, subjectOptions]);
-
-  if (!policy) return null;
-
-  if (policy === 'class') {
-    return (
-      <div className="mt-4">
-        <div className="rounded-2xl bg-gray-50 px-4 py-3">
-          <p className="text-sm font-bold text-gray-800">반마다 금액을 설정해요</p>
-          <p className="mt-1 text-xs leading-relaxed text-gray-500">
-            반을 만들 때 과목에 맞는 수강료를 직접 입력합니다.
-          </p>
-        </div>
-        <StudentOverrideHint />
-      </div>
-    );
-  }
-
-  const groups = TUITION_RATE_GROUPS[policy] || [];
-  const currentTable = rates?.[policy] && typeof rates[policy] === 'object'
-    ? rates[policy]
-    : {};
-  const activeSubject = subjectOptions.find((subject) => subject.id === activeSubjectId);
-  const activeSubjectTable = activeSubject ? subjectTables[activeSubject.id] || {} : {};
-
-  const setBaseAmount = (key, rawValue) => {
-    const nextTable = updateAmount(currentTable, key, rawValue);
-    onChange?.({ ...(rates || {}), [policy]: nextTable });
-  };
-
-  const setSubjectAmount = (key, rawValue) => {
-    if (!activeSubject) return;
-    const nextSubjectTable = updateAmount(activeSubjectTable, key, rawValue);
-    onChange?.({
-      ...(rates || {}),
-      subject_rates: {
-        ...(rates?.subject_rates || {}),
-        [policy]: {
-          ...subjectTables,
-          [activeSubject.id]: nextSubjectTable,
-        },
-      },
-    });
-  };
-
-  return (
-    <div className="mt-4">
-      <div className="mb-2">
-        <p className="text-sm font-bold text-gray-900">기본 월 수강료</p>
-        <p className="mt-0.5 text-[11px] text-gray-500">
-          {policy === 'school_level' ? '학교급별 금액이 모든 과목에 적용돼요.' : '학년별 금액이 모든 과목에 적용돼요.'}
-        </p>
-      </div>
-
-      <TuitionRateGrid
-        groups={groups}
-        table={currentTable}
-        onAmountChange={setBaseAmount}
-        compact={compact}
-      />
-
-      <button
-        type="button"
-        onClick={() => setShowSubjectRates((open) => !open)}
-        className={`mt-3 flex w-full items-center justify-between rounded-xl border px-3.5 py-3 text-left ${
-          showSubjectRates ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-white'
-        }`}
-      >
-        <span>
-          <span className="block text-sm font-bold text-gray-900">과목별로 다르게 받기</span>
-          <span className="mt-0.5 block text-[11px] text-gray-500">필요한 과목만 기본 금액을 바꿔요.</span>
-        </span>
-        <span className="flex items-center gap-1.5">
-          {configuredSubjectIds.length > 0 && (
-            <span className="text-[11px] font-bold text-blue-600">{configuredSubjectIds.length}개</span>
-          )}
-          <ChevronDown
-            size={16}
-            className={`text-gray-400 transition-transform ${showSubjectRates ? 'rotate-180' : ''}`}
-          />
-        </span>
-      </button>
-
-      {showSubjectRates && (
-        <div className="mt-3 rounded-2xl bg-gray-50 p-3">
-          {subjectOptions.length === 0 ? (
-            <p className="py-2 text-center text-xs text-gray-500">운영 과목을 먼저 선택해주세요.</p>
-          ) : (
-            <>
-              <div className="mb-3 flex gap-1.5 overflow-x-auto pb-0.5">
-                {subjectOptions.map((subject) => {
-                  const selected = subject.id === activeSubjectId;
-                  const configured = hasAmounts(subjectTables[subject.id]);
-                  return (
-                    <button
-                      key={subject.id}
-                      type="button"
-                      onClick={() => setActiveSubjectId(subject.id)}
-                      className={`flex flex-shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold ${
-                        selected
-                          ? 'bg-blue-600 text-white'
-                          : 'border border-gray-200 bg-white text-gray-600'
-                      }`}
-                    >
-                      {subject.label}
-                      {configured && <Check size={11} />}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="mb-2 text-xs font-bold text-gray-700">{activeSubject?.label} 수강료</p>
-              <TuitionRateGrid
-                groups={groups}
-                table={activeSubjectTable}
-                fallbackTable={currentTable}
-                onAmountChange={setSubjectAmount}
-                compact
-              />
-              <p className="mt-2 text-[11px] text-gray-500">비워두면 기본 금액이 적용돼요.</p>
-            </>
-          )}
-        </div>
-      )}
-
-      <StudentOverrideHint />
-    </div>
-  );
-}
-
 function updateAmount(table, key, rawValue) {
   const digits = digitsOnly(rawValue);
   const nextTable = { ...(table || {}) };
@@ -183,53 +25,378 @@ function updateAmount(table, key, rawValue) {
   return nextTable;
 }
 
-function TuitionRateGrid({
-  groups,
-  table,
-  fallbackTable = {},
-  onAmountChange,
-  compact,
+function hasSubjectRates(rates) {
+  const subjectRates = rates?.subject_rates;
+  if (!subjectRates || typeof subjectRates !== 'object') return false;
+  return Object.values(subjectRates).some((policyTables) =>
+    policyTables
+    && typeof policyTables === 'object'
+    && Object.values(policyTables).some((table) =>
+      table && Object.values(table).some((amount) => Number(amount) > 0)
+    )
+  );
+}
+
+const SCHOOL_LEVEL_OPTIONS = TUITION_RATE_GROUPS.school_level[0].options;
+const GRADE_OPTIONS = TUITION_RATE_GROUPS.grade.flatMap((group) =>
+  group.options.map((option) => ({
+    ...option,
+    label: option.id,
+    schoolLevel: group.label,
+  }))
+);
+
+export default function TuitionRateFields({
+  rates = {},
+  onChange,
+  subjects = [],
 }) {
+  const subjectOptions = useMemo(
+    () => (Array.isArray(subjects) ? subjects : [])
+      .map((subjectId) => ACADEMY_SUBJECT_OPTIONS.find((option) => option.id === subjectId))
+      .filter(Boolean),
+    [subjects],
+  );
+  const subjectMode = rates?.subject_mode === true
+    || (rates?.subject_mode === undefined && hasSubjectRates(rates));
+  const [activeTarget, setActiveTarget] = useState('common');
+  const [addingGrade, setAddingGrade] = useState(false);
+  const [selectedGrade, setSelectedGrade] = useState('');
+  const [gradeAmount, setGradeAmount] = useState('');
+
+  useEffect(() => {
+    if (
+      activeTarget !== 'common'
+      && !subjectOptions.some((subject) => subject.id === activeTarget)
+    ) {
+      setActiveTarget('common');
+    }
+  }, [activeTarget, subjectOptions]);
+
+  const isCommon = activeTarget === 'common';
+  const activeSubject = subjectOptions.find((subject) => subject.id === activeTarget);
+  const commonSchoolTable = rates?.school_level || {};
+  const subjectSchoolTables = rates?.subject_rates?.school_level || {};
+  const commonGradeTable = rates?.grade || {};
+  const subjectGradeTables = rates?.subject_rates?.grade || {};
+  const currentSchoolTable = isCommon
+    ? commonSchoolTable
+    : subjectSchoolTables[activeTarget] || {};
+  const currentGradeTable = isCommon
+    ? commonGradeTable
+    : subjectGradeTables[activeTarget] || {};
+  const configuredGrades = GRADE_OPTIONS.filter(
+    (grade) => Number(currentGradeTable[grade.id]) > 0,
+  );
+  const availableGrades = GRADE_OPTIONS.filter(
+    (grade) => !configuredGrades.some((configured) => configured.id === grade.id),
+  );
+
+  const setSubjectMode = (enabled) => {
+    onChange?.({ ...(rates || {}), subject_mode: enabled });
+    setActiveTarget('common');
+    closeGradeForm();
+  };
+
+  const setSchoolAmount = (key, rawValue) => {
+    const nextTable = updateAmount(currentSchoolTable, key, rawValue);
+    if (isCommon) {
+      onChange?.({ ...(rates || {}), school_level: nextTable });
+      return;
+    }
+    onChange?.({
+      ...(rates || {}),
+      subject_rates: {
+        ...(rates?.subject_rates || {}),
+        school_level: {
+          ...subjectSchoolTables,
+          [activeTarget]: nextTable,
+        },
+      },
+    });
+  };
+
+  const writeGradeTable = (nextTable) => {
+    if (isCommon) {
+      onChange?.({ ...(rates || {}), grade: nextTable });
+      return;
+    }
+    onChange?.({
+      ...(rates || {}),
+      subject_rates: {
+        ...(rates?.subject_rates || {}),
+        grade: {
+          ...subjectGradeTables,
+          [activeTarget]: nextTable,
+        },
+      },
+    });
+  };
+
+  const addGradeOverride = () => {
+    if (!selectedGrade || Number(gradeAmount) <= 0) return;
+    writeGradeTable({
+      ...currentGradeTable,
+      [selectedGrade]: Number(digitsOnly(gradeAmount)),
+    });
+    closeGradeForm();
+  };
+
+  function closeGradeForm() {
+    setAddingGrade(false);
+    setSelectedGrade('');
+    setGradeAmount('');
+  }
+
+  const selectTarget = (target) => {
+    setActiveTarget(target);
+    closeGradeForm();
+  };
+
   return (
-    <div className={compact ? 'flex flex-col gap-3' : 'flex flex-col gap-4'}>
-      {groups.map((group) => (
-        <div key={group.id}>
-          {group.label && (
-            <p className="mb-1.5 text-xs font-bold text-gray-600">{group.label}</p>
+    <div className="mt-3">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={subjectMode}
+        onClick={() => setSubjectMode(!subjectMode)}
+        disabled={subjectOptions.length === 0}
+        className="flex w-full items-center justify-between rounded-2xl bg-gray-50 px-4 py-3.5 text-left disabled:opacity-50"
+      >
+        <span>
+          <span className="block text-sm font-bold text-gray-900">과목마다 수강료가 달라요</span>
+          <span className="mt-0.5 block text-[11px] text-gray-500">
+            {subjectOptions.length > 0 ? '과목별 금액이 같다면 끄면 돼요.' : '운영 과목을 먼저 선택해주세요.'}
+          </span>
+        </span>
+        <span
+          className={`relative h-7 w-12 flex-shrink-0 rounded-full transition-colors ${
+            subjectMode ? 'bg-blue-600' : 'bg-gray-300'
+          }`}
+        >
+          <span
+            className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+              subjectMode ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </span>
+      </button>
+
+      {subjectMode && (
+        <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
+          <TargetChip
+            label="공통"
+            selected={isCommon}
+            configured
+            onClick={() => selectTarget('common')}
+          />
+          {subjectOptions.map((subject) => (
+            <TargetChip
+              key={subject.id}
+              label={subject.label}
+              selected={activeTarget === subject.id}
+              configured={
+                Object.values(subjectSchoolTables[subject.id] || {}).some((amount) => Number(amount) > 0)
+                || Object.values(subjectGradeTables[subject.id] || {}).some((amount) => Number(amount) > 0)
+              }
+              onClick={() => selectTarget(subject.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="mt-4">
+        <p className="text-sm font-bold text-gray-900">
+          {isCommon ? '학교급별 기본 수강료' : `${activeSubject?.label || ''} 수강료`}
+        </p>
+        <p className="mt-0.5 text-[11px] text-gray-500">
+          {isCommon
+            ? '초등·중등·고등 금액을 입력해주세요.'
+            : '비워두면 공통 금액이 적용돼요.'}
+        </p>
+      </div>
+
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {SCHOOL_LEVEL_OPTIONS.map((option) => (
+          <AmountField
+            key={option.id}
+            label={option.label}
+            value={currentSchoolTable[option.id]}
+            fallbackValue={isCommon ? null : commonSchoolTable[option.id]}
+            onChange={(value) => setSchoolAmount(option.id, value)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-4 border-t border-gray-100 pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <span>
+            <span className="block text-sm font-bold text-gray-900">학년별 예외</span>
+            <span className="mt-0.5 block text-[11px] text-gray-500">다른 금액을 받는 학년만 추가해요.</span>
+          </span>
+          {!addingGrade && availableGrades.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setAddingGrade(true)}
+              className="flex flex-shrink-0 items-center gap-1 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-600"
+            >
+              <Plus size={13} />
+              추가
+            </button>
           )}
-          <div className="grid grid-cols-3 gap-2">
-            {group.options.map((option) => (
-              <label
-                key={option.id}
-                className="rounded-xl border border-gray-200 bg-white px-2.5 py-2"
+        </div>
+
+        {configuredGrades.length > 0 && (
+          <div className="mt-2 flex flex-col gap-2">
+            {configuredGrades.map((grade) => (
+              <div
+                key={grade.id}
+                className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2"
               >
-                <span className="block text-[11px] font-semibold text-gray-500">
-                  {option.label}
-                </span>
-                <span className="mt-1 flex items-center gap-1">
-                  <input
-                    value={displayAmount(table?.[option.id])}
-                    onChange={(event) => onAmountChange(option.id, event.target.value)}
-                    inputMode="numeric"
-                    placeholder={displayAmount(fallbackTable?.[option.id]) || '0'}
-                    aria-label={`${option.label} 월 수강료`}
-                    className="min-w-0 flex-1 bg-transparent text-right text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300"
-                  />
-                  <span className="text-[10px] text-gray-400">원</span>
-                </span>
-              </label>
+                <span className="w-9 flex-shrink-0 text-xs font-bold text-blue-600">{grade.label}</span>
+                <MoneyInput
+                  value={currentGradeTable[grade.id]}
+                  onValueChange={(value) => {
+                    writeGradeTable(updateAmount(currentGradeTable, grade.id, value));
+                  }}
+                  inputMode="numeric"
+                  aria-label={`${grade.label} 예외 수강료`}
+                  className="min-w-0 flex-1 bg-transparent text-right text-sm font-bold text-gray-900 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextTable = { ...currentGradeTable };
+                    delete nextTable[grade.id];
+                    writeGradeTable(nextTable);
+                  }}
+                  aria-label={`${grade.label} 예외 삭제`}
+                  className="rounded-full p-1 text-gray-300 active:bg-gray-100"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             ))}
           </div>
-        </div>
-      ))}
+        )}
+
+        {addingGrade && (
+          <div className="mt-3 rounded-2xl bg-gray-50 p-3">
+            <div className="grid grid-cols-6 gap-1.5">
+              {availableGrades.map((grade) => (
+                <button
+                  key={grade.id}
+                  type="button"
+                  onClick={() => setSelectedGrade(grade.id)}
+                  className={`rounded-lg py-2 text-[11px] font-bold ${
+                    selectedGrade === grade.id
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-200 bg-white text-gray-600'
+                  }`}
+                >
+                  {grade.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <label className="flex min-w-0 flex-1 items-center rounded-xl border border-gray-200 bg-white px-3 py-2.5">
+                <MoneyInput
+                  value={gradeAmount}
+                  onValueChange={(value) => setGradeAmount(digitsOnly(value))}
+                  inputMode="numeric"
+                  placeholder="금액"
+                  aria-label="학년별 예외 수강료"
+                  className="min-w-0 flex-1 bg-transparent text-right text-sm font-bold outline-none"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={closeGradeForm}
+                className="rounded-xl px-2.5 py-2.5 text-xs font-bold text-gray-500"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={addGradeOverride}
+                disabled={!selectedGrade || Number(gradeAmount) <= 0}
+                className="rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-bold text-white disabled:bg-blue-300"
+              >
+                적용
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2.5 text-xs text-blue-700">
+        나중에 학생별로 조정할 수 있어요.
+      </p>
     </div>
   );
 }
 
-function StudentOverrideHint() {
+function TargetChip({ label, selected, configured, onClick }) {
   return (
-    <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2.5 text-xs text-blue-700">
-      나중에 학생별로 조정할 수 있어요.
-    </p>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex flex-shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold ${
+        selected
+          ? 'bg-blue-600 text-white'
+          : 'border border-gray-200 bg-white text-gray-600'
+      }`}
+    >
+      {label}
+      {configured && label !== '공통' && <Check size={11} />}
+    </button>
+  );
+}
+
+function AmountField({ label, value, fallbackValue, onChange }) {
+  return (
+    <label className="rounded-xl border border-gray-200 bg-white px-2.5 py-2">
+      <span className="block text-[11px] font-semibold text-gray-500">{label}</span>
+      <span className="mt-1 flex items-center">
+        <MoneyInput
+          value={value}
+          onValueChange={onChange}
+          inputMode="numeric"
+          placeholder={Number(fallbackValue) > 0 ? formatKoreanCurrency(fallbackValue) : '0'}
+          aria-label={`${label} 월 수강료`}
+          className="min-w-0 flex-1 bg-transparent text-right text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300"
+        />
+      </span>
+    </label>
+  );
+}
+
+function MoneyInput({
+  value,
+  onValueChange,
+  placeholder,
+  className,
+  ...inputProps
+}) {
+  const [focused, setFocused] = useState(false);
+  const amount = Number(String(value || '').replace(/\D/g, ''));
+  const displayValue = amount > 0
+    ? (focused ? displayAmount(amount) : formatKoreanCurrency(amount))
+    : '';
+
+  return (
+    <input
+      {...inputProps}
+      value={displayValue}
+      onChange={(event) => onValueChange?.(event.target.value)}
+      onFocus={(event) => {
+        setFocused(true);
+        const input = event.currentTarget;
+        requestAnimationFrame(() => input.select());
+      }}
+      onBlur={() => setFocused(false)}
+      placeholder={placeholder}
+      className={className}
+    />
   );
 }

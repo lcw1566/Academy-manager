@@ -147,27 +147,42 @@ export function getSchoolLevelKey(level = '') {
 export function getTuitionRateForLevel(tuitionRates = {}, policy, level = '', subject = '') {
   if (!policy || policy === 'class') return 0;
 
-  let key = String(level || '').trim();
-  if (policy === 'school_level') {
-    if (key.startsWith('초')) key = 'elementary';
-    else if (key.startsWith('중')) key = 'middle';
-    else if (key.startsWith('고')) key = 'high';
-    else return 0;
-  }
+  const gradeKey = String(level || '').trim();
+  let schoolLevelKey = '';
+  if (gradeKey.startsWith('초')) schoolLevelKey = 'elementary';
+  else if (gradeKey.startsWith('중')) schoolLevelKey = 'middle';
+  else if (gradeKey.startsWith('고')) schoolLevelKey = 'high';
+  else return 0;
 
   const subjectId = ACADEMY_SUBJECT_OPTIONS.find(
     (option) => option.id === subject || option.label === subject,
   )?.id;
-  const subjectTable = subjectId
-    ? tuitionRates?.subject_rates?.[policy]?.[subjectId]
-    : null;
-  const subjectAmount = Number(subjectTable?.[key]);
-  if (Number.isFinite(subjectAmount) && subjectAmount > 0) {
-    return Math.round(subjectAmount);
+  const hasStoredSubjectRates = tuitionRates?.subject_mode === undefined
+    && tuitionRates?.subject_rates
+    && typeof tuitionRates.subject_rates === 'object';
+  const subjectMode = tuitionRates?.subject_mode === true || hasStoredSubjectRates;
+
+  if (subjectMode && subjectId) {
+    const subjectGradeAmount = Number(
+      tuitionRates?.subject_rates?.grade?.[subjectId]?.[gradeKey],
+    );
+    if (Number.isFinite(subjectGradeAmount) && subjectGradeAmount > 0) {
+      return Math.round(subjectGradeAmount);
+    }
+
+    const subjectSchoolAmount = Number(
+      tuitionRates?.subject_rates?.school_level?.[subjectId]?.[schoolLevelKey],
+    );
+    if (Number.isFinite(subjectSchoolAmount) && subjectSchoolAmount > 0) {
+      return Math.round(subjectSchoolAmount);
+    }
   }
 
-  const baseTable = tuitionRates?.[policy];
-  if (!baseTable || typeof baseTable !== 'object' || Array.isArray(baseTable)) return 0;
-  const baseAmount = Number(baseTable[key]);
-  return Number.isFinite(baseAmount) && baseAmount > 0 ? Math.round(baseAmount) : 0;
+  const gradeAmount = Number(tuitionRates?.grade?.[gradeKey]);
+  if (Number.isFinite(gradeAmount) && gradeAmount > 0) {
+    return Math.round(gradeAmount);
+  }
+
+  const schoolAmount = Number(tuitionRates?.school_level?.[schoolLevelKey]);
+  return Number.isFinite(schoolAmount) && schoolAmount > 0 ? Math.round(schoolAmount) : 0;
 }

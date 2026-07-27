@@ -28,8 +28,6 @@ import {
   ACADEMY_SUBJECT_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
-  TUITION_POLICY_OPTIONS,
-  getTuitionPolicyLabel,
   inferAcademyTypeFromSubjects,
 } from '../../constants/academySettings';
 import { generateQrToken } from '../academy/attendance/attendanceHelpers';
@@ -76,7 +74,7 @@ export default function WorkspaceSelectionPage() {
   const [academyPhone, setAcademyPhone] = useState('');
   const [academySubjects, setAcademySubjects] = useState([]);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
-  const [tuitionPolicy, setTuitionPolicy] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
+  const tuitionPolicy = DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
   const [tuitionRates, setTuitionRates] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
   const [staffCheckMethod, setStaffCheckMethod] = useState('manual');
   const [studentCheckMethod, setStudentCheckMethod] = useState('teacher_manual');
@@ -193,7 +191,6 @@ export default function WorkspaceSelectionPage() {
     setAcademyPhone('');
     setAcademySubjects([]);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
-    setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
     setTuitionRates(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
     setStaffCheckMethod('manual');
     setStudentCheckMethod('teacher_manual');
@@ -333,7 +330,6 @@ export default function WorkspaceSelectionPage() {
                 phone={academyPhone}
                 subjects={academySubjects}
                 clinicRequired={clinicRequired}
-                tuitionPolicy={tuitionPolicy}
                 tuitionRates={tuitionRates}
                 staffCheckMethod={staffCheckMethod}
                 studentCheckMethod={studentCheckMethod}
@@ -343,7 +339,6 @@ export default function WorkspaceSelectionPage() {
                 onPhoneChange={setAcademyPhone}
                 onSubjectToggle={toggleAcademySubject}
                 onClinicRequiredChange={setClinicRequired}
-                onTuitionPolicyChange={setTuitionPolicy}
                 onTuitionRatesChange={setTuitionRates}
                 onStaffCheckMethodChange={setStaffCheckMethod}
                 onStudentCheckMethodChange={setStudentCheckMethod}
@@ -406,7 +401,6 @@ function AcademyCreateOnboarding({
   phone,
   subjects,
   clinicRequired,
-  tuitionPolicy,
   tuitionRates,
   staffCheckMethod,
   studentCheckMethod,
@@ -416,7 +410,6 @@ function AcademyCreateOnboarding({
   onPhoneChange,
   onSubjectToggle,
   onClinicRequiredChange,
-  onTuitionPolicyChange,
   onTuitionRatesChange,
   onStaffCheckMethodChange,
   onStudentCheckMethodChange,
@@ -424,9 +417,6 @@ function AcademyCreateOnboarding({
   onCancel,
   onCreate,
 }) {
-  const [showTuitionPolicyOptions, setShowTuitionPolicyOptions] = useState(
-    tuitionPolicy !== 'school_level',
-  );
   const isNameReady = !!name.trim();
   const isSubjectReady = subjects.length > 0;
   const steps = [
@@ -547,49 +537,10 @@ function AcademyCreateOnboarding({
 
       {step === 2 && (
         <div>
-          <div className="flex items-center justify-between rounded-2xl bg-gray-50 px-4 py-3">
-            <span>
-              <span className="block text-[11px] font-semibold text-gray-500">수강료 기준</span>
-              <span className="mt-0.5 block text-sm font-bold text-gray-900">
-                {getTuitionPolicyLabel(tuitionPolicy)}
-              </span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowTuitionPolicyOptions((open) => !open)}
-              className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-600 shadow-sm"
-            >
-              {showTuitionPolicyOptions ? '닫기' : '기준 바꾸기'}
-            </button>
-          </div>
-          {showTuitionPolicyOptions && (
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              {TUITION_POLICY_OPTIONS.map((option) => {
-                const selected = tuitionPolicy === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => onTuitionPolicyChange(option.id)}
-                    className={`rounded-2xl border px-2 py-3 text-center ${
-                      selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'
-                    }`}
-                  >
-                    <p className={`text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-900'}`}>
-                      {option.label}
-                    </p>
-                    <p className="mt-1 text-[10px] text-gray-500">{option.description}</p>
-                  </button>
-                );
-              })}
-            </div>
-          )}
           <TuitionRateFields
-            policy={tuitionPolicy}
             rates={tuitionRates}
             onChange={onTuitionRatesChange}
             subjects={subjects}
-            compact
           />
         </div>
       )}
