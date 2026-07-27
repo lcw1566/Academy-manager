@@ -7,6 +7,8 @@
 
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
+const STARTUP_QUERY_TIMEOUT_MS = 8000;
+
 function assertSupabaseConfigured() {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase가 설정되지 않았어요. .env.local을 확인해주세요.');
@@ -15,10 +17,32 @@ function assertSupabaseConfigured() {
 
 async function getCurrentUserOrThrow() {
   assertSupabaseConfigured();
-  const { data, error } = await supabase.auth.getUser();
+  // 앱 시작 시 initializeAuth에서 이미 세션을 확인한다. 여기서 매 API 호출마다
+  // getUser()로 인증 서버를 다시 왕복하면 로그인 직후 요청이 한꺼번에 밀리므로,
+  // 로컬에 보관된 세션을 재사용한다. 실제 접근 권한은 서버 RLS가 계속 검증한다.
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  if (!data?.user) throw new Error('로그인이 필요해요.');
-  return data.user;
+  if (!data?.session?.user) throw new Error('로그인이 필요해요.');
+  return data.session.user;
+}
+
+async function runStartupQuery(buildQuery, timeoutMessage) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), STARTUP_QUERY_TIMEOUT_MS);
+  try {
+    const result = await buildQuery(controller.signal);
+    if (controller.signal.aborted) {
+      throw new Error(timeoutMessage);
+    }
+    return result;
+  } catch (error) {
+    if (controller.signal.aborted || error?.name === 'AbortError') {
+      throw new Error(timeoutMessage);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -27,11 +51,15 @@ async function getCurrentUserOrThrow() {
 
 export async function getProfile() {
   const user = await getCurrentUserOrThrow();
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .maybeSingle();
+  const { data, error } = await runStartupQuery(
+    (signal) => supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .abortSignal(signal)
+      .maybeSingle(),
+    '프로필 확인 시간이 초과됐어요.',
+  );
   if (error) throw error;
   return data; // 없으면 null
 }
@@ -97,11 +125,15 @@ export async function updateMyProfileAccountType({ accountType, defaultRole, dis
 
 export async function getMyAcademyMemberships() {
   const user = await getCurrentUserOrThrow();
-  const { data, error } = await supabase
-    .from('academy_members')
-    .select('*, academy:academies(*)')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: true });
+  const { data, error } = await runStartupQuery(
+    (signal) => supabase
+      .from('academy_members')
+      .select('*, academy:academies(*)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true })
+      .abortSignal(signal),
+    '학원 권한 확인 시간이 초과됐어요.',
+  );
   if (error) throw error;
   return data ?? [];
 }

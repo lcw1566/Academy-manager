@@ -555,7 +555,7 @@ const useWorkspaceStore = create(
       // sessionStorage 의 pending-account-type 이 있으면 프로필에 반영하고 삭제.
       // (회원가입 시 이메일 인증이 필요해 session 이 없는 경우 account_type 을
       //  바로 저장하지 못하는 케이스를 위해 sessionStorage 에 임시 보관해둠.)
-      syncProfile: async () => {
+      syncProfile: async ({ throwOnError = false } = {}) => {
         if (!isSupabaseConfigured) return null;
         try {
           const authUser = useAuthStore.getState().user;
@@ -625,6 +625,7 @@ const useWorkspaceStore = create(
           return profile;
         } catch (err) {
           set({ workspaceError: err?.message ?? '프로필 동기화에 실패했어요.' });
+          if (throwOnError) throw err;
           return null;
         }
       },
@@ -656,7 +657,7 @@ const useWorkspaceStore = create(
       },
 
       // 멤버십 목록 조회 + currentAcademyId 유효성 검증
-      loadMemberships: async () => {
+      loadMemberships: async ({ throwOnError = false } = {}) => {
         if (!isSupabaseConfigured) return [];
         try {
           const memberships = await getMyAcademyMemberships();
@@ -678,6 +679,7 @@ const useWorkspaceStore = create(
             workspaceError:
               err?.message ?? '학원 목록을 불러오지 못했어요.',
           });
+          if (throwOnError) throw err;
           return [];
         }
       },
@@ -1645,9 +1647,11 @@ const useWorkspaceStore = create(
           try {
             // 두 조회는 서로 의존하지 않으므로 동시에 실행한다.
             await Promise.all([
-              get().syncProfile(),
-              get().loadMemberships(),
+              get().syncProfile({ throwOnError: true }),
+              get().loadMemberships({ throwOnError: true }),
             ]);
+
+            if (useAuthStore.getState().user?.id !== authUserId) return;
 
             // 권한/학원 선택에 필요한 정보가 준비되면 즉시 첫 화면을 연다.
             set({ isWorkspaceReady: true, isWorkspaceLoading: false });
@@ -1677,11 +1681,19 @@ const useWorkspaceStore = create(
               // Phase 44.7 / Phase C — 실제 출근 로그도 best-effort 로드.
               get().loadStaffAttendanceLogs({ limit: 200 }),
             ]);
+          } catch (error) {
+            if (useAuthStore.getState().user?.id === authUserId) {
+              set({
+                isWorkspaceReady: false,
+                workspaceError:
+                  error?.message ?? '학원 정보를 불러오지 못했어요.',
+              });
+            }
           } finally {
             // 필수 조회가 예외를 던진 경우에도 전역 로딩은 반드시 해제한다.
-            // 현재 syncProfile/loadMemberships는 오류를 자체 처리하지만, 이후
-            // 구현 변경으로 예외가 전파돼도 무한 로딩이 생기지 않게 방어한다.
-            set({ isWorkspaceLoading: false });
+            if (useAuthStore.getState().user?.id === authUserId) {
+              set({ isWorkspaceLoading: false });
+            }
           }
         })();
 

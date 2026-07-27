@@ -1,6 +1,6 @@
 import { useEffect, useRef, useMemo, useState } from 'react';
 import { AnimatePresence, MotionConfig } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2, RotateCcw } from 'lucide-react';
 import useAcademyStore from './store/useAcademyStore';
 import useAuthStore from './store/useAuthStore';
 import useWorkspaceStore from './store/useWorkspaceStore';
@@ -83,6 +83,8 @@ export default function App() {
   const memberships = useWorkspaceStore((s) => s.memberships);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
+  const isWorkspaceLoading = useWorkspaceStore((s) => s.isWorkspaceLoading);
+  const workspaceError = useWorkspaceStore((s) => s.workspaceError);
   const workspacePicked = useWorkspaceStore((s) => s.workspacePicked);
   const startWorkspaceRealtime = useWorkspaceStore((s) => s.startWorkspaceRealtime);
   const stopWorkspaceRealtime = useWorkspaceStore((s) => s.stopWorkspaceRealtime);
@@ -466,7 +468,9 @@ export default function App() {
     // (env 미설정 환경에서는 인증이 불가하므로 RoleSelectPage / 기존 흐름으로 폴백)
     if (isSupabaseReady) {
       // auth 초기화 중에는 깜빡임 방지용 로딩 화면.
-      if (!isAuthInitialized) return <LoadingScreen />;
+      if (!isAuthInitialized) {
+        return <LoadingScreen label="로그인 정보 확인 중…" />;
+      }
       // 미인증 → 랜딩 페이지. CTA에서 로그인/회원가입 화면을 연다.
       if (!isAuthenticated) {
         return (
@@ -477,7 +481,15 @@ export default function App() {
         );
       }
       // 인증됐지만 workspace 가 아직 준비 안 됨 — 권한 결정 전 화면 깜빡임 방지.
-      if (!isWorkspaceReady) return <LoadingScreen />;
+      if (!isWorkspaceReady) {
+        return (
+          <LoadingScreen
+            label="학원 정보 확인 중…"
+            error={!isWorkspaceLoading ? workspaceError : null}
+            onRetry={initializeWorkspace}
+          />
+        );
+      }
     }
 
     // 직원은 active 멤버십이 생기기 전까지 전용 대기 화면에 머문다. 새 역할 없는
@@ -549,11 +561,46 @@ export default function App() {
   );
 }
 
-function LoadingScreen() {
+function LoadingScreen({ label = '불러오는 중…', error = null, onRetry }) {
+  const [isSlow, setIsSlow] = useState(false);
+
+  useEffect(() => {
+    setIsSlow(false);
+    const timer = setTimeout(() => setIsSlow(true), 5000);
+    return () => clearTimeout(timer);
+  }, [label, error]);
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#F2F4F6] text-gray-400">
-      <Loader2 size={22} className="animate-spin mb-3" />
-      <p className="text-xs">불러오는 중…</p>
+      {error ? (
+        <>
+          <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center shadow-sm mb-4">
+            <AlertCircle size={23} className="text-red-500" />
+          </div>
+          <p className="text-base font-bold text-gray-900">학원 정보를 불러오지 못했어요</p>
+          <p className="mt-2 px-6 text-center text-sm text-gray-500">{error}</p>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white"
+            >
+              <RotateCcw size={16} />
+              다시 시도
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <Loader2 size={22} className="animate-spin mb-3" />
+          <p className="text-xs">{label}</p>
+          {isSlow && (
+            <p className="mt-2 text-[11px] text-gray-400">
+              서버 응답이 평소보다 늦어요. 잠시만 기다려주세요.
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }

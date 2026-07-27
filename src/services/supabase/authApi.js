@@ -1,14 +1,34 @@
 import { supabase, isSupabaseConfigured, setAuthRememberPreference } from '../../lib/supabase';
 
+const AUTH_SESSION_TIMEOUT_MS = 8000;
+
 function assertSupabaseConfigured() {
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Supabase가 설정되지 않았습니다. .env.local을 확인해주세요.');
   }
 }
 
+async function withTimeout(promise, timeoutMs, message) {
+  let timeoutId;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export async function getCurrentSession() {
   assertSupabaseConfigured();
-  const { data, error } = await supabase.auth.getSession();
+  const { data, error } = await withTimeout(
+    supabase.auth.getSession(),
+    AUTH_SESSION_TIMEOUT_MS,
+    '로그인 상태 확인 시간이 초과됐어요. 다시 시도해주세요.',
+  );
   if (error) throw error;
   return data.session;
 }

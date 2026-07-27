@@ -11,6 +11,7 @@ import {
 import { disableCurrentPushDevice } from '../services/pushNotifications';
 
 let authSubscription = null;
+let authInitializationPromise = null;
 
 const useAuthStore = create((set, get) => ({
   user: null,
@@ -27,38 +28,49 @@ const useAuthStore = create((set, get) => ({
 
   clearAuthError: () => set({ authError: null }),
 
-  initializeAuth: async () => {
+  initializeAuth: () => {
     if (get().isInitialized) return;
+    if (authInitializationPromise) return authInitializationPromise;
 
     if (!isSupabaseConfigured) {
       set({ isInitialized: true, isSupabaseReady: false });
       return;
     }
 
-    set({ isAuthLoading: true, authError: null });
+    const initialization = (async () => {
+      set({ isAuthLoading: true, authError: null });
 
-    try {
-      const session = await getCurrentSession();
-      set({
-        session,
-        user: session?.user ?? null,
-        isAuthenticated: Boolean(session?.user),
-      });
-
-      if (!authSubscription) {
-        authSubscription = subscribeAuthStateChange((_event, nextSession) => {
-          set({
-            session: nextSession,
-            user: nextSession?.user ?? null,
-            isAuthenticated: Boolean(nextSession?.user),
-          });
+      try {
+        const session = await getCurrentSession();
+        set({
+          session,
+          user: session?.user ?? null,
+          isAuthenticated: Boolean(session?.user),
         });
+
+        if (!authSubscription) {
+          authSubscription = subscribeAuthStateChange((_event, nextSession) => {
+            set({
+              session: nextSession,
+              user: nextSession?.user ?? null,
+              isAuthenticated: Boolean(nextSession?.user),
+            });
+          });
+        }
+      } catch (err) {
+        set({ authError: err?.message ?? 'Auth 초기화에 실패했습니다.' });
+      } finally {
+        set({ isAuthLoading: false, isInitialized: true });
       }
-    } catch (err) {
-      set({ authError: err?.message ?? 'Auth 초기화에 실패했습니다.' });
-    } finally {
-      set({ isAuthLoading: false, isInitialized: true });
-    }
+    })();
+
+    authInitializationPromise = initialization;
+    void initialization.finally(() => {
+      if (authInitializationPromise === initialization) {
+        authInitializationPromise = null;
+      }
+    });
+    return initialization;
   },
 
   signUp: async ({ email, password, metadata } = {}) => {
