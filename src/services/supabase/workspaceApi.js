@@ -504,12 +504,30 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
 
   if (Object.keys(dbPatch).length === 0) return null;
 
-  const runUpdate = async (payload) => supabase
-    .from('academies')
-    .update(payload)
-    .eq('id', academyId)
-    .select()
-    .maybeSingle();
+  const runUpdate = async (payload) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    try {
+      const result = await supabase
+        .from('academies')
+        .update(payload)
+        .eq('id', academyId)
+        .select()
+        .abortSignal(controller.signal)
+        .maybeSingle();
+      if (controller.signal.aborted) {
+        throw new Error('저장 시간이 초과됐어요. 네트워크를 확인하고 다시 시도해주세요.');
+      }
+      return result;
+    } catch (error) {
+      if (controller.signal.aborted || error?.name === 'AbortError') {
+        throw new Error('저장 시간이 초과됐어요. 네트워크를 확인하고 다시 시도해주세요.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
 
   let { data, error } = await runUpdate(dbPatch);
   if (error && isMissingAcademySettingsColumnError(error)) {
@@ -527,6 +545,9 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
     error = retry.error;
   }
   if (error) throw error;
+  if (!data) {
+    throw new Error('학원 원장 권한을 확인하지 못했어요. SQL 032를 적용한 뒤 다시 시도해주세요.');
+  }
   return data;
 }
 

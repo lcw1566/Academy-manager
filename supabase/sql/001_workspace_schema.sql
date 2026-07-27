@@ -175,6 +175,23 @@ as $$
   );
 $$;
 
+create or replace function public.is_owner_member_of_academy(p_academy_id uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.academy_members
+    where academy_id = p_academy_id
+      and user_id = auth.uid()
+      and role = 'owner'
+      and status = 'active'
+  );
+$$;
+
 
 -- ============================================================
 -- SECTION 8. Row Level Security enable
@@ -237,8 +254,14 @@ drop policy if exists "academies update by owner" on public.academies;
 create policy "academies update by owner"
 on public.academies
 for update
-using (owner_id = auth.uid())
-with check (owner_id = auth.uid());
+using (
+  owner_id = auth.uid()
+  or public.is_owner_member_of_academy(id)
+)
+with check (
+  owner_id = auth.uid()
+  or public.is_owner_member_of_academy(id)
+);
 
 
 -- ============================================================
