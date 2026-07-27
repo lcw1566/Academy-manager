@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronRight, RefreshCw, LogOut, Loader2, Inbox, UserCog, Building2, Mail, Phone,
-  Check, CheckSquare, QrCode,
+  Check, CheckSquare, QrCode, Settings,
 } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
@@ -30,6 +30,7 @@ import {
   TUITION_POLICY_OPTIONS,
   getAcademySubjectsLabel,
   getClinicRequiredLabel,
+  getTuitionPolicyLabel,
   inferAcademyTypeFromSubjects,
 } from '../../../constants/academySettings';
 
@@ -74,12 +75,18 @@ export default function AcademyMorePage() {
       : DEFAULT_ACADEMY_SETTINGS.academySubjects;
     const localClinicRequired = academyProfile?.clinicRequired ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired;
     const localTuitionPolicy = academyProfile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
+    const localAddress = academyProfile?.address || '';
+    const localPhone = academyProfile?.phone || '';
+    const serverAddress = currentAcademy?.address ?? localAddress;
+    const serverPhone = currentAcademy?.phone ?? localPhone;
     if (
       localName === currentAcademyName &&
       localAcademyType === serverAcademyType &&
       JSON.stringify(localAcademySubjects) === JSON.stringify(serverAcademySubjects) &&
       localClinicRequired === serverClinicRequired &&
-      localTuitionPolicy === serverTuitionPolicy
+      localTuitionPolicy === serverTuitionPolicy &&
+      localAddress === serverAddress &&
+      localPhone === serverPhone
     ) return;
     setAcademyProfile({
       ...(academyProfile || { ownerName: '', address: '', phone: '' }),
@@ -88,6 +95,8 @@ export default function AcademyMorePage() {
       academySubjects: serverAcademySubjects,
       clinicRequired: serverClinicRequired,
       tuitionPolicy: serverTuitionPolicy,
+      address: serverAddress,
+      phone: serverPhone,
     });
   }, [
     currentAcademyId,
@@ -96,6 +105,8 @@ export default function AcademyMorePage() {
     currentAcademy?.academy_subjects,
     currentAcademy?.clinic_required,
     currentAcademy?.tuition_policy,
+    currentAcademy?.address,
+    currentAcademy?.phone,
     academyProfile,
     setAcademyProfile,
   ]);
@@ -112,8 +123,6 @@ export default function AcademyMorePage() {
   const ownerHasNoAcademy = isOwner && memberships.length === 0;
 
   const handleSaveAcademyProfile = async (data) => {
-    setAcademyProfile(data);
-    setShowProfileEdit(false);
     try {
       await updateAcademyProfileSettings?.({
         name: data.name,
@@ -121,15 +130,21 @@ export default function AcademyMorePage() {
         academySubjects: data.academySubjects,
         clinicRequired: data.clinicRequired,
         tuitionPolicy: data.tuitionPolicy,
+        address: data.address,
+        phone: data.phone,
       });
+      setAcademyProfile(data);
+      setShowProfileEdit(false);
       showToast('학원 정보가 저장되었습니다.');
+      return true;
     } catch (err) {
       showToast(
         err?.message
-          ? `로컬에는 저장했지만 서버 저장에 실패했어요: ${err.message}`
-          : '로컬에는 저장했지만 서버 저장에 실패했어요.',
+          ? `학원 설정을 저장하지 못했어요: ${err.message}`
+          : '학원 설정을 저장하지 못했어요.',
         'error',
       );
+      return false;
     }
   };
 
@@ -161,8 +176,6 @@ export default function AcademyMorePage() {
               onEditAcademy={() => setShowProfileEdit(true)}
               onEditMyProfile={() => setShowUserProfileEdit(true)}
               onSwitchAcademy={handleSwitchAcademy}
-              onOpenAttendanceSettings={() => setShowAttendanceSettings(true)}
-              onOpenQrDisplay={() => setShowQrDisplay(true)}
             />
           )
         ) : (
@@ -184,8 +197,17 @@ export default function AcademyMorePage() {
       {showProfileEdit && (
         <AcademyProfileModal
           profile={academyProfile}
+          academy={currentAcademy}
           onClose={() => setShowProfileEdit(false)}
           onSave={handleSaveAcademyProfile}
+          onOpenAttendanceSettings={() => {
+            setShowProfileEdit(false);
+            setShowAttendanceSettings(true);
+          }}
+          onOpenQrDisplay={() => {
+            setShowProfileEdit(false);
+            setShowQrDisplay(true);
+          }}
         />
       )}
 
@@ -290,18 +312,14 @@ function InlineLogoutButton() {
 
 // ─── 학원 정보 + 원장 프로필 통합 카드 ─────────────────────────────
 function AcademyOwnerInfoCard({
-  academyProfile, academyName, displayName, email, phone, onEditAcademy, onEditMyProfile,
+  academyProfile, academyName, displayName, email, phone, onEditMyProfile,
 }) {
   const displayedAcademyName = academyName || academyProfile?.name || '학원';
   const subjectsLabel = getAcademySubjectsLabel(academyProfile?.academySubjects);
   const clinicLabel = getClinicRequiredLabel(academyProfile?.clinicRequired);
   return (
     <div className="mx-4 mt-4 bg-white rounded-2xl p-4 shadow-sm">
-      <button
-        type="button"
-        onClick={onEditAcademy}
-        className="w-full flex items-center gap-3 text-left active:opacity-90"
-      >
+      <div className="flex w-full items-center gap-3 text-left">
         <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-xl font-bold text-blue-600 flex-shrink-0">
           🏫
         </div>
@@ -311,8 +329,7 @@ function AcademyOwnerInfoCard({
             원장 · {subjectsLabel} · {clinicLabel}
           </p>
         </div>
-        <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
-      </button>
+      </div>
 
       <div className="mt-3 pt-3 border-t border-gray-50 flex flex-col gap-2">
         <InfoRow icon={UserCog} label="원장 이름" value={displayName} />
@@ -361,20 +378,10 @@ function OwnerMoreSections({
   academyProfile, academyName, displayName, email, phone, memberships = [], showSwitchAcademy,
   lastSyncedLabel,
   onEditAcademy, onEditMyProfile, onSwitchAcademy,
-  onOpenAttendanceSettings, onOpenQrDisplay,
 }) {
   const showToast = useAcademyStore((s) => s.showToast);
   const [refreshing, setRefreshing] = useState(false);
-  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
-  const currentAcademy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
-  const attendance = readAttendanceSettings(currentAcademy);
-  const methodSubtitle = (() => {
-    const staffLabel = attendance.staffCheckMethod === 'qr' ? 'QR' : '직접 기록';
-    const studentLabel = attendance.studentCheckMethod === 'qr' ? 'QR' : '선생님 직접 체크';
-    return `직원 ${staffLabel} · 학생 ${studentLabel}`;
-  })();
-  const isQrInUse =
-    attendance.staffCheckMethod === 'qr' || attendance.studentCheckMethod === 'qr';
+  const academySettingsSubtitle = `${getAcademySubjectsLabel(academyProfile?.academySubjects)} · 수강료 ${getTuitionPolicyLabel(academyProfile?.tuitionPolicy)}`;
 
   const handleRefresh = async () => {
     if (refreshing) return;
@@ -412,28 +419,18 @@ function OwnerMoreSections({
         displayName={displayName}
         email={email}
         phone={phone}
-        onEditAcademy={onEditAcademy}
         onEditMyProfile={onEditMyProfile}
       />
 
-      <SectionTitle>학원 설정</SectionTitle>
+      <SectionTitle>설정</SectionTitle>
       <div className="mx-4 flex flex-col gap-2">
         <SettingsRow
-          icon={CheckSquare}
-          tone="emerald"
-          title="출결·등하원 설정"
-          subtitle={methodSubtitle}
-          onClick={onOpenAttendanceSettings}
+          icon={Settings}
+          tone="blue"
+          title="학원 설정"
+          subtitle={academySettingsSubtitle}
+          onClick={onEditAcademy}
         />
-        {isQrInUse && (
-          <SettingsRow
-            icon={QrCode}
-            tone="blue"
-            title="공용 QR 화면 열기"
-            subtitle="공용 단말에 풀스크린 QR을 띄워요."
-            onClick={onOpenQrDisplay}
-          />
-        )}
         <SettingsRow
           icon={RefreshCw}
           title="데이터 새로고침"
@@ -578,10 +575,16 @@ function StaffMoreSections({
 }
 
 // ─── 학원 정보 수정 모달 ────────────────────────────────────────
-function AcademyProfileModal({ profile, onClose, onSave }) {
-  const [form, setForm] = useState({
+function AcademyProfileModal({
+  profile,
+  academy,
+  onClose,
+  onSave,
+  onOpenAttendanceSettings,
+  onOpenQrDisplay,
+}) {
+  const initialForm = useMemo(() => ({
     name:      profile?.name      || '',
-    ownerName: profile?.ownerName || '',
     address:   profile?.address   || '',
     phone:     profile?.phone     || '',
     academySubjects: Array.isArray(profile?.academySubjects)
@@ -589,7 +592,12 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
       : DEFAULT_ACADEMY_SETTINGS.academySubjects,
     clinicRequired: profile?.clinicRequired ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired,
     tuitionPolicy: profile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy,
-  });
+  }), [profile]);
+  const [form, setForm] = useState(initialForm);
+  const [saving, setSaving] = useState(false);
+  const attendance = readAttendanceSettings(academy);
+  const methodSubtitle = `직원 ${attendance.staffCheckMethod === 'qr' ? 'QR' : '직접 기록'} · 학생 ${attendance.studentCheckMethod === 'qr' ? 'QR' : '직접 체크'}`;
+  const isQrInUse = attendance.staffCheckMethod === 'qr' || attendance.studentCheckMethod === 'qr';
   const toggleSubject = (subjectId) => {
     setForm((f) => {
       const current = Array.isArray(f.academySubjects) ? f.academySubjects : [];
@@ -601,27 +609,46 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
       };
     });
   };
-  const handleSave = () => {
+  const buildSaveData = () => {
     const academySubjects = Array.isArray(form.academySubjects) ? form.academySubjects : [];
-    onSave({
+    return {
       ...form,
       academySubjects,
       academyType: inferAcademyTypeFromSubjects(academySubjects),
-    });
+    };
+  };
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      return await onSave(buildSaveData());
+    } finally {
+      setSaving(false);
+    }
+  };
+  const handleOpenLinkedSetting = async (openSetting) => {
+    if (saving) return;
+    const hasUnsavedChanges = JSON.stringify(form) !== JSON.stringify(initialForm);
+    if (!hasUnsavedChanges) {
+      openSetting?.();
+      return;
+    }
+    const saved = await handleSave();
+    if (saved) openSetting?.();
   };
   return (
     <Modal
       isOpen
       onClose={onClose}
-      title="학원 정보 수정"
+      title="학원 설정"
       footer={
         <button
           type="button"
           onClick={handleSave}
-          disabled={(form.academySubjects || []).length === 0}
+          disabled={saving || (form.academySubjects || []).length === 0}
           className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl disabled:bg-blue-300"
         >
-          저장
+          {saving ? '저장 중…' : '저장'}
         </button>
       }
     >
@@ -636,16 +663,6 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
           />
         </div>
         <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">원장 이름</label>
-          <input
-            value={form.ownerName}
-            onChange={(e) => setForm((f) => ({ ...f, ownerName: e.target.value }))}
-            placeholder="예: 김원장"
-            className="input"
-          />
-          <p className="text-xs text-gray-400 mt-1.5">반의 담당 강사 선택 시 원장 본인을 배정할 수 있어요.</p>
-        </div>
-        <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">주소</label>
           <input
             value={form.address}
@@ -655,7 +672,7 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
           />
         </div>
         <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">연락처</label>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">대표 연락처</label>
           <input
             value={form.phone}
             onChange={(e) => setForm((f) => ({ ...f, phone: formatPhoneNumber(e.target.value) }))}
@@ -731,6 +748,26 @@ function AcademyProfileModal({ profile, onClose, onSave }) {
                 </button>
               );
             })}
+          </div>
+        </div>
+        <div>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">출결</label>
+          <div className="flex flex-col gap-2">
+            <SettingsRow
+              icon={CheckSquare}
+              tone="emerald"
+              title="출결·등하원"
+              subtitle={methodSubtitle}
+              onClick={() => handleOpenLinkedSetting(onOpenAttendanceSettings)}
+            />
+            {isQrInUse && (
+              <SettingsRow
+                icon={QrCode}
+                tone="blue"
+                title="공용 QR 화면"
+                onClick={() => handleOpenLinkedSetting(onOpenQrDisplay)}
+              />
+            )}
           </div>
         </div>
       </div>

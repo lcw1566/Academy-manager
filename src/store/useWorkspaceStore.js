@@ -79,6 +79,7 @@ function ensureCurrentAcademyDataScope(academyId) {
 
 function syncAcademyProfileFromServer(academy) {
   if (!academy) return;
+  const localProfile = useAcademyStore.getState().academyProfile || {};
   useAcademyStore.getState().setAcademyProfile?.({
     name: academy.name || '우리 학원',
     academyType: academy.academy_type || 'core_subjects',
@@ -87,6 +88,8 @@ function syncAcademyProfileFromServer(academy) {
       : ['korean', 'english', 'math'],
     clinicRequired: academy.clinic_required !== false,
     tuitionPolicy: academy.tuition_policy || 'class',
+    address: academy.address ?? localProfile.address ?? '',
+    phone: academy.phone ?? localProfile.phone ?? '',
   });
 }
 

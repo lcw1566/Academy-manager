@@ -46,6 +46,8 @@ create table if not exists public.academies (
   id                    uuid primary key default gen_random_uuid(),
   name                  text not null,
   owner_id              uuid references auth.users(id) on delete cascade,
+  address               text,
+  phone                 text,
   academy_type          text default 'core_subjects',
   academy_subjects      jsonb not null default '["korean", "english", "math"]'::jsonb,
   clinic_required       boolean not null default true,

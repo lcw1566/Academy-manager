@@ -269,6 +269,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authUserId = useAuthStore((s) => s.user?.id);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const ownerDisplayName = useWorkspaceStore((s) => s.profile?.display_name);
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
@@ -282,7 +283,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const [studentSearch, setStudentSearch] = useState('');
   const [studentSchoolFilter, setStudentSchoolFilter] = useState('');
   const [studentGradeFilter, setStudentGradeFilter] = useState('');
-  const ownerLabel = academyProfile?.ownerName?.trim() || '원장';
+  const ownerLabel = ownerDisplayName?.trim() || academyProfile?.ownerName?.trim() || '원장';
   const tuitionPolicy = academyProfile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
   const subjectOptions = useMemo(() => {
     const configuredSubjectIds = Array.isArray(academyProfile?.academySubjects)

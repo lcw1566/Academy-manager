@@ -401,6 +401,8 @@ function isMissingAcademySettingsColumnError(error) {
     message.includes('clinic_required') ||
     message.includes('tuition_policy') ||
     message.includes('tuition_policy_onboarded_at') ||
+    message.includes('address') ||
+    message.includes('phone') ||
     message.includes('academy_onboarded_at')
   );
 }
@@ -496,6 +498,8 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
     dbPatch.tuition_policy = patch.tuitionPolicy || 'class';
     dbPatch.tuition_policy_onboarded_at = new Date().toISOString();
   }
+  if (patch.address !== undefined) dbPatch.address = (patch.address || '').trim() || null;
+  if (patch.phone !== undefined) dbPatch.phone = (patch.phone || '').trim() || null;
   if (patch.markOnboarded === true) dbPatch.academy_onboarded_at = new Date().toISOString();
 
   if (Object.keys(dbPatch).length === 0) return null;
@@ -509,6 +513,9 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
 
   let { data, error } = await runUpdate(dbPatch);
   if (error && isMissingAcademySettingsColumnError(error)) {
+    if (dbPatch.address !== undefined || dbPatch.phone !== undefined) {
+      throw new Error('학원 주소·연락처 저장을 위해 SQL 031을 먼저 적용해주세요.');
+    }
     if (dbPatch.tuition_policy !== undefined) {
       throw new Error('수강료 기준 저장을 위해 SQL 030을 먼저 적용해주세요.');
     }
