@@ -56,11 +56,52 @@ export const TUITION_POLICY_OPTIONS = [
   { id: 'class', label: '반별', description: '반마다 직접 설정' },
 ];
 
+export const TUITION_RATE_GROUPS = {
+  school_level: [
+    {
+      id: 'school_level',
+      label: '',
+      options: [
+        { id: 'elementary', label: '초등' },
+        { id: 'middle', label: '중등' },
+        { id: 'high', label: '고등' },
+      ],
+    },
+  ],
+  grade: [
+    {
+      id: 'elementary',
+      label: '초등',
+      options: Array.from({ length: 6 }, (_, index) => ({
+        id: `초${index + 1}`,
+        label: `${index + 1}학년`,
+      })),
+    },
+    {
+      id: 'middle',
+      label: '중등',
+      options: Array.from({ length: 3 }, (_, index) => ({
+        id: `중${index + 1}`,
+        label: `${index + 1}학년`,
+      })),
+    },
+    {
+      id: 'high',
+      label: '고등',
+      options: Array.from({ length: 3 }, (_, index) => ({
+        id: `고${index + 1}`,
+        label: `${index + 1}학년`,
+      })),
+    },
+  ],
+};
+
 export const DEFAULT_ACADEMY_SETTINGS = {
   academyType: 'core_subjects',
   academySubjects: ['korean', 'english', 'math'],
   clinicRequired: true,
   tuitionPolicy: 'class',
+  tuitionRates: {},
 };
 
 export function inferAcademyTypeFromSubjects(subjects = []) {
@@ -101,4 +142,21 @@ export function getSchoolLevelKey(level = '') {
   if (value.startsWith('중')) return '중등';
   if (value.startsWith('고')) return '고등';
   return value ? '기타' : '';
+}
+
+export function getTuitionRateForLevel(tuitionRates = {}, policy, level = '') {
+  if (!policy || policy === 'class') return 0;
+  const table = tuitionRates?.[policy];
+  if (!table || typeof table !== 'object' || Array.isArray(table)) return 0;
+
+  let key = String(level || '').trim();
+  if (policy === 'school_level') {
+    if (key.startsWith('초')) key = 'elementary';
+    else if (key.startsWith('중')) key = 'middle';
+    else if (key.startsWith('고')) key = 'high';
+    else return 0;
+  }
+
+  const amount = Number(table[key]);
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
 }

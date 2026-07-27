@@ -32,6 +32,7 @@ import {
   inferAcademyTypeFromSubjects,
 } from '../../constants/academySettings';
 import { generateQrToken } from '../academy/attendance/attendanceHelpers';
+import TuitionRateFields from '../academy/onboarding/TuitionRateFields';
 
 export const WORKSPACE_PICKED_KEY = 'workspace-picked';
 
@@ -75,6 +76,7 @@ export default function WorkspaceSelectionPage() {
   const [academySubjects, setAcademySubjects] = useState(DEFAULT_ACADEMY_SETTINGS.academySubjects);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
   const [tuitionPolicy, setTuitionPolicy] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
+  const [tuitionRates, setTuitionRates] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
   const [staffCheckMethod, setStaffCheckMethod] = useState('manual');
   const [studentCheckMethod, setStudentCheckMethod] = useState('teacher_manual');
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -137,6 +139,7 @@ export default function WorkspaceSelectionPage() {
         academySubjects,
         clinicRequired,
         tuitionPolicy,
+        tuitionRates,
         address: academyAddress,
         phone: academyPhone,
       });
@@ -161,6 +164,7 @@ export default function WorkspaceSelectionPage() {
         academySubjects,
         clinicRequired,
         tuitionPolicy,
+        tuitionRates,
         address: academyAddress.trim(),
         phone: academyPhone.trim(),
       });
@@ -189,6 +193,7 @@ export default function WorkspaceSelectionPage() {
     setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
     setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
+    setTuitionRates(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
     setStaffCheckMethod('manual');
     setStudentCheckMethod('teacher_manual');
   };
@@ -328,6 +333,7 @@ export default function WorkspaceSelectionPage() {
                 subjects={academySubjects}
                 clinicRequired={clinicRequired}
                 tuitionPolicy={tuitionPolicy}
+                tuitionRates={tuitionRates}
                 staffCheckMethod={staffCheckMethod}
                 studentCheckMethod={studentCheckMethod}
                 submitting={createSubmitting}
@@ -337,6 +343,7 @@ export default function WorkspaceSelectionPage() {
                 onSubjectToggle={toggleAcademySubject}
                 onClinicRequiredChange={setClinicRequired}
                 onTuitionPolicyChange={setTuitionPolicy}
+                onTuitionRatesChange={setTuitionRates}
                 onStaffCheckMethodChange={setStaffCheckMethod}
                 onStudentCheckMethodChange={setStudentCheckMethod}
                 onStepChange={setCreateStep}
@@ -399,6 +406,7 @@ function AcademyCreateOnboarding({
   subjects,
   clinicRequired,
   tuitionPolicy,
+  tuitionRates,
   staffCheckMethod,
   studentCheckMethod,
   submitting,
@@ -408,6 +416,7 @@ function AcademyCreateOnboarding({
   onSubjectToggle,
   onClinicRequiredChange,
   onTuitionPolicyChange,
+  onTuitionRatesChange,
   onStaffCheckMethodChange,
   onStudentCheckMethodChange,
   onStepChange,
@@ -419,7 +428,7 @@ function AcademyCreateOnboarding({
   const steps = [
     { title: '학원 기본 정보를 알려주세요', desc: '학원 이름, 주소와 전화번호는 나중에도 변경할 수 있어요.' },
     { title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 학원 프로필에서 바꿀 수 있어요.' },
-    { title: '수강료 기준은 무엇인가요?', desc: '반을 만들 때 같은 기준의 최근 금액을 불러와요.' },
+    { title: '수강료 가격표를 설정해주세요', desc: '새 반의 학교급이나 학년에 맞는 금액을 자동으로 불러와요.' },
     { title: '클리닉을 어떻게 쓸까요?', desc: '수업 후 자습·보완 기록의 기본값이에요.' },
     { title: '직원 출퇴근은 어떻게 기록할까요?', desc: '직접 기록하거나 QR을 사용할 수 있어요.' },
     { title: '학생 등하원은 어떻게 기록할까요?', desc: '학원에 맞는 방식을 골라주세요.' },
@@ -528,25 +537,33 @@ function AcademyCreateOnboarding({
       )}
 
       {step === 2 && (
-        <div className="grid grid-cols-3 gap-2">
-          {TUITION_POLICY_OPTIONS.map((option) => {
-            const selected = tuitionPolicy === option.id;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => onTuitionPolicyChange(option.id)}
-                className={`rounded-2xl border px-2 py-3 text-center ${
-                  selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'
-                }`}
-              >
-                <p className={`text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-900'}`}>
-                  {option.label}
-                </p>
-                <p className="mt-1 text-[10px] text-gray-500">{option.description}</p>
-              </button>
-            );
-          })}
+        <div>
+          <div className="grid grid-cols-3 gap-2">
+            {TUITION_POLICY_OPTIONS.map((option) => {
+              const selected = tuitionPolicy === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => onTuitionPolicyChange(option.id)}
+                  className={`rounded-2xl border px-2 py-3 text-center ${
+                    selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'
+                  }`}
+                >
+                  <p className={`text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-900'}`}>
+                    {option.label}
+                  </p>
+                  <p className="mt-1 text-[10px] text-gray-500">{option.description}</p>
+                </button>
+              );
+            })}
+          </div>
+          <TuitionRateFields
+            policy={tuitionPolicy}
+            rates={tuitionRates}
+            onChange={onTuitionRatesChange}
+            compact
+          />
         </div>
       )}
 

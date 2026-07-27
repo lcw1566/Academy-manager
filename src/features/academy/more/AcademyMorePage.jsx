@@ -23,6 +23,7 @@ import { clearWorkspacePicked } from '../../auth/WorkspaceSelectionPage';
 import AttendanceSettingsSheet from '../attendance/AttendanceSettingsSheet';
 import QrDisplayPage from '../attendance/QrDisplayPage';
 import { readAttendanceSettings } from '../attendance/attendanceHelpers';
+import TuitionRateFields from '../onboarding/TuitionRateFields';
 import {
   ACADEMY_SUBJECT_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
@@ -68,6 +69,10 @@ export default function AcademyMorePage() {
       : DEFAULT_ACADEMY_SETTINGS.academySubjects;
     const serverClinicRequired = currentAcademy?.clinic_required ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired;
     const serverTuitionPolicy = currentAcademy?.tuition_policy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
+    const serverTuitionRates =
+      currentAcademy?.tuition_rates && typeof currentAcademy.tuition_rates === 'object'
+        ? currentAcademy.tuition_rates
+        : DEFAULT_ACADEMY_SETTINGS.tuitionRates;
     const localName = academyProfile?.name;
     const localAcademyType = academyProfile?.academyType || DEFAULT_ACADEMY_SETTINGS.academyType;
     const localAcademySubjects = Array.isArray(academyProfile?.academySubjects)
@@ -75,6 +80,7 @@ export default function AcademyMorePage() {
       : DEFAULT_ACADEMY_SETTINGS.academySubjects;
     const localClinicRequired = academyProfile?.clinicRequired ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired;
     const localTuitionPolicy = academyProfile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
+    const localTuitionRates = academyProfile?.tuitionRates || DEFAULT_ACADEMY_SETTINGS.tuitionRates;
     const localAddress = academyProfile?.address || '';
     const localPhone = academyProfile?.phone || '';
     const serverAddress = currentAcademy?.address ?? localAddress;
@@ -85,6 +91,7 @@ export default function AcademyMorePage() {
       JSON.stringify(localAcademySubjects) === JSON.stringify(serverAcademySubjects) &&
       localClinicRequired === serverClinicRequired &&
       localTuitionPolicy === serverTuitionPolicy &&
+      JSON.stringify(localTuitionRates) === JSON.stringify(serverTuitionRates) &&
       localAddress === serverAddress &&
       localPhone === serverPhone
     ) return;
@@ -95,6 +102,7 @@ export default function AcademyMorePage() {
       academySubjects: serverAcademySubjects,
       clinicRequired: serverClinicRequired,
       tuitionPolicy: serverTuitionPolicy,
+      tuitionRates: serverTuitionRates,
       address: serverAddress,
       phone: serverPhone,
     });
@@ -105,6 +113,7 @@ export default function AcademyMorePage() {
     currentAcademy?.academy_subjects,
     currentAcademy?.clinic_required,
     currentAcademy?.tuition_policy,
+    currentAcademy?.tuition_rates,
     currentAcademy?.address,
     currentAcademy?.phone,
     academyProfile,
@@ -130,6 +139,7 @@ export default function AcademyMorePage() {
         academySubjects: data.academySubjects,
         clinicRequired: data.clinicRequired,
         tuitionPolicy: data.tuitionPolicy,
+        tuitionRates: data.tuitionRates,
         address: data.address,
         phone: data.phone,
       });
@@ -592,6 +602,7 @@ function AcademyProfileModal({
       : DEFAULT_ACADEMY_SETTINGS.academySubjects,
     clinicRequired: profile?.clinicRequired ?? DEFAULT_ACADEMY_SETTINGS.clinicRequired,
     tuitionPolicy: profile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy,
+    tuitionRates: profile?.tuitionRates || DEFAULT_ACADEMY_SETTINGS.tuitionRates,
   }), [profile]);
   const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
@@ -726,6 +737,12 @@ function AcademyProfileModal({
               );
             })}
           </div>
+          <TuitionRateFields
+            policy={form.tuitionPolicy}
+            rates={form.tuitionRates}
+            onChange={(tuitionRates) => setForm((current) => ({ ...current, tuitionRates }))}
+            compact
+          />
         </div>
         <div>
           <label className="text-xs font-semibold text-gray-600 mb-1.5 block">클리닉(자습) 운영</label>

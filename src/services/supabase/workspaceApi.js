@@ -434,6 +434,7 @@ function isMissingAcademySettingsColumnError(error) {
     message.includes('academy_subjects') ||
     message.includes('clinic_required') ||
     message.includes('tuition_policy') ||
+    message.includes('tuition_rates') ||
     message.includes('tuition_policy_onboarded_at') ||
     message.includes('address') ||
     message.includes('phone') ||
@@ -446,6 +447,7 @@ function buildAcademySettingsPayload({
   academySubjects,
   clinicRequired,
   tuitionPolicy,
+  tuitionRates,
   address,
   phone,
 } = {}) {
@@ -456,6 +458,11 @@ function buildAcademySettingsPayload({
   if (tuitionPolicy !== undefined) {
     out.tuition_policy = tuitionPolicy || 'class';
     out.tuition_policy_onboarded_at = new Date().toISOString();
+  }
+  if (tuitionRates !== undefined) {
+    out.tuition_rates = tuitionRates && typeof tuitionRates === 'object'
+      ? tuitionRates
+      : {};
   }
   if (address !== undefined) out.address = (address || '').trim() || null;
   if (phone !== undefined) out.phone = (phone || '').trim() || null;
@@ -471,6 +478,7 @@ export async function createAcademyAsOwner({
   academySubjects,
   clinicRequired,
   tuitionPolicy,
+  tuitionRates,
   address,
   phone,
 } = {}) {
@@ -485,6 +493,7 @@ export async function createAcademyAsOwner({
     academySubjects,
     clinicRequired,
     tuitionPolicy,
+    tuitionRates,
     address,
     phone,
   });
@@ -494,6 +503,10 @@ export async function createAcademyAsOwner({
     .select()
     .single();
   if (aErr && isMissingAcademySettingsColumnError(aErr)) {
+    const missingColumnMessage = `${aErr?.message || ''} ${aErr?.details || ''}`.toLowerCase();
+    if (missingColumnMessage.includes('tuition_rates')) {
+      throw new Error('수강료 가격표 저장을 위해 SQL 033을 먼저 적용해주세요.');
+    }
     const retry = await supabase
       .from('academies')
       .insert(basePayload)
@@ -540,6 +553,11 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
     dbPatch.tuition_policy = patch.tuitionPolicy || 'class';
     dbPatch.tuition_policy_onboarded_at = new Date().toISOString();
   }
+  if (patch.tuitionRates !== undefined) {
+    dbPatch.tuition_rates = patch.tuitionRates && typeof patch.tuitionRates === 'object'
+      ? patch.tuitionRates
+      : {};
+  }
   if (patch.address !== undefined) dbPatch.address = (patch.address || '').trim() || null;
   if (patch.phone !== undefined) dbPatch.phone = (patch.phone || '').trim() || null;
   if (patch.markOnboarded === true) dbPatch.academy_onboarded_at = new Date().toISOString();
@@ -575,6 +593,9 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
   if (error && isMissingAcademySettingsColumnError(error)) {
     if (dbPatch.address !== undefined || dbPatch.phone !== undefined) {
       throw new Error('학원 주소·전화번호 저장을 위해 SQL 031을 먼저 적용해주세요.');
+    }
+    if (dbPatch.tuition_rates !== undefined) {
+      throw new Error('수강료 가격표 저장을 위해 SQL 033을 먼저 적용해주세요.');
     }
     if (dbPatch.tuition_policy !== undefined) {
       throw new Error('수강료 기준 저장을 위해 SQL 030을 먼저 적용해주세요.');

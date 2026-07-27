@@ -93,6 +93,10 @@ function syncAcademyProfileFromServer(academy) {
       : ['korean', 'english', 'math'],
     clinicRequired: academy.clinic_required !== false,
     tuitionPolicy: academy.tuition_policy || 'class',
+    tuitionRates:
+      academy.tuition_rates && typeof academy.tuition_rates === 'object'
+        ? academy.tuition_rates
+        : {},
     address: academy.address ?? localProfile.address ?? '',
     phone: academy.phone ?? localProfile.phone ?? '',
   });
@@ -694,6 +698,7 @@ const useWorkspaceStore = create(
         academySubjects,
         clinicRequired,
         tuitionPolicy,
+        tuitionRates,
         address,
         phone,
       } = {}) => {
@@ -708,6 +713,7 @@ const useWorkspaceStore = create(
             academySubjects,
             clinicRequired,
             tuitionPolicy,
+            tuitionRates,
             address,
             phone,
           });

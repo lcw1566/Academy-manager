@@ -155,6 +155,7 @@ function createDefaultAcademyProfile() {
     academySubjects: ['korean', 'english', 'math'],
     clinicRequired: true,
     tuitionPolicy: 'class',
+    tuitionRates: {},
   };
 }
 
@@ -917,6 +918,7 @@ const useAcademyStore = create(
         academySubjects: ['korean', 'english', 'math'],
         clinicRequired: true,
         tuitionPolicy: 'class',
+        tuitionRates: {},
       },
       academyStudents: [],
       classGroups: [],

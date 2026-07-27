@@ -23,6 +23,7 @@ import {
   ACADEMY_SUBJECT_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
   getSchoolLevelKey,
+  getTuitionRateForLevel,
   getTuitionPolicyLabel,
 } from '../../../constants/academySettings';
 import {
@@ -411,6 +412,13 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
 
   const findRecentTuition = (level) => {
     if (!level || tuitionPolicy === 'class') return '';
+    const configuredTuition = getTuitionRateForLevel(
+      academyProfile?.tuitionRates,
+      tuitionPolicy,
+      level,
+    );
+    if (configuredTuition > 0) return String(configuredTuition);
+
     const basis = tuitionPolicy === 'school_level' ? getSchoolLevelKey(level) : level;
     const matched = [...(classGroups || [])].reverse().find((group) => {
       if (group.id === editGroup?.id || Number(group.monthlyFee) <= 0) return false;
