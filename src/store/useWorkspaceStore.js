@@ -71,6 +71,11 @@ const WORKSPACE_PICKED_SESSION_KEY = 'workspace-picked';
 const LEGACY_WORKSPACE_STORAGE_KEY = 'academy-manager-workspace';
 const WORKSPACE_STORAGE_KEY = 'seenit-workspace';
 
+// React StrictMode나 인증 상태 이벤트가 짧은 간격으로 겹쳐도 로그인 초기화 요청을
+// 두 벌씩 보내지 않도록 같은 사용자의 실행 중인 Promise를 공유한다.
+let workspaceInitializationPromise = null;
+let workspaceInitializationUserId = null;
+
 function ensureCurrentAcademyDataScope(academyId) {
   const userId = useAuthStore.getState().user?.id;
   if (!userId || !academyId) return;
@@ -1619,40 +1624,77 @@ const useWorkspaceStore = create(
         return created;
       },
 
-      // 로그인 직후 호출: 모든 서버 데이터 일괄 동기화
+      // 로그인 직후 호출.
+      // 화면 진입에 필요한 프로필/멤버십만 먼저 확인하고, 무거운 도메인 데이터는
+      // 각 로더의 loading 상태를 사용해 백그라운드에서 동기화한다. 한 요청이라도
+      // 늦어질 때 앱 전체가 무기한 로딩 화면에 머무는 것을 방지한다.
       initializeWorkspace: async () => {
         if (!isSupabaseConfigured) return;
-        set({ isWorkspaceLoading: true, workspaceError: null });
+        const authUserId = useAuthStore.getState().user?.id;
+        if (!authUserId) return;
+
+        if (
+          workspaceInitializationPromise
+          && workspaceInitializationUserId === authUserId
+        ) {
+          return workspaceInitializationPromise;
+        }
+
+        const initialization = (async () => {
+          set({ isWorkspaceLoading: true, workspaceError: null });
+          try {
+            // 두 조회는 서로 의존하지 않으므로 동시에 실행한다.
+            await Promise.all([
+              get().syncProfile(),
+              get().loadMemberships(),
+            ]);
+
+            // 권한/학원 선택에 필요한 정보가 준비되면 즉시 첫 화면을 연다.
+            set({ isWorkspaceReady: true, isWorkspaceLoading: false });
+
+            // 아래 데이터는 화면별 로딩 상태로 갱신한다. 실패는 각 로더가 자체
+            // 에러 상태에 기록하므로 전체 로그인 성공 여부를 막지 않는다.
+            void Promise.allSettled([
+              get().loadServerStudents(),
+              get().loadServerClassGroups(),
+              get().loadServerClassSessions(),
+              get().loadServerLessonRecords(),
+              get().loadServerAttendanceRecords(),
+              get().loadServerClinicRecords(),
+              get().loadServerPayments(),
+              get().loadServerPayrolls(),
+              get().loadMyPendingInvitations(),
+              get().loadAcademyMemberProfiles(),
+              get().loadAcademyStaffProfiles(),
+              get().loadAcademyInvitations(),
+              get().loadServerStaffShifts(),
+              get().loadStudentCheckEvents(),
+              // Phase 44.5 / Phase A — 룰/예외 캐시는 best-effort.
+              get().loadStaffWorkRules(),
+              get().loadStaffWorkExceptions(),
+              get().loadClassScheduleRules(),
+              get().loadClassSessionExceptions(),
+              // Phase 44.7 / Phase C — 실제 출근 로그도 best-effort 로드.
+              get().loadStaffAttendanceLogs({ limit: 200 }),
+            ]);
+          } finally {
+            // 필수 조회가 예외를 던진 경우에도 전역 로딩은 반드시 해제한다.
+            // 현재 syncProfile/loadMemberships는 오류를 자체 처리하지만, 이후
+            // 구현 변경으로 예외가 전파돼도 무한 로딩이 생기지 않게 방어한다.
+            set({ isWorkspaceLoading: false });
+          }
+        })();
+
+        workspaceInitializationPromise = initialization;
+        workspaceInitializationUserId = authUserId;
+
         try {
-          await get().syncProfile();
-          await get().loadMemberships();
-          await Promise.all([
-            get().loadServerStudents(),
-            get().loadServerClassGroups(),
-            get().loadServerClassSessions(),
-            get().loadServerLessonRecords(),
-            get().loadServerAttendanceRecords(),
-            get().loadServerClinicRecords(),
-            get().loadServerPayments(),
-            get().loadServerPayrolls(),
-            get().loadMyPendingInvitations(),
-            get().loadAcademyMemberProfiles(),
-            get().loadAcademyStaffProfiles(),
-            get().loadAcademyInvitations(),
-            get().loadServerStaffShifts(),
-            get().loadStudentCheckEvents(),
-            // Phase 44.5 / Phase A — 룰/예외 캐시는 best-effort. 실패해도 워크스페이스
-            // 초기화는 성공으로 처리. staff_attendance_logs 는 Phase C 까지 빈 채로 둠.
-            get().loadStaffWorkRules(),
-            get().loadStaffWorkExceptions(),
-            get().loadClassScheduleRules(),
-            get().loadClassSessionExceptions(),
-            // Phase 44.7 / Phase C — 실제 출근 로그도 best-effort 로드.
-            get().loadStaffAttendanceLogs({ limit: 200 }),
-          ]);
-          set({ isWorkspaceReady: true });
+          return await initialization;
         } finally {
-          set({ isWorkspaceLoading: false });
+          if (workspaceInitializationPromise === initialization) {
+            workspaceInitializationPromise = null;
+            workspaceInitializationUserId = null;
+          }
         }
       },
     }),

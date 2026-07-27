@@ -370,7 +370,7 @@ export default function App() {
     if (hydratingRef.current) return;
     if (wasAutoHydratedThisSession(currentAcademyId)) return;
 
-    // 핵심 카운터가 한 번이라도 로딩 끝났는지 (initializeWorkspace 의 Promise.all 완료)
+    // 핵심 카운터가 백그라운드 초기 로딩을 한 번이라도 마쳤는지
     const hasInitialServerLoad = !!(
       serverStudentsLoadedAt && serverClassGroupsLoadedAt && serverClassSessionsLoadedAt
     );
