@@ -663,7 +663,7 @@ function AcademyProfileModal({
           />
         </div>
         <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">주소</label>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">학원 주소</label>
           <input
             value={form.address}
             onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
@@ -672,7 +672,7 @@ function AcademyProfileModal({
           />
         </div>
         <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">대표 연락처</label>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">학원 전화번호</label>
           <input
             value={form.phone}
             onChange={(e) => setForm((f) => ({ ...f, phone: formatPhoneNumber(e.target.value) }))}

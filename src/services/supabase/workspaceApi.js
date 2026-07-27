@@ -446,6 +446,8 @@ function buildAcademySettingsPayload({
   academySubjects,
   clinicRequired,
   tuitionPolicy,
+  address,
+  phone,
 } = {}) {
   const out = {};
   if (academyType !== undefined) out.academy_type = academyType || null;
@@ -455,6 +457,8 @@ function buildAcademySettingsPayload({
     out.tuition_policy = tuitionPolicy || 'class';
     out.tuition_policy_onboarded_at = new Date().toISOString();
   }
+  if (address !== undefined) out.address = (address || '').trim() || null;
+  if (phone !== undefined) out.phone = (phone || '').trim() || null;
   out.academy_onboarded_at = new Date().toISOString();
   return out;
 }
@@ -467,6 +471,8 @@ export async function createAcademyAsOwner({
   academySubjects,
   clinicRequired,
   tuitionPolicy,
+  address,
+  phone,
 } = {}) {
   const user = await getCurrentUserOrThrow();
   const trimmed = (name ?? '').trim();
@@ -479,6 +485,8 @@ export async function createAcademyAsOwner({
     academySubjects,
     clinicRequired,
     tuitionPolicy,
+    address,
+    phone,
   });
   let { data: academy, error: aErr } = await supabase
     .from('academies')
@@ -566,7 +574,7 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
   let { data, error } = await runUpdate(dbPatch);
   if (error && isMissingAcademySettingsColumnError(error)) {
     if (dbPatch.address !== undefined || dbPatch.phone !== undefined) {
-      throw new Error('학원 주소·연락처 저장을 위해 SQL 031을 먼저 적용해주세요.');
+      throw new Error('학원 주소·전화번호 저장을 위해 SQL 031을 먼저 적용해주세요.');
     }
     if (dbPatch.tuition_policy !== undefined) {
       throw new Error('수강료 기준 저장을 위해 SQL 030을 먼저 적용해주세요.');

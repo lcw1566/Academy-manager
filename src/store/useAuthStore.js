@@ -12,6 +12,11 @@ import { disableCurrentPushDevice } from '../services/pushNotifications';
 
 let authSubscription = null;
 let authInitializationPromise = null;
+let signOutPromise = null;
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 const useAuthStore = create((set, get) => ({
   user: null,
@@ -121,22 +126,53 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  signOutUser: async () => {
-    set({ isAuthLoading: true, authError: null });
-    try {
-      try {
-        await disableCurrentPushDevice();
-      } catch (pushError) {
+  signOutUser: () => {
+    if (signOutPromise) return signOutPromise;
+
+    const previousAuth = {
+      session: get().session,
+      user: get().user,
+      isAuthenticated: get().isAuthenticated,
+    };
+
+    // 사용자가 누른 즉시 랜딩 화면으로 전환한다. 원격 세션/푸시 정리는 아래에서
+    // 계속 진행하고, 실제 로그아웃 실패 시에만 이전 인증 상태를 복구한다.
+    set({
+      session: null,
+      user: null,
+      isAuthenticated: false,
+      isAuthLoading: true,
+      authError: null,
+    });
+
+    const operation = (async () => {
+      const pushCleanup = disableCurrentPushDevice().catch((pushError) => {
         console.warn('[push] device disable on sign-out failed', pushError?.message || pushError);
+      });
+
+      try {
+        // 서버의 push_devices 비활성화 요청이 먼저 출발할 짧은 시간을 주되,
+        // 느린 푸시 서버 때문에 세션 종료가 계속 밀리지는 않게 한다.
+        await Promise.race([pushCleanup, wait(600)]);
+        await signOut();
+        void pushCleanup;
+      } catch (err) {
+        set({
+          ...previousAuth,
+          authError: err?.message ?? '로그아웃에 실패했습니다.',
+        });
+        throw err;
+      } finally {
+        set({ isAuthLoading: false });
       }
-      await signOut();
-      set({ session: null, user: null, isAuthenticated: false });
-    } catch (err) {
-      set({ authError: err?.message ?? '로그아웃에 실패했습니다.' });
-      throw err;
-    } finally {
-      set({ isAuthLoading: false });
-    }
+    })();
+
+    signOutPromise = operation;
+    const clearSignOutPromise = () => {
+      if (signOutPromise === operation) signOutPromise = null;
+    };
+    void operation.then(clearSignOutPromise, clearSignOutPromise);
+    return operation;
   },
 }));
 

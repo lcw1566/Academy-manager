@@ -694,6 +694,8 @@ const useWorkspaceStore = create(
         academySubjects,
         clinicRequired,
         tuitionPolicy,
+        address,
+        phone,
       } = {}) => {
         if (!isSupabaseConfigured) {
           throw new Error('Supabase가 설정되지 않았어요.');
@@ -706,6 +708,8 @@ const useWorkspaceStore = create(
             academySubjects,
             clinicRequired,
             tuitionPolicy,
+            address,
+            phone,
           });
           const memberships = await getMyAcademyMemberships();
           ensureCurrentAcademyDataScope(academy.id);

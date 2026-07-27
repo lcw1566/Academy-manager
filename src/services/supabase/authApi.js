@@ -73,7 +73,9 @@ export async function resendSignUpConfirmation(email) {
 
 export async function signOut() {
   assertSupabaseConfigured();
-  const { error } = await supabase.auth.signOut();
+  // 일반 로그아웃은 현재 기기의 세션만 종료한다. 기본 global scope는 사용자의
+  // 다른 PC/휴대폰 세션까지 폐기하는 원격 요청이라 불필요하게 무겁다.
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
   if (error) throw error;
 }
 

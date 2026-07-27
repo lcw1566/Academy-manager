@@ -7,7 +7,7 @@ import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAcademyStore from '../../store/useAcademyStore';
 import { fetchAcademySnapshot } from '../../services/supabase/hydrateApi';
-import { roleMap, appRoleToLabel } from '../../utils/format';
+import { roleMap, appRoleToLabel, formatPhoneNumber } from '../../utils/format';
 import {
   ACADEMY_SUBJECT_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
@@ -75,6 +75,8 @@ export default function WorkspaceSection() {
 
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
+  const [address, setAddress] = useState('');
+  const [phone, setPhone] = useState('');
   const [academySubjects, setAcademySubjects] = useState(DEFAULT_ACADEMY_SETTINGS.academySubjects);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
   const [tuitionPolicy, setTuitionPolicy] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
@@ -169,6 +171,8 @@ export default function WorkspaceSection() {
         academySubjects,
         clinicRequired,
         tuitionPolicy,
+        address,
+        phone,
       });
       setAcademyProfile({
         name: trimmed,
@@ -176,9 +180,13 @@ export default function WorkspaceSection() {
         academySubjects,
         clinicRequired,
         tuitionPolicy,
+        address: address.trim(),
+        phone: phone.trim(),
       });
       showToast('학원 워크스페이스가 생성되었어요.');
       setName('');
+      setAddress('');
+      setPhone('');
       setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
       setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
       setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
@@ -193,6 +201,8 @@ export default function WorkspaceSection() {
   const handleCancel = () => {
     setCreating(false);
     setName('');
+    setAddress('');
+    setPhone('');
     setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
     setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
@@ -261,10 +271,14 @@ export default function WorkspaceSection() {
           creating={creating}
           submitting={submitting}
           name={name}
+          address={address}
+          phone={phone}
           academySubjects={academySubjects}
           clinicRequired={clinicRequired}
           tuitionPolicy={tuitionPolicy}
           onNameChange={setName}
+          onAddressChange={setAddress}
+          onPhoneChange={setPhone}
           onSubjectToggle={toggleAcademySubject}
           onClinicRequiredChange={setClinicRequired}
           onTuitionPolicyChange={setTuitionPolicy}
@@ -328,11 +342,15 @@ export default function WorkspaceSection() {
         creating ? (
           <InlineCreateForm
             name={name}
+            address={address}
+            phone={phone}
             academySubjects={academySubjects}
             clinicRequired={clinicRequired}
             tuitionPolicy={tuitionPolicy}
             submitting={submitting}
             onNameChange={setName}
+            onAddressChange={setAddress}
+            onPhoneChange={setPhone}
             onSubjectToggle={toggleAcademySubject}
             onClinicRequiredChange={setClinicRequired}
             onTuitionPolicyChange={setTuitionPolicy}
@@ -407,8 +425,9 @@ function CurrentAcademyCard({ academyName, membershipRole, lastSyncedLabel, onRe
 // "마지막 동기화 HH:mm + 새로고침" 만 노출한다. 자동 hydrate 가 정상 흐름.
 
 function EmptyCard({
-  loading, creating, submitting, name, academySubjects, clinicRequired, tuitionPolicy,
-  onNameChange, onSubjectToggle, onClinicRequiredChange, onTuitionPolicyChange,
+  loading, creating, submitting, name, address, phone, academySubjects, clinicRequired, tuitionPolicy,
+  onNameChange, onAddressChange, onPhoneChange,
+  onSubjectToggle, onClinicRequiredChange, onTuitionPolicyChange,
   onStart, onSubmit, onCancel, deemphasized,
 }) {
   // staff 계정은 학원을 직접 만들기보다 초대 수락 흐름을 권장하므로
@@ -439,11 +458,15 @@ function EmptyCard({
       ) : creating ? (
         <InlineCreateForm
           name={name}
+          address={address}
+          phone={phone}
           academySubjects={academySubjects}
           clinicRequired={clinicRequired}
           tuitionPolicy={tuitionPolicy}
           submitting={submitting}
           onNameChange={onNameChange}
+          onAddressChange={onAddressChange}
+          onPhoneChange={onPhoneChange}
           onSubjectToggle={onSubjectToggle}
           onClinicRequiredChange={onClinicRequiredChange}
           onTuitionPolicyChange={onTuitionPolicyChange}
@@ -576,8 +599,9 @@ function InvitationsCard({ invitations, loading, acceptingId, onAccept, onRefres
 }
 
 function InlineCreateForm({
-  name, academySubjects, clinicRequired, tuitionPolicy, submitting,
-  onNameChange, onSubjectToggle, onClinicRequiredChange, onTuitionPolicyChange,
+  name, address, phone, academySubjects, clinicRequired, tuitionPolicy, submitting,
+  onNameChange, onAddressChange, onPhoneChange,
+  onSubjectToggle, onClinicRequiredChange, onTuitionPolicyChange,
   onSubmit, onCancel, variant,
 }) {
   const containerClass =
@@ -593,6 +617,23 @@ function InlineCreateForm({
         placeholder="학원 이름"
         disabled={submitting}
         className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 disabled:opacity-60"
+      />
+      <input
+        value={address}
+        onChange={(e) => onAddressChange(e.target.value)}
+        placeholder="학원 주소"
+        autoComplete="street-address"
+        disabled={submitting}
+        className="mt-2 w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 disabled:opacity-60"
+      />
+      <input
+        value={phone}
+        onChange={(e) => onPhoneChange(formatPhoneNumber(e.target.value))}
+        placeholder="학원 전화번호"
+        inputMode="tel"
+        autoComplete="tel"
+        disabled={submitting}
+        className="mt-2 w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 disabled:opacity-60"
       />
       <SubjectChipGroup
         subjects={academySubjects}

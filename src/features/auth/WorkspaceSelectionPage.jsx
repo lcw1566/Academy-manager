@@ -23,7 +23,7 @@ import {
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAcademyStore from '../../store/useAcademyStore';
-import { roleMap } from '../../utils/format';
+import { formatPhoneNumber, roleMap } from '../../utils/format';
 import {
   ACADEMY_SUBJECT_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
@@ -70,6 +70,8 @@ export default function WorkspaceSelectionPage() {
   const [creating, setCreating] = useState(false);
   const [createStep, setCreateStep] = useState(0);
   const [newAcademyName, setNewAcademyName] = useState('');
+  const [academyAddress, setAcademyAddress] = useState('');
+  const [academyPhone, setAcademyPhone] = useState('');
   const [academySubjects, setAcademySubjects] = useState(DEFAULT_ACADEMY_SETTINGS.academySubjects);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
   const [tuitionPolicy, setTuitionPolicy] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
@@ -135,6 +137,8 @@ export default function WorkspaceSelectionPage() {
         academySubjects,
         clinicRequired,
         tuitionPolicy,
+        address: academyAddress,
+        phone: academyPhone,
       });
       let attendanceSettingsSaved = true;
       try {
@@ -157,6 +161,8 @@ export default function WorkspaceSelectionPage() {
         academySubjects,
         clinicRequired,
         tuitionPolicy,
+        address: academyAddress.trim(),
+        phone: academyPhone.trim(),
       });
       showToast(
         attendanceSettingsSaved
@@ -178,6 +184,8 @@ export default function WorkspaceSelectionPage() {
   const resetCreateForm = () => {
     setCreateStep(0);
     setNewAcademyName('');
+    setAcademyAddress('');
+    setAcademyPhone('');
     setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
     setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
@@ -315,6 +323,8 @@ export default function WorkspaceSelectionPage() {
               <AcademyCreateOnboarding
                 step={createStep}
                 name={newAcademyName}
+                address={academyAddress}
+                phone={academyPhone}
                 subjects={academySubjects}
                 clinicRequired={clinicRequired}
                 tuitionPolicy={tuitionPolicy}
@@ -322,6 +332,8 @@ export default function WorkspaceSelectionPage() {
                 studentCheckMethod={studentCheckMethod}
                 submitting={createSubmitting}
                 onNameChange={setNewAcademyName}
+                onAddressChange={setAcademyAddress}
+                onPhoneChange={setAcademyPhone}
                 onSubjectToggle={toggleAcademySubject}
                 onClinicRequiredChange={setClinicRequired}
                 onTuitionPolicyChange={setTuitionPolicy}
@@ -382,6 +394,8 @@ export default function WorkspaceSelectionPage() {
 function AcademyCreateOnboarding({
   step,
   name,
+  address,
+  phone,
   subjects,
   clinicRequired,
   tuitionPolicy,
@@ -389,6 +403,8 @@ function AcademyCreateOnboarding({
   studentCheckMethod,
   submitting,
   onNameChange,
+  onAddressChange,
+  onPhoneChange,
   onSubjectToggle,
   onClinicRequiredChange,
   onTuitionPolicyChange,
@@ -401,7 +417,7 @@ function AcademyCreateOnboarding({
   const isNameReady = !!name.trim();
   const isSubjectReady = subjects.length > 0;
   const steps = [
-    { title: '학원 이름을 알려주세요', desc: '원장님과 강사들이 함께 볼 학원 이름이에요.' },
+    { title: '학원 기본 정보를 알려주세요', desc: '학원 이름, 주소와 전화번호는 나중에도 변경할 수 있어요.' },
     { title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 학원 프로필에서 바꿀 수 있어요.' },
     { title: '수강료 기준은 무엇인가요?', desc: '반을 만들 때 같은 기준의 최근 금액을 불러와요.' },
     { title: '클리닉을 어떻게 쓸까요?', desc: '수업 후 자습·보완 기록의 기본값이에요.' },
@@ -449,13 +465,39 @@ function AcademyCreateOnboarding({
       </div>
 
       {step === 0 && (
-        <input
-          value={name}
-          onChange={(e) => onNameChange(e.target.value)}
-          placeholder="예: 우리 학원"
-          className="w-full px-4 py-3.5 border border-gray-200 rounded-2xl text-base focus:outline-none focus:border-blue-500"
-          autoFocus
-        />
+        <div className="flex flex-col gap-3">
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold text-gray-600">학원 이름</span>
+            <input
+              value={name}
+              onChange={(e) => onNameChange(e.target.value)}
+              placeholder="예: 우리 학원"
+              className="w-full px-4 py-3.5 border border-gray-200 rounded-2xl text-base focus:outline-none focus:border-blue-500"
+              autoFocus
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold text-gray-600">학원 주소</span>
+            <input
+              value={address}
+              onChange={(e) => onAddressChange(e.target.value)}
+              placeholder="예: 서울시 강남구 테헤란로 00"
+              autoComplete="street-address"
+              className="w-full px-4 py-3.5 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:border-blue-500"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold text-gray-600">학원 전화번호</span>
+            <input
+              value={phone}
+              onChange={(e) => onPhoneChange(formatPhoneNumber(e.target.value))}
+              placeholder="02-0000-0000"
+              inputMode="tel"
+              autoComplete="tel"
+              className="w-full px-4 py-3.5 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:border-blue-500"
+            />
+          </label>
+        </div>
       )}
 
       {step === 1 && (
