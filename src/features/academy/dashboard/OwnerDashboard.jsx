@@ -5,8 +5,11 @@ import useAcademyStore from '../../../store/useAcademyStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { today, formatDateShort, greetingByTime } from '../../../utils/date';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
-import { classifyShiftStatus, readAttendanceSettings } from '../attendance/attendanceHelpers';
-import QrDisplayPage from '../attendance/QrDisplayPage';
+import {
+  classifyShiftStatus,
+  openQrDisplayWindow,
+  readAttendanceSettings,
+} from '../attendance/attendanceHelpers';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
 import {
   buildPlannedClassSessions,
@@ -57,7 +60,6 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
 
   const [selectedDate, setSelectedDate] = useState(today());
-  const [showQrDisplay, setShowQrDisplay] = useState(false);
   const todayStr = today();
 
   const recentAttendanceEvents = useMemo(() => {
@@ -229,14 +231,16 @@ export default function OwnerDashboard({ operationsOnly = false }) {
             <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 학원 운영</h2>
             <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)} · {academyProfile.name || '학원'}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowQrDisplay(true)}
-            className="h-11 px-4 rounded-2xl bg-[#0064FF] text-white text-sm font-bold flex items-center gap-1.5 shadow-sm active:bg-[#0050CC]"
-          >
-            <QrCode size={15} />
-            공용 QR
-          </button>
+          {(attendance.staffCheckMethod === 'qr' || attendance.studentCheckMethod === 'qr') && (
+            <button
+              type="button"
+              onClick={openQrDisplayWindow}
+              className="h-11 px-4 rounded-2xl bg-[#0064FF] text-white text-sm font-bold flex items-center gap-1.5 shadow-sm active:bg-[#0050CC]"
+            >
+              <QrCode size={15} />
+              공용 QR
+            </button>
+          )}
         </div>
       </div>
 
@@ -424,9 +428,6 @@ export default function OwnerDashboard({ operationsOnly = false }) {
         </div>
       )}
 
-      {showQrDisplay && (
-        <QrDisplayPage onClose={() => setShowQrDisplay(false)} />
-      )}
     </div>
   );
 }

@@ -18,7 +18,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Building2, ChevronRight, LogOut, Plus, Inbox, Loader2, Mail, Check,
-  QrCode, MousePointerClick, Users,
+  QrCode, MousePointerClick, Users, Ban,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -320,7 +320,7 @@ export default function WorkspaceSelectionPage() {
           <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
             <p className="text-sm font-bold text-gray-900 mb-1">아직 학원이 없어요</p>
             <p className="text-xs text-gray-500 leading-relaxed mb-4">
-              학원을 만들면 강사·보조강사를 초대하고 학생을 관리할 수 있어요.
+              학원을 만들면 선생님을 초대하고 학생을 관리할 수 있어요.
             </p>
             {creating ? (
               <AcademyCreateOnboarding
@@ -420,10 +420,10 @@ function AcademyCreateOnboarding({
   const isNameReady = !!name.trim();
   const isSubjectReady = subjects.length > 0;
   const steps = [
-    { emoji: '🏫', title: '학원 기본 정보를 알려주세요', desc: '학원 이름, 주소와 전화번호는 나중에도 변경할 수 있어요.' },
-    { emoji: '📚', title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 학원 프로필에서 바꿀 수 있어요.' },
-    { emoji: '💳', title: '수강료 가격표를 설정해주세요', desc: '학교급별이 기본이에요. 필요하면 기준과 과목별 금액을 바꿀 수 있어요.' },
-    { emoji: '📝', title: '클리닉을 어떻게 쓸까요?', desc: '수업 후 자습·보완 기록의 기본값이에요.' },
+    { emoji: '🏫', title: '학원 기본 정보를 알려주세요', desc: '학원 기본정보는 나중에도 변경할 수 있어요.' },
+    { emoji: '📚', title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 수정할 수 있어요.' },
+    { emoji: '💳', title: '수강료 가격표를 설정해주세요', desc: '필요하면 세부설정을 바꿀 수 있어요.' },
+    { emoji: '📝', title: '클리닉을 어떻게 쓸까요?', desc: '수업 후 자습이 기본값이에요.' },
     { emoji: '⏱️', title: '직원 출퇴근은 어떻게 기록할까요?', desc: '직접 기록하거나 QR을 사용할 수 있어요.' },
     { emoji: '✅', title: '학생 등하원은 어떻게 기록할까요?', desc: '학원에 맞는 방식을 골라주세요.' },
   ];
@@ -588,7 +588,7 @@ function AcademyCreateOnboarding({
             selected={staffCheckMethod === 'qr'}
             Icon={QrCode}
             title="QR로 출퇴근"
-            description="학원 공용 QR을 스캔해야 출퇴근이 기록돼요."
+            description="공용 QR을 스캔해야 출퇴근이 기록돼요."
             onClick={() => onStaffCheckMethodChange('qr')}
           />
         </div>
@@ -609,6 +609,13 @@ function AcademyCreateOnboarding({
             title="학생 QR 등하원"
             description="학생이 공용 QR과 PIN으로 등·하원을 기록해요."
             onClick={() => onStudentCheckMethodChange('qr')}
+          />
+          <AttendanceMethodChoice
+            selected={studentCheckMethod === 'disabled'}
+            Icon={Ban}
+            title="사용하지 않음"
+            description="등·하원 기능만 끄고 수업 출결은 따로 기록할 수 있어요."
+            onClick={() => onStudentCheckMethodChange('disabled')}
           />
         </div>
       )}

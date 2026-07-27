@@ -94,7 +94,7 @@ begin
   ) then
     alter table public.academies
       add constraint academies_student_check_method_chk
-      check (student_check_method in ('teacher_manual','qr'));
+      check (student_check_method in ('teacher_manual','qr','disabled'));
   end if;
 end$$;
 

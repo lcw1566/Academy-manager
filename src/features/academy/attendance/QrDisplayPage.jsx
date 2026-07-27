@@ -1,7 +1,7 @@
 // QrDisplayPage — Phase 41
 //
-// 공용 단말에 띄우는 풀스크린 QR 화면. owner 가 학원 설정에서 "공용 QR 화면 열기"
-// 로 진입하면 모달이 아니라 전체 viewport 를 점유하는 페이지로 표시한다.
+// 공용 단말에 띄우는 풀스크린 QR 화면. owner 가 "공용 QR 새 창 열기"를 누르면
+// ?qrDisplay=1 전용 창에서 전체 viewport 를 점유하는 페이지로 표시한다.
 //
 // 페이로드: buildPublicCheckinPayload({ academyId, token, purpose: 'shared' }).
 // 토큰은 academies.attendance_qr_token. 자동 회전(20초 간격) — token 회전 시
@@ -40,6 +40,14 @@ export default function QrDisplayPage({ onClose }) {
       : '학생 등하원';
 
   const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = `${academyName} · 공용 QR`;
+    return () => {
+      document.title = previousTitle;
+    };
+  }, [academyName]);
+
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), REFRESH_SEC * 1000);
     return () => clearInterval(id);

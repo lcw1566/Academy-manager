@@ -21,8 +21,10 @@ import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { clearWorkspacePicked } from '../../auth/WorkspaceSelectionPage';
 import AttendanceSettingsSheet from '../attendance/AttendanceSettingsSheet';
-import QrDisplayPage from '../attendance/QrDisplayPage';
-import { readAttendanceSettings } from '../attendance/attendanceHelpers';
+import {
+  openQrDisplayWindow,
+  readAttendanceSettings,
+} from '../attendance/attendanceHelpers';
 import TuitionRateFields from '../onboarding/TuitionRateFields';
 import {
   ACADEMY_SUBJECT_OPTIONS,
@@ -42,7 +44,6 @@ export default function AcademyMorePage() {
   const [showProfileEdit, setShowProfileEdit]         = useState(false);
   const [showUserProfileEdit, setShowUserProfileEdit] = useState(false);
   const [showAttendanceSettings, setShowAttendanceSettings] = useState(false);
-  const [showQrDisplay, setShowQrDisplay]             = useState(false);
 
   const authUserEmail = useAuthStore((s) => s.user?.email);
   const userProfile = useWorkspaceStore((s) => s.profile);
@@ -214,7 +215,7 @@ export default function AcademyMorePage() {
           }}
           onOpenQrDisplay={() => {
             setShowProfileEdit(false);
-            setShowQrDisplay(true);
+            openQrDisplayWindow();
           }}
         />
       )}
@@ -233,10 +234,6 @@ export default function AcademyMorePage() {
         />
       )}
 
-      {/* 공용 QR 화면 (owner 만) */}
-      {showQrDisplay && (
-        <QrDisplayPage onClose={() => setShowQrDisplay(false)} />
-      )}
     </div>
   );
 }
@@ -605,7 +602,12 @@ function AcademyProfileModal({
   const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
   const attendance = readAttendanceSettings(academy);
-  const methodSubtitle = `직원 ${attendance.staffCheckMethod === 'qr' ? 'QR' : '직접 기록'} · 학생 ${attendance.studentCheckMethod === 'qr' ? 'QR' : '직접 체크'}`;
+  const studentMethodLabel = attendance.studentCheckMethod === 'qr'
+    ? 'QR'
+    : attendance.studentCheckMethod === 'disabled'
+      ? '사용 안 함'
+      : '직접 체크';
+  const methodSubtitle = `직원 ${attendance.staffCheckMethod === 'qr' ? 'QR' : '직접 기록'} · 학생 ${studentMethodLabel}`;
   const isQrInUse = attendance.staffCheckMethod === 'qr' || attendance.studentCheckMethod === 'qr';
   const toggleSubject = (subjectId) => {
     setForm((f) => {

@@ -66,6 +66,36 @@ export function getPublicCheckinBaseUrl() {
   return normalizePublicBaseUrl(envBaseUrl) || normalizePublicBaseUrl(windowOrigin);
 }
 
+export function buildQrDisplayUrl() {
+  if (typeof window === 'undefined') return '';
+  try {
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.hash = '';
+    url.searchParams.set('qrDisplay', '1');
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
+export function openQrDisplayWindow() {
+  if (typeof window === 'undefined') return false;
+  const url = buildQrDisplayUrl();
+  if (!url) return false;
+  const popup = window.open(
+    url,
+    'seenit-attendance-qr',
+    'popup=yes,width=1180,height=820,resizable=yes,scrollbars=yes',
+  );
+  if (!popup) {
+    window.alert('QR 새 창을 열지 못했어요. 브라우저의 팝업 차단을 허용해주세요.');
+    return false;
+  }
+  popup.focus?.();
+  return true;
+}
+
 export function buildPublicCheckinUrl({ payload, baseUrl } = {}) {
   const base = normalizePublicBaseUrl(baseUrl || getPublicCheckinBaseUrl());
   if (!base || !payload) return '';

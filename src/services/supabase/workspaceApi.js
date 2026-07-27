@@ -787,7 +787,7 @@ export async function deactivateAcademyStaffProfile({ academyId, userId }) {
 
 // SQL 027 — 직원은 직접 기록 또는 QR을 선택한다. wifi는 계속 지원하지 않는다.
 const STAFF_CHECK_METHODS = new Set(['manual', 'qr']);
-const STUDENT_CHECK_METHODS = new Set(['teacher_manual', 'qr']);
+const STUDENT_CHECK_METHODS = new Set(['teacher_manual', 'qr', 'disabled']);
 
 // SQL 011 의 새 컬럼을 한 번에 업데이트. owner 만 update RLS 통과.
 // 전달된 키만 patch 한다 — undefined 는 무시.
@@ -804,7 +804,7 @@ export async function updateAcademyAttendanceSettings(academyId, patch = {}) {
   }
   if (patch.studentCheckMethod !== undefined) {
     if (!STUDENT_CHECK_METHODS.has(patch.studentCheckMethod)) {
-      throw new Error("student_check_method 는 'teacher_manual' 또는 'qr' 이어야 해요.");
+      throw new Error("student_check_method 는 'teacher_manual', 'qr', 'disabled' 중 하나여야 해요.");
     }
     dbPatch.student_check_method = patch.studentCheckMethod;
   }

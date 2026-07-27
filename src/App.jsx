@@ -13,6 +13,7 @@ import WorkspaceSelectionPage, { wasWorkspacePicked, clearWorkspacePicked } from
 import AppLayout from './components/AppLayout';
 import AcademyAppLayout from './features/academy/AcademyAppLayout';
 import PublicCheckinPage from './features/academy/attendance/PublicCheckinPage';
+import QrDisplayPage from './features/academy/attendance/QrDisplayPage';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import { fetchAcademySnapshot } from './services/supabase/hydrateApi';
@@ -32,6 +33,26 @@ function isPublicCheckinRequest() {
   } catch {
     return false;
   }
+}
+
+function isQrDisplayRequest() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return new URL(window.location.href).searchParams.get('qrDisplay') === '1';
+  } catch {
+    return false;
+  }
+}
+
+function closeQrDisplayPage() {
+  if (typeof window === 'undefined') return;
+  if (window.opener) {
+    window.close();
+    return;
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.delete('qrDisplay');
+  window.location.replace(`${url.pathname}${url.search}${url.hash}`);
 }
 
 // Phase 25 — sessionStorage key per academy. Used to make sure auto-hydrate
@@ -60,6 +81,7 @@ function markAutoHydratedThisSession(academyId) {
 
 export default function App() {
   const isPublicCheckin = isPublicCheckinRequest();
+  const isQrDisplay = isQrDisplayRequest();
   const role = useAcademyStore((s) => s.role);
   const setRole = useAcademyStore((s) => s.setRole);
   const toast = useAcademyStore((s) => s.toast);
@@ -119,14 +141,14 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!isAuthenticated) return undefined;
+    if (!isAuthenticated || isQrDisplay) return undefined;
     initializePushNotifications((data) => openChatNotification(data?.threadId || data?.thread_id))
       .catch((err) => console.warn('[push] initialization failed', err?.message || err));
     return undefined;
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isQrDisplay]);
 
   useEffect(() => {
-    if (!isAuthenticated || typeof window === 'undefined') return undefined;
+    if (!isAuthenticated || isQrDisplay || typeof window === 'undefined') return undefined;
     const openFromPayload = (threadId) => openChatNotification(threadId);
     const url = new URL(window.location.href);
     const initialThreadId = url.searchParams.get('chatThread');
@@ -140,11 +162,12 @@ export default function App() {
     };
     navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage);
     return () => navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isQrDisplay]);
 
   // 웹이 열려 있을 때 들어오는 새 메시지는 OS 알림으로 표시한다. 초기 채팅
   // hydrate 결과는 기준선으로만 저장해 과거 메시지가 한꺼번에 울리지 않게 한다.
   useEffect(() => {
+    if (isQrDisplay) return;
     if (!chatLoadedAt) {
       chatNotificationReadyRef.current = false;
       seenChatMessageIdsRef.current = new Set();
@@ -182,6 +205,7 @@ export default function App() {
     authUserId,
     activeTab,
     activeChatThreadId,
+    isQrDisplay,
   ]);
 
   // server count loaders 완료 여부 — auto-hydrate 진입 가드.
@@ -240,7 +264,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (isPublicCheckin) return undefined;
+    if (isPublicCheckin || isQrDisplay) return undefined;
     if (!isAuthenticated || !isWorkspaceReady) return undefined;
 
     startWorkspaceRealtime();
@@ -277,6 +301,7 @@ export default function App() {
     authUserId,
     currentAcademyId,
     isPublicCheckin,
+    isQrDisplay,
     startWorkspaceRealtime,
     stopWorkspaceRealtime,
     refreshWorkspaceCollaborationState,
@@ -292,13 +317,14 @@ export default function App() {
     [currentAcademyId, memberships],
   );
   useEffect(() => {
-    if (isPublicCheckin) return undefined;
+    if (isPublicCheckin || isQrDisplay) return undefined;
     if (!isAuthenticated || !isWorkspaceReady || !hasAcademyMembership) return undefined;
     loadChat(currentAcademyId);
     startChatRealtime(currentAcademyId);
     return () => stopChatRealtime();
   }, [
     isPublicCheckin,
+    isQrDisplay,
     isAuthenticated,
     isWorkspaceReady,
     hasAcademyMembership,
@@ -323,7 +349,7 @@ export default function App() {
   // role 이 그 값과 다른 동안은 재설정하지 않는다 (Workspace UI 의 수동 전환 보호).
   const autoAppliedRoleRef = useRef(null);
   useEffect(() => {
-    if (isPublicCheckin) return;
+    if (isPublicCheckin || isQrDisplay) return;
     if (!isAuthenticated) return;
     if (!isWorkspaceReady) return; // memberships 가 아직 로딩 중일 수 있음
 
@@ -350,7 +376,7 @@ export default function App() {
     setRole(nextRole);
     autoAppliedRoleRef.current = nextRole;
   }, [
-    isPublicCheckin, isAuthenticated, isWorkspaceReady, memberships, currentAcademyId,
+    isPublicCheckin, isQrDisplay, isAuthenticated, isWorkspaceReady, memberships, currentAcademyId,
     profile?.account_type, role, setRole,
   ]);
 
@@ -366,7 +392,7 @@ export default function App() {
   const hydratingRef = useRef(false);
   const monthEndGenerationRef = useRef(null);
   useEffect(() => {
-    if (isPublicCheckin) return;
+    if (isPublicCheckin || isQrDisplay) return;
     if (!isAuthenticated) return;
     if (!currentAcademyId) return;
     if (hydratingRef.current) return;
@@ -408,14 +434,14 @@ export default function App() {
       }
     })();
   }, [
-    isPublicCheckin, isAuthenticated, currentAcademyId,
+    isPublicCheckin, isQrDisplay, isAuthenticated, currentAcademyId,
     serverStudentsLoadedAt, serverClassGroupsLoadedAt, serverClassSessionsLoadedAt,
     isServerStudentsLoading, isServerClassGroupsLoading, isServerClassSessionsLoading,
     hydrateAcademyFromServerSnapshot, showToast,
   ]);
 
   useEffect(() => {
-    if (isPublicCheckin) return;
+    if (isPublicCheckin || isQrDisplay) return;
     if (!isAuthenticated) return;
     if (!isWorkspaceReady) return;
     if (role !== 'owner') return;
@@ -452,6 +478,7 @@ export default function App() {
   }, [
     isAuthenticated,
     isPublicCheckin,
+    isQrDisplay,
     isWorkspaceReady,
     role,
     currentAcademyId,
@@ -490,6 +517,10 @@ export default function App() {
           />
         );
       }
+    }
+
+    if (isQrDisplay) {
+      return <QrDisplayPage onClose={closeQrDisplayPage} />;
     }
 
     // 직원은 active 멤버십이 생기기 전까지 전용 대기 화면에 머문다. 새 역할 없는

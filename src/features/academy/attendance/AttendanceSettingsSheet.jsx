@@ -11,13 +11,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  QrCode, Loader2, Info, X as XIcon, RefreshCw, Monitor, MousePointerClick, Users, Check,
+  QrCode, Loader2, Info, X as XIcon, RefreshCw, Monitor, MousePointerClick, Users, Check, Ban,
 } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import useAcademyStore from '../../../store/useAcademyStore';
-import { readAttendanceSettings, generateQrToken } from './attendanceHelpers';
-import QrDisplayPage from './QrDisplayPage';
+import {
+  readAttendanceSettings,
+  generateQrToken,
+  openQrDisplayWindow,
+} from './attendanceHelpers';
 
 export default function AttendanceSettingsSheet({ kind = 'settings', onClose }) {
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
@@ -33,12 +36,13 @@ export default function AttendanceSettingsSheet({ kind = 'settings', onClose }) 
 
   const [saving, setSaving] = useState(false);
   const [rotating, setRotating] = useState(false);
-  const [showQrDisplay, setShowQrDisplay] = useState(false);
   const [staffCheckMethod, setStaffCheckMethod] = useState(current.staffCheckMethod);
   const [studentCheckMethod, setStudentCheckMethod] = useState(current.studentCheckMethod);
 
   const isOnboarding = kind === 'onboarding';
   const isQrInUse = staffCheckMethod === 'qr' || studentCheckMethod === 'qr';
+  const isSavedQrInUse =
+    current.staffCheckMethod === 'qr' || current.studentCheckMethod === 'qr';
 
   useEffect(() => {
     setStaffCheckMethod(current.staffCheckMethod);
@@ -161,23 +165,30 @@ export default function AttendanceSettingsSheet({ kind = 'settings', onClose }) 
                 description="공용 QR과 학생 PIN으로 등·하원을 기록해요."
                 onClick={() => setStudentCheckMethod('qr')}
               />
+              <MethodOption
+                selected={studentCheckMethod === 'disabled'}
+                Icon={Ban}
+                title="사용하지 않음"
+                description="등·하원 기능만 끄고 수업 출결은 따로 기록할 수 있어요."
+                onClick={() => setStudentCheckMethod('disabled')}
+              />
             </div>
           </div>
 
           {/* Owner 액션 — onboarding 모드에서는 숨겨서 흐름을 가볍게 한다. */}
-          {!isOnboarding && isQrInUse && (
+          {!isOnboarding && isSavedQrInUse && (
             <div className="flex flex-col gap-2">
               <button
                 type="button"
-                onClick={() => setShowQrDisplay(true)}
+                onClick={openQrDisplayWindow}
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl border border-gray-200 bg-white active:bg-gray-50 text-left"
               >
                 <div className="w-9 h-9 rounded-full bg-indigo-50 flex items-center justify-center">
                   <Monitor size={15} className="text-indigo-600" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-[#191F28]">공용 QR 화면 열기</p>
-                  <p className="text-[11px] text-[#8B95A1] mt-0.5">키오스크/태블릿에 띄워두는 풀스크린 QR</p>
+                  <p className="text-sm font-bold text-[#191F28]">공용 QR 새 창 열기</p>
+                  <p className="text-[11px] text-[#8B95A1] mt-0.5">현재 화면을 유지하고 QR 전용 창을 열어요.</p>
                 </div>
               </button>
               <button
@@ -203,16 +214,13 @@ export default function AttendanceSettingsSheet({ kind = 'settings', onClose }) 
           <div className="mt-1 flex items-start gap-2 bg-[#F8F9FA] rounded-2xl px-3 py-2.5">
             <Info size={13} className="text-[#4E5968] mt-0.5 flex-shrink-0" />
             <p className="text-[11px] text-[#4E5968] leading-relaxed">
-              설정은 나중에도 바꿀 수 있어요. QR을 선택하면 학원 공용 화면에서 같은
-              QR을 사용하고, 직접 체크를 선택하면 각 업무 화면에서 기록해요.
+              설정은 나중에도 바꿀 수 있어요. QR 화면은 별도 창으로 열리고,
+              사용하지 않음을 선택해도 수업 출결 기록은 그대로 사용할 수 있어요.
             </p>
           </div>
         </div>
       </Modal>
 
-      {showQrDisplay && (
-        <QrDisplayPage onClose={() => setShowQrDisplay(false)} />
-      )}
     </>
   );
 }
