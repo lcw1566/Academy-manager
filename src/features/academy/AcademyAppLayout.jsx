@@ -189,12 +189,7 @@ function DesktopChatWindow({ pinned, onPinnedChange, onClose }) {
     >
       <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-4">
         <MessageCircle size={16} className="text-[#0064FF]" />
-        <p className="flex-1 text-sm font-extrabold text-gray-900">씨닛 채팅</p>
-        {pinned && (
-          <span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-600">
-            고정됨
-          </span>
-        )}
+        <p className="flex-1 text-sm font-extrabold text-gray-900">채팅</p>
         <button
           type="button"
           onClick={() => onPinnedChange(!pinned)}

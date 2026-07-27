@@ -20,6 +20,10 @@ import { OWNER_TEACHER_ID } from '../../../utils/format';
 import BulkShiftSuggestionSheet from '../work/BulkShiftSuggestionSheet';
 import { hhmmToMin } from '../../../utils/shiftCoverage';
 import {
+  ACADEMY_SUBJECT_OPTIONS,
+  DEFAULT_ACADEMY_SETTINGS,
+} from '../../../constants/academySettings';
+import {
   buildEffectiveStaffShifts,
   getUncoveredStaffSessions,
 } from '../../../utils/staffShiftCoverage';
@@ -169,18 +173,6 @@ export function matchSessionPairs(localSessions, serverSessions) {
 }
 
 const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
-const SUBJECT_OPTIONS = [
-  { value: '국어', label: '국어' },
-  { value: '영어', label: '영어' },
-  { value: '수학', label: '수학' },
-  { value: '과학', label: '과학' },
-  { value: '사회', label: '사회' },
-  { value: '역사', label: '역사' },
-  { value: '논술', label: '논술' },
-  { value: '한국사', label: '한국사' },
-  { value: '통합과학', label: '통합과학' },
-  { value: '기타', label: '기타' },
-];
 const LEVEL_GROUPS = [
   {
     label: '초등',
@@ -285,6 +277,17 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const [subjectSheetOpen, setSubjectSheetOpen] = useState(false);
   const [levelSheetOpen, setLevelSheetOpen] = useState(false);
   const ownerLabel = academyProfile?.ownerName?.trim() || '원장';
+  const subjectOptions = useMemo(() => {
+    const configuredSubjectIds = Array.isArray(academyProfile?.academySubjects)
+      && academyProfile.academySubjects.length > 0
+      ? academyProfile.academySubjects
+      : DEFAULT_ACADEMY_SETTINGS.academySubjects;
+
+    return configuredSubjectIds
+      .map((subjectId) => ACADEMY_SUBJECT_OPTIONS.find((option) => option.id === subjectId))
+      .filter(Boolean)
+      .map((option) => ({ value: option.label, label: option.label }));
+  }, [academyProfile?.academySubjects]);
 
   // Phase 38 — 요일별 시간 토글. weekdayTimes 가 명시적으로 들어있으면 OFF 로 시작.
   const initialUseSameTime = !editGroup?.weekdayTimes
@@ -699,36 +702,52 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             />
           </Field>
 
-          <Field label="과목">
-            <SelectRow
-              value={form.subject}
-              placeholder="과목을 선택해주세요"
-              onClick={() => setSubjectSheetOpen(true)}
-            />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="과목">
+              <SelectRow
+                value={form.subject}
+                placeholder="과목 선택"
+                onClick={() => setSubjectSheetOpen(true)}
+              />
+            </Field>
 
-          <Field label="학년/레벨">
-            <SelectRow
-              value={form.level}
-              placeholder="학년 또는 레벨을 선택해주세요"
-              onClick={() => setLevelSheetOpen(true)}
-            />
-          </Field>
+            <Field label="학년/레벨">
+              <SelectRow
+                value={form.level}
+                placeholder="학년 선택"
+                onClick={() => setLevelSheetOpen(true)}
+              />
+            </Field>
+          </div>
 
-          <Field label="담당 강사">
-            <select
-              value={form.teacherId}
-              onChange={(e) => set('teacherId', e.target.value)}
-              className="input"
-            >
-              <option value="">강사 선택</option>
-              <option value={OWNER_TEACHER_ID}>{ownerLabel} (원장 본인)</option>
-              {academyTeachers.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-            <AvailabilityBanner status={teacherAvailability} onGoToStaff={goToStaffSchedule} />
-          </Field>
+          <div className="rounded-2xl bg-[#F7F8FA] p-3.5">
+            <p className="mb-3 text-xs font-bold text-[#4E5968]">담당 및 장소</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="담당 강사">
+                <select
+                  value={form.teacherId}
+                  onChange={(e) => set('teacherId', e.target.value)}
+                  className="input bg-white"
+                >
+                  <option value="">강사 선택</option>
+                  <option value={OWNER_TEACHER_ID}>{ownerLabel} (원장 본인)</option>
+                  {academyTeachers.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <AvailabilityBanner status={teacherAvailability} onGoToStaff={goToStaffSchedule} />
+              </Field>
+
+              <Field label="강의실 (선택)">
+                <input
+                  value={form.room}
+                  onChange={(e) => set('room', e.target.value)}
+                  placeholder="예: 1강의실"
+                  className="input bg-white"
+                />
+              </Field>
+            </div>
+          </div>
 
         </div>
 
@@ -867,7 +886,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             <div className="grid grid-cols-2 gap-2">
               <ChoiceCard
                 active={periodEndMode === 'forever'}
-                title="계속 진행"
+                title="종료일 없이"
+                subtitle="다음 달 수업도 자동 생성"
                 onClick={() => {
                   setPeriodEndMode('forever');
                   set('endDate', '');
@@ -875,7 +895,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
               />
               <ChoiceCard
                 active={periodEndMode === 'until'}
-                title="특정 날짜까지"
+                title="종료일 정하기"
+                subtitle="선택한 날짜까지만 생성"
                 onClick={() => setPeriodEndMode('until')}
               />
             </div>
@@ -892,14 +913,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             )}
           </Field>
 
-          <Field label="강의실 (선택)">
-            <input
-              value={form.room}
-              onChange={(e) => set('room', e.target.value)}
-              placeholder="예: 1강의실"
-              className="input"
-            />
-          </Field>
         </div>
 
         {/* ── 하단 · 학생/수강료/메모 (full-width) ─────────────────── */}
@@ -989,13 +1002,13 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
 
           {!editGroup && (
             <div className="bg-blue-50 rounded-xl px-4 py-3">
-              <p className="text-xs text-blue-700 font-semibold mb-1">수업 회차 자동 생성</p>
+              <p className="text-xs text-blue-700 font-semibold mb-1">월별 수업 일정 자동 생성</p>
               <p className="text-xs text-blue-600">
                 매주 {form.weekdays.join(', ') || '선택한 요일'} {form.useSameTime ? `${form.startTime}~${form.endTime}` : '요일별 시간'} 수업이에요.
                 {' '}
                 {periodEndMode === 'until' && form.endDate
-                  ? `${form.startDate}부터 ${form.endDate}까지 진행해요.`
-                  : `${form.startDate}부터 계속 진행해요.`}
+                  ? `${form.startDate}부터 ${form.endDate}까지만 월별로 만들어요.`
+                  : `${form.startDate}부터 시작하고, 다음 달 수업은 월별로 자동 생성해요.`}
               </p>
             </div>
           )}
@@ -1007,7 +1020,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         open={subjectSheetOpen}
         onClose={() => setSubjectSheetOpen(false)}
         title="과목 선택"
-        options={SUBJECT_OPTIONS}
+        options={subjectOptions}
         value={form.subject}
         onSelect={(v) => set('subject', v)}
       />

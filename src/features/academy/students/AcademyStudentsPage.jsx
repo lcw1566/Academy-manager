@@ -101,37 +101,37 @@ export default function AcademyStudentsPage() {
                   <button
                     type="button"
                     onClick={() => navigateToAcademyStudent(student.id)}
-                    className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left"
+                    className="flex min-w-0 flex-1 items-center gap-3 py-3.5 pl-4 pr-2 text-left md:px-4"
                   >
-                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50">
                       <span className="font-bold text-blue-600">{(student.name || '?')[0]}</span>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <p className="font-bold text-gray-900">{student.name}</p>
-                        {student.grade && (
-                          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{student.grade}</span>
-                        )}
-                        <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${statusMeta.badgeClassName}`}>
-                          {statusMeta.label}
+                    <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
+                      <p className="flex-shrink-0 font-bold text-gray-900">{student.name}</p>
+                      {student.grade && (
+                        <span className="flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                          {student.grade}
                         </span>
-                        {pendingCount > 0 && (
-                          <span className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full font-medium">
-                            클리닉 {pendingCount}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {student.school && (
-                          <span className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${getSchoolTagClassName(student.school)}`}>
-                            {student.school}
-                          </span>
-                        )}
-                        {groups.length > 0 && (
-                          <p className="text-xs text-blue-600 font-medium">{groups.map((g) => g.name).join(', ')}</p>
-                        )}
-                      </div>
+                      )}
+                      {student.school && (
+                        <span className={`max-w-28 flex-shrink truncate rounded-md border px-2 py-0.5 text-[11px] font-semibold md:max-w-44 ${getSchoolTagClassName(student.school)}`}>
+                          {student.school}
+                        </span>
+                      )}
+                      {groups.length > 0 && (
+                        <p className="hidden min-w-0 truncate text-xs font-medium text-blue-600 sm:block">
+                          {groups.map((g) => g.name).join(', ')}
+                        </p>
+                      )}
+                      {pendingCount > 0 && (
+                        <span className="hidden flex-shrink-0 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-600 md:inline">
+                          클리닉 {pendingCount}
+                        </span>
+                      )}
                     </div>
+                    <span className={`flex-shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold md:px-2.5 md:text-[11px] ${statusMeta.badgeClassName}`}>
+                      {statusMeta.label}
+                    </span>
                     <ChevronRight size={16} className="hidden text-gray-300 flex-shrink-0 md:block" />
                   </button>
                   {callNumber && (
@@ -139,7 +139,7 @@ export default function AcademyStudentsPage() {
                       href={toTelHref(callNumber)}
                       onClick={(event) => event.stopPropagation()}
                       aria-label={`${student.name} ${student.phone ? '학생' : '학부모'} 연락처로 전화`}
-                      className="mr-3 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 active:scale-95 md:hidden"
+                      className="mr-3 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 active:scale-95 md:hidden"
                     >
                       <Phone size={17} />
                     </a>
