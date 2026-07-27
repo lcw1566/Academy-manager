@@ -123,12 +123,14 @@ export async function updateMyProfileAccountType({ accountType, defaultRole, dis
 // academies / academy_members
 // ────────────────────────────────────────────────────────────────
 
-export async function getMyAcademyMemberships() {
+export async function getMyAcademyMemberships({ includeAcademy = true } = {}) {
   const user = await getCurrentUserOrThrow();
   const { data, error } = await runStartupQuery(
     (signal) => supabase
       .from('academy_members')
-      .select('*, academy:academies(*)')
+      // 로그인 필수 경로에서는 academies 조인을 생략할 수 있다. 학원 설정
+      // 테이블의 DDL/RLS가 지연돼도 본인의 소속과 역할 확인까지 막히지 않는다.
+      .select(includeAcademy ? '*, academy:academies(*)' : '*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true })
       .abortSignal(signal),

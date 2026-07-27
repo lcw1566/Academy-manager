@@ -657,10 +657,13 @@ const useWorkspaceStore = create(
       },
 
       // 멤버십 목록 조회 + currentAcademyId 유효성 검증
-      loadMemberships: async ({ throwOnError = false } = {}) => {
+      loadMemberships: async ({
+        throwOnError = false,
+        includeAcademy = true,
+      } = {}) => {
         if (!isSupabaseConfigured) return [];
         try {
-          const memberships = await getMyAcademyMemberships();
+          const memberships = await getMyAcademyMemberships({ includeAcademy });
           const ids = new Set(memberships.map((m) => m.academy_id));
 
           let currentAcademyId = get().currentAcademyId;
@@ -1648,7 +1651,12 @@ const useWorkspaceStore = create(
             // 두 조회는 서로 의존하지 않으므로 동시에 실행한다.
             await Promise.all([
               get().syncProfile({ throwOnError: true }),
-              get().loadMemberships({ throwOnError: true }),
+              // 로그인에 필요한 소속/역할만 먼저 읽는다. academies 설정 전체는
+              // 아래 백그라운드 재조회에서 합친다.
+              get().loadMemberships({
+                throwOnError: true,
+                includeAcademy: false,
+              }),
             ]);
 
             if (useAuthStore.getState().user?.id !== authUserId) return;
@@ -1659,6 +1667,8 @@ const useWorkspaceStore = create(
             // 아래 데이터는 화면별 로딩 상태로 갱신한다. 실패는 각 로더가 자체
             // 에러 상태에 기록하므로 전체 로그인 성공 여부를 막지 않는다.
             void Promise.allSettled([
+              // 학원 이름·온보딩·수강료·연락처 등 academies 상세를 채운다.
+              get().loadMemberships({ includeAcademy: true }),
               get().loadServerStudents(),
               get().loadServerClassGroups(),
               get().loadServerClassSessions(),
