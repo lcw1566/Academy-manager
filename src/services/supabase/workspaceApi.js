@@ -456,7 +456,7 @@ function buildAcademySettingsPayload({
   if (academySubjects !== undefined) out.academy_subjects = Array.isArray(academySubjects) ? academySubjects : [];
   if (clinicRequired !== undefined) out.clinic_required = clinicRequired !== false;
   if (tuitionPolicy !== undefined) {
-    out.tuition_policy = tuitionPolicy || 'class';
+    out.tuition_policy = tuitionPolicy || 'school_level';
     out.tuition_policy_onboarded_at = new Date().toISOString();
   }
   if (tuitionRates !== undefined) {
@@ -550,7 +550,7 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
   if (patch.academySubjects !== undefined) dbPatch.academy_subjects = Array.isArray(patch.academySubjects) ? patch.academySubjects : [];
   if (patch.clinicRequired !== undefined) dbPatch.clinic_required = patch.clinicRequired !== false;
   if (patch.tuitionPolicy !== undefined) {
-    dbPatch.tuition_policy = patch.tuitionPolicy || 'class';
+    dbPatch.tuition_policy = patch.tuitionPolicy || 'school_level';
     dbPatch.tuition_policy_onboarded_at = new Date().toISOString();
   }
   if (patch.tuitionRates !== undefined) {

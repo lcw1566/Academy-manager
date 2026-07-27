@@ -78,7 +78,7 @@ export default function WorkspaceSection() {
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
-  const [academySubjects, setAcademySubjects] = useState(DEFAULT_ACADEMY_SETTINGS.academySubjects);
+  const [academySubjects, setAcademySubjects] = useState([]);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
   const [tuitionPolicy, setTuitionPolicy] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
   const [tuitionRates, setTuitionRates] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
@@ -191,7 +191,7 @@ export default function WorkspaceSection() {
       setName('');
       setAddress('');
       setPhone('');
-      setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
+      setAcademySubjects([]);
       setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
       setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
       setTuitionRates(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
@@ -208,7 +208,7 @@ export default function WorkspaceSection() {
     setName('');
     setAddress('');
     setPhone('');
-    setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
+    setAcademySubjects([]);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
     setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
     setTuitionRates(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
@@ -662,6 +662,7 @@ function InlineCreateForm({
         policy={tuitionPolicy}
         rates={tuitionRates}
         onChange={onTuitionRatesChange}
+        subjects={academySubjects}
         compact
       />
       <CreateChoiceGroup

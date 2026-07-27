@@ -741,6 +741,7 @@ function AcademyProfileModal({
             policy={form.tuitionPolicy}
             rates={form.tuitionRates}
             onChange={(tuitionRates) => setForm((current) => ({ ...current, tuitionRates }))}
+            subjects={form.academySubjects}
             compact
           />
         </div>

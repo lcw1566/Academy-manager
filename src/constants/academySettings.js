@@ -100,7 +100,7 @@ export const DEFAULT_ACADEMY_SETTINGS = {
   academyType: 'core_subjects',
   academySubjects: ['korean', 'english', 'math'],
   clinicRequired: true,
-  tuitionPolicy: 'class',
+  tuitionPolicy: 'school_level',
   tuitionRates: {},
 };
 
@@ -144,10 +144,8 @@ export function getSchoolLevelKey(level = '') {
   return value ? '기타' : '';
 }
 
-export function getTuitionRateForLevel(tuitionRates = {}, policy, level = '') {
+export function getTuitionRateForLevel(tuitionRates = {}, policy, level = '', subject = '') {
   if (!policy || policy === 'class') return 0;
-  const table = tuitionRates?.[policy];
-  if (!table || typeof table !== 'object' || Array.isArray(table)) return 0;
 
   let key = String(level || '').trim();
   if (policy === 'school_level') {
@@ -157,6 +155,19 @@ export function getTuitionRateForLevel(tuitionRates = {}, policy, level = '') {
     else return 0;
   }
 
-  const amount = Number(table[key]);
-  return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+  const subjectId = ACADEMY_SUBJECT_OPTIONS.find(
+    (option) => option.id === subject || option.label === subject,
+  )?.id;
+  const subjectTable = subjectId
+    ? tuitionRates?.subject_rates?.[policy]?.[subjectId]
+    : null;
+  const subjectAmount = Number(subjectTable?.[key]);
+  if (Number.isFinite(subjectAmount) && subjectAmount > 0) {
+    return Math.round(subjectAmount);
+  }
+
+  const baseTable = tuitionRates?.[policy];
+  if (!baseTable || typeof baseTable !== 'object' || Array.isArray(baseTable)) return 0;
+  const baseAmount = Number(baseTable[key]);
+  return Number.isFinite(baseAmount) && baseAmount > 0 ? Math.round(baseAmount) : 0;
 }

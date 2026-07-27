@@ -154,7 +154,7 @@ function createDefaultAcademyProfile() {
     academyType: 'core_subjects',
     academySubjects: ['korean', 'english', 'math'],
     clinicRequired: true,
-    tuitionPolicy: 'class',
+    tuitionPolicy: 'school_level',
     tuitionRates: {},
   };
 }
@@ -917,7 +917,7 @@ const useAcademyStore = create(
         academyType: 'core_subjects',
         academySubjects: ['korean', 'english', 'math'],
         clinicRequired: true,
-        tuitionPolicy: 'class',
+        tuitionPolicy: 'school_level',
         tuitionRates: {},
       },
       academyStudents: [],

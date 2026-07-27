@@ -3,14 +3,18 @@ import { Check, Loader2 } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { TUITION_POLICY_OPTIONS } from '../../../constants/academySettings';
+import {
+  DEFAULT_ACADEMY_SETTINGS,
+  TUITION_POLICY_OPTIONS,
+} from '../../../constants/academySettings';
 import TuitionRateFields from './TuitionRateFields';
 
 export default function TuitionPolicyOnboardingSheet({ onClose }) {
   const updateAcademyProfileSettings = useWorkspaceStore((state) => state.updateAcademyProfileSettings);
+  const academySubjects = useAcademyStore((state) => state.academyProfile?.academySubjects || []);
   const setAcademyProfile = useAcademyStore((state) => state.setAcademyProfile);
   const showToast = useAcademyStore((state) => state.showToast);
-  const [tuitionPolicy, setTuitionPolicy] = useState('');
+  const [tuitionPolicy, setTuitionPolicy] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
   const [tuitionRates, setTuitionRates] = useState({});
   const [saving, setSaving] = useState(false);
 
@@ -74,6 +78,7 @@ export default function TuitionPolicyOnboardingSheet({ onClose }) {
         policy={tuitionPolicy}
         rates={tuitionRates}
         onChange={setTuitionRates}
+        subjects={academySubjects}
       />
     </Modal>
   );

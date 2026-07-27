@@ -92,7 +92,7 @@ function syncAcademyProfileFromServer(academy) {
       ? academy.academy_subjects
       : ['korean', 'english', 'math'],
     clinicRequired: academy.clinic_required !== false,
-    tuitionPolicy: academy.tuition_policy || 'class',
+    tuitionPolicy: academy.tuition_policy || 'school_level',
     tuitionRates:
       academy.tuition_rates && typeof academy.tuition_rates === 'object'
         ? academy.tuition_rates

@@ -51,7 +51,7 @@ create table if not exists public.academies (
   academy_type          text default 'core_subjects',
   academy_subjects      jsonb not null default '["korean", "english", "math"]'::jsonb,
   clinic_required       boolean not null default true,
-  tuition_policy        text not null default 'class'
+  tuition_policy        text not null default 'school_level'
                         check (tuition_policy in ('school_level', 'grade', 'class')),
   tuition_rates         jsonb not null default '{}'::jsonb,
   tuition_policy_onboarded_at timestamptz,

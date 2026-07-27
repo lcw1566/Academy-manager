@@ -17,7 +17,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Building2, ChevronLeft, ChevronRight, LogOut, Plus, Inbox, Loader2, Mail, Check,
+  Building2, ChevronRight, LogOut, Plus, Inbox, Loader2, Mail, Check,
   QrCode, MousePointerClick, Users,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
@@ -29,6 +29,7 @@ import {
   CLINIC_REQUIRED_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
   TUITION_POLICY_OPTIONS,
+  getTuitionPolicyLabel,
   inferAcademyTypeFromSubjects,
 } from '../../constants/academySettings';
 import { generateQrToken } from '../academy/attendance/attendanceHelpers';
@@ -73,7 +74,7 @@ export default function WorkspaceSelectionPage() {
   const [newAcademyName, setNewAcademyName] = useState('');
   const [academyAddress, setAcademyAddress] = useState('');
   const [academyPhone, setAcademyPhone] = useState('');
-  const [academySubjects, setAcademySubjects] = useState(DEFAULT_ACADEMY_SETTINGS.academySubjects);
+  const [academySubjects, setAcademySubjects] = useState([]);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
   const [tuitionPolicy, setTuitionPolicy] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
   const [tuitionRates, setTuitionRates] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
@@ -190,7 +191,7 @@ export default function WorkspaceSelectionPage() {
     setNewAcademyName('');
     setAcademyAddress('');
     setAcademyPhone('');
-    setAcademySubjects(DEFAULT_ACADEMY_SETTINGS.academySubjects);
+    setAcademySubjects([]);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
     setTuitionPolicy(DEFAULT_ACADEMY_SETTINGS.tuitionPolicy);
     setTuitionRates(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
@@ -423,15 +424,18 @@ function AcademyCreateOnboarding({
   onCancel,
   onCreate,
 }) {
+  const [showTuitionPolicyOptions, setShowTuitionPolicyOptions] = useState(
+    tuitionPolicy !== 'school_level',
+  );
   const isNameReady = !!name.trim();
   const isSubjectReady = subjects.length > 0;
   const steps = [
-    { title: '학원 기본 정보를 알려주세요', desc: '학원 이름, 주소와 전화번호는 나중에도 변경할 수 있어요.' },
-    { title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 학원 프로필에서 바꿀 수 있어요.' },
-    { title: '수강료 가격표를 설정해주세요', desc: '새 반의 학교급이나 학년에 맞는 금액을 자동으로 불러와요.' },
-    { title: '클리닉을 어떻게 쓸까요?', desc: '수업 후 자습·보완 기록의 기본값이에요.' },
-    { title: '직원 출퇴근은 어떻게 기록할까요?', desc: '직접 기록하거나 QR을 사용할 수 있어요.' },
-    { title: '학생 등하원은 어떻게 기록할까요?', desc: '학원에 맞는 방식을 골라주세요.' },
+    { emoji: '🏫', title: '학원 기본 정보를 알려주세요', desc: '학원 이름, 주소와 전화번호는 나중에도 변경할 수 있어요.' },
+    { emoji: '📚', title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 학원 프로필에서 바꿀 수 있어요.' },
+    { emoji: '💳', title: '수강료 가격표를 설정해주세요', desc: '학교급별이 기본이에요. 필요하면 기준과 과목별 금액을 바꿀 수 있어요.' },
+    { emoji: '📝', title: '클리닉을 어떻게 쓸까요?', desc: '수업 후 자습·보완 기록의 기본값이에요.' },
+    { emoji: '⏱️', title: '직원 출퇴근은 어떻게 기록할까요?', desc: '직접 기록하거나 QR을 사용할 수 있어요.' },
+    { emoji: '✅', title: '학생 등하원은 어떻게 기록할까요?', desc: '학원에 맞는 방식을 골라주세요.' },
   ];
   const canGoNext = step === 0 ? isNameReady : step === 1 ? isSubjectReady : true;
   const primaryLabel = step === steps.length - 1 ? '만들기' : '다음';
@@ -468,9 +472,14 @@ function AcademyCreateOnboarding({
         </div>
       </div>
 
-      <div>
-        <p className="text-lg font-bold text-gray-900">{steps[step].title}</p>
-        <p className="mt-1 text-xs leading-relaxed text-gray-500">{steps[step].desc}</p>
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gray-50 text-xl">
+          {steps[step].emoji}
+        </span>
+        <div className="min-w-0 pt-0.5">
+          <p className="text-lg font-bold text-gray-900">{steps[step].title}</p>
+          <p className="mt-1 text-xs leading-relaxed text-gray-500">{steps[step].desc}</p>
+        </div>
       </div>
 
       {step === 0 && (
@@ -538,30 +547,48 @@ function AcademyCreateOnboarding({
 
       {step === 2 && (
         <div>
-          <div className="grid grid-cols-3 gap-2">
-            {TUITION_POLICY_OPTIONS.map((option) => {
-              const selected = tuitionPolicy === option.id;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => onTuitionPolicyChange(option.id)}
-                  className={`rounded-2xl border px-2 py-3 text-center ${
-                    selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'
-                  }`}
-                >
-                  <p className={`text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-900'}`}>
-                    {option.label}
-                  </p>
-                  <p className="mt-1 text-[10px] text-gray-500">{option.description}</p>
-                </button>
-              );
-            })}
+          <div className="flex items-center justify-between rounded-2xl bg-gray-50 px-4 py-3">
+            <span>
+              <span className="block text-[11px] font-semibold text-gray-500">수강료 기준</span>
+              <span className="mt-0.5 block text-sm font-bold text-gray-900">
+                {getTuitionPolicyLabel(tuitionPolicy)}
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowTuitionPolicyOptions((open) => !open)}
+              className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-blue-600 shadow-sm"
+            >
+              {showTuitionPolicyOptions ? '닫기' : '기준 바꾸기'}
+            </button>
           </div>
+          {showTuitionPolicyOptions && (
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {TUITION_POLICY_OPTIONS.map((option) => {
+                const selected = tuitionPolicy === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => onTuitionPolicyChange(option.id)}
+                    className={`rounded-2xl border px-2 py-3 text-center ${
+                      selected ? 'border-blue-500 bg-blue-50' : 'border-gray-100 bg-gray-50'
+                    }`}
+                  >
+                    <p className={`text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-900'}`}>
+                      {option.label}
+                    </p>
+                    <p className="mt-1 text-[10px] text-gray-500">{option.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <TuitionRateFields
             policy={tuitionPolicy}
             rates={tuitionRates}
             onChange={onTuitionRatesChange}
+            subjects={subjects}
             compact
           />
         </div>
@@ -642,7 +669,6 @@ function AcademyCreateOnboarding({
           disabled={submitting}
           className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold disabled:opacity-50"
         >
-          {step > 0 && <ChevronLeft size={14} />}
           {step === 0 ? '취소' : '이전'}
         </button>
         <button

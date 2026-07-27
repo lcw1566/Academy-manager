@@ -8,14 +8,14 @@
 -- ============================================================
 
 alter table public.academies
-  add column if not exists tuition_policy text not null default 'class',
+  add column if not exists tuition_policy text not null default 'school_level',
   add column if not exists tuition_policy_onboarded_at timestamptz;
 
 alter table public.academies
-  alter column tuition_policy set default 'class';
+  alter column tuition_policy set default 'school_level';
 
 update public.academies
-set tuition_policy = 'class'
+set tuition_policy = 'school_level'
 where tuition_policy is null
    or tuition_policy not in ('school_level', 'grade', 'class');
 

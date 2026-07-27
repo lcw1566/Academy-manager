@@ -410,18 +410,20 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
       return { ...f, studentBillings };
     });
 
-  const findRecentTuition = (level) => {
+  const findRecentTuition = (level, subject = form.subject) => {
     if (!level || tuitionPolicy === 'class') return '';
     const configuredTuition = getTuitionRateForLevel(
       academyProfile?.tuitionRates,
       tuitionPolicy,
       level,
+      subject,
     );
     if (configuredTuition > 0) return String(configuredTuition);
 
     const basis = tuitionPolicy === 'school_level' ? getSchoolLevelKey(level) : level;
     const matched = [...(classGroups || [])].reverse().find((group) => {
       if (group.id === editGroup?.id || Number(group.monthlyFee) <= 0) return false;
+      if (subject && group.subject !== subject) return false;
       const groupBasis = tuitionPolicy === 'school_level'
         ? getSchoolLevelKey(group.level)
         : group.level;
@@ -435,9 +437,24 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
       ...current,
       level,
       monthlyFee: !editGroup && !current.monthlyFee
-        ? findRecentTuition(level)
+        ? findRecentTuition(level, current.subject)
         : current.monthlyFee,
     }));
+  };
+
+  const handleSubjectSelect = (subject) => {
+    setForm((current) => {
+      if (editGroup || !current.level) return { ...current, subject };
+      const previousAutoFee = findRecentTuition(current.level, current.subject);
+      const nextAutoFee = findRecentTuition(current.level, subject);
+      const canReplaceFee = !current.monthlyFee
+        || Number(current.monthlyFee) === Number(previousAutoFee);
+      return {
+        ...current,
+        subject,
+        monthlyFee: canReplaceFee ? nextAutoFee : current.monthlyFee,
+      };
+    });
   };
 
   const handleSave = async () => {
@@ -1114,7 +1131,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         title="과목 선택"
         options={subjectOptions}
         value={form.subject}
-        onSelect={(v) => set('subject', v)}
+        onSelect={handleSubjectSelect}
       />
 
       {/* 학년/레벨 선택 sheet — 그룹별 */}
