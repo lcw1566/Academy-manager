@@ -13,6 +13,7 @@ import {
 import { formatPhoneNumber } from '../../../utils/format';
 import { getTodayYMD } from '../../../utils/date';
 import { getSchoolTagClassName } from '../../../utils/schoolTags';
+import { STUDENT_STATUS_OPTIONS } from '../../../utils/studentStatus';
 
 const SCHOOL_TYPES = [
   { id: 'elementary', label: '초등' },
@@ -31,12 +32,6 @@ const GRADE_OPTIONS = {
   adult:      [],
   other:      [],
 };
-
-const STATUS_OPTIONS = [
-  { value: 'active',    label: '재원' },
-  { value: 'paused',   label: '휴원' },
-  { value: 'inactive', label: '퇴원' },
-];
 
 // 학부모 호칭 옵션 — parentTitle 값 + label
 const PARENT_TITLE_OPTIONS = [
@@ -606,11 +601,6 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
               </button>
             ))}
           </div>
-          <p className="text-xs text-gray-500 mt-2">
-            {form.parentTitle
-              ? <>상담 표시명: <span className="font-semibold text-gray-800">{buildParentDisplayName(form.name, form.parentTitle)}</span></>
-              : '상담과 안내 메시지에서 사용할 호칭을 직접 선택해주세요.'}
-          </p>
         </Field>
 
         <Field label="등하원 PIN">
@@ -631,22 +621,26 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
           <input type="date" value={form.enrollmentDate} onChange={(e) => set('enrollmentDate', e.target.value)} className="input" />
         </Field>
 
-        <Field label="재원 상태">
-          <div className="flex gap-2">
-            {STATUS_OPTIONS.map(({ value, label }) => (
-              <button key={value} type="button" onClick={() => set('status', value)}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors ${
-                  form.status === value
-                    ? value === 'active' ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : value === 'paused' ? 'border-yellow-400 bg-yellow-50 text-yellow-700'
-                      : 'border-gray-400 bg-gray-100 text-gray-600'
-                    : 'border-gray-200 bg-white text-gray-500'
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </Field>
+        {isEdit && (
+          <Field label="재원 상태">
+            <div className="grid grid-cols-2 gap-2">
+              {STUDENT_STATUS_OPTIONS.map(({ value, label, selectedClassName }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => set('status', value)}
+                  className={`py-2.5 rounded-xl text-xs font-bold border-2 transition-colors ${
+                    form.status === value
+                      ? selectedClassName
+                      : 'border-gray-200 bg-white text-gray-500'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </Field>
+        )}
 
         <Field label="메모">
           <textarea value={form.memo} onChange={(e) => set('memo', e.target.value)} rows={2} placeholder="특이사항 등" className="input resize-none" />

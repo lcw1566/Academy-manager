@@ -61,7 +61,7 @@ create table if not exists public.students (
   parent_name      text,
   enrollment_date  date,
   status           text not null default 'active'
-                   check (status in ('active', 'paused', 'inactive')),
+                   check (status in ('scheduled', 'active', 'paused', 'inactive')),
   memo             text,
   class_group_ids  jsonb not null default '[]'::jsonb,
   created_at       timestamptz not null default now(),

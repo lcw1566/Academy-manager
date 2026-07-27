@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Search, ChevronRight } from 'lucide-react';
+import { Plus, Search, ChevronRight, Phone } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -9,6 +9,8 @@ import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
 import { getSchoolTagClassName } from '../../../utils/schoolTags';
+import { getStudentStatusMeta } from '../../../utils/studentStatus';
+import { toTelHref } from '../../../utils/format';
 
 export default function AcademyStudentsPage() {
   const { role, academyStudents, classGroups, clinicTasks, navigateToAcademyStudent } = useAcademyStore();
@@ -88,23 +90,31 @@ export default function AcademyStudentsPage() {
             {filtered.map((student) => {
               const groups = getStudentGroups(student.id);
               const pendingCount = getPendingClinics(student.id);
+              const statusMeta = getStudentStatusMeta(student.status);
+              const callNumber = student.phone || student.parentPhone || '';
               return (
-                <motion.button
+                <motion.div
                   key={student.id}
                   whileTap={{ scale: 0.97 }}
-                  onClick={() => navigateToAcademyStudent(student.id)}
-                  className="bg-white rounded-2xl p-4 shadow-sm text-left w-full"
+                  className="flex w-full items-center overflow-hidden rounded-2xl bg-white shadow-sm"
                 >
-                  <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => navigateToAcademyStudent(student.id)}
+                    className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left"
+                  >
                     <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
                       <span className="font-bold text-blue-600">{(student.name || '?')[0]}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <p className="font-bold text-gray-900">{student.name}</p>
                         {student.grade && (
                           <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{student.grade}</span>
                         )}
+                        <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${statusMeta.badgeClassName}`}>
+                          {statusMeta.label}
+                        </span>
                         {pendingCount > 0 && (
                           <span className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full font-medium">
                             클리닉 {pendingCount}
@@ -122,9 +132,19 @@ export default function AcademyStudentsPage() {
                         )}
                       </div>
                     </div>
-                    <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
-                  </div>
-                </motion.button>
+                    <ChevronRight size={16} className="hidden text-gray-300 flex-shrink-0 md:block" />
+                  </button>
+                  {callNumber && (
+                    <a
+                      href={toTelHref(callNumber)}
+                      onClick={(event) => event.stopPropagation()}
+                      aria-label={`${student.name} ${student.phone ? '학생' : '학부모'} 연락처로 전화`}
+                      className="mr-3 flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 active:scale-95 md:hidden"
+                    >
+                      <Phone size={17} />
+                    </a>
+                  )}
+                </motion.div>
               );
             })}
           </div>

@@ -18,6 +18,7 @@ import AcademyStudentFormModal from './AcademyStudentFormModal';
 import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getSchoolTagClassName } from '../../../utils/schoolTags';
+import { getStudentStatusMeta } from '../../../utils/studentStatus';
 
 
 // 역할별 탭 정의
@@ -391,6 +392,7 @@ export default function AcademyStudentDetailPage() {
       </div>
     );
   }
+  const statusMeta = getStudentStatusMeta(student.status);
 
   // 최근 수업 (요약용): 미래 회차는 제외한다.
   const latestRecord = dailyRecords.find((r) => !r.isFuture) || null;
@@ -806,7 +808,23 @@ export default function AcademyStudentDetailPage() {
             {(student.name || '?')[0]}
           </div>
           <div>
-            <p className="text-xl font-bold text-gray-900">{student.name}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xl font-bold text-gray-900">{student.name}</p>
+              {canManageStudents ? (
+                <button
+                  type="button"
+                  onClick={() => setShowEdit(true)}
+                  aria-label={`재원 상태 변경, 현재 ${statusMeta.label}`}
+                  className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${statusMeta.badgeClassName}`}
+                >
+                  {statusMeta.label}
+                </button>
+              ) : (
+                <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${statusMeta.badgeClassName}`}>
+                  {statusMeta.label}
+                </span>
+              )}
+            </div>
             <div className="mt-1 flex items-center gap-2">
               {student.grade && <span className="text-sm text-gray-500">{student.grade}</span>}
               {student.school && (
