@@ -8,7 +8,8 @@
 -- ============================================================
 
 alter table public.academies
-  add column if not exists tuition_policy text not null default 'class';
+  add column if not exists tuition_policy text not null default 'class',
+  add column if not exists tuition_policy_onboarded_at timestamptz;
 
 alter table public.academies
   alter column tuition_policy set default 'class';

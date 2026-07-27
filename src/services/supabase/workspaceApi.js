@@ -400,6 +400,7 @@ function isMissingAcademySettingsColumnError(error) {
     message.includes('academy_subjects') ||
     message.includes('clinic_required') ||
     message.includes('tuition_policy') ||
+    message.includes('tuition_policy_onboarded_at') ||
     message.includes('academy_onboarded_at')
   );
 }
@@ -414,7 +415,10 @@ function buildAcademySettingsPayload({
   if (academyType !== undefined) out.academy_type = academyType || null;
   if (academySubjects !== undefined) out.academy_subjects = Array.isArray(academySubjects) ? academySubjects : [];
   if (clinicRequired !== undefined) out.clinic_required = clinicRequired !== false;
-  if (tuitionPolicy !== undefined) out.tuition_policy = tuitionPolicy || 'class';
+  if (tuitionPolicy !== undefined) {
+    out.tuition_policy = tuitionPolicy || 'class';
+    out.tuition_policy_onboarded_at = new Date().toISOString();
+  }
   out.academy_onboarded_at = new Date().toISOString();
   return out;
 }
@@ -488,7 +492,10 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
   if (patch.academyType !== undefined) dbPatch.academy_type = patch.academyType || null;
   if (patch.academySubjects !== undefined) dbPatch.academy_subjects = Array.isArray(patch.academySubjects) ? patch.academySubjects : [];
   if (patch.clinicRequired !== undefined) dbPatch.clinic_required = patch.clinicRequired !== false;
-  if (patch.tuitionPolicy !== undefined) dbPatch.tuition_policy = patch.tuitionPolicy || 'class';
+  if (patch.tuitionPolicy !== undefined) {
+    dbPatch.tuition_policy = patch.tuitionPolicy || 'class';
+    dbPatch.tuition_policy_onboarded_at = new Date().toISOString();
+  }
   if (patch.markOnboarded === true) dbPatch.academy_onboarded_at = new Date().toISOString();
 
   if (Object.keys(dbPatch).length === 0) return null;
@@ -502,6 +509,9 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
 
   let { data, error } = await runUpdate(dbPatch);
   if (error && isMissingAcademySettingsColumnError(error)) {
+    if (dbPatch.tuition_policy !== undefined) {
+      throw new Error('수강료 기준 저장을 위해 SQL 030을 먼저 적용해주세요.');
+    }
     const fallback = {};
     if (dbPatch.name !== undefined) fallback.name = dbPatch.name;
     if (Object.keys(fallback).length === 0) return null;

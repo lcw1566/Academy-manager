@@ -51,6 +51,7 @@ create table if not exists public.academies (
   clinic_required       boolean not null default true,
   tuition_policy        text not null default 'class'
                         check (tuition_policy in ('school_level', 'grade', 'class')),
+  tuition_policy_onboarded_at timestamptz,
   academy_onboarded_at  timestamptz,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now()

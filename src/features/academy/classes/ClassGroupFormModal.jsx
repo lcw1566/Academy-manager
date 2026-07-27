@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronRight, AlertTriangle, Check, Search } from 'lucide-react';
+import { ChevronRight, AlertTriangle, Check } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import OptionSelectSheet from '../../../components/OptionSelectSheet';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -975,14 +975,13 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           {academyStudents.length > 0 && (
             <Field label={`학생 배정 (${form.studentIds.length}/${academyStudents.length})`}>
               <div className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-[minmax(0,1fr)_150px_130px]">
-                <div className="relative col-span-2 md:col-span-1">
-                  <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <div className="col-span-2 md:col-span-1">
                   <input
                     value={studentSearch}
                     onChange={(event) => setStudentSearch(event.target.value)}
                     placeholder="학생 검색"
                     aria-label="학생 검색"
-                    className="input pl-9"
+                    className="input"
                   />
                 </div>
                 <select

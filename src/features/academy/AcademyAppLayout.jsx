@@ -7,6 +7,7 @@ import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useChatStore, { totalUnread } from '../../store/useChatStore';
 import { currentUserCan } from '../../utils/staffPermissions';
 import AttendanceSettingsSheet from './attendance/AttendanceSettingsSheet';
+import TuitionPolicyOnboardingSheet from './onboarding/TuitionPolicyOnboardingSheet';
 import Sidebar from '../../components/Sidebar';
 
 const loadOwnerDashboard = () => import('./dashboard/OwnerDashboard');
@@ -289,9 +290,19 @@ export default function AcademyAppLayout() {
     && isWorkspaceReady
     && !!currentAcademy
     && !currentAcademy.attendance_onboarded_at;
+  const needsTuitionPolicyOnboarding = role === 'owner'
+    && isWorkspaceReady
+    && !!currentAcademy
+    && !currentAcademy.tuition_policy_onboarded_at;
   // 사용자가 이번 세션에서 onboarding 모달을 명시적으로 닫은 경우 다시 띄우지 않음.
   // (서버 set 이 실패하더라도 무한 루프 회피.)
   const [attendanceOnboardingDismissed, setAttendanceOnboardingDismissed] = useState(false);
+  const [tuitionOnboardingDismissed, setTuitionOnboardingDismissed] = useState(false);
+  const showTuitionOnboarding = needsTuitionPolicyOnboarding && !tuitionOnboardingDismissed;
+
+  useEffect(() => {
+    setTuitionOnboardingDismissed(false);
+  }, [currentAcademyId]);
 
   // Phase 31 — 역할별 default 탭 후, staffPermissions 로 일부 탭 (payroll 등) 가린다.
   const authUserId = useAuthStore((s) => s.user?.id);
@@ -455,7 +466,13 @@ export default function AcademyAppLayout() {
           "서버 데이터 새로고침/불러오기" 버튼으로 진행. */}
 
       {/* Phase 41 — 출결 onboarding (owner 만, 1회) */}
-      {needsAttendanceOnboarding && !attendanceOnboardingDismissed && (
+      {showTuitionOnboarding && (
+        <TuitionPolicyOnboardingSheet
+          onClose={() => setTuitionOnboardingDismissed(true)}
+        />
+      )}
+
+      {needsAttendanceOnboarding && !attendanceOnboardingDismissed && !showTuitionOnboarding && (
         <AttendanceSettingsSheet
           kind="onboarding"
           onClose={() => setAttendanceOnboardingDismissed(true)}
