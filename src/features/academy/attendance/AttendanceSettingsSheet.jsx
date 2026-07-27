@@ -155,21 +155,21 @@ export default function AttendanceSettingsSheet({ kind = 'settings', onClose }) 
                 selected={studentCheckMethod === 'teacher_manual'}
                 Icon={Users}
                 title="선생님이 직접 체크"
-                description="수업 화면에서 출석·지각·결석을 입력해요."
+                description="수업 화면에서 선생님이 체크해요."
                 onClick={() => setStudentCheckMethod('teacher_manual')}
               />
               <MethodOption
                 selected={studentCheckMethod === 'qr'}
                 Icon={QrCode}
                 title="학생 QR 등하원"
-                description="공용 QR과 학생 PIN으로 등·하원을 기록해요."
+                description="공용 QR과 PIN으로 기록해요."
                 onClick={() => setStudentCheckMethod('qr')}
               />
               <MethodOption
                 selected={studentCheckMethod === 'disabled'}
                 Icon={Ban}
                 title="사용하지 않음"
-                description="등·하원 기능만 끄고 수업 출결은 따로 기록할 수 있어요."
+                description="등·하원 기능을 사용하지 않아요."
                 onClick={() => setStudentCheckMethod('disabled')}
               />
             </div>

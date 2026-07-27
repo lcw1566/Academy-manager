@@ -41,12 +41,12 @@ export const CLINIC_REQUIRED_OPTIONS = [
   {
     value: true,
     label: '클리닉 필수',
-    description: '수업 후 보완·자습 기록을 기본 운영 흐름으로 사용해요.',
+    description: '수업과 별개로 클리닉·자습이 필수예요.',
   },
   {
     value: false,
     label: '필요할 때만',
-    description: '보완이 필요한 학생에게만 클리닉 기록을 남겨요.',
+    description: '필요한 학생만 클리닉·자습을 진행해요.',
   },
 ];
 

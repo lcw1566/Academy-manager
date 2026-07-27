@@ -378,8 +378,11 @@ function MoneyInput({
   className,
   ...inputProps
 }) {
+  const [focused, setFocused] = useState(false);
   const amount = Number(String(value || '').replace(/\D/g, ''));
-  const displayValue = amount > 0 ? formatKoreanCurrency(amount) : '';
+  const displayValue = amount > 0
+    ? (focused ? amount.toLocaleString('ko-KR') : formatKoreanCurrency(amount))
+    : '';
 
   return (
     <input
@@ -387,18 +390,11 @@ function MoneyInput({
       value={displayValue}
       onChange={(event) => onValueChange?.(event.target.value)}
       onFocus={(event) => {
+        setFocused(true);
         const input = event.currentTarget;
         requestAnimationFrame(() => input.select());
       }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Backspace' && event.key !== 'Delete') return;
-        event.preventDefault();
-        const input = event.currentTarget;
-        const allSelected = input.selectionStart === 0
-          && input.selectionEnd === input.value.length;
-        const nextValue = allSelected ? '' : String(amount).slice(0, -1);
-        onValueChange?.(nextValue);
-      }}
+      onBlur={() => setFocused(false)}
       placeholder={placeholder}
       className={className}
     />
