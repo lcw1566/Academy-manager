@@ -34,6 +34,7 @@ import {
   updateAcademyAttendanceSettings,
   listStudentCheckEvents,
   createStudentCheckEvent,
+  toggleStudentCheckEvent,
 } from '../services/supabase/workspaceApi';
 import {
   listAcademyStudents,
@@ -1591,7 +1592,8 @@ const useWorkspaceStore = create(
         return created;
       },
 
-      // 학생 등·하원 이벤트 목록 (read-only). 기본은 오늘 + 최근 200건.
+      // 학생 등·하원 이벤트 목록. 날짜가 있으면 한국 시간 기준 해당 하루,
+      // 최대 1000건을 불러온다.
       loadStudentCheckEvents: async ({ sinceDateYMD, limit } = {}) => {
         if (!isSupabaseConfigured) {
           set({ studentCheckEvents: [] });
@@ -1637,6 +1639,29 @@ const useWorkspaceStore = create(
           set((s) => ({ studentCheckEvents: [created, ...(s.studentCheckEvents || [])] }));
         }
         return created;
+      },
+
+      // SQL 035: 다음 등원/하원 상태 결정과 중복 방지를 서버에서 원자적으로 처리.
+      // migration 미적용 환경이면 null이며 호출자가 기존 방식으로 fallback한다.
+      toggleStudentCheckEventLocal: async ({ studentId, source = 'qr' }) => {
+        if (!isSupabaseConfigured) {
+          throw new Error('Supabase가 설정되지 않았어요.');
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) throw new Error('학원을 먼저 선택해주세요.');
+        const result = await toggleStudentCheckEvent({
+          academyId, studentId, source,
+        });
+        const event = result?.event || null;
+        if (event && !result?.duplicate) {
+          set((s) => ({
+            studentCheckEvents: [
+              event,
+              ...(s.studentCheckEvents || []).filter((item) => item.id !== event.id),
+            ],
+          }));
+        }
+        return result;
       },
 
       // 로그인 직후 호출.

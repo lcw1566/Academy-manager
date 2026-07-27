@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen, Clock3, Pin, X } from 'lucide-react';
+import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen, Clock3, Pin, X, CheckSquare } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -19,6 +19,7 @@ const loadClassSessionPage = () => import('./classes/ClassSessionPage');
 const loadClinicPage = () => import('./clinic/ClinicPage');
 const loadAcademyStudentsPage = () => import('./students/AcademyStudentsPage');
 const loadAcademyStudentDetailPage = () => import('./students/AcademyStudentDetailPage');
+const loadStudentAttendancePage = () => import('./attendance/StudentAttendancePage');
 const loadAcademyMorePage = () => import('./more/AcademyMorePage');
 const loadPayrollPage = () => import('./payroll/PayrollPage');
 const loadStaffPage = () => import('./staff/StaffPage');
@@ -33,6 +34,7 @@ const ClassSessionPage = lazy(loadClassSessionPage);
 const ClinicPage = lazy(loadClinicPage);
 const AcademyStudentsPage = lazy(loadAcademyStudentsPage);
 const AcademyStudentDetailPage = lazy(loadAcademyStudentDetailPage);
+const StudentAttendancePage = lazy(loadStudentAttendancePage);
 const AcademyMorePage = lazy(loadAcademyMorePage);
 const PayrollPage = lazy(loadPayrollPage);
 const StaffPage = lazy(loadStaffPage);
@@ -41,6 +43,7 @@ const ChatPage = lazy(loadChatPage);
 const COMMON_ACADEMY_TAB_LOADERS = [
   loadClassGroupsPage,
   loadAcademyStudentsPage,
+  loadStudentAttendancePage,
   loadChatPage,
   loadAcademyMorePage,
 ];
@@ -53,6 +56,7 @@ const COMMON_ACADEMY_TAB_LOADERS = [
 const TAB_CONFIG = {
   owner: [
     { id: 'home',       label: '홈',    Icon: Home },
+    { id: 'attendance', label: '등하원', Icon: CheckSquare, mobileBottomNav: false },
     { id: 'classes',    label: '수업',  Icon: BookOpen },
     { id: 'students',   label: '학생',  Icon: Users },
     { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
@@ -65,6 +69,7 @@ const TAB_CONFIG = {
   ],
   teacher: [
     { id: 'home',     label: '홈',   Icon: Home },
+    { id: 'attendance', label: '등하원', Icon: CheckSquare, mobileBottomNav: false },
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
@@ -88,6 +93,7 @@ const TAB_CONFIG = {
   ],
   manager: [
     { id: 'home',       label: '홈',    Icon: Home },
+    { id: 'attendance', label: '등하원', Icon: CheckSquare, mobileBottomNav: false },
     { id: 'classes',    label: '수업',  Icon: BookOpen },
     { id: 'students',   label: '학생',  Icon: Users },
     { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
@@ -407,6 +413,7 @@ export default function AcademyAppLayout() {
       if (activeTab === 'home')       return renderDashboard();
       if (activeTab === 'classes')    return selectedClassGroupId ? <ClassGroupDetailPage /> : <ClassGroupsPage />;
       if (activeTab === 'students')   return selectedAcademyStudentId ? <AcademyStudentDetailPage /> : <AcademyStudentsPage />;
+      if (activeTab === 'attendance') return <StudentAttendancePage />;
       if (activeTab === 'clinic')     return <ClinicPage />;
       if (activeTab === 'payments' || activeTab === 'settlement') {
         return <PilotLockedFeature featureId="payments" onReturn={() => setActiveTab('classes')} />;

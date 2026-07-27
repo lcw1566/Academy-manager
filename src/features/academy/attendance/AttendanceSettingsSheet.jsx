@@ -1,6 +1,6 @@
 // AttendanceSettingsSheet — Phase 41
 //
-// 출결·등하원 설정 화면. 두 가지 진입 모드를 모두 지원:
+// 직원 출퇴근·학생 등하원 설정 화면. 두 가지 진입 모드를 모두 지원:
 //   - kind='onboarding' : 학원 첫 진입 시 호출. 닫기 버튼 없음/약함, "확인했어요" 만 노출.
 //   - kind='settings'   : 더보기 탭에서 호출. 닫기 가능, 변경사항 저장.
 //
@@ -62,7 +62,7 @@ export default function AttendanceSettingsSheet({ kind = 'settings', onClose }) 
       if (isQrInUse && !current.attendanceQrToken) patch.attendanceQrToken = generateQrToken();
       if (isOnboarding) patch.markOnboarded = true;
       await saveAttendanceSettings(patch);
-      showToast(isOnboarding ? '출결 설정이 완료되었어요.' : '출결 설정이 저장되었어요.');
+      showToast(isOnboarding ? '등하원 설정이 완료되었어요.' : '등하원 설정이 저장되었어요.');
       onClose?.();
     } catch (err) {
       showToast(err?.message ?? '저장에 실패했어요.', 'error');
@@ -84,7 +84,7 @@ export default function AttendanceSettingsSheet({ kind = 'settings', onClose }) 
     }
   };
 
-  const title = isOnboarding ? '출결 방식을 선택해주세요' : '출결·등하원 설정';
+  const title = isOnboarding ? '등하원 방식을 선택해주세요' : '등하원 설정';
 
   return (
     <>
@@ -120,7 +120,7 @@ export default function AttendanceSettingsSheet({ kind = 'settings', onClose }) 
             <div>
               <div className="mb-2 flex items-center justify-between text-[11px] font-bold">
                 <span className="text-blue-600">마지막 설정</span>
-                <span className="text-gray-400">출결 관리</span>
+                <span className="text-gray-400">등하원 관리</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-blue-100">
                 <div className="h-full w-full rounded-full bg-blue-600" />
@@ -154,8 +154,8 @@ export default function AttendanceSettingsSheet({ kind = 'settings', onClose }) 
               <MethodOption
                 selected={studentCheckMethod === 'teacher_manual'}
                 Icon={Users}
-                title="선생님이 직접 체크"
-                description="수업 화면에서 선생님이 체크해요."
+                title="선생님이 직접 기록"
+                description="학생의 등원 상태를 선생님이 확인해요."
                 onClick={() => setStudentCheckMethod('teacher_manual')}
               />
               <MethodOption
@@ -214,8 +214,7 @@ export default function AttendanceSettingsSheet({ kind = 'settings', onClose }) 
           <div className="mt-1 flex items-start gap-2 bg-[#F8F9FA] rounded-2xl px-3 py-2.5">
             <Info size={13} className="text-[#4E5968] mt-0.5 flex-shrink-0" />
             <p className="text-[11px] text-[#4E5968] leading-relaxed">
-              설정은 나중에도 바꿀 수 있어요. QR 화면은 별도 창으로 열리고,
-              사용하지 않음을 선택해도 수업 출결 기록은 그대로 사용할 수 있어요.
+              설정은 나중에도 바꿀 수 있어요. QR 화면은 별도 창으로 열려요.
             </p>
           </div>
         </div>

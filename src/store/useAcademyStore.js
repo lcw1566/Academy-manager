@@ -1245,7 +1245,7 @@ const useAcademyStore = create(
   // ─── Academy Attendance ───────────────────────────
   // Phase 42 — source / checkedAt 같이 받음. 선생님이 버튼을 눌러 수정한
   // 경우 호출자는 source='teacher_manual' 을 명시한다. 비지정 시 기존 row 의
-  // source 를 유지하고, 신규 row 면 'manual' (직접 체크) 로 default.
+  // source 를 유지하고, 신규 row 면 DB 제약과 같은 'teacher_manual' 로 default.
   updateAcademyAttendance: (sessionId, studentId, status, { source, checkedAt, silent } = {}) => {
     const existing = get().academyAttendanceRecords.find(
       (a) => a.sessionId === sessionId && a.studentId === studentId
@@ -1259,7 +1259,7 @@ const useAcademyStore = create(
             ? {
                 ...a,
                 status,
-                source: source ?? a.source ?? 'manual',
+                source: source ?? a.source ?? 'teacher_manual',
                 checkedAt: checkedAt ?? (source ? now : a.checkedAt ?? null),
               }
             : a
@@ -1275,37 +1275,13 @@ const useAcademyStore = create(
             studentId,
             date: session?.date || '',
             status,
-            source: source || 'manual',
+            source: source || 'teacher_manual',
             checkedAt: checkedAt || now,
           },
         ],
       }));
     }
     if (!silent) get().showToast('출결이 저장되었습니다.');
-  },
-
-  // 수업 기록 저장 시 호출 — 출결 버튼을 누르지 않은 학생에 대해 기본 present record 보장.
-  // toast 없이 조용히 동작. 이미 record가 있는 학생은 그대로 둔다.
-  ensureAttendanceRecordsForSession: ({ sessionId, studentIds, date }) => {
-    if (!sessionId || !Array.isArray(studentIds) || studentIds.length === 0) return [];
-    const existing = get().academyAttendanceRecords;
-    const existingForSession = new Set(
-      existing.filter((a) => a.sessionId === sessionId).map((a) => a.studentId)
-    );
-    const missing = studentIds.filter((sid) => sid && !existingForSession.has(sid));
-    if (missing.length === 0) return [];
-    const now = Date.now();
-    const toAdd = missing.map((sid, idx) => ({
-      id: `aa${now}_${idx}_${sid}`,
-      sessionId,
-      studentId: sid,
-      date: date || '',
-      status: 'present',
-    }));
-    set((s) => ({
-      academyAttendanceRecords: [...s.academyAttendanceRecords, ...toAdd],
-    }));
-    return toAdd;
   },
 
   // ─── Academy Lesson Records ───────────────────────

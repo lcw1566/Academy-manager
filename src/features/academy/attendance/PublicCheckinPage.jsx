@@ -59,16 +59,20 @@ export default function PublicCheckinPage() {
       });
       if (result?.ok) {
         const eventLabel = result.event_type === 'check_out' ? '하원' : '등원';
+        const isDuplicate = result.message === 'duplicate';
         const timeLabel = result.event_time
           ? new Date(result.event_time).toLocaleTimeString('ko-KR', {
+              timeZone: 'Asia/Seoul',
               hour: '2-digit',
               minute: '2-digit',
             })
           : '';
         setMessage({
           type: 'success',
-          title: `${result.student_name || '학생'} ${eventLabel} 완료`,
-          detail: timeLabel ? `${timeLabel}에 기록됐어요.` : '기록됐어요.',
+          title: `${result.student_name || '학생'} ${eventLabel} ${isDuplicate ? '확인' : '완료'}`,
+          detail: isDuplicate
+            ? '이미 처리된 기록이에요. 중복으로 저장하지 않았어요.'
+            : timeLabel ? `${timeLabel}에 기록됐어요.` : '기록됐어요.',
         });
         setPin('');
         return;

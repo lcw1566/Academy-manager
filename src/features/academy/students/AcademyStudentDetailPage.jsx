@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X, Paperclip, PhoneCall } from 'lucide-react';
+import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X, Paperclip, PhoneCall, ChevronLeft, ChevronRight, LogIn, LogOut, Clock3 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -10,7 +10,7 @@ import {
   updatePayment as updateServerPayment,
   deletePayment as deleteServerPayment,
 } from '../../../services/supabase/domainApi';
-import { formatDateShort, getKoreanWeekdayFromYMD, today } from '../../../utils/date';
+import { addDaysYMD, formatDateShort, getKoreanWeekdayFromYMD, today } from '../../../utils/date';
 import { attendanceStatusMap, toTelHref } from '../../../utils/format';
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
@@ -19,19 +19,30 @@ import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getSchoolTagClassName } from '../../../utils/schoolTags';
 import { getStudentStatusMeta } from '../../../utils/studentStatus';
+import { getAcademyYmd, getStudentDayCheckState } from '../attendance/attendanceHelpers';
 
 
 // 역할별 탭 정의
 const TABS_BY_ROLE = {
-  owner:     ['요약', '수업 기록', '클리닉 기록', '정산'],
-  teacher:   ['요약', '수업 기록', '클리닉 기록'],
-  assistant: ['요약', '클리닉 기록'],
-  manager:   ['요약', '수업 기록', '클리닉 기록', '정산'],
+  owner:     ['요약', '등하원', '수업 기록', '클리닉 기록', '정산'],
+  teacher:   ['요약', '등하원', '수업 기록', '클리닉 기록'],
+  assistant: ['요약', '등하원', '클리닉 기록'],
+  manager:   ['요약', '등하원', '수업 기록', '클리닉 기록', '정산'],
 };
 
 function nowHHMM() {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatAttendanceTime(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleTimeString('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 }
 
 function isSessionFuture(session, todayYMD = today(), currentHHMM = nowHHMM()) {
@@ -313,6 +324,9 @@ export default function AcademyStudentDetailPage() {
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
   const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
+  const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
+  const isStudentCheckEventsLoading = useWorkspaceStore((s) => s.isStudentCheckEventsLoading);
+  const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
   const myStaffProfile = useMemo(
     () => academyStaffProfiles.find((sp) => sp.user_id === authUserId) || null,
     [academyStaffProfiles, authUserId],
@@ -331,6 +345,7 @@ export default function AcademyStudentDetailPage() {
   const [showClinicForm, setShowClinicForm] = useState(false);
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ classGroupId: '', amount: '', month: today().slice(0, 7) });
+  const [attendanceDate, setAttendanceDate] = useState(() => getAcademyYmd() || today());
 
   // May be null during back-navigation exit animation — compute before all hooks
   const student = academyStudents.find((s) => s.id === selectedAcademyStudentId) ?? null;
@@ -365,6 +380,58 @@ export default function AcademyStudentDetailPage() {
     [studentClinicRecords, student]
   );
 
+  const attendanceTimeline = useMemo(() => {
+    if (!student) return [];
+    const state = getStudentDayCheckState(student.serverId, attendanceDate, studentCheckEvents);
+    const eventEntries = state.events.map((event) => ({
+      id: `event-${event.id}`,
+      type: event.event_type,
+      time: formatAttendanceTime(event.event_time),
+      sortTime: formatAttendanceTime(event.event_time),
+      title: event.event_type === 'check_out' ? '하원' : '등원',
+      detail: event.source === 'qr' ? 'QR 기록' : '선생님 기록',
+    }));
+    const sessionEntries = classSessions
+      .filter((session) => (
+        session.date === attendanceDate
+        && session.status !== 'canceled'
+        && (session.studentIds || []).includes(student.id)
+      ))
+      .map((session) => {
+        const group = classGroups.find((item) => item.id === session.classGroupId);
+        const attendance = academyAttendanceRecords.find((record) => (
+          record.sessionId === session.id && record.studentId === student.id
+        ));
+        const sessionStateLabels = {
+          present: '정상',
+          late: '지각',
+          absent: '결석',
+          makeup: '보강',
+          excused: '인정결석',
+        };
+        const statusLabel = attendance?.status
+          ? sessionStateLabels[attendance.status] || '상태 기록'
+          : '미확인';
+        return {
+          id: `session-${session.id}`,
+          type: 'session',
+          time: session.startTime || '',
+          sortTime: session.startTime || '99:99',
+          title: group?.name || '수업',
+          detail: `${session.startTime || ''}${session.endTime ? `–${session.endTime}` : ''} · ${statusLabel}`,
+        };
+      });
+    return [...eventEntries, ...sessionEntries]
+      .sort((a, b) => a.sortTime.localeCompare(b.sortTime));
+  }, [
+    student,
+    attendanceDate,
+    studentCheckEvents,
+    classSessions,
+    classGroups,
+    academyAttendanceRecords,
+  ]);
+
   const tabs = TABS_BY_ROLE[role] || TABS_BY_ROLE.owner;
 
   useEffect(() => {
@@ -372,6 +439,11 @@ export default function AcademyStudentDetailPage() {
       setActiveTab(tabs[0]);
     }
   }, [tabs, activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== '등하원' || !currentAcademyId || !attendanceDate) return;
+    loadStudentCheckEvents({ sinceDateYMD: attendanceDate, limit: 1000 });
+  }, [activeTab, currentAcademyId, attendanceDate, loadStudentCheckEvents]);
 
   if (!student) {
     return (
@@ -505,6 +577,84 @@ export default function AcademyStudentDetailPage() {
       </div>
     </div>
   );
+
+  const renderAttendance = () => {
+    const isToday = attendanceDate === (getAcademyYmd() || today());
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between rounded-2xl bg-white px-3 py-2 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setAttendanceDate((date) => addDaysYMD(date, -1))}
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 active:bg-gray-100"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setAttendanceDate(getAcademyYmd() || today())}
+            className="px-3 text-center"
+          >
+            <p className="text-sm font-extrabold text-gray-900">
+              {isToday ? '오늘' : formatDateShort(attendanceDate)}
+            </p>
+            <p className="mt-0.5 text-[11px] text-gray-400">{attendanceDate}</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setAttendanceDate((date) => addDaysYMD(date, 1))}
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 active:bg-gray-100"
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
+
+        {isStudentCheckEventsLoading && attendanceTimeline.length === 0 ? (
+          <div className="rounded-2xl bg-white px-5 py-8 text-center text-sm text-gray-400 shadow-sm">
+            불러오는 중...
+          </div>
+        ) : attendanceTimeline.length === 0 ? (
+          <div className="rounded-2xl bg-white px-5 py-8 text-center shadow-sm">
+            <Clock3 size={22} className="mx-auto mb-2 text-gray-300" />
+            <p className="text-sm font-bold text-gray-700">등하원 기록이 없어요</p>
+            <p className="mt-1 text-xs text-gray-400">수업과 등하원 기록이 생기면 시간순으로 보여요.</p>
+          </div>
+        ) : (
+          <div className="rounded-2xl bg-white px-4 py-2 shadow-sm">
+            {attendanceTimeline.map((entry, index) => {
+              const Icon = entry.type === 'check_in'
+                ? LogIn
+                : entry.type === 'check_out'
+                  ? LogOut
+                  : Clock3;
+              const iconTone = entry.type === 'check_in'
+                ? 'bg-emerald-50 text-emerald-600'
+                : entry.type === 'check_out'
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'bg-gray-100 text-gray-500';
+              return (
+                <div key={entry.id} className="relative flex gap-3 py-3">
+                  {index < attendanceTimeline.length - 1 && (
+                    <div className="absolute bottom-0 left-[15px] top-9 w-px bg-gray-100" />
+                  )}
+                  <div className={`relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${iconTone}`}>
+                    <Icon size={14} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-gray-900">{entry.title}</p>
+                      <span className="text-xs font-semibold text-gray-400">{entry.time}</span>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-gray-500">{entry.detail}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderLessonHistory = () => {
     const currentAndPastRecords = dailyRecords.filter((record) => !record.isFuture);
@@ -852,6 +1002,7 @@ export default function AcademyStudentDetailPage() {
 
         <div className="px-4">
           {activeTab === '요약' && renderSummary()}
+          {activeTab === '등하원' && renderAttendance()}
           {activeTab === '수업 기록' && renderLessonHistory()}
           {activeTab === '클리닉 기록' && renderClinic()}
           {activeTab === '정산' && renderSettlement()}

@@ -41,7 +41,14 @@ const HOMEWORK_OPTIONS = [
   { value: '일부 완료', color: 'border-yellow-400 bg-yellow-50 text-yellow-700' },
   { value: '미완료',    color: 'border-red-300 bg-red-50 text-red-700' },
 ];
-const ATT_OPTIONS = ['present', 'late', 'absent', 'makeup'];
+const ATT_OPTIONS = ['present', 'late', 'absent', 'excused', 'makeup'];
+const SESSION_STATE_LABELS = {
+  present: '정상',
+  late: '지각',
+  absent: '결석',
+  makeup: '보강',
+  excused: '인정결석',
+};
 
 // ─── 학습 보완 항목 태그 ────────────────────────────────────────────────────
 const SUPPORT_TAG_TYPES = [
@@ -189,7 +196,7 @@ const StudentCard = memo(function StudentCard({
           )}
           {attendance ? (
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${attendanceStatusMap[attendance.status]?.bg} ${attendanceStatusMap[attendance.status]?.color}`}>
-              {attendanceStatusMap[attendance.status]?.label}
+              {SESSION_STATE_LABELS[attendance.status] || attendanceStatusMap[attendance.status]?.label}
             </span>
           ) : (
             <span className="text-xs text-gray-300 font-medium">미체크</span>
@@ -208,10 +215,10 @@ const StudentCard = memo(function StudentCard({
       >
         <div style={{ overflow: 'hidden', opacity: expanded ? 1 : 0, transition: 'opacity 0.18s ease' }}>
             <div className="px-4 pb-4 border-t border-gray-50 flex flex-col gap-4 pt-3">
-              {/* 출결 */}
+              {/* 등하원으로 자동 계산된 수업 상태의 예외 수정 */}
               {canEditAttendance && (
                 <div>
-                  <p className="text-xs font-semibold text-gray-500 mb-2">출결</p>
+                  <p className="text-xs font-semibold text-gray-500 mb-2">수업 상태 수정</p>
                   <div className="flex gap-2">
                     {ATT_OPTIONS.map((status) => {
                       const meta = attendanceStatusMap[status];
@@ -227,7 +234,7 @@ const StudentCard = memo(function StudentCard({
                               : 'border-gray-200 bg-white text-gray-500'
                           }`}
                         >
-                          {meta.label}
+                          {SESSION_STATE_LABELS[status] || meta.label}
                         </button>
                       );
                     })}
@@ -331,7 +338,6 @@ export default function ClassSessionPage() {
   const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords);
   const batchSaveSessionRecords = useAcademyStore((s) => s.batchSaveSessionRecords);
   const updateClassSession = useAcademyStore((s) => s.updateClassSession);
-  const ensureAttendanceRecordsForSession = useAcademyStore((s) => s.ensureAttendanceRecordsForSession);
   const goBackFromClassSession = useAcademyStore((s) => s.goBackFromClassSession);
   const showToast = useAcademyStore((s) => s.showToast);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -448,7 +454,7 @@ export default function ClassSessionPage() {
   }, [selectedClassSessionId]);
 
   // Phase 42 — 세션을 열 때 학생 체크인 이벤트를 한 번 불러온다 (over-fetch 방지:
-  // 그 session.date 기준 이후 이벤트만). loadStudentCheckEvents 는 store 가
+  // 한국 시간 기준 session.date 하루만). loadStudentCheckEvents 는 store 가
   // 데이터를 즉시 반영하므로 의존성에 session.date 만 두면 충분.
   useEffect(() => {
     if (!session?.date || !currentAcademyId) return;
@@ -575,13 +581,7 @@ export default function ClassSessionPage() {
       commonRecord: commonRec,
       studentRecords: studentRecDraftRef.current,
     });
-    // 출결 buttons 를 누르지 않은 학생도 기본 present record 보장
     const sessionStudentIds = (session.studentIds || []).filter(Boolean);
-    ensureAttendanceRecordsForSession({
-      sessionId: session.id,
-      studentIds: sessionStudentIds,
-      date: session.date,
-    });
     setSavedCommon({ ...commonRec });
     studentDirtyRef.current = {};
     setDirtyRevision((v) => v + 1);
@@ -632,7 +632,8 @@ export default function ClassSessionPage() {
 
       // 2-b) attendance_records bulk upsert (unique class_session_id + student_id)
       //   - sessionStudents 전체 기준으로 payload 생성
-      //   - local record 있으면 그 값 사용, 없으면 default present
+      //   - 자동 판정 또는 선생님 수정으로 실제 기록이 생긴 학생만 저장
+      //   - 미체크 학생을 기본 출석으로 만들지 않음
       //   - student.serverId 있는 학생만 서버 전송 대상
       try {
         const studentByLocalId = new Map(academyStudents.map((s) => [s.id, s]));
@@ -643,19 +644,20 @@ export default function ClassSessionPage() {
         const studentsWithServerId = sessionStudents.filter((s) => s.serverId);
         const skippedStudents = sessionStudents.filter((s) => !s.serverId);
 
-        const records = studentsWithServerId.map((stu) => {
+        const records = studentsWithServerId.flatMap((stu) => {
           const local = existingForSession.get(stu.id);
-          return {
+          if (!local) return [];
+          return [{
             class_group_id: group.serverId,
             class_session_id: session.serverId,
             student_id: stu.serverId,
-            date: local?.date || session.date,
-            status: local?.status || 'present',
-            memo: local?.memo || null,
+            date: local.date || session.date,
+            status: local.status,
+            memo: local.memo || null,
             // Phase 42 — 출결 source / 체크 시각 동기화.
-            source: local?.source || null,
-            checked_at: local?.checkedAt || null,
-          };
+            source: local.source === 'manual' ? 'teacher_manual' : (local.source || null),
+            checked_at: local.checkedAt || null,
+          }];
         });
 
         if (import.meta.env?.DEV) {
@@ -681,8 +683,8 @@ export default function ClassSessionPage() {
         console.error('[supabase] upsertAcademyAttendanceRecordsBulk failed', err);
         showToast(
           err?.message
-            ? `출결 서버 저장 실패: ${err.message}`
-            : '출결은 저장됐지만 서버 동기화는 실패했어요.',
+            ? `등하원 상태 서버 저장 실패: ${err.message}`
+            : '등하원 상태는 저장됐지만 서버 동기화는 실패했어요.',
           'error',
         );
       }
@@ -691,20 +693,23 @@ export default function ClassSessionPage() {
     setIsSaving(false);
   }, [
     session, group, isSaving, commonRec, academyStudents, attendanceByStudentId,
-    batchSaveSessionRecords, ensureAttendanceRecordsForSession,
+    batchSaveSessionRecords,
     isAuthenticated, currentAcademyId,
     loadServerLessonRecords, loadServerAttendanceRecords, showToast,
   ]);
 
   const setCommonField = (k, v) => setCommonRec((r) => ({ ...r, [k]: v }));
 
-  const presentCount = useMemo(() => {
-    let count = 0;
-    for (const record of attendanceByStudentId.values()) {
-      if (record.status === 'present') count += 1;
+  const checkedInCount = useMemo(() => {
+    const confirmed = new Set();
+    for (const [studentId, hint] of qrHintByStudentId.entries()) {
+      if (hint.checkInTime) confirmed.add(studentId);
     }
-    return count;
-  }, [attendanceByStudentId]);
+    for (const [studentId, record] of attendanceByStudentId.entries()) {
+      if (record.status === 'present' || record.status === 'late') confirmed.add(studentId);
+    }
+    return confirmed.size;
+  }, [attendanceByStudentId, qrHintByStudentId]);
 
   if (!session || !group) {
     return (
@@ -744,7 +749,7 @@ export default function ClassSessionPage() {
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <div className="grid grid-cols-3 gap-3 mb-3">
               <SummaryCell label="수강생" value={students.length} />
-              <SummaryCell label="출석" value={presentCount} color="text-green-600" />
+              <SummaryCell label="등원 확인" value={checkedInCount} color="text-green-600" />
               <SummaryCell label="보완 항목" value={supportCount} color="text-orange-500" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
@@ -832,10 +837,10 @@ export default function ClassSessionPage() {
           </div>
         )}
 
-        {/* ── 학생별 기록 ───────────────────────────────── */}
+        {/* ── 학생별 등하원·수업 기록 ─────────────────────── */}
         <div className="px-4 mb-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-bold text-gray-700">학생별 기록</p>
+            <p className="text-sm font-bold text-gray-700">학생 등하원</p>
             {attendanceSettings.studentCheckMethod === 'qr' && qrHintByStudentId.size > 0 && (
               <span className="text-[11px] font-semibold text-indigo-700 flex items-center gap-1">
                 <QrCode size={11} /> QR 등원 {qrHintByStudentId.size}명
@@ -846,7 +851,7 @@ export default function ClassSessionPage() {
             <div className="mb-3 rounded-2xl bg-indigo-50 px-3 py-2.5 flex items-start gap-2">
               <Info size={13} className="text-indigo-600 mt-0.5 flex-shrink-0" />
               <p className="text-[11px] text-indigo-700 leading-relaxed">
-                QR 등원 기록을 기준으로 출석이 자동 표시돼요. 필요하면 선생님이 직접 수정할 수 있어요.
+                등하원 시간과 수업 시간을 비교해 자동 표시해요. 예외만 직접 수정할 수 있어요.
               </p>
             </div>
           )}

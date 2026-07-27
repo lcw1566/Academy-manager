@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Clock, FileText, Users as UsersIcon, AlertCircle, CheckSquare, QrCode } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -7,6 +7,7 @@ import { today, formatDateShort, greetingByTime } from '../../../utils/date';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import {
   classifyShiftStatus,
+  getAcademyYmd,
   openQrDisplayWindow,
   readAttendanceSettings,
 } from '../attendance/attendanceHelpers';
@@ -48,6 +49,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
   const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
+  const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
   const staffAttendanceLogs = useWorkspaceStore((s) => s.staffAttendanceLogs) ?? [];
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
@@ -59,8 +61,13 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
   const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
 
-  const [selectedDate, setSelectedDate] = useState(today());
-  const todayStr = today();
+  const [selectedDate, setSelectedDate] = useState(() => getAcademyYmd() || today());
+  const todayStr = getAcademyYmd() || today();
+
+  useEffect(() => {
+    if (!currentAcademyId || !todayStr) return;
+    loadStudentCheckEvents({ sinceDateYMD: todayStr, limit: 1000 });
+  }, [currentAcademyId, todayStr, loadStudentCheckEvents]);
 
   const recentAttendanceEvents = useMemo(() => {
     const staffByUserId = new Map(
@@ -209,7 +216,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
     const checkedStudentIds = new Set();
     for (const ev of studentCheckEvents) {
       if (!ev.event_time) continue;
-      if (!String(ev.event_time).startsWith(todayISO)) continue;
+      if (getAcademyYmd(ev.event_time) !== todayISO) continue;
       if (ev.event_type === 'check_in') checkedStudentIds.add(ev.student_id);
     }
     return {
@@ -285,7 +292,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
       {/* 요약 카드 */}
       <div className="px-4 grid grid-cols-2 gap-3 mb-5">
         <SummaryCard label="오늘 수업" value={`${todaySessions.length}개`} onClick={() => setActiveTab('classes')} />
-        <SummaryCard label="출석 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('classes')} />
+        <SummaryCard label="등원 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('attendance')} />
         <SummaryCard label="오늘 출근 예정" value={`${todayShiftStaffIds.length}명`} onClick={() => setActiveTab('staff')} />
         <SummaryCard
           label="오늘 클리닉 기록"
@@ -308,13 +315,13 @@ export default function OwnerDashboard({ operationsOnly = false }) {
         )}
       </div>
 
-      {/* Phase 41 — 오늘 출결 요약 카드 */}
+      {/* Phase 41 — 오늘 근무·등하원 요약 카드 */}
       <div className="px-4 mb-5">
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
               <CheckSquare size={14} className="text-emerald-600" />
-              오늘 출결
+              오늘 근무·등하원
             </p>
           </div>
           <div className="grid grid-cols-4 gap-2">

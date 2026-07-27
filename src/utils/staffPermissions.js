@@ -13,7 +13,7 @@
 // 이 단계에서는 UI gating 만 처리한다. RLS 수준 검증은 향후.
 
 // 역할별 기본 권한 (PERMISSION_DEFAULTS)
-//   teacher:  학생/수업/출결 편집 + 급여 조회
+//   teacher:  학생/수업/등하원 상태 편집 + 급여 조회
 //   assistant: 클리닉 편집 + 학생/급여 조회 (수업/출결 편집은 default off)
 //   manager:   데스크 실무 운영(학생·수납·직원·공유자료)을 담당하되 원장 전용
 //              학원 삭제/최종 설정/급여 관리는 포함하지 않는다.
@@ -60,7 +60,7 @@ export const PERMISSION_DEFAULTS = {
 export const PERMISSION_LABELS = {
   canViewStudents: '학생 정보 조회',
   canEditLessonRecords: '수업 기록 작성/수정',
-  canEditAttendance: '출결 기록 작성/수정',
+  canEditAttendance: '등하원·수업 상태 기록',
   canEditClinicRecords: '클리닉 기록 작성/수정',
   canViewPayroll: '본인 급여 조회',
   canViewPayments: '학원 수납 정보 조회',

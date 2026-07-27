@@ -25,9 +25,13 @@ import {
   updateAcademyStaffShift as updateServerStaffShift,
 } from '../../../services/supabase/domainApi';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
-import { today as todayDate } from '../../../utils/date';
 import {
-  parseCheckinPayload, isPayloadExpired, SHIFT_STATUS_LABELS, classifyShiftStatus,
+  parseCheckinPayload,
+  isPayloadExpired,
+  SHIFT_STATUS_LABELS,
+  classifyShiftStatus,
+  getAcademyYmd,
+  getStudentDayCheckState,
 } from './attendanceHelpers';
 import { canUseNativeQrScanner, scanNativeQrCode } from './nativeQrScanner';
 
@@ -60,7 +64,9 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
+  const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
   const createStudentCheckEventLocal = useWorkspaceStore((s) => s.createStudentCheckEventLocal);
+  const toggleStudentCheckEventLocal = useWorkspaceStore((s) => s.toggleStudentCheckEventLocal);
 
   const myMembership = useMemo(
     () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
@@ -248,7 +254,7 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
       setResult({ ok: false, title: '로그인 정보를 확인할 수 없어요.', detail: '다시 로그인한 뒤 시도해주세요.' });
       return;
     }
-    const todayStr = todayDate();
+    const todayStr = getAcademyYmd() || '';
     const todaysShifts = myStaff?.id
       ? academyStaffShifts
           .filter((sh) => sh.staffId === myStaff.id && sh.date === todayStr && sh.status !== 'canceled')
@@ -351,13 +357,67 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
       setResult({ ok: false, title: '학생을 찾을 수 없어요.', detail: '학생이 삭제되었거나 다른 학원의 카드일 수 있어요.' });
       return;
     }
-    const serverStudentId = student.serverId || studentId;
-    // 직전 1시간 내 마지막 이벤트가 check_in 이면 check_out, 아니면 check_in.
-    const recent = (useWorkspaceStore.getState().studentCheckEvents || [])
-      .filter((e) => e.student_id === serverStudentId)
-      .sort((a, b) => (b.event_time || '').localeCompare(a.event_time || ''))[0];
-    const nextType = recent?.event_type === 'check_in' ? 'check_out' : 'check_in';
+    if (!student.serverId) {
+      setResult({
+        ok: false,
+        title: '학생 정보 동기화가 필요해요.',
+        detail: '학생 목록을 새로고침한 뒤 다시 스캔해주세요.',
+      });
+      return;
+    }
+    const serverStudentId = student.serverId;
     try {
+      // SQL 035 적용 환경: 두 단말이 동시에 스캔해도 서버에서 직렬화한다.
+      const atomicResult = await toggleStudentCheckEventLocal({
+        studentId: serverStudentId,
+        source: 'qr',
+      });
+      if (atomicResult?.event) {
+        const eventType = atomicResult.event.event_type;
+        const eventLabel = eventType === 'check_out' ? '하원' : '등원';
+        showToast(
+          atomicResult.duplicate
+            ? `이미 ${eventLabel} 처리됐어요.`
+            : `${eventLabel}으로 기록했어요.`,
+        );
+        setResult({
+          ok: true,
+          title: atomicResult.duplicate
+            ? `이미 ${eventLabel} 처리됐어요.`
+            : `${eventLabel} 처리됐어요.`,
+          detail: atomicResult.duplicate
+            ? `${student.name || '학생'} · 중복 스캔은 기록하지 않았어요.`
+            : `${student.name || '학생'} · ${nowHHmm()}`,
+        });
+        closeAfterSuccess();
+        return;
+      }
+
+      // SQL 035 적용 전 배포에서도 전날 기록과 연속 스캔을 안전하게 처리한다.
+      // 캐시의 전날 기록으로 다음 날 첫 스캔이 하원이 되는 일을 막기 위해
+      // 한국 시간 기준 오늘 기록을 서버에서 다시 확인한다.
+      const todayYmd = getAcademyYmd();
+      await loadStudentCheckEvents({ sinceDateYMD: todayYmd, limit: 1000 });
+      const state = getStudentDayCheckState(
+        serverStudentId,
+        todayYmd,
+        useWorkspaceStore.getState().studentCheckEvents || [],
+      );
+      const latestTime = state.latest?.event_time
+        ? new Date(state.latest.event_time).getTime()
+        : 0;
+      if (latestTime && Date.now() - latestTime < 8000) {
+        const latestLabel = state.latest.event_type === 'check_out' ? '하원' : '등원';
+        setResult({
+          ok: true,
+          title: `이미 ${latestLabel} 처리됐어요.`,
+          detail: `${student.name || '학생'} · 중복 스캔은 기록하지 않았어요.`,
+        });
+        closeAfterSuccess();
+        return;
+      }
+
+      const nextType = state.isInside ? 'check_out' : 'check_in';
       await createStudentCheckEventLocal({
         studentId: serverStudentId,
         eventType: nextType,

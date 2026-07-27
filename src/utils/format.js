@@ -35,6 +35,7 @@ export const attendanceStatusMap = {
   present: { label: '출석', color: 'text-green-700', bg: 'bg-green-50', activeBg: 'bg-green-500', activeText: 'text-white' },
   late:    { label: '지각', color: 'text-orange-700', bg: 'bg-orange-50', activeBg: 'bg-orange-500', activeText: 'text-white' },
   absent:  { label: '결석', color: 'text-red-700', bg: 'bg-red-50', activeBg: 'bg-red-500', activeText: 'text-white' },
+  excused: { label: '인정결석', color: 'text-slate-700', bg: 'bg-slate-100', activeBg: 'bg-slate-600', activeText: 'text-white' },
   makeup:  { label: '보강필요', color: 'text-yellow-700', bg: 'bg-yellow-50', activeBg: 'bg-yellow-500', activeText: 'text-white' },
 };
 

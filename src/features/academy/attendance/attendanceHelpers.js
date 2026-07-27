@@ -199,8 +199,77 @@ export const SHIFT_STATUS_LABELS = {
   canceled:   '취소',
 };
 
-// Phase 42 — 학생 등·하원 이벤트(serverEvents) 에서 특정 (학생, 세션) 에 가장
-// 가까운 등원 1건과 그 이후 하원 1건을 골라 attendance hint 를 만든다.
+const ACADEMY_TIME_ZONE = 'Asia/Seoul';
+const academyDateTimeFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: ACADEMY_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function getAcademyDateTimeParts(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const parts = {};
+  for (const part of academyDateTimeFormatter.formatToParts(date)) {
+    if (part.type !== 'literal') parts[part.type] = part.value;
+  }
+  return {
+    ymd: `${parts.year}-${parts.month}-${parts.day}`,
+    minuteOfDay: Number(parts.hour) * 60 + Number(parts.minute),
+    hhmm: `${parts.hour}:${parts.minute}`,
+  };
+}
+
+export function getAcademyYmd(value = new Date()) {
+  return getAcademyDateTimeParts(value)?.ymd || null;
+}
+
+export function getStudentDayCheckState(studentServerId, ymd, events = []) {
+  const dayEvents = events
+    .filter((event) => (
+      event?.student_id === studentServerId
+      && event.event_time
+      && getAcademyYmd(event.event_time) === ymd
+      && ['check_in', 'check_out'].includes(event.event_type)
+    ))
+    .sort((a, b) => new Date(a.event_time).getTime() - new Date(b.event_time).getTime());
+
+  const latest = dayEvents[dayEvents.length - 1] || null;
+  return {
+    events: dayEvents,
+    latest,
+    isInside: latest?.event_type === 'check_in',
+  };
+}
+
+function buildVisitIntervals(dayEvents) {
+  const intervals = [];
+  let openCheckIn = null;
+
+  for (const event of dayEvents) {
+    if (event.event_type === 'check_in') {
+      // 연속 등원은 첫 기록을 유지한다. 중복 스캔이 체류 시작을 늦추면 안 된다.
+      if (!openCheckIn) openCheckIn = event;
+      continue;
+    }
+    if (event.event_type === 'check_out' && openCheckIn) {
+      if (new Date(event.event_time).getTime() >= new Date(openCheckIn.event_time).getTime()) {
+        intervals.push({ checkIn: openCheckIn, checkOut: event });
+      }
+      openCheckIn = null;
+    }
+  }
+
+  if (openCheckIn) intervals.push({ checkIn: openCheckIn, checkOut: null });
+  return intervals;
+}
+
+// 학생 등·하원 구간과 특정 수업 시간이 실제로 겹치는지 확인해 수업 상태의
+// 자동 제안값을 만든다. 원본 등·하원과 수업별 예외 기록은 계속 분리한다.
 //
 // 입력:
 //   - studentServerId: public.students.id (uuid)
@@ -213,76 +282,63 @@ export const SHIFT_STATUS_LABELS = {
 //     checkOutTime: 'HH:mm'|null, checkInISO, checkOutISO }
 //
 // 규칙 (사양 명세 2번 그대로):
-//   - check_in <= session start + graceMin → 'present'
-//   - check_in >  session start + graceMin && <= session end → 'late'
-//   - 그 외엔 statusHint = null (단순 표기만)
-//   - check_out 은 check_in 이후 같은 날 가장 빠른 것 1건 (참고 표시).
+//   - 체류 구간이 수업 시간과 겹치지 않으면 자동 판정하지 않는다.
+//   - 겹치는 체류의 check_in <= session start + graceMin → 'present'
+//   - 겹치는 체류의 check_in > session start + graceMin → 'late'
+//   - 하원 미기록은 열린 체류로 간주하되 결석은 자동 생성하지 않는다.
 export function getQrAttendanceHint(studentServerId, session, events = [], { graceMin = 10 } = {}) {
   const empty = { statusHint: null, checkInTime: null, checkOutTime: null, checkInISO: null, checkOutISO: null };
   if (!studentServerId || !session?.date) return empty;
   const sStart = hhmmToMin(session.startTime);
   const sEnd = hhmmToMin(session.endTime);
 
-  // 같은 날짜·학생 이벤트만.
-  const dayEvents = [];
-  for (const ev of events) {
-    if (!ev || ev.student_id !== studentServerId) continue;
-    if (!ev.event_time) continue;
-    // event_time 은 timestamptz. 날짜 부분만 우선 비교.
-    const datePart = String(ev.event_time).slice(0, 10);
-    if (datePart !== session.date) continue;
-    dayEvents.push(ev);
-  }
+  const { events: dayEvents } = getStudentDayCheckState(
+    studentServerId,
+    session.date,
+    events,
+  );
   if (dayEvents.length === 0) return empty;
 
-  // check_in 중 시작 시각에 가장 가까운(또는 그 이전 가장 늦은) 것.
-  const checkIns = dayEvents.filter((e) => e.event_type === 'check_in')
-    .sort((a, b) => String(a.event_time).localeCompare(b.event_time));
-  let bestIn = null;
-  if (sStart != null && checkIns.length > 0) {
-    // 시작 시각 이전 가장 늦은 check_in.
-    const before = checkIns.filter((e) => evtTimeToMin(e.event_time) <= sStart + graceMin);
-    bestIn = before.length > 0 ? before[before.length - 1] : checkIns[0];
-  } else {
-    bestIn = checkIns[0] || null;
-  }
-  const checkOuts = dayEvents.filter((e) => e.event_type === 'check_out')
-    .sort((a, b) => String(a.event_time).localeCompare(b.event_time));
-  let bestOut = null;
-  if (bestIn) {
-    bestOut = checkOuts.find((e) => String(e.event_time).localeCompare(bestIn.event_time) > 0) || null;
-  }
+  const visits = buildVisitIntervals(dayEvents);
+  const sessionEnd = sEnd ?? sStart;
+  if (sStart == null || sessionEnd == null) return empty;
+
+  const overlappingVisits = visits
+    .map((visit) => {
+      const inMin = evtTimeToMin(visit.checkIn.event_time);
+      const outMin = visit.checkOut ? evtTimeToMin(visit.checkOut.event_time) : null;
+      const overlaps = inMin != null
+        && inMin <= sessionEnd
+        && (outMin == null || outMin >= sStart);
+      const overlapMinutes = overlaps
+        ? Math.max(0, Math.min(outMin ?? sessionEnd, sessionEnd) - Math.max(inMin, sStart))
+        : -1;
+      return { ...visit, inMin, outMin, overlapMinutes };
+    })
+    .filter((visit) => visit.overlapMinutes > 0)
+    .sort((a, b) => b.overlapMinutes - a.overlapMinutes);
+
+  const bestVisit = overlappingVisits[0] || null;
+  if (!bestVisit) return empty;
 
   let statusHint = null;
-  if (bestIn && sStart != null) {
-    const inMin = evtTimeToMin(bestIn.event_time);
-    if (inMin != null) {
-      if (inMin <= sStart + graceMin) statusHint = 'present';
-      else if (sEnd == null || inMin <= sEnd) statusHint = 'late';
-    }
+  if (bestVisit.inMin != null) {
+    statusHint = bestVisit.inMin <= sStart + graceMin ? 'present' : 'late';
   }
   return {
     statusHint,
-    checkInTime: bestIn ? evtTimeToHHmm(bestIn.event_time) : null,
-    checkOutTime: bestOut ? evtTimeToHHmm(bestOut.event_time) : null,
-    checkInISO: bestIn?.event_time || null,
-    checkOutISO: bestOut?.event_time || null,
+    checkInTime: evtTimeToHHmm(bestVisit.checkIn.event_time),
+    checkOutTime: bestVisit.checkOut ? evtTimeToHHmm(bestVisit.checkOut.event_time) : null,
+    checkInISO: bestVisit.checkIn.event_time,
+    checkOutISO: bestVisit.checkOut?.event_time || null,
   };
 }
 
-// "YYYY-MM-DDTHH:mm:ss..." (UTC 또는 KST 모두) 의 시간 부분을 분 단위로.
-// timestamptz 가 UTC 로 직렬화될 수 있어 local 시간으로 변환한다.
 function evtTimeToMin(ts) {
-  if (!ts) return null;
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.getHours() * 60 + d.getMinutes();
+  return getAcademyDateTimeParts(ts)?.minuteOfDay ?? null;
 }
 function evtTimeToHHmm(ts) {
-  if (!ts) return null;
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return null;
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return getAcademyDateTimeParts(ts)?.hhmm ?? null;
 }
 
 // Attendance row 의 source 값 → 라벨.

@@ -840,9 +840,33 @@ export async function updateAcademyAttendanceSettings(academyId, patch = {}) {
 
 // 학원 단위 student_check_events 목록 조회 (read-only).
 // 옵션:
-//   - sinceDateYMD : 이 날짜(YYYY-MM-DD) 0시 이후 이벤트만 (없으면 전체)
-//   - limit        : 정렬 후 최대 N개 (없으면 200)
-export async function listStudentCheckEvents(academyId, { sinceDateYMD, limit = 200 } = {}) {
+//   - sinceDateYMD : 이 날짜(YYYY-MM-DD)의 한국 시간 하루만 조회
+//   - limit        : 정렬 후 최대 N개 (없으면 1000)
+function nextYmd(ymd) {
+  const [year, month, day] = String(ymd).split('-').map(Number);
+  if (![year, month, day].every(Number.isFinite)) return null;
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  return [
+    next.getUTCFullYear(),
+    String(next.getUTCMonth() + 1).padStart(2, '0'),
+    String(next.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function currentAcademyYmd() {
+  const parts = {};
+  for (const part of new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())) {
+    if (part.type !== 'literal') parts[part.type] = part.value;
+  }
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export async function listStudentCheckEvents(academyId, { sinceDateYMD, limit = 1000 } = {}) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
   let query = supabase
@@ -851,8 +875,11 @@ export async function listStudentCheckEvents(academyId, { sinceDateYMD, limit = 
     .eq('academy_id', academyId)
     .order('event_time', { ascending: false });
   if (sinceDateYMD) {
-    // YMD 를 ISO 변환 (학원이 KST 라면 그대로도 OK — 일치하는 그 날짜 이후 row 만)
-    query = query.gte('event_time', `${sinceDateYMD}T00:00:00`);
+    const untilDateYMD = nextYmd(sinceDateYMD);
+    query = query.gte('event_time', `${sinceDateYMD}T00:00:00+09:00`);
+    if (untilDateYMD) {
+      query = query.lt('event_time', `${untilDateYMD}T00:00:00+09:00`);
+    }
   }
   if (limit) query = query.limit(limit);
   const { data, error } = await query;
@@ -886,6 +913,45 @@ export async function createStudentCheckEvent({
     .single();
   if (error) throw error;
   return data;
+}
+
+// SQL 035가 적용된 환경에서는 등원/하원 결정을 서버 transaction 안에서 처리한다.
+// 아직 migration이 적용되지 않은 배포에는 null을 반환해 기존 안전 fallback을 쓴다.
+export async function toggleStudentCheckEvent({
+  academyId, studentId, source = 'qr',
+}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!studentId) throw new Error('studentId가 필요해요.');
+  const { data, error } = await supabase.rpc('toggle_student_check_event', {
+    p_academy_id: academyId,
+    p_student_id: studentId,
+    p_source: source || 'qr',
+  });
+  if (error) {
+    // PostgREST schema cache 또는 DB에서 함수가 아직 발견되지 않는 경우.
+    if (error.code !== 'PGRST202' && error.code !== '42883') throw error;
+
+    // SQL 035 적용 전 안전 fallback. 동시 단말 직렬화는 migration 적용 후 보장된다.
+    const todayYmd = currentAcademyYmd();
+    const events = await listStudentCheckEvents(academyId, {
+      sinceDateYMD: todayYmd,
+      limit: 1000,
+    });
+    const latest = events.find((event) => event.student_id === studentId) || null;
+    const latestTime = latest?.event_time ? new Date(latest.event_time).getTime() : 0;
+    if (latestTime && Date.now() - latestTime < 8000) {
+      return { event: latest, duplicate: true };
+    }
+    const event = await createStudentCheckEvent({
+      academyId,
+      studentId,
+      eventType: latest?.event_type === 'check_in' ? 'check_out' : 'check_in',
+      source,
+    });
+    return { event, duplicate: false };
+  }
+  return data || null;
 }
 
 export async function publicStudentCheckin({ academyId, qrToken, pin, expiresAt } = {}) {

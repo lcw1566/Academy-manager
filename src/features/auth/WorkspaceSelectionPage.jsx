@@ -170,7 +170,7 @@ export default function WorkspaceSelectionPage() {
       showToast(
         attendanceSettingsSaved
           ? '학원 설정이 완료되었어요.'
-          : '학원은 생성됐어요. 출결 설정을 다시 확인해주세요.',
+          : '학원은 생성됐어요. 등하원 설정을 다시 확인해주세요.',
         attendanceSettingsSaved ? 'success' : 'error',
       );
       resetCreateForm();
@@ -609,8 +609,8 @@ function AcademyCreateOnboarding({
           <AttendanceMethodChoice
             selected={studentCheckMethod === 'teacher_manual'}
             Icon={Users}
-            title="선생님이 직접 체크"
-            description="수업 화면에서 선생님이 체크해요."
+            title="선생님이 직접 기록"
+            description="학생의 등원 상태를 선생님이 확인해요."
             onClick={() => onStudentCheckMethodChange('teacher_manual')}
           />
           <AttendanceMethodChoice

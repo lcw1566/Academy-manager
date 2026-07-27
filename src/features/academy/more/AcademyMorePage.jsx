@@ -226,7 +226,7 @@ export default function AcademyMorePage() {
         onClose={() => setShowUserProfileEdit(false)}
       />
 
-      {/* 출결·등하원 설정 (owner 만) */}
+      {/* 직원 출퇴근·학생 등하원 설정 (owner 만) */}
       {showAttendanceSettings && (
         <AttendanceSettingsSheet
           kind="settings"
@@ -748,12 +748,12 @@ function AcademyProfileModal({
           </div>
         </div>
         <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">출결</label>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">등하원</label>
           <div className="flex flex-col gap-2">
             <SettingsRow
               icon={CheckSquare}
               tone="emerald"
-              title="출결·등하원"
+              title="등하원 설정"
               subtitle={methodSubtitle}
               onClick={() => handleOpenLinkedSetting(onOpenAttendanceSettings)}
             />
