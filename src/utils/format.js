@@ -7,24 +7,27 @@ export function formatKoreanCurrency(amount) {
   const value = Math.floor(Number(amount));
   if (!Number.isFinite(value) || value <= 0) return '0원';
 
-  const units = [
-    { value: 100000000, label: '억' },
-    { value: 10000, label: '만' },
-    { value: 1000, label: '천' },
-    { value: 100, label: '백' },
-    { value: 10, label: '십' },
-  ];
+  if (value < 10000) return `${value.toLocaleString('ko-KR')}원`;
+
   let remainder = value;
   const parts = [];
-
-  for (const unit of units) {
-    const count = Math.floor(remainder / unit.value);
-    if (count > 0) {
-      parts.push(`${count.toLocaleString('ko-KR')}${unit.label}`);
-      remainder %= unit.value;
-    }
+  const eok = Math.floor(remainder / 100000000);
+  if (eok > 0) {
+    parts.push(`${eok.toLocaleString('ko-KR')}억`);
+    remainder %= 100000000;
   }
-  if (remainder > 0) parts.push(String(remainder));
+  const man = Math.floor(remainder / 10000);
+  if (man > 0) {
+    parts.push(`${man.toLocaleString('ko-KR')}만`);
+    remainder %= 10000;
+  }
+  if (remainder > 0) {
+    parts.push(
+      remainder % 1000 === 0
+        ? `${remainder / 1000}천`
+        : remainder.toLocaleString('ko-KR'),
+    );
+  }
   return `${parts.join(' ')}원`;
 }
 

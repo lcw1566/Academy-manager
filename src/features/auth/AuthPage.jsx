@@ -461,13 +461,15 @@ function AuthPromotionSlot({ compact = false }) {
 function CloseButton({ onClick }) {
   if (!onClick) return null;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label="닫기"
-    className="absolute right-4 top-4 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-gray-100 transition-transform active:scale-95"
-    >
-      <X size={18} className="text-gray-600" />
-    </button>
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 mx-auto flex max-w-6xl justify-end px-5 pt-4 md:px-6">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label="닫기"
+        className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-gray-200 transition-transform active:scale-95"
+      >
+        <X size={18} className="text-gray-700" />
+      </button>
+    </div>
   );
 }

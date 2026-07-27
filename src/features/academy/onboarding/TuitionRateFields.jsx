@@ -10,13 +10,6 @@ function digitsOnly(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 9);
 }
 
-function displayAmount(value) {
-  const amount = Number(value);
-  return Number.isFinite(amount) && amount > 0
-    ? amount.toLocaleString('ko-KR')
-    : '';
-}
-
 function updateAmount(table, key, rawValue) {
   const digits = digitsOnly(rawValue);
   const nextTable = { ...(table || {}) };
@@ -251,9 +244,9 @@ export default function TuitionRateFields({
             {configuredGrades.map((grade) => (
               <div
                 key={grade.id}
-                className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2"
+                className="flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-3 py-2 shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100"
               >
-                <span className="w-9 flex-shrink-0 text-xs font-bold text-blue-600">{grade.label}</span>
+                <span className="w-9 flex-shrink-0 text-xs font-bold text-blue-700">{grade.label}</span>
                 <MoneyInput
                   value={currentGradeTable[grade.id]}
                   onValueChange={(value) => {
@@ -281,7 +274,7 @@ export default function TuitionRateFields({
         )}
 
         {addingGrade && (
-          <div className="mt-3 rounded-2xl bg-gray-50 p-3">
+          <div className="mt-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
             <div className="grid grid-cols-6 gap-1.5">
               {availableGrades.map((grade) => (
                 <button
@@ -291,7 +284,7 @@ export default function TuitionRateFields({
                   className={`rounded-lg py-2 text-[11px] font-bold ${
                     selectedGrade === grade.id
                       ? 'bg-blue-600 text-white'
-                      : 'border border-gray-200 bg-white text-gray-600'
+                      : 'border border-gray-300 bg-white text-gray-700'
                   }`}
                 >
                   {grade.label}
@@ -299,7 +292,7 @@ export default function TuitionRateFields({
               ))}
             </div>
             <div className="mt-2 flex items-center gap-2">
-              <label className="flex min-w-0 flex-1 items-center rounded-xl border border-gray-200 bg-white px-3 py-2.5">
+              <label className="flex min-w-0 flex-1 items-center rounded-xl border border-gray-300 bg-white px-3 py-2.5 shadow-sm focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
                 <MoneyInput
                   value={gradeAmount}
                   onValueChange={(value) => setGradeAmount(digitsOnly(value))}
@@ -348,15 +341,22 @@ function TargetChip({ label, selected, configured, onClick }) {
       }`}
     >
       {label}
-      {configured && label !== '공통' && <Check size={11} />}
+      {label !== '공통' && (
+        <span className="flex h-[11px] w-[11px] flex-shrink-0 items-center justify-center">
+          <Check
+            size={11}
+            className={configured ? '' : 'invisible'}
+          />
+        </span>
+      )}
     </button>
   );
 }
 
 function AmountField({ label, value, fallbackValue, onChange }) {
   return (
-    <label className="rounded-xl border border-gray-200 bg-white px-2.5 py-2">
-      <span className="block text-[11px] font-semibold text-gray-500">{label}</span>
+    <label className="rounded-xl border border-gray-300 bg-white px-2.5 py-2.5 shadow-sm transition-colors focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
+      <span className="block text-[11px] font-bold text-gray-700">{label}</span>
       <span className="mt-1 flex items-center">
         <MoneyInput
           value={value}
@@ -364,7 +364,7 @@ function AmountField({ label, value, fallbackValue, onChange }) {
           inputMode="numeric"
           placeholder={Number(fallbackValue) > 0 ? formatKoreanCurrency(fallbackValue) : '0'}
           aria-label={`${label} 월 수강료`}
-          className="min-w-0 flex-1 bg-transparent text-right text-sm font-bold text-gray-900 outline-none placeholder:text-gray-300"
+          className="min-w-0 flex-1 bg-transparent text-right text-sm font-extrabold text-gray-950 outline-none placeholder:font-semibold placeholder:text-gray-500"
         />
       </span>
     </label>
@@ -378,11 +378,8 @@ function MoneyInput({
   className,
   ...inputProps
 }) {
-  const [focused, setFocused] = useState(false);
   const amount = Number(String(value || '').replace(/\D/g, ''));
-  const displayValue = amount > 0
-    ? (focused ? displayAmount(amount) : formatKoreanCurrency(amount))
-    : '';
+  const displayValue = amount > 0 ? formatKoreanCurrency(amount) : '';
 
   return (
     <input
@@ -390,11 +387,18 @@ function MoneyInput({
       value={displayValue}
       onChange={(event) => onValueChange?.(event.target.value)}
       onFocus={(event) => {
-        setFocused(true);
         const input = event.currentTarget;
         requestAnimationFrame(() => input.select());
       }}
-      onBlur={() => setFocused(false)}
+      onKeyDown={(event) => {
+        if (event.key !== 'Backspace' && event.key !== 'Delete') return;
+        event.preventDefault();
+        const input = event.currentTarget;
+        const allSelected = input.selectionStart === 0
+          && input.selectionEnd === input.value.length;
+        const nextValue = allSelected ? '' : String(amount).slice(0, -1);
+        onValueChange?.(nextValue);
+      }}
       placeholder={placeholder}
       className={className}
     />

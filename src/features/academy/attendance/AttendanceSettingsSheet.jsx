@@ -248,7 +248,12 @@ function MethodOption({ selected, Icon, title, description, onClick }) {
           </span>
           <span className="mt-0.5 block text-[11px] leading-relaxed text-[#8B95A1]">{description}</span>
         </span>
-        {selected && <Check size={15} className="flex-shrink-0 text-blue-600" />}
+        <span className="flex h-[15px] w-[15px] flex-shrink-0 items-center justify-center">
+          <Check
+            size={15}
+            className={selected ? 'text-blue-600' : 'invisible'}
+          />
+        </span>
       </span>
     </button>
   );

@@ -527,7 +527,12 @@ function AcademyCreateOnboarding({
                   <span className={`text-sm font-bold ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
                     {subject.label}
                   </span>
-                  {selected && <Check size={15} className="text-blue-600" />}
+                  <span className="flex h-[15px] w-[15px] flex-shrink-0 items-center justify-center">
+                    <Check
+                      size={15}
+                      className={selected ? 'text-blue-600' : 'invisible'}
+                    />
+                  </span>
                 </span>
               </button>
             );
@@ -567,7 +572,12 @@ function AcademyCreateOnboarding({
                     </p>
                     <p className="mt-1 text-xs leading-relaxed text-gray-500">{option.description}</p>
                   </div>
-                  {selected && <Check size={16} className="mt-0.5 flex-shrink-0 text-blue-600" />}
+                  <span className="mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center">
+                    <Check
+                      size={16}
+                      className={selected ? 'text-blue-600' : 'invisible'}
+                    />
+                  </span>
                 </div>
               </button>
             );
@@ -666,7 +676,12 @@ function AttendanceMethodChoice({ selected, Icon, title, description, onClick })
           </span>
           <span className="mt-1 block text-xs leading-relaxed text-gray-500">{description}</span>
         </span>
-        {selected && <Check size={16} className="flex-shrink-0 text-blue-600" />}
+        <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
+          <Check
+            size={16}
+            className={selected ? 'text-blue-600' : 'invisible'}
+          />
+        </span>
       </div>
     </button>
   );
