@@ -4,7 +4,12 @@ import Modal from '../../../components/Modal';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { createAcademyStudent, updateStudent } from '../../../services/supabase/domainApi';
+import {
+  createAcademyStudent,
+  updateStudent,
+  updateClassGroup as updateServerClassGroup,
+  updateClassSession as updateServerClassSession,
+} from '../../../services/supabase/domainApi';
 import { formatPhoneNumber } from '../../../utils/format';
 import { getTodayYMD } from '../../../utils/date';
 
@@ -49,15 +54,16 @@ const PARENT_TITLE_LABEL = {
 
 // 기존 parentName(자유 입력)에서 호칭만 역추출 — 마이그레이션용
 function inferParentTitle(parentName, studentName) {
-  if (!parentName) return 'mother';
+  if (!parentName) return '';
   if (parentName.includes('아버님') || parentName.includes('아버지')) return 'father';
   if (parentName.includes('보호자')) return 'guardian';
   if (parentName.includes('학부모')) return 'parent';
-  return 'mother';
+  if (parentName.includes('어머님') || parentName.includes('어머니')) return 'mother';
+  return '';
 }
 
 export function buildParentDisplayName(studentName, parentTitle) {
-  const title = PARENT_TITLE_LABEL[parentTitle] || PARENT_TITLE_LABEL.mother;
+  const title = PARENT_TITLE_LABEL[parentTitle] || PARENT_TITLE_LABEL.guardian;
   const trimmed = (studentName || '').trim();
   return trimmed ? `${trimmed} ${title}` : title;
 }
@@ -84,6 +90,15 @@ function normalizePin(value) {
 function normalizePinOrEmpty(value) {
   const pin = normalizePin(value);
   return pin.length === 4 ? pin : '';
+}
+
+function normalizeGradeForSchoolType(value, schoolType) {
+  const options = GRADE_OPTIONS[schoolType] || [];
+  if (!options.length || !value) return value || '';
+  if (options.includes(value)) return value;
+  const gradeNumber = String(value).match(/[1-6]/)?.[0];
+  const normalized = gradeNumber ? `${gradeNumber}학년` : '';
+  return options.includes(normalized) ? normalized : '';
 }
 
 // camelCase 학생 폼 → Supabase students 테이블 snake_case payload.
@@ -114,18 +129,22 @@ function mapAcademyStudentFormToServerPayload(form) {
 export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const {
     addAcademyStudent, updateAcademyStudent, setAcademyStudentServerId,
+    assignAcademyStudentToClassGroups,
+    classGroups, classSessions, academyStudents,
     schoolNames, addSchoolName, showToast,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
+  const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
+  const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const isEdit = !!editStudent;
 
   const [form, setForm] = useState({
     name: editStudent?.name || '',
     schoolType: editStudent?.schoolType || '',
     school: editStudent?.school || editStudent?.schoolName || '',
-    grade: editStudent?.grade || '',
+    grade: normalizeGradeForSchoolType(editStudent?.grade, editStudent?.schoolType),
     phone: editStudent?.phone || '',
     parentTitle: editStudent?.parentTitle || inferParentTitle(editStudent?.parentName, editStudent?.name),
     parentPhone: editStudent?.parentPhone || '',
@@ -138,17 +157,24 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [phase, setPhase] = useState('form');
   const [submitting, setSubmitting] = useState(false);
+  const [createdStudent, setCreatedStudent] = useState(null);
+  const [selectedClassGroupIds, setSelectedClassGroupIds] = useState([]);
+  const [assigning, setAssigning] = useState(false);
   const schoolInputRef = useRef(null);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const handleSchoolTypeChange = (type) => {
-    setForm((f) => ({ ...f, schoolType: type, grade: '' }));
+    setForm((f) => ({
+      ...f,
+      schoolType: type,
+      grade: f.schoolType === type ? f.grade : '',
+      school: f.schoolType === type ? f.school : '',
+    }));
   };
 
   const gradeOptions = GRADE_OPTIONS[form.schoolType] || [];
   const showGradeButtons = form.schoolType && form.schoolType !== 'adult' && form.schoolType !== 'other' && gradeOptions.length > 0;
-  const showGradeInput = form.schoolType === 'other';
   const showSchoolName = form.schoolType && form.schoolType !== 'adult';
 
   const filteredSuggestions = form.school.trim()
@@ -158,8 +184,13 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const handleSubmit = async () => {
     if (submitting) return;
     if (!form.name.trim()) return alert('이름을 입력해주세요.');
+    if (form.schoolType !== 'adult' && !form.parentTitle) {
+      return alert('상담 시 사용할 학부모 호칭을 선택해주세요.');
+    }
     const trimmedName = form.name.trim();
-    const parentDisplayName = buildParentDisplayName(trimmedName, form.parentTitle);
+    const parentDisplayName = form.parentTitle
+      ? buildParentDisplayName(trimmedName, form.parentTitle)
+      : '';
     const resolvedCheckinPin = normalizePinOrEmpty(form.checkinPin)
       || lastFourDigits(form.phone, form.parentPhone);
     const data = {
@@ -205,9 +236,10 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
       const localStudent = addAcademyStudent(data);
 
       // 2) Supabase write-through — 로그인 + 학원 선택 시에만 시도
+      let serverStudent = null;
       if (isAuthenticated && currentAcademyId) {
         try {
-          const serverStudent = await createAcademyStudent({
+          serverStudent = await createAcademyStudent({
             academyId: currentAcademyId,
             ...mapAcademyStudentFormToServerPayload(data),
           });
@@ -228,30 +260,182 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
         }
       }
 
-      setPhase('success');
+      setCreatedStudent({
+        ...localStudent,
+        ...data,
+        id: serverStudent?.id || localStudent.id,
+        serverId: serverStudent?.id || localStudent.serverId || null,
+      });
+      setPhase('assignment');
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (phase === 'success') {
+  const availableClassGroups = classGroups.filter((group) => group.status !== 'inactive');
+
+  const toggleClassGroup = (groupId) => {
+    setSelectedClassGroupIds((current) => (
+      current.includes(groupId)
+        ? current.filter((id) => id !== groupId)
+        : [...current, groupId]
+    ));
+  };
+
+  const handleAssignToClassGroups = async () => {
+    if (assigning || !createdStudent || selectedClassGroupIds.length === 0) return;
+    const selectedGroups = classGroups.filter((group) => selectedClassGroupIds.includes(group.id));
+    const effectiveFromDate = createdStudent.enrollmentDate || getTodayYMD();
+
+    assignAcademyStudentToClassGroups({
+      studentId: createdStudent.id,
+      classGroupIds: selectedClassGroupIds,
+      fromDate: effectiveFromDate,
+    });
+
+    if (!isAuthenticated || !currentAcademyId || !createdStudent.serverId) {
+      onClose();
+      return;
+    }
+
+    setAssigning(true);
+    try {
+      const serverGroupIds = selectedGroups.map((group) => group.serverId).filter(Boolean);
+      await updateStudent(createdStudent.serverId, { class_group_ids: serverGroupIds });
+
+      const resolveServerStudentIds = (studentIds = []) => {
+        const resolved = studentIds.map((studentId) => {
+          const student = academyStudents.find(
+            (item) => item.id === studentId || item.serverId === studentId,
+          );
+          if (student?.serverId) return student.serverId;
+          return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(studentId)
+            ? studentId
+            : null;
+        }).filter(Boolean);
+        return [...new Set([...resolved, createdStudent.serverId])];
+      };
+
+      const groupUpdates = selectedGroups
+        .filter((group) => group.serverId)
+        .map((group) => updateServerClassGroup(group.serverId, {
+          student_ids: resolveServerStudentIds(group.studentIds),
+        }));
+
+      const sessionUpdates = classSessions
+        .filter((session) => (
+          selectedClassGroupIds.includes(session.classGroupId)
+          && session.serverId
+          && session.status !== 'canceled'
+          && (!session.date || session.date >= effectiveFromDate)
+        ))
+        .map((session) => updateServerClassSession(session.serverId, {
+          student_ids: resolveServerStudentIds(session.studentIds),
+        }));
+
+      await Promise.all([...groupUpdates, ...sessionUpdates]);
+      await Promise.all([
+        loadServerStudents?.(),
+        loadServerClassGroups?.(),
+        loadServerClassSessions?.(),
+      ]);
+      onClose();
+    } catch (err) {
+      console.error('[supabase] assign student to class groups failed', err);
+      showToast(
+        err?.message
+          ? `수업은 배정됐지만 서버 동기화에 실패했어요: ${err.message}`
+          : '수업은 배정됐지만 서버 동기화에 실패했어요.',
+        'error',
+      );
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  if (phase === 'assignment') {
     return (
       <Modal
         isOpen
         onClose={onClose}
-        title="학생 등록 완료"
+        title="수업 배정"
         footer={
-          <button onClick={onClose} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">
-            학생 목록으로
-          </button>
+          availableClassGroups.length > 0 ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={assigning}
+                className="h-12 flex-1 rounded-xl bg-gray-100 text-sm font-bold text-gray-600 disabled:opacity-50"
+              >
+                나중에
+              </button>
+              <button
+                type="button"
+                onClick={handleAssignToClassGroups}
+                disabled={assigning || selectedClassGroupIds.length === 0}
+                className="h-12 flex-[1.5] rounded-xl bg-blue-600 text-sm font-bold text-white disabled:bg-gray-200 disabled:text-gray-400"
+              >
+                {assigning ? '배정 중…' : selectedClassGroupIds.length > 0
+                  ? `${selectedClassGroupIds.length}개 수업에 배정`
+                  : '수업 선택'}
+              </button>
+            </div>
+          ) : (
+            <button onClick={onClose} className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl">
+              학생 목록으로
+            </button>
+          )
         }
       >
-        <div className="py-6 text-center">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-            <Check size={28} className="text-green-600" />
+        <div className="pb-2">
+          <div className="mb-5 flex items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-3">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white">
+              <Check size={20} className="text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-900">{createdStudent?.name} 학생이 등록됐어요</p>
+              <p className="mt-0.5 text-xs text-gray-500">바로 참여할 수업을 선택해주세요.</p>
+            </div>
           </div>
-          <p className="font-bold text-gray-900 text-lg">{form.name} 학생이 등록됐어요!</p>
-          <p className="text-sm text-gray-500 mt-2">학생 목록에서 확인할 수 있어요.</p>
+
+          {availableClassGroups.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-gray-200 px-4 py-8 text-center">
+              <p className="text-sm font-bold text-gray-700">아직 만들어진 수업이 없어요</p>
+              <p className="mt-1 text-xs leading-5 text-gray-400">수업을 만든 뒤 학생 상세 화면에서 배정할 수 있어요.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {availableClassGroups.map((group) => {
+                const selected = selectedClassGroupIds.includes(group.id);
+                const schedule = [
+                  (group.weekdays || []).join('·'),
+                  group.startTime && group.endTime ? `${group.startTime}–${group.endTime}` : '',
+                ].filter(Boolean).join(' · ');
+                return (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => toggleClassGroup(group.id)}
+                    className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
+                      selected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
+                    }`}
+                  >
+                    <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+                      selected ? 'border-blue-600 bg-blue-600 text-white' : 'border-gray-300 text-transparent'
+                    }`}>
+                      <Check size={13} strokeWidth={3} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-gray-900">{group.name}</span>
+                      {schedule && <span className="mt-0.5 block text-xs text-gray-400">{schedule}</span>}
+                    </span>
+                    {group.subject && <span className="text-xs font-semibold text-gray-400">{group.subject}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </Modal>
     );
@@ -341,23 +525,15 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
           </Field>
         )}
 
-        {showGradeInput && (
-          <Field label="학년 / 상태">
-            <input value={form.grade} onChange={(e) => set('grade', e.target.value)} placeholder="예: 재수생, N수생" className="input" />
-          </Field>
-        )}
-
-        {!form.schoolType && (
-          <Field label="학년">
-            <input value={form.grade} onChange={(e) => set('grade', e.target.value)} placeholder="예: 중2, 고1" className="input" />
-          </Field>
-        )}
-
         <Field label="학생 연락처">
           <input inputMode="tel" value={form.phone} onChange={(e) => set('phone', formatPhoneNumber(e.target.value))} placeholder="010-0000-0000" className="input" />
         </Field>
 
-        <Field label="학부모 호칭">
+        <Field label="학부모 연락처">
+          <input inputMode="tel" value={form.parentPhone} onChange={(e) => set('parentPhone', formatPhoneNumber(e.target.value))} placeholder="010-0000-0000" className="input" />
+        </Field>
+
+        <Field label={form.schoolType === 'adult' ? '보호자 호칭 (선택)' : '학부모 호칭 *'}>
           <div className="flex gap-2 flex-wrap">
             {PARENT_TITLE_OPTIONS.map(({ value, label }) => (
               <button key={value} type="button" onClick={() => set('parentTitle', value)}
@@ -369,14 +545,10 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
             ))}
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            {form.name.trim()
-              ? <>표시 이름: <span className="font-semibold text-gray-800">{buildParentDisplayName(form.name, form.parentTitle)}</span></>
-              : '학생 이름 입력 후 자동으로 표시돼요.'}
+            {form.parentTitle
+              ? <>상담 표시명: <span className="font-semibold text-gray-800">{buildParentDisplayName(form.name, form.parentTitle)}</span></>
+              : '상담과 안내 메시지에서 사용할 호칭을 직접 선택해주세요.'}
           </p>
-        </Field>
-
-        <Field label="학부모 연락처">
-          <input inputMode="tel" value={form.parentPhone} onChange={(e) => set('parentPhone', formatPhoneNumber(e.target.value))} placeholder="010-0000-0000" className="input" />
         </Field>
 
         <Field label="등하원 PIN">

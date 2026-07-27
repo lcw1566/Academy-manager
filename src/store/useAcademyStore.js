@@ -985,6 +985,53 @@ const useAcademyStore = create(
       ),
     }));
   },
+  // 신규 학생을 반과 앞으로의 수업 회차에 한 번에 배정한다.
+  // 과거 회차에는 소급 배정하지 않아 기존 출결 기록을 오염시키지 않는다.
+  assignAcademyStudentToClassGroups: ({ studentId, classGroupIds = [], fromDate } = {}) => {
+    if (!studentId || !Array.isArray(classGroupIds) || classGroupIds.length === 0) return;
+    const selectedGroupIds = new Set(classGroupIds.filter(Boolean));
+    const effectiveFromDate = fromDate || getTodayYMD();
+    set((s) => {
+      const student = s.academyStudents.find(
+        (item) => item.id === studentId || item.serverId === studentId,
+      );
+      if (!student) return {};
+      const canonicalStudentId = student.id;
+      const studentAliases = new Set(
+        [student.id, student.serverId, studentId].filter(Boolean),
+      );
+      const appendStudent = (ids = []) => [
+        ...ids.filter((id) => !studentAliases.has(id)),
+        canonicalStudentId,
+      ];
+      return {
+        academyStudents: s.academyStudents.map((item) => (
+          item.id === student.id
+            ? {
+                ...item,
+                classGroupIds: [...new Set([
+                  ...(item.classGroupIds || []),
+                  ...selectedGroupIds,
+                ])],
+              }
+            : item
+        )),
+        classGroups: s.classGroups.map((group) => (
+          selectedGroupIds.has(group.id)
+            ? { ...group, studentIds: appendStudent(group.studentIds), updatedAt: new Date().toISOString() }
+            : group
+        )),
+        classSessions: s.classSessions.map((session) => (
+          selectedGroupIds.has(session.classGroupId)
+          && session.status !== 'canceled'
+          && (!session.date || session.date >= effectiveFromDate)
+            ? { ...session, studentIds: appendStudent(session.studentIds), updatedAt: new Date().toISOString() }
+            : session
+        )),
+      };
+    });
+    get().showToast(`${classGroupIds.length}개 수업에 학생을 배정했어요.`);
+  },
 
   // ─── Class Groups (반) ────────────────────────────
   // Phase 38 — group.weekdayTimes (옵션) 가 있으면 각 요일별 시간을 사용한다.
