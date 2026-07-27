@@ -2504,6 +2504,16 @@ const useAcademyStore = create(
     {
       name: 'academy-store',
       storage: createJSONStorage(() => createDeferredLocalStorage()),
+      version: 1,
+      // 이전 버전에서 남아 있던 예시 학교 자동완성 캐시는 한 번 비운다.
+      // 학생 레코드의 실제 school/schoolName 값은 건드리지 않는다.
+      migrate: (persistedState, persistedVersion) => {
+        if (!persistedState || typeof persistedState !== 'object') return persistedState;
+        if (persistedVersion < 1) {
+          return { ...persistedState, schoolNames: [] };
+        }
+        return persistedState;
+      },
       partialize: (s) => ({
         // Auth
         currentMode: s.currentMode,

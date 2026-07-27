@@ -17,6 +17,7 @@ import Header from '../../../components/Header';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
 import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 import { currentUserCan } from '../../../utils/staffPermissions';
+import { getSchoolTagClassName } from '../../../utils/schoolTags';
 
 
 // 역할별 탭 정의
@@ -806,7 +807,14 @@ export default function AcademyStudentDetailPage() {
           </div>
           <div>
             <p className="text-xl font-bold text-gray-900">{student.name}</p>
-            {student.grade && <p className="text-sm text-gray-500">{student.grade} {student.school && `· ${student.school}`}</p>}
+            <div className="mt-1 flex items-center gap-2">
+              {student.grade && <span className="text-sm text-gray-500">{student.grade}</span>}
+              {student.school && (
+                <span className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${getSchoolTagClassName(student.school)}`}>
+                  {student.school}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

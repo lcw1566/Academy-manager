@@ -3,6 +3,7 @@ import { Check } from 'lucide-react';
 import Modal from '../../components/Modal';
 import useAcademyStore from '../../store/useAcademyStore';
 import { formatPhoneNumber } from '../../utils/format';
+import { getSchoolTagClassName } from '../../utils/schoolTags';
 
 const SUBJECTS = ['수학', '영어', '국어', '과학', '물리', '화학', '사회', '역사', '기타'];
 
@@ -210,7 +211,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
                 onChange={(e) => { setSchoolName(e.target.value); setShowSuggestions(true); }}
                 onFocus={() => setShowSuggestions(true)}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                placeholder="예: 공릉중"
+                placeholder="학교명을 입력하세요"
                 className="input"
               />
               {showSuggestions && filteredSuggestions.length > 0 && (
@@ -220,9 +221,11 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
                       key={s}
                       type="button"
                       onMouseDown={() => handleSelectSuggestion(s)}
-                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 border-b border-gray-50 last:border-0"
+                      className="flex w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-50 last:border-0"
                     >
-                      {s}
+                      <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${getSchoolTagClassName(s)}`}>
+                        {s}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -244,7 +247,7 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
                           key={s}
                           type="button"
                           onClick={() => setSchoolName(s)}
-                          className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors border border-gray-200"
+                          className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-transform active:scale-95 ${getSchoolTagClassName(s)}`}
                         >
                           {s}
                         </button>

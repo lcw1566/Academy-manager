@@ -8,6 +8,7 @@ import { currentUserCan } from '../../../utils/staffPermissions';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
+import { getSchoolTagClassName } from '../../../utils/schoolTags';
 
 export default function AcademyStudentsPage() {
   const { role, academyStudents, classGroups, clinicTasks, navigateToAcademyStudent } = useAcademyStore();
@@ -111,7 +112,11 @@ export default function AcademyStudentsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
-                        {student.school && <p className="text-xs text-gray-400">{student.school}</p>}
+                        {student.school && (
+                          <span className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${getSchoolTagClassName(student.school)}`}>
+                            {student.school}
+                          </span>
+                        )}
                         {groups.length > 0 && (
                           <p className="text-xs text-blue-600 font-medium">{groups.map((g) => g.name).join(', ')}</p>
                         )}

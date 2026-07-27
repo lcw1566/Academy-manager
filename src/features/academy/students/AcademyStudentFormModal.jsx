@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Pencil } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -12,6 +12,7 @@ import {
 } from '../../../services/supabase/domainApi';
 import { formatPhoneNumber } from '../../../utils/format';
 import { getTodayYMD } from '../../../utils/date';
+import { getSchoolTagClassName } from '../../../utils/schoolTags';
 
 const SCHOOL_TYPES = [
   { id: 'elementary', label: '초등' },
@@ -160,11 +161,15 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const [createdStudent, setCreatedStudent] = useState(null);
   const [selectedClassGroupIds, setSelectedClassGroupIds] = useState([]);
   const [assigning, setAssigning] = useState(false);
+  const [isEditingSchool, setIsEditingSchool] = useState(
+    () => !(editStudent?.school || editStudent?.schoolName),
+  );
   const schoolInputRef = useRef(null);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const handleSchoolTypeChange = (type) => {
+    if (form.schoolType !== type) setIsEditingSchool(true);
     setForm((f) => ({
       ...f,
       schoolType: type,
@@ -180,6 +185,21 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const filteredSuggestions = form.school.trim()
     ? schoolNames.filter((s) => s.includes(form.school) && s !== form.school)
     : schoolNames.filter(Boolean).slice(0, 5);
+
+  const commitSchoolName = () => {
+    const schoolName = form.school.trim();
+    set('school', schoolName);
+    setShowSuggestions(false);
+    if (schoolName) setIsEditingSchool(false);
+  };
+
+  const editSchoolName = () => {
+    setIsEditingSchool(true);
+    requestAnimationFrame(() => {
+      schoolInputRef.current?.focus();
+      schoolInputRef.current?.select();
+    });
+  };
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -476,35 +496,77 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
 
         {showSchoolName && (
           <Field label="학교명">
-            <div className="relative">
-              <input
-                ref={schoolInputRef}
-                value={form.school}
-                onChange={(e) => { set('school', e.target.value); setShowSuggestions(true); }}
-                onFocus={() => setShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                placeholder="예: 공릉중학교"
-                className="input"
-              />
-              {showSuggestions && filteredSuggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 z-10 bg-white border border-gray-200 rounded-xl shadow-lg mt-1 overflow-hidden">
-                  {filteredSuggestions.map((s) => (
-                    <button key={s} type="button" onMouseDown={() => { set('school', s); setShowSuggestions(false); }}
-                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 border-b border-gray-50 last:border-0">
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {form.school && !isEditingSchool ? (
+              <div className="flex min-h-12 items-center rounded-2xl border border-gray-200 bg-white px-3">
+                <button
+                  type="button"
+                  onClick={editSchoolName}
+                  className={`inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold ${getSchoolTagClassName(form.school)}`}
+                  aria-label={`${form.school} 학교명 수정`}
+                >
+                  <span className="truncate">{form.school}</span>
+                  <Pencil size={12} className="flex-shrink-0 opacity-60" />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  ref={schoolInputRef}
+                  value={form.school}
+                  onChange={(e) => { set('school', e.target.value); setShowSuggestions(true); }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitSchoolName();
+                    }
+                  }}
+                  onBlur={() => setTimeout(commitSchoolName, 150)}
+                  placeholder="학교명을 입력하세요"
+                  className="input"
+                />
+                {showSuggestions && filteredSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-10 bg-white border border-gray-200 rounded-xl shadow-lg mt-1 overflow-hidden">
+                    {filteredSuggestions.map((schoolName) => (
+                      <button
+                        key={schoolName}
+                        type="button"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          set('school', schoolName);
+                          setShowSuggestions(false);
+                          setIsEditingSchool(false);
+                        }}
+                        className="flex w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-50 last:border-0"
+                      >
+                        <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${getSchoolTagClassName(schoolName)}`}>
+                          {schoolName}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {schoolNames.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-2">
+                <p className="mb-1.5 text-[11px] font-medium text-gray-400">최근 입력한 학교</p>
+                <div className="flex flex-wrap gap-1.5">
                 {schoolNames.filter((s) => s !== form.school).slice(0, 6).map((s) => (
-                  <button key={s} type="button" onClick={() => set('school', s)}
-                    className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600 transition-colors border border-gray-200">
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => {
+                      set('school', s);
+                      setIsEditingSchool(false);
+                      setShowSuggestions(false);
+                    }}
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-transform active:scale-95 ${getSchoolTagClassName(s)}`}
+                  >
                     {s}
                   </button>
                 ))}
+                </div>
               </div>
             )}
           </Field>
