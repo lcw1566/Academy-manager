@@ -52,7 +52,7 @@ export default function TuitionPolicyOnboardingSheet({ onClose }) {
         </button>
       }
     >
-      <p className="mb-2 text-sm text-gray-500">학교급별 기본 금액을 입력하고 필요한 예외만 추가해주세요.</p>
+      <p className="mb-2 text-sm text-gray-500">학교별 기본 금액을 입력하고 필요한 예외만 추가해주세요.</p>
       <TuitionRateFields
         rates={tuitionRates}
         onChange={setTuitionRates}

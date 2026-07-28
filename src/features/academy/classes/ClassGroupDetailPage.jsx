@@ -24,6 +24,7 @@ import {
 import { hhmmToMin } from '../../../utils/shiftCoverage';
 import { getTeacherDisplayName } from '../../../utils/format';
 import { currentUserCan } from '../../../utils/staffPermissions';
+import { getRoomTagClassName } from '../../../utils/roomTags';
 import ClassGroupFormModal, {
   mapClassSessionToServerPayload,
   matchSessionPairs,
@@ -314,7 +315,7 @@ export default function ClassGroupDetailPage() {
                     : `${group.startTime}–${group.endTime}`
                 }
               />
-              {group.room && <InfoRow label="강의실" value={group.room} />}
+              {group.room && <InfoRow label="강의실" value={<RoomTag room={group.room} />} />}
               {teacherName && <InfoRow label="담당강사" value={teacherName} />}
               <InfoRow label="학생" value={`${students.length}명`} />
               {group.monthlyFee > 0 && <InfoRow label="월 수강료" value={`${group.monthlyFee.toLocaleString()}원`} />}
@@ -688,7 +689,7 @@ function WeekSessionBlock({ session, students, attendanceRecords, todayYMD, top,
         </span>
       </div>
       <div className="mt-0.5 hidden items-center gap-1.5 text-[10px] font-semibold text-[#8B95A1] md:flex">
-        {session.room && <span className="truncate">{session.room}</span>}
+        {session.room && <RoomTag room={session.room} compact />}
         <span>{students.length}명</span>
         {attendedCount > 0 && <span className="text-green-600">출석 {attendedCount}</span>}
       </div>
@@ -838,7 +839,7 @@ function SessionCard({ session, students, attendanceRecords, onClick, isPast }) 
       </div>
       <div className="flex items-center gap-3 text-xs text-gray-400">
         <span>{session.startTime}–{session.endTime}</span>
-        {session.room && <span>{session.room}</span>}
+        {session.room && <RoomTag room={session.room} compact />}
         <span>{students.length}명</span>
         {isPast && attendedCount > 0 && (
           <span className="text-green-600 font-medium">출석 {attendedCount}명</span>
@@ -854,5 +855,16 @@ function InfoRow({ label, value }) {
       <p className="text-gray-400 mb-0.5">{label}</p>
       <p className="font-semibold text-gray-800">{value}</p>
     </div>
+  );
+}
+
+function RoomTag({ room, compact = false }) {
+  if (!room) return null;
+  return (
+    <span className={`inline-flex max-w-full items-center rounded-lg border font-bold ${getRoomTagClassName(room)} ${
+      compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs'
+    }`}>
+      <span className="truncate">{room}</span>
+    </span>
   );
 }

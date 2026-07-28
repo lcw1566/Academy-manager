@@ -51,7 +51,7 @@ export const CLINIC_REQUIRED_OPTIONS = [
 ];
 
 export const TUITION_POLICY_OPTIONS = [
-  { id: 'school_level', label: '학교급별', description: '초등·중등·고등 기준' },
+  { id: 'school_level', label: '학교별', description: '초등·중등·고등 기준' },
   { id: 'grade', label: '학년별', description: '초1·중2·고3 기준' },
   { id: 'class', label: '반별', description: '반마다 직접 설정' },
 ];

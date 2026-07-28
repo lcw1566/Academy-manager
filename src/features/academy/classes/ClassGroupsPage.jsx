@@ -11,6 +11,7 @@ import { today, formatDateShort } from '../../../utils/date';
 import { getTeacherDisplayName, OWNER_TEACHER_ID } from '../../../utils/format';
 import { useState } from 'react';
 import { currentUserCan } from '../../../utils/staffPermissions';
+import { getRoomTagClassName } from '../../../utils/roomTags';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
 import {
   buildPlannedClassSessions,
@@ -163,7 +164,11 @@ export default function ClassGroupsPage() {
                           : group.startTime || ''}
                       </span>
                     </div>
-                    {group.room && <p className="text-xs text-gray-400 truncate">{group.room}</p>}
+                    {group.room && (
+                      <span className={`inline-flex w-fit max-w-full rounded-lg border px-2 py-1 text-[11px] font-bold ${getRoomTagClassName(group.room)}`}>
+                        <span className="truncate">{group.room}</span>
+                      </span>
+                    )}
                     {group.teacherName && (
                       <p className="text-xs text-gray-400 truncate">담당: {group.teacherName}</p>
                     )}

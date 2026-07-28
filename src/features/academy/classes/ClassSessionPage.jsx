@@ -14,6 +14,7 @@ import Modal from '../../../components/Modal';
 import { formatDateShort } from '../../../utils/date';
 import { attendanceStatusMap, getTeacherDisplayName } from '../../../utils/format';
 import { currentUserCan } from '../../../utils/staffPermissions';
+import { getRoomTagClassName } from '../../../utils/roomTags';
 import ShiftCoverageSheet from '../work/ShiftCoverageSheet';
 import useEnsureShiftCoverage from '../work/useEnsureShiftCoverage';
 import { getQrAttendanceHint, readAttendanceSettings } from '../attendance/attendanceHelpers';
@@ -753,7 +754,7 @@ export default function ClassSessionPage() {
               <SummaryCell label="보완 항목" value={supportCount} color="text-orange-500" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
-              {session.room && <InfoChip label="강의실" value={session.room} />}
+              {session.room && <InfoChip label="강의실" value={session.room} tag />}
               {teacherName && <InfoChip label="강사" value={teacherName} />}
               <InfoChip label="시간" value={`${session.startTime}–${session.endTime}`} />
               <InfoChip label="상태" value={session.status === 'completed' ? '완료' : session.status === 'canceled' ? '취소' : '예정'} />
@@ -1118,11 +1119,16 @@ function SubstituteTeacherModal({ session, mainTeacherId, academyTeachers, onClo
   );
 }
 
-function InfoChip({ label, value }) {
+function InfoChip({ label, value, tag = false }) {
   return (
     <div className="flex items-center gap-1">
       <span className="text-gray-400">{label}:</span>
-      <span className="font-medium text-gray-700">{value}</span>
+      <span className={tag
+        ? `inline-flex max-w-full rounded-lg border px-1.5 py-0.5 text-[10px] font-bold ${getRoomTagClassName(value)}`
+        : 'font-medium text-gray-700'
+      }>
+        {value}
+      </span>
     </div>
   );
 }

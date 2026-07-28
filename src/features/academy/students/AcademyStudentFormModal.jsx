@@ -14,6 +14,7 @@ import { formatPhoneNumber } from '../../../utils/format';
 import { getTodayYMD } from '../../../utils/date';
 import { getSchoolTagClassName } from '../../../utils/schoolTags';
 import { STUDENT_STATUS_OPTIONS } from '../../../utils/studentStatus';
+import { readAttendanceSettings } from '../attendance/attendanceHelpers';
 
 const SCHOOL_TYPES = [
   { id: 'elementary', label: '초등' },
@@ -131,10 +132,13 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const isEdit = !!editStudent;
+  const currentAcademy = memberships.find((membership) => membership.academy_id === currentAcademyId)?.academy || null;
+  const showCheckinPin = readAttendanceSettings(currentAcademy).studentCheckMethod === 'qr';
 
   const [form, setForm] = useState({
     name: editStudent?.name || '',
@@ -603,19 +607,21 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
           </div>
         </Field>
 
-        <Field label="등하원 PIN">
-          <input
-            inputMode="numeric"
-            value={form.checkinPin}
-            onChange={(e) => set('checkinPin', normalizePin(e.target.value))}
-            placeholder={lastFourDigits(form.phone, form.parentPhone) || '0000'}
-            maxLength={4}
-            className="input tracking-[0.25em] font-bold"
-          />
-          <p className="text-xs text-gray-500 mt-1.5">
-            비워두면 학생 연락처, 없으면 학부모 연락처 끝 4자리로 자동 설정돼요.
-          </p>
-        </Field>
+        {showCheckinPin && (
+          <Field label="등하원 PIN">
+            <input
+              inputMode="numeric"
+              value={form.checkinPin}
+              onChange={(e) => set('checkinPin', normalizePin(e.target.value))}
+              placeholder={lastFourDigits(form.phone, form.parentPhone) || '0000'}
+              maxLength={4}
+              className="input tracking-[0.25em] font-bold"
+            />
+            <p className="text-xs text-gray-500 mt-1.5">
+              비워두면 학생 연락처, 없으면 학부모 연락처 끝 4자리로 자동 설정돼요.
+            </p>
+          </Field>
+        )}
 
         <Field label="등원일">
           <input type="date" value={form.enrollmentDate} onChange={(e) => set('enrollmentDate', e.target.value)} className="input" />

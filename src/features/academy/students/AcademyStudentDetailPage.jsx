@@ -19,7 +19,7 @@ import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getSchoolTagClassName } from '../../../utils/schoolTags';
 import { getStudentStatusMeta } from '../../../utils/studentStatus';
-import { getAcademyYmd, getStudentDayCheckState } from '../attendance/attendanceHelpers';
+import { getAcademyYmd, getStudentDayCheckState, readAttendanceSettings } from '../attendance/attendanceHelpers';
 
 
 // 역할별 탭 정의
@@ -321,6 +321,7 @@ export default function AcademyStudentDetailPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authUserId = useAuthStore((s) => s.user?.id);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
   const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
@@ -331,6 +332,11 @@ export default function AcademyStudentDetailPage() {
     () => academyStaffProfiles.find((sp) => sp.user_id === authUserId) || null,
     [academyStaffProfiles, authUserId],
   );
+  const currentAcademy = useMemo(
+    () => memberships.find((membership) => membership.academy_id === currentAcademyId)?.academy || null,
+    [memberships, currentAcademyId],
+  );
+  const showCheckinPin = readAttendanceSettings(currentAcademy).studentCheckMethod === 'qr';
   const canEditClinicRecords = currentUserCan(
     { role, staffProfile: myStaffProfile },
     'canEditClinicRecords',
@@ -512,7 +518,9 @@ export default function AcademyStudentDetailPage() {
           {student.phone && <InfoRowFull label="연락처" value={student.phone} phone={student.phone} />}
           {student.parentName && <InfoRowFull label="학부모" value={student.parentName} />}
           {student.parentPhone && <InfoRowFull label="학부모 연락처" value={student.parentPhone} phone={student.parentPhone} />}
-          {canManageStudents && student.checkinPin && <InfoRowFull label="등하원 PIN" value={student.checkinPin} />}
+          {canManageStudents && showCheckinPin && student.checkinPin && (
+            <InfoRowFull label="등하원 PIN" value={student.checkinPin} />
+          )}
           {student.memo && <InfoRowFull label="메모" value={student.memo} />}
         </div>
       </div>

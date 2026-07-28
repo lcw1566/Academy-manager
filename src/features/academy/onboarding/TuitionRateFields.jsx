@@ -200,7 +200,7 @@ export default function TuitionRateFields({
 
       <div className="mt-4">
         <p className="text-sm font-bold text-gray-900">
-          {isCommon ? '학교급별 기본 수강료' : `${activeSubject?.label || ''} 수강료`}
+          {isCommon ? '학교별 기본 수강료' : `${activeSubject?.label || ''} 수강료`}
         </p>
         <p className="mt-0.5 text-[11px] text-gray-500">
           {isCommon

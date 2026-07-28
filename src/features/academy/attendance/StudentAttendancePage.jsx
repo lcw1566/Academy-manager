@@ -18,6 +18,7 @@ import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { addDaysYMD, formatDateShort } from '../../../utils/date';
 import { currentUserCan } from '../../../utils/staffPermissions';
+import { getRoomTagClassName } from '../../../utils/roomTags';
 import {
   buildPlannedClassSessions,
   mergePlannedAndActualClassSessions,
@@ -58,7 +59,7 @@ function getPresenceMeta(state) {
   }
   if (state.isInside) {
     return {
-      label: '학원에 있음',
+      label: '학원에 있어요',
       detail: `${formatEventTime(state.latest.event_time)} 등원`,
       badge: 'bg-emerald-50 text-emerald-700',
       icon: LogIn,
@@ -316,8 +317,8 @@ export default function StudentAttendancePage() {
         ) : null}
       />
 
-      <div className="px-4 pt-[72px] pb-8 md:px-0 md:pt-0">
-        <div className="mb-4 flex items-center justify-between rounded-2xl bg-white px-3 py-2 shadow-sm">
+      <div className="mx-auto max-w-6xl px-4 pt-[72px] pb-8 md:px-0 md:pt-0">
+        <div className="mb-4 flex items-center justify-between rounded-2xl border border-[#E5E8EB] bg-white px-3 py-2">
           <button type="button" onClick={() => goDate(-1)} className="h-10 w-10 rounded-xl text-gray-500 active:bg-gray-100">
             <ChevronLeft size={20} className="mx-auto" />
           </button>
@@ -332,7 +333,7 @@ export default function StudentAttendancePage() {
           </button>
         </div>
 
-        <div className="mb-4 grid grid-cols-4 gap-2">
+        <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           <SummaryItem label="예정" value={summary.expected} Icon={CalendarDays} tone="gray" />
           <SummaryItem label="등원" value={summary.checkedIn} Icon={CheckCircle2} tone="blue" />
           <SummaryItem label="원내" value={summary.inside} Icon={LogIn} tone="green" />
@@ -350,13 +351,13 @@ export default function StudentAttendancePage() {
           </div>
         )}
 
-        <div className="mb-3 flex h-12 items-center gap-2 rounded-2xl bg-white px-4 shadow-sm">
-          <Search size={17} className="flex-shrink-0 text-gray-400" />
+        <div className="mb-3 flex h-[52px] items-center gap-2.5 rounded-2xl border border-[#D1D6DB] bg-white px-4 focus-within:border-[#3182F6] focus-within:ring-2 focus-within:ring-blue-100">
+          <Search size={18} className="flex-shrink-0 text-[#8B95A1]" />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="학생 이름, 학교, 학년 검색"
-            className="min-w-0 flex-1 bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400"
+            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#191F28] outline-none placeholder:text-[#8B95A1]"
           />
         </div>
 
@@ -402,6 +403,7 @@ export default function StudentAttendancePage() {
                 saving={savingStudentId === row.student.id}
                 hasServerId={!!row.student.serverId}
                 actualSessionIds={actualSessionIds}
+                classGroups={classGroups}
                 onRecord={() => recordNextEvent(row)}
                 onAddPast={() => {
                   setManualEntryTarget(row);
@@ -472,16 +474,21 @@ export default function StudentAttendancePage() {
 
 function SummaryItem({ label, value, Icon, tone }) {
   const tones = {
-    gray: 'bg-white text-gray-600',
-    blue: 'bg-blue-50 text-blue-700',
-    green: 'bg-emerald-50 text-emerald-700',
-    indigo: 'bg-indigo-50 text-indigo-700',
+    gray: { icon: 'bg-gray-100 text-gray-600', value: 'text-[#191F28]' },
+    blue: { icon: 'bg-blue-50 text-blue-600', value: 'text-blue-700' },
+    green: { icon: 'bg-emerald-50 text-emerald-600', value: 'text-emerald-700' },
+    indigo: { icon: 'bg-indigo-50 text-indigo-600', value: 'text-indigo-700' },
   };
+  const selectedTone = tones[tone] || tones.gray;
   return (
-    <div className={`rounded-2xl px-2 py-3 text-center shadow-sm ${tones[tone] || tones.gray}`}>
-      <Icon size={14} className="mx-auto mb-1 opacity-75" />
-      <p className="text-lg font-extrabold leading-none">{value}</p>
-      <p className="mt-1 text-[10px] font-bold opacity-75">{label}</p>
+    <div className="flex items-center gap-3 rounded-2xl border border-[#E5E8EB] bg-white px-3.5 py-3.5">
+      <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${selectedTone.icon}`}>
+        <Icon size={16} />
+      </div>
+      <div>
+        <p className={`text-xl font-black leading-none ${selectedTone.value}`}>{value}</p>
+        <p className="mt-1 text-[11px] font-bold text-[#6B7684]">{label}</p>
+      </div>
     </div>
   );
 }
@@ -493,72 +500,87 @@ function StudentPresenceRow({
   saving,
   hasServerId,
   actualSessionIds,
+  classGroups,
   onRecord,
   onAddPast,
   onOpenSession,
 }) {
   const { student, state, sessions, presence } = row;
   const PresenceIcon = presence.icon;
-  const actionLabel = state.isInside ? '하원' : state.latest ? '재등원' : '등원';
-  const sessionText = sessions.length > 0
-    ? sessions.map((session) => `${session.startTime || ''} ${session.room || ''}`.trim()).join(' · ')
-    : '오늘 수업 없음';
+  const actionLabel = state.isInside ? '하원 처리' : state.latest ? '재등원' : '등원 처리';
 
   return (
-    <div className="rounded-2xl bg-white px-4 py-3.5 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-extrabold text-blue-600">
-          {(student.name || '?')[0]}
+    <div className="rounded-[22px] border border-[#E5E8EB] bg-white p-4 transition-colors hover:border-[#D1D6DB]">
+      <div className="grid items-center gap-4 md:grid-cols-[minmax(200px,0.9fr)_minmax(280px,1.35fr)_auto]">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[#E8F3FF] text-base font-black text-[#1B64DA]">
+            {(student.name || '?')[0]}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-extrabold text-[#191F28]">{student.name}</p>
+            <p className="mt-1 truncate text-xs font-medium text-[#6B7684]">
+              {[student.school, student.grade].filter(Boolean).join(' · ') || '학교 정보 없음'}
+            </p>
+          </div>
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <p className="font-bold text-gray-900">{student.name}</p>
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${presence.badge}`}>
-              <PresenceIcon size={10} />
+
+        <div className="min-w-0 border-t border-gray-100 pt-3 md:border-l md:border-t-0 md:pl-4 md:pt-0">
+          <p className="mb-2 text-[10px] font-bold text-[#8B95A1]">오늘 수업</p>
+          {sessions.length > 0 ? (
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
+              {sessions.map((session) => {
+                const canOpen = actualSessionIds.has(session.id);
+                const group = classGroups.find((item) => item.id === session.classGroupId);
+                return (
+                  <button
+                    key={session.id}
+                    type="button"
+                    disabled={!canOpen}
+                    onClick={() => onOpenSession(session.id)}
+                    className="flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-2 text-left active:bg-gray-100 disabled:cursor-default"
+                  >
+                    <span className="text-xs font-black text-[#191F28]">{session.startTime || '미정'}</span>
+                    <span className="max-w-28 truncate text-[11px] font-semibold text-[#4E5968]">{group?.name || '수업'}</span>
+                    {session.room && (
+                      <span className={`rounded-md border px-1.5 py-0.5 text-[9px] font-bold ${getRoomTagClassName(session.room)}`}>
+                        {session.room}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs font-semibold text-[#8B95A1]">예정된 수업이 없어요</p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-3 md:justify-end md:border-t-0 md:pt-0">
+          <div className="min-w-0 text-left md:text-right">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${presence.badge}`}>
+              <PresenceIcon size={11} />
               {presence.label}
             </span>
+            <p className="mt-1 text-[11px] font-semibold text-[#6B7684]">{presence.detail}</p>
           </div>
-          <p className="mt-0.5 truncate text-xs text-gray-400">
-            {[student.school, student.grade, presence.detail].filter(Boolean).join(' · ')}
-          </p>
-          <p className="mt-2 truncate text-xs font-medium text-gray-600">{sessionText}</p>
+          {(canRecord || canAddPast) && (
+            <button
+              type="button"
+              onClick={canRecord ? onRecord : onAddPast}
+              disabled={saving || !hasServerId}
+              className={`h-11 min-w-[76px] flex-shrink-0 rounded-xl px-3 text-xs font-extrabold transition-transform active:scale-[0.97] disabled:opacity-40 ${
+                canAddPast
+                  ? 'border border-[#D1D6DB] bg-white text-[#4E5968]'
+                  : state.isInside
+                  ? 'bg-[#191F28] text-white'
+                  : 'bg-[#3182F6] text-white'
+              }`}
+            >
+              {saving ? '저장 중' : canAddPast ? '기록 추가' : actionLabel}
+            </button>
+          )}
         </div>
-        {(canRecord || canAddPast) && (
-          <button
-            type="button"
-            onClick={canRecord ? onRecord : onAddPast}
-            disabled={saving || !hasServerId}
-            className={`h-9 flex-shrink-0 rounded-xl px-3 text-xs font-extrabold disabled:opacity-40 ${
-              canAddPast
-                ? 'border border-gray-200 bg-white text-gray-600'
-                : state.isInside
-                ? 'bg-gray-900 text-white'
-                : 'bg-blue-600 text-white'
-            }`}
-          >
-            {saving ? '저장 중' : canAddPast ? '기록 추가' : actionLabel}
-          </button>
-        )}
       </div>
-
-      {sessions.length > 0 && (
-        <div className="mt-3 flex gap-2 overflow-x-auto border-t border-gray-50 pt-2.5" style={{ scrollbarWidth: 'none' }}>
-          {sessions.map((session) => {
-            const canOpen = actualSessionIds.has(session.id);
-            return (
-              <button
-                key={session.id}
-                type="button"
-                disabled={!canOpen}
-                onClick={() => onOpenSession(session.id)}
-                className="flex-shrink-0 rounded-lg bg-gray-50 px-2.5 py-1.5 text-[11px] font-bold text-gray-600 disabled:cursor-default"
-              >
-                {session.startTime || '시간 미정'} · 수업 상태
-              </button>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronRight, AlertTriangle, Check } from 'lucide-react';
+import { ChevronRight, AlertTriangle, Check, Plus, X } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import OptionSelectSheet from '../../../components/OptionSelectSheet';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -19,6 +19,7 @@ import {
 import { OWNER_TEACHER_ID } from '../../../utils/format';
 import BulkShiftSuggestionSheet from '../work/BulkShiftSuggestionSheet';
 import { hhmmToMin } from '../../../utils/shiftCoverage';
+import { getRoomTagClassName } from '../../../utils/roomTags';
 import {
   ACADEMY_SUBJECT_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
@@ -323,6 +324,14 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   });
   const [periodStartMode, setPeriodStartMode] = useState(editGroup ? 'custom' : 'today');
   const [periodEndMode, setPeriodEndMode] = useState(editGroup?.endDate ? 'until' : 'forever');
+  const roomOptions = useMemo(
+    () => [...new Set(
+      [...classGroups.map((group) => group.room), form.room]
+        .map((room) => String(room || '').trim())
+        .filter(Boolean),
+    )],
+    [classGroups, form.room],
+  );
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -704,7 +713,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     });
   }, [academyStudents, studentSearch, studentSchoolFilter, studentGradeFilter]);
   const tuitionBasisLabel = tuitionPolicy === 'school_level'
-    ? (getSchoolLevelKey(form.level) || '학교급')
+    ? (getSchoolLevelKey(form.level) || '학교')
     : tuitionPolicy === 'grade'
       ? (form.level || '학년')
       : '반';
@@ -821,11 +830,10 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             </Field>
 
             <Field label="강의실">
-              <input
+              <RoomTagPicker
                 value={form.room}
-                onChange={(e) => set('room', e.target.value)}
-                placeholder="강의실 선택"
-                className="input"
+                options={roomOptions}
+                onChange={(room) => set('room', room)}
               />
             </Field>
           </div>
@@ -1256,5 +1264,107 @@ function SelectRow({ value, placeholder, onClick }) {
       </span>
       <ChevronRight size={18} className="text-gray-300" />
     </button>
+  );
+}
+
+function RoomTagPicker({ value, options = [], onChange }) {
+  const [adding, setAdding] = useState(!value);
+  const [draft, setDraft] = useState('');
+  const trimmedDraft = draft.trim();
+  const otherOptions = options.filter((room) => room !== value);
+
+  const commit = () => {
+    if (!trimmedDraft) return;
+    onChange?.(trimmedDraft);
+    setDraft('');
+    setAdding(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-2.5">
+      {value && (
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className={`inline-flex max-w-full items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold ${getRoomTagClassName(value)}`}>
+            <span className="truncate">{value}</span>
+            <button
+              type="button"
+              onClick={() => {
+                onChange?.('');
+                setAdding(true);
+              }}
+              aria-label={`${value} 강의실 선택 해제`}
+              className="rounded-full p-0.5 opacity-60 active:bg-white/60"
+            >
+              <X size={11} />
+            </button>
+          </span>
+          {!adding && (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="flex-shrink-0 text-[11px] font-bold text-blue-600"
+            >
+              변경
+            </button>
+          )}
+        </div>
+      )}
+
+      {otherOptions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {otherOptions.map((room) => (
+            <button
+              key={room}
+              type="button"
+              onClick={() => {
+                onChange?.(room);
+                setDraft('');
+                setAdding(false);
+              }}
+              className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-transform active:scale-[0.97] ${getRoomTagClassName(room)}`}
+            >
+              {room}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {adding ? (
+        <div className={`${otherOptions.length > 0 ? 'mt-2' : ''} flex items-center gap-2`}>
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                commit();
+              }
+            }}
+            autoFocus={!value}
+            placeholder="예: A강의실"
+            className="h-10 min-w-0 flex-1 rounded-xl bg-gray-50 px-3 text-sm font-semibold text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-100"
+          />
+          <button
+            type="button"
+            onClick={commit}
+            disabled={!trimmedDraft}
+            className="h-10 rounded-xl bg-blue-600 px-3 text-xs font-bold text-white disabled:bg-gray-200"
+          >
+            추가
+          </button>
+        </div>
+      ) : (
+        !value && otherOptions.length === 0 && (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="flex h-10 w-full items-center justify-center gap-1 rounded-xl bg-gray-50 text-xs font-bold text-gray-500"
+          >
+            <Plus size={13} />
+            강의실 추가
+          </button>
+        )
+      )}
+    </div>
   );
 }
