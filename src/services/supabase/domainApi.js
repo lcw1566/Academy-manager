@@ -294,6 +294,28 @@ export async function updateClassSession(id, patch = {}) {
   return data;
 }
 
+export async function updateFutureClassSessionRecordSchema({
+  academyId,
+  classGroupId,
+  fromDate,
+  recordSchema,
+} = {}) {
+  assertSupabaseConfigured();
+  if (!academyId || !classGroupId || !fromDate) {
+    throw new Error('학원·반·시작 날짜가 필요해요.');
+  }
+  const { data, error } = await supabase
+    .from('class_sessions')
+    .update({ record_schema: Array.isArray(recordSchema) ? recordSchema : [] })
+    .eq('academy_id', academyId)
+    .eq('class_group_id', classGroupId)
+    .gte('date', fromDate)
+    .not('status', 'in', '("completed","canceled")')
+    .select();
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function deleteClassSession(id) {
   assertSupabaseConfigured();
   if (!id) throw new Error('id가 필요해요.');
@@ -944,6 +966,7 @@ const STUDENT_ALLOWED_FIELDS = new Set([
   'phone', 'parent_phone', 'parent_title', 'parent_name',
   'enrollment_date', 'status', 'memo', 'class_group_ids',
   'checkin_pin',
+  'clinic_record_fields', 'clinic_default_activity_type',
 ]);
 
 function sanitizeStudentPayload(input, { strip = [] } = {}) {
@@ -960,7 +983,7 @@ function sanitizeStudentPayload(input, { strip = [] } = {}) {
 const CLASS_GROUP_ALLOWED_FIELDS = new Set([
   'id', 'academy_id', 'user_id', 'mode',
   'name', 'subject', 'level',
-  'activity_type', 'activity_name', 'record_blocks',
+  'activity_type', 'activity_name', 'record_blocks', 'record_schema',
   'teacher_id', 'teacher_type',
   // Phase 44 — server-stable auth.users.id 매칭용 (SQL 013)
   'teacher_user_id',
@@ -992,6 +1015,7 @@ const CLASS_SESSION_ALLOWED_FIELDS = new Set([
   // Phase 44 — server-stable auth.users.id 매칭용 (SQL 013)
   'teacher_user_id',
   'student_ids', 'status', 'memo',
+  'record_schema', 'activity_type', 'activity_name', 'session_kind', 'origin_session_id',
   // Phase 30 — 대체 강사 (SQL 006 에서 추가됨)
   'substitute_teacher_user_id', 'substitute_reason',
   // Phase 35 — 보조강사 배정 영속화 (SQL 008)
@@ -1014,6 +1038,7 @@ const LESSON_RECORD_ALLOWED_FIELDS = new Set([
   'class_group_id', 'class_session_id', 'date', 'teacher_id',
   'common_progress', 'common_lesson_content', 'common_homework',
   'next_lesson_plan', 'teacher_memo',
+  'common_custom_values',
   'student_records',
   'ai_parent_notice', 'ai_student_homework_notice',
 ]);

@@ -19,6 +19,7 @@ import {
   mapServerPayrollToLocal,
 } from '../services/supabase/hydrateMappers';
 import { computeLessonHoursForMonth } from '../utils/shiftCoverage';
+import { normalizeRecordSchema } from '../constants/learningActivitySettings';
 
 const noopStorage = {
   getItem: () => null,
@@ -1043,7 +1044,10 @@ const useAcademyStore = create(
   //   keys 는 한글 요일 문자열 ('월','화','수','목','금','토','일').
   //   해당 키가 없으면 group.startTime / group.endTime 으로 fallback.
   generateClassSessions: (group, options = {}) => {
-    const { id: classGroupId, weekdays, startDate, endDate, startTime, endTime, room, teacherId, teacherUserId, studentIds, weekdayTimes } = group;
+    const {
+      id: classGroupId, weekdays, startDate, endDate, startTime, endTime,
+      room, teacherId, teacherUserId, studentIds, weekdayTimes,
+    } = group;
     const dayNameToNum = { '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6, '일': 0 };
     const numToDayName = ['일', '월', '화', '수', '목', '금', '토'];
     const daysOfWeek = (weekdays || []).map((d) => dayNameToNum[d]).filter((d) => d !== undefined);
@@ -1071,6 +1075,11 @@ const useAcademyStore = create(
         teacherUserId: teacherUserId || '',
         assistantIds: [],
         studentIds: studentIds || [],
+        recordSchema: normalizeRecordSchema(group.recordSchema || group.recordBlocks),
+        activityType: group.activityType || 'regular_class',
+        activityName: group.activityName || '',
+        sessionKind: 'regular',
+        originSessionId: null,
         status: 'scheduled',
         memo: '',
         createdAt: new Date().toISOString(),
@@ -1205,6 +1214,17 @@ const useAcademyStore = create(
   },
 
   // ─── Class Sessions (수업 회차) ───────────────────
+  addClassSession: (sessionData) => {
+    const session = {
+      ...sessionData,
+      id: sessionData.id || `cs_manual_${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    set((s) => ({ classSessions: [...s.classSessions, session] }));
+    get().showToast(session.sessionKind === 'makeup' ? '보강 회차를 만들었어요.' : '수업 회차를 만들었어요.');
+    return session;
+  },
   updateClassSession: (sessionId, updates) => {
     set((s) => ({
       classSessions: s.classSessions.map((session) =>
@@ -1212,6 +1232,19 @@ const useAcademyStore = create(
       ),
     }));
     get().showToast('수업 회차가 수정되었습니다.');
+  },
+  applyRecordSchemaToFutureSessions: (groupId, recordSchema, fromDate = getTodayYMD()) => {
+    const normalized = normalizeRecordSchema(recordSchema, []);
+    set((s) => ({
+      classSessions: s.classSessions.map((session) => (
+        session.classGroupId === groupId
+        && session.date >= fromDate
+        && session.status !== 'completed'
+        && session.status !== 'canceled'
+          ? { ...session, recordSchema: normalized, updatedAt: new Date().toISOString() }
+          : session
+      )),
+    }));
   },
   // Supabase class_sessions row 의 uuid 를 local session 에 매핑 (silent).
   setClassSessionServerId: (localId, serverId) => {

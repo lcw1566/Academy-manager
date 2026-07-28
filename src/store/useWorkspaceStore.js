@@ -93,6 +93,10 @@ function syncAcademyProfileFromServer(academy) {
       ? academy.academy_subjects
       : ['korean', 'english', 'math'],
     clinicRequired: academy.clinic_required !== false,
+    clinicRecordFields: Array.isArray(academy.clinic_record_fields)
+      ? academy.clinic_record_fields
+      : ['materials', 'description', 'result'],
+    clinicDefaultActivityType: academy.clinic_default_activity_type || 'clinic',
     tuitionPolicy: academy.tuition_policy || 'school_level',
     tuitionRates:
       academy.tuition_rates && typeof academy.tuition_rates === 'object'
@@ -698,6 +702,8 @@ const useWorkspaceStore = create(
         academyType,
         academySubjects,
         clinicRequired,
+        clinicRecordFields,
+        clinicDefaultActivityType,
         tuitionPolicy,
         tuitionRates,
         address,
@@ -713,6 +719,8 @@ const useWorkspaceStore = create(
             academyType,
             academySubjects,
             clinicRequired,
+            clinicRecordFields,
+            clinicDefaultActivityType,
             tuitionPolicy,
             tuitionRates,
             address,

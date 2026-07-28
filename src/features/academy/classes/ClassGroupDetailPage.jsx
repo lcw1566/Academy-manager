@@ -7,6 +7,8 @@ import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import {
   createAcademyClassSessionsBulk,
   deleteClassGroup as deleteServerClassGroup,
+  updateClassGroup as updateServerClassGroup,
+  updateFutureClassSessionRecordSchema,
 } from '../../../services/supabase/domainApi';
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
@@ -28,11 +30,15 @@ import { getRoomTagClassName } from '../../../utils/roomTags';
 import {
   CLASS_ACTIVITY_TYPES,
   getActivityLabel,
+  normalizeRecordSchema,
+  recordSchemaToBlockIds,
 } from '../../../constants/learningActivitySettings';
 import ClassGroupFormModal, {
   mapClassSessionToServerPayload,
   matchSessionPairs,
 } from './ClassGroupFormModal';
+import RecordTemplateModal from './RecordTemplateModal';
+import MakeupSessionModal from './MakeupSessionModal';
 
 const SESSION_STATUS = {
   scheduled:   { label: '예정',  color: 'bg-blue-50 text-blue-600' },
@@ -90,6 +96,7 @@ export default function ClassGroupDetailPage() {
     academyStudents, academyTeachers, academyAssistants = [], academyProfile, academyAttendanceRecords,
     clinicRecords = [], navigateToClassSession, goBackFromClassGroup, setActiveTab,
     deleteClassGroup, showToast, ensureClassSessionsForMonth, setClassSessionServerIds,
+    updateClassGroup, applyRecordSchemaToFutureSessions,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authUserId = useAuthStore((s) => s.user?.id);
@@ -111,6 +118,9 @@ export default function ClassGroupDetailPage() {
   const [calendarAnchor, setCalendarAnchor] = useState(today());
   const [calendarMode, setCalendarMode] = useState('week');
   const [generatingMonth, setGeneratingMonth] = useState(false);
+  const [showRecordTemplate, setShowRecordTemplate] = useState(false);
+  const [savingRecordTemplate, setSavingRecordTemplate] = useState(false);
+  const [showMakeupForm, setShowMakeupForm] = useState(false);
   const todayStr = today();
 
   const group = classGroups.find((g) => g.id === selectedClassGroupId) ?? null;
@@ -330,6 +340,24 @@ export default function ClassGroupDetailPage() {
               <InfoRow label="학생" value={`${students.length}명`} />
               {group.monthlyFee > 0 && <InfoRow label="월 수강료" value={`${group.monthlyFee.toLocaleString()}원`} />}
             </div>
+            {canManageClasses && (
+              <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowRecordTemplate(true)}
+                  className="rounded-xl bg-blue-50 py-2.5 text-xs font-bold text-blue-700 active:bg-blue-100"
+                >
+                  기록 구성
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMakeupForm(true)}
+                  className="rounded-xl bg-violet-50 py-2.5 text-xs font-bold text-violet-700 active:bg-violet-100"
+                >
+                  + 보강 만들기
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -414,6 +442,54 @@ export default function ClassGroupDetailPage() {
         <ClassGroupFormModal
           editGroup={group}
           onClose={() => setShowEditForm(false)}
+        />
+      )}
+
+      {showRecordTemplate && (
+        <RecordTemplateModal
+          title={`${group.name} 기록 구성`}
+          description="반의 기본 형식으로 저장하고 오늘 이후 아직 끝나지 않은 회차에도 적용해요. 완료된 과거 기록은 바뀌지 않아요."
+          initialSchema={group.recordSchema || group.recordBlocks}
+          saving={savingRecordTemplate}
+          onClose={() => setShowRecordTemplate(false)}
+          onSave={async (schema) => {
+            const normalized = normalizeRecordSchema(schema, []);
+            setSavingRecordTemplate(true);
+            try {
+              updateClassGroup(group.id, {
+                recordSchema: normalized,
+                recordBlocks: recordSchemaToBlockIds(normalized),
+              });
+              applyRecordSchemaToFutureSessions(group.id, normalized, todayStr);
+              if (group.serverId && isAuthenticated && currentAcademyId) {
+                await updateServerClassGroup(group.serverId, {
+                  record_schema: normalized,
+                  record_blocks: recordSchemaToBlockIds(normalized),
+                });
+                await updateFutureClassSessionRecordSchema({
+                  academyId: currentAcademyId,
+                  classGroupId: group.serverId,
+                  fromDate: todayStr,
+                  recordSchema: normalized,
+                });
+                await Promise.all([loadServerClassGroups(), loadServerClassSessions()]);
+              }
+              setShowRecordTemplate(false);
+            } catch (error) {
+              showToast(error?.message || '기록 구성을 저장하지 못했어요.', 'error');
+            } finally {
+              setSavingRecordTemplate(false);
+            }
+          }}
+        />
+      )}
+
+      {showMakeupForm && (
+        <MakeupSessionModal
+          group={group}
+          students={students}
+          sessions={sessions}
+          onClose={() => setShowMakeupForm(false)}
         />
       )}
 

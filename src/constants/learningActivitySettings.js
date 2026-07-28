@@ -20,15 +20,23 @@ export const CLINIC_ACTIVITY_TYPES = [
 ];
 
 export const CLASS_RECORD_BLOCKS = [
-  { id: 'progress', label: '진도', scope: 'common' },
-  { id: 'content', label: '수업 내용', scope: 'common' },
-  { id: 'homework', label: '공통 숙제', scope: 'common' },
-  { id: 'next_plan', label: '다음 계획', scope: 'common' },
-  { id: 'teacher_memo', label: '강사 메모', scope: 'common' },
-  { id: 'student_evaluation', label: '학생 평가', scope: 'student' },
-  { id: 'score', label: '점수', scope: 'student' },
-  { id: 'student_memo', label: '학생 메모', scope: 'student' },
-  { id: 'support', label: '보완 항목', scope: 'student' },
+  { id: 'progress', type: 'short_text', label: '진도', scope: 'common', system: true },
+  { id: 'content', type: 'long_text', label: '수업 내용', scope: 'common', system: true },
+  { id: 'homework', type: 'short_text', label: '공통 숙제', scope: 'common', system: true },
+  { id: 'next_plan', type: 'short_text', label: '다음 계획', scope: 'common', system: true },
+  { id: 'teacher_memo', type: 'long_text', label: '강사 메모', scope: 'common', system: true },
+  { id: 'student_evaluation', type: 'evaluation', label: '학생 평가', scope: 'student', system: true },
+  { id: 'score', type: 'score', label: '점수', scope: 'student', system: true },
+  { id: 'student_memo', type: 'long_text', label: '학생 메모', scope: 'student', system: true },
+  { id: 'support', type: 'support', label: '보완 항목', scope: 'student', system: true },
+];
+
+export const CUSTOM_RECORD_BLOCK_TYPES = [
+  { id: 'short_text', label: '짧은 글' },
+  { id: 'long_text', label: '긴 글' },
+  { id: 'number', label: '숫자' },
+  { id: 'checkbox', label: '체크' },
+  { id: 'select', label: '선택' },
 ];
 
 export const DEFAULT_CLASS_RECORD_BLOCKS = [
@@ -57,10 +65,55 @@ const CLASS_RECORD_PRESETS = {
 };
 
 const VALID_RECORD_BLOCK_IDS = new Set(CLASS_RECORD_BLOCKS.map((block) => block.id));
+const RECORD_BLOCK_BY_ID = new Map(CLASS_RECORD_BLOCKS.map((block) => [block.id, block]));
 
 export function normalizeClassRecordBlocks(value) {
   if (!Array.isArray(value)) return [...DEFAULT_CLASS_RECORD_BLOCKS];
   return [...new Set(value.filter((id) => VALID_RECORD_BLOCK_IDS.has(id)))];
+}
+
+function normalizeSchemaBlock(block, index) {
+  if (typeof block === 'string') {
+    const systemBlock = RECORD_BLOCK_BY_ID.get(block);
+    return systemBlock ? { ...systemBlock } : null;
+  }
+  if (!block || typeof block !== 'object') return null;
+  const systemBlock = RECORD_BLOCK_BY_ID.get(block.id);
+  if (systemBlock) return { ...systemBlock, required: block.required === true };
+  const type = CUSTOM_RECORD_BLOCK_TYPES.some((option) => option.id === block.type)
+    ? block.type
+    : 'short_text';
+  const label = String(block.label || '').trim();
+  if (!label) return null;
+  return {
+    id: String(block.id || `custom_${index}`),
+    type,
+    label,
+    scope: block.scope === 'student' ? 'student' : 'common',
+    system: false,
+    required: block.required === true,
+    options: type === 'select'
+      ? [...new Set((Array.isArray(block.options) ? block.options : []).map((item) => String(item).trim()).filter(Boolean))]
+      : [],
+  };
+}
+
+export function normalizeRecordSchema(value, fallbackBlockIds = DEFAULT_CLASS_RECORD_BLOCKS) {
+  const source = Array.isArray(value) ? value : fallbackBlockIds;
+  const seen = new Set();
+  return source
+    .map(normalizeSchemaBlock)
+    .filter((block) => {
+      if (!block || seen.has(block.id)) return false;
+      seen.add(block.id);
+      return true;
+    });
+}
+
+export function recordSchemaToBlockIds(schema) {
+  return normalizeRecordSchema(schema)
+    .filter((block) => block.system && VALID_RECORD_BLOCK_IDS.has(block.id))
+    .map((block) => block.id);
 }
 
 export function getClassRecordPreset(activityType) {

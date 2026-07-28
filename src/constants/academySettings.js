@@ -50,6 +50,13 @@ export const CLINIC_REQUIRED_OPTIONS = [
   },
 ];
 
+export const CLINIC_RECORD_FIELD_OPTIONS = [
+  { id: 'materials', label: '교재·자료' },
+  { id: 'description', label: '진행 내용' },
+  { id: 'result', label: '결과' },
+  { id: 'overall_memo', label: '전체 메모' },
+];
+
 export const TUITION_POLICY_OPTIONS = [
   { id: 'school_level', label: '학교별', description: '초등·중등·고등 기준' },
   { id: 'grade', label: '학년별', description: '초1·중2·고3 기준' },
@@ -100,6 +107,8 @@ export const DEFAULT_ACADEMY_SETTINGS = {
   academyType: 'core_subjects',
   academySubjects: ['korean', 'english', 'math'],
   clinicRequired: true,
+  clinicRecordFields: ['materials', 'description', 'result'],
+  clinicDefaultActivityType: 'clinic',
   tuitionPolicy: 'school_level',
   tuitionRates: {},
 };

@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
+import {
+  Plus, ChevronDown, ChevronUp, Pencil, Trash2, Clock3, CheckCircle2,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -70,7 +72,7 @@ const SUPPORT_TAG_LABELS = {
 
 export default function ClinicPage() {
   const {
-    role, clinicRecords = [], academyStudents, classGroups,
+    role, clinicRecords = [], academyStudents, classGroups, academyProfile,
     academyLessonRecords = [], classSessions = [],
     deleteClinicRecord, showToast,
   } = useAcademyStore();
@@ -88,6 +90,7 @@ export default function ClinicPage() {
   const [dateFilter, setDateFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [editRecord, setEditRecord] = useState(null);
+  const [quickTarget, setQuickTarget] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
@@ -124,6 +127,43 @@ export default function ClinicPage() {
 
   const todayCount = useMemo(() => clinicRecords.filter((r) => r.date === todayStr).length, [clinicRecords, todayStr]);
   const weekCount = useMemo(() => clinicRecords.filter((r) => isInDateRange(r.date, 'week')).length, [clinicRecords]);
+  const todayExpectedGroups = useMemo(() => classSessions
+    .filter((session) => (
+      session.date === todayStr
+      && !['canceled', 'cancelled'].includes(session.status)
+    ))
+    .sort((a, b) => (
+      (a.startTime || '').localeCompare(b.startTime || '')
+      || String(a.id).localeCompare(String(b.id))
+    ))
+    .map((session) => {
+      const group = classGroups.find((item) => item.id === session.classGroupId);
+      const studentIds = Array.isArray(session.studentIds) && session.studentIds.length > 0
+        ? session.studentIds
+        : group?.studentIds || [];
+      const students = studentIds
+        .map((studentId) => academyStudents.find((student) => student.id === studentId))
+        .filter(Boolean)
+        .map((student) => ({
+          ...student,
+          clinicRecord: clinicRecords.find((record) => (
+            record.date === todayStr
+            && record.studentId === student.id
+            && (
+              record.classSessionId === session.id
+              || (!record.classSessionId && record.classGroupId === group?.id)
+            )
+          )) || null,
+        }));
+      return { session, group, students };
+    })
+    .filter((item) => item.students.length > 0), [
+    classSessions,
+    classGroups,
+    academyStudents,
+    clinicRecords,
+    todayStr,
+  ]);
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
@@ -208,6 +248,81 @@ export default function ClinicPage() {
             <p className="text-2xl font-bold text-gray-900">{weekCount}건</p>
           </div>
         </div>
+
+        {todayExpectedGroups.length > 0 && (
+          <section className="px-4 mb-5">
+            <div className="mb-2 flex items-end justify-between">
+              <div>
+                <p className="text-sm font-bold text-gray-900">오늘 예정</p>
+                <p className="mt-0.5 text-[11px] text-gray-400">
+                  {academyProfile?.clinicRequired === false
+                    ? '필요한 학생을 눌러 기록하세요.'
+                    : '반 순서대로 학생을 확인하세요.'}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              {todayExpectedGroups.map(({ session, group, students }) => (
+                <div key={session.id} className="overflow-hidden rounded-2xl bg-white shadow-sm">
+                  <div className="flex items-center gap-2 border-b border-gray-50 px-4 py-3">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                      <Clock3 size={15} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-gray-900">
+                        {group?.name || session.activityName || '수업'}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-gray-400">
+                        {[session.startTime, group?.subject, session.room || group?.room].filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {students.map((student) => (
+                      <button
+                        key={student.id}
+                        type="button"
+                        disabled={!canEditClinic}
+                        onClick={() => {
+                          if (student.clinicRecord) {
+                            setEditRecord(student.clinicRecord);
+                            return;
+                          }
+                          setQuickTarget({
+                            studentId: student.id,
+                            date: todayStr,
+                            subject: group?.subject || '',
+                            classGroupId: group?.id || '',
+                            classSessionId: session.id,
+                          });
+                        }}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-gray-50 disabled:cursor-default"
+                      >
+                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-50 text-xs font-bold text-gray-500">
+                          {student.name?.slice(0, 1) || '학'}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-bold text-gray-900">{student.name}</span>
+                          {student.grade && (
+                            <span className="mt-0.5 block text-[11px] text-gray-400">{student.grade}</span>
+                          )}
+                        </span>
+                        {student.clinicRecord ? (
+                          <span className="flex items-center gap-1 text-xs font-bold text-emerald-600">
+                            <CheckCircle2 size={14} />
+                            완료
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold text-blue-600">기록</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* 보조강사: 수업에서 남긴 보완 항목 */}
         {role === 'assistant' && supportItems.length > 0 && (
@@ -330,10 +445,15 @@ export default function ClinicPage() {
       </div>
 
       {/* 클리닉 추가/수정 폼 */}
-      {(showForm || editRecord) && (
+      {(showForm || editRecord || quickTarget) && (
         <ClinicRecordFormModal
           editRecord={editRecord}
-          onClose={() => { setShowForm(false); setEditRecord(null); }}
+          presetStudentId={quickTarget?.studentId}
+          presetDate={quickTarget?.date}
+          presetSubject={quickTarget?.subject}
+          presetClassGroupId={quickTarget?.classGroupId}
+          presetClassSessionId={quickTarget?.classSessionId}
+          onClose={() => { setShowForm(false); setEditRecord(null); setQuickTarget(null); }}
         />
       )}
 

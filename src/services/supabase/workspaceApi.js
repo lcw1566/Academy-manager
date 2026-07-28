@@ -433,6 +433,8 @@ function isMissingAcademySettingsColumnError(error) {
     message.includes('academy_type') ||
     message.includes('academy_subjects') ||
     message.includes('clinic_required') ||
+    message.includes('clinic_record_fields') ||
+    message.includes('clinic_default_activity_type') ||
     message.includes('tuition_policy') ||
     message.includes('tuition_rates') ||
     message.includes('tuition_policy_onboarded_at') ||
@@ -446,6 +448,8 @@ function buildAcademySettingsPayload({
   academyType,
   academySubjects,
   clinicRequired,
+  clinicRecordFields,
+  clinicDefaultActivityType,
   tuitionPolicy,
   tuitionRates,
   address,
@@ -455,6 +459,12 @@ function buildAcademySettingsPayload({
   if (academyType !== undefined) out.academy_type = academyType || null;
   if (academySubjects !== undefined) out.academy_subjects = Array.isArray(academySubjects) ? academySubjects : [];
   if (clinicRequired !== undefined) out.clinic_required = clinicRequired !== false;
+  if (clinicRecordFields !== undefined) {
+    out.clinic_record_fields = Array.isArray(clinicRecordFields) ? clinicRecordFields : [];
+  }
+  if (clinicDefaultActivityType !== undefined) {
+    out.clinic_default_activity_type = clinicDefaultActivityType || 'clinic';
+  }
   if (tuitionPolicy !== undefined) {
     out.tuition_policy = tuitionPolicy || 'school_level';
     out.tuition_policy_onboarded_at = new Date().toISOString();
@@ -477,6 +487,8 @@ export async function createAcademyAsOwner({
   academyType,
   academySubjects,
   clinicRequired,
+  clinicRecordFields,
+  clinicDefaultActivityType,
   tuitionPolicy,
   tuitionRates,
   address,
@@ -492,6 +504,8 @@ export async function createAcademyAsOwner({
     academyType,
     academySubjects,
     clinicRequired,
+    clinicRecordFields,
+    clinicDefaultActivityType,
     tuitionPolicy,
     tuitionRates,
     address,
@@ -549,6 +563,12 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
   if (patch.academyType !== undefined) dbPatch.academy_type = patch.academyType || null;
   if (patch.academySubjects !== undefined) dbPatch.academy_subjects = Array.isArray(patch.academySubjects) ? patch.academySubjects : [];
   if (patch.clinicRequired !== undefined) dbPatch.clinic_required = patch.clinicRequired !== false;
+  if (patch.clinicRecordFields !== undefined) {
+    dbPatch.clinic_record_fields = Array.isArray(patch.clinicRecordFields) ? patch.clinicRecordFields : [];
+  }
+  if (patch.clinicDefaultActivityType !== undefined) {
+    dbPatch.clinic_default_activity_type = patch.clinicDefaultActivityType || 'clinic';
+  }
   if (patch.tuitionPolicy !== undefined) {
     dbPatch.tuition_policy = patch.tuitionPolicy || 'school_level';
     dbPatch.tuition_policy_onboarded_at = new Date().toISOString();

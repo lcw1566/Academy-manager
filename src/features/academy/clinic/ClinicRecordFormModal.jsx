@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, MessageCircle, Plus, X } from 'lucide-react';
+import { Check, ChevronDown, MessageCircle, Plus, SlidersHorizontal, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import {
   createAcademyClinicRecord,
+  updateStudent as updateServerStudent,
   updateClinicRecord as updateServerClinicRecord,
 } from '../../../services/supabase/domainApi';
 import { today } from '../../../utils/date';
@@ -16,6 +17,10 @@ import {
   CLINIC_ACTIVITY_TYPES,
   getActivityLabel,
 } from '../../../constants/learningActivitySettings';
+import {
+  CLINIC_RECORD_FIELD_OPTIONS,
+  DEFAULT_ACADEMY_SETTINGS,
+} from '../../../constants/academySettings';
 
 const SUBJECTS = ['국어', '수학', '영어', '과학', '사회', '기타'];
 
@@ -158,10 +163,10 @@ export default function ClinicRecordFormModal({
   initialRelayIndex = 0,
 }) {
   const {
-    addClinicRecord, updateClinicRecord, setClinicRecordServerId,
+    addClinicRecord, updateClinicRecord, setClinicRecordServerId, updateAcademyStudent,
     academyStudents, classGroups, classSessions, academyLessonRecords,
     academyTeachers, academyAssistants, academyManagers = [], role,
-    showToast,
+    academyProfile, showToast,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authUserId = useAuthStore((s) => s.user?.id);
@@ -181,6 +186,7 @@ export default function ClinicRecordFormModal({
     : null;
 
   const initialStudentId = editRecord?.studentId || activeRelayTarget?.studentId || presetStudentId || '';
+  const initialStudent = academyStudents.find((student) => student.id === initialStudentId);
   const initialDate = editRecord?.date || activeRelayTarget?.date || presetDate || today();
   const initialClassGroupId = editRecord?.classGroupId || activeRelayTarget?.classGroupId || presetClassGroupId || '';
   const initialClassSessionId = editRecord?.classSessionId || activeRelayTarget?.classSessionId || presetClassSessionId || '';
@@ -209,7 +215,12 @@ export default function ClinicRecordFormModal({
   const [studentId, setStudentId] = useState(initialStudentId);
   const [date, setDate] = useState(initialDate);
   const [subject, setSubject] = useState(initialSubject);
-  const [activityType, setActivityType] = useState(editRecord?.activityType || 'clinic');
+  const [activityType, setActivityType] = useState(
+    editRecord?.activityType
+    || initialStudent?.clinicDefaultActivityType
+    || academyProfile?.clinicDefaultActivityType
+    || 'clinic',
+  );
   const [activityName, setActivityName] = useState(editRecord?.activityName || '');
   const [classGroupId, setClassGroupId] = useState(initialClassGroupId);
   const [classSessionId, setClassSessionId] = useState(initialClassSessionId);
@@ -221,6 +232,18 @@ export default function ClinicRecordFormModal({
   const [customItemDraft, setCustomItemDraft] = useState({ title: '', description: '' });
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [showMetaEditor, setShowMetaEditor] = useState(!initialStudentId || !initialDate || !initialSubject);
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [templateFields, setTemplateFields] = useState(
+    Array.isArray(initialStudent?.clinicRecordFields)
+      ? initialStudent.clinicRecordFields
+      : academyProfile?.clinicRecordFields || DEFAULT_ACADEMY_SETTINGS.clinicRecordFields,
+  );
+  const [templateActivityType, setTemplateActivityType] = useState(
+    initialStudent?.clinicDefaultActivityType
+    || academyProfile?.clinicDefaultActivityType
+    || DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType,
+  );
+  const [savingTemplate, setSavingTemplate] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -304,12 +327,50 @@ export default function ClinicRecordFormModal({
   const nextRelayStudent = hasNextRelayTarget
     ? academyStudents.find((s) => s.id === normalizedRelayTargets[relayIndex + 1]?.studentId)
     : null;
+  const configuredFields = useMemo(
+    () => new Set(
+      Array.isArray(templateFields) && templateFields.length > 0
+        ? templateFields
+        : DEFAULT_ACADEMY_SETTINGS.clinicRecordFields,
+    ),
+    [templateFields],
+  );
+  const itemFieldCount = ['materials', 'description', 'result']
+    .filter((field) => configuredFields.has(field)).length;
+  const detailGridClass = itemFieldCount >= 3
+    ? 'md:grid-cols-[96px_minmax(160px,0.75fr)_minmax(260px,1.5fr)_minmax(170px,0.7fr)_32px]'
+    : itemFieldCount === 2
+      ? 'md:grid-cols-[110px_minmax(220px,1fr)_minmax(220px,1fr)_32px]'
+      : 'md:grid-cols-[120px_minmax(260px,1fr)_32px]';
 
   useEffect(() => {
     if (selectedSession?.classGroupId && !classGroupId) {
       setClassGroupId(selectedSession.classGroupId);
     }
   }, [selectedSession?.classGroupId, classGroupId]);
+
+  useEffect(() => {
+    const academyFields = Array.isArray(academyProfile?.clinicRecordFields)
+      ? academyProfile.clinicRecordFields
+      : DEFAULT_ACADEMY_SETTINGS.clinicRecordFields;
+    const nextFields = Array.isArray(selectedStudent?.clinicRecordFields)
+      ? selectedStudent.clinicRecordFields
+      : academyFields;
+    const nextActivityType =
+      selectedStudent?.clinicDefaultActivityType
+      || academyProfile?.clinicDefaultActivityType
+      || DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType;
+    setTemplateFields(nextFields);
+    setTemplateActivityType(nextActivityType);
+    if (!editRecord) setActivityType(nextActivityType);
+  }, [
+    selectedStudent?.id,
+    selectedStudent?.clinicRecordFields,
+    selectedStudent?.clinicDefaultActivityType,
+    academyProfile?.clinicRecordFields,
+    academyProfile?.clinicDefaultActivityType,
+    editRecord,
+  ]);
 
   useEffect(() => {
     if (!autoSubject || autoSubject === subject) return;
@@ -539,6 +600,43 @@ export default function ClinicRecordFormModal({
     }
   };
 
+  const saveStudentTemplate = async ({ useAcademyDefault = false } = {}) => {
+    if (!selectedStudent || savingTemplate) return;
+    if (!useAcademyDefault && templateFields.length === 0) {
+      showToast('기록 항목을 하나 이상 골라주세요.', 'error');
+      return;
+    }
+    const localPatch = {
+      clinicRecordFields: useAcademyDefault ? null : templateFields,
+      clinicDefaultActivityType: useAcademyDefault ? null : templateActivityType,
+    };
+    setSavingTemplate(true);
+    try {
+      updateAcademyStudent(selectedStudent.id, localPatch);
+      if (selectedStudent.serverId && isAuthenticated && currentAcademyId) {
+        await updateServerStudent(selectedStudent.serverId, {
+          clinic_record_fields: localPatch.clinicRecordFields,
+          clinic_default_activity_type: localPatch.clinicDefaultActivityType,
+        });
+      }
+      if (useAcademyDefault) {
+        const academyFields = academyProfile?.clinicRecordFields
+          || DEFAULT_ACADEMY_SETTINGS.clinicRecordFields;
+        const academyActivity =
+          academyProfile?.clinicDefaultActivityType
+          || DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType;
+        setTemplateFields(academyFields);
+        setTemplateActivityType(academyActivity);
+        if (!editRecord) setActivityType(academyActivity);
+      }
+      setShowTemplateEditor(false);
+    } catch (error) {
+      showToast(error?.message || '학생별 기본 구성을 저장하지 못했어요.', 'error');
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
   if (typeof document === 'undefined') return null;
   const activityLabel = getActivityLabel(CLINIC_ACTIVITY_TYPES, activityType, activityName);
   return createPortal(
@@ -576,11 +674,26 @@ export default function ClinicRecordFormModal({
                 <ChevronDown size={12} className={`flex-shrink-0 transition-transform ${showMetaEditor ? 'rotate-180' : ''}`} />
               </button>
             </div>
-            {hasTeacherRequest && (
-              <span className="flex-shrink-0 rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-600">
-                수업 연계
-              </span>
-            )}
+            <div className="flex flex-shrink-0 items-center gap-2">
+              {hasTeacherRequest && (
+                <span className="rounded-full bg-orange-50 px-2.5 py-1 text-[11px] font-bold text-orange-600">
+                  수업 연계
+                </span>
+              )}
+              {selectedStudent && (
+                <button
+                  type="button"
+                  onClick={() => setShowTemplateEditor((current) => !current)}
+                  className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                    showTemplateEditor ? 'bg-blue-50 text-blue-600' : 'bg-gray-50 text-gray-500'
+                  }`}
+                  aria-label="학생별 기록 구성"
+                  title="학생별 기록 구성"
+                >
+                  <SlidersHorizontal size={15} />
+                </button>
+              )}
+            </div>
           </div>
           {hasTeacherRequest && (
             <div className="mt-3 rounded-xl bg-orange-50 px-3 py-2">
@@ -603,6 +716,78 @@ export default function ClinicRecordFormModal({
         </div>
 
         <div className="px-4 py-5 flex flex-col gap-5">
+          {showTemplateEditor && selectedStudent && (
+            <div className="rounded-2xl bg-[#F2F4F6] p-4">
+              <div className="mb-3">
+                <p className="text-sm font-bold text-[#191F28]">{selectedStudent.name} 기본 구성</p>
+                <p className="mt-0.5 text-[11px] text-[#8B95A1]">이 학생의 다음 기록부터 기본으로 열려요.</p>
+              </div>
+              <p className="mb-2 text-[11px] font-bold text-[#6B7684]">기본 활동</p>
+              <div className="mb-4 flex flex-wrap gap-2">
+                {CLINIC_ACTIVITY_TYPES.filter((option) => option.id !== 'other').map((option) => {
+                  const selected = templateActivityType === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setTemplateActivityType(option.id)}
+                      className={`rounded-xl border px-3 py-2 text-xs font-bold ${
+                        selected
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 bg-white text-gray-600'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mb-2 text-[11px] font-bold text-[#6B7684]">기록 항목</p>
+              <div className="grid grid-cols-2 gap-2">
+                {CLINIC_RECORD_FIELD_OPTIONS.map((option) => {
+                  const selected = templateFields.includes(option.id);
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setTemplateFields((current) => (
+                        selected
+                          ? current.filter((id) => id !== option.id)
+                          : [...current, option.id]
+                      ))}
+                      className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-xs font-bold ${
+                        selected
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 bg-white text-gray-600'
+                      }`}
+                    >
+                      {option.label}
+                      {selected && <Check size={13} />}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  disabled={savingTemplate || templateFields.length === 0}
+                  onClick={() => saveStudentTemplate()}
+                  className="flex-1 rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  학생 기본값 저장
+                </button>
+                <button
+                  type="button"
+                  disabled={savingTemplate}
+                  onClick={() => saveStudentTemplate({ useAcademyDefault: true })}
+                  className="rounded-xl bg-white px-3 py-2.5 text-xs font-bold text-gray-600 disabled:opacity-50"
+                >
+                  학원 기본값
+                </button>
+              </div>
+            </div>
+          )}
+
           <FormSection label="활동 유형">
             <div className="flex flex-wrap gap-2">
               {CLINIC_ACTIVITY_TYPES.map((option) => {
@@ -793,7 +978,7 @@ export default function ClinicRecordFormModal({
                 {selectedItems.map((item) => (
                   <div
                     key={item.id}
-                    className="grid grid-cols-1 gap-3 rounded-2xl bg-[#F8FAFC] px-3 py-3 md:grid-cols-[96px_minmax(160px,0.75fr)_minmax(260px,1.5fr)_minmax(170px,0.7fr)_32px] md:items-start md:px-4 md:py-3.5"
+                    className={`grid grid-cols-1 gap-3 rounded-2xl bg-[#F8FAFC] px-3 py-3 md:items-start md:px-4 md:py-3.5 ${detailGridClass}`}
                   >
                     <div className="flex items-center justify-between gap-2 md:block">
                       <div className="min-w-0">
@@ -809,7 +994,7 @@ export default function ClinicRecordFormModal({
                       </button>
                     </div>
 
-                    <div className="min-w-0">
+                    {configuredFields.has('materials') && <div className="min-w-0">
                       <label className="mb-1 block text-[11px] font-bold text-gray-500">교재·자료</label>
                       <div className="rounded-xl bg-white px-3 py-2.5 transition-colors focus-within:bg-blue-50/60">
                           {(item.materialTags || []).length > 0 && (
@@ -841,9 +1026,9 @@ export default function ClinicRecordFormModal({
                             className="w-full bg-transparent text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-300"
                           />
                       </div>
-                    </div>
+                    </div>}
 
-                    <div className="min-w-0">
+                    {configuredFields.has('description') && <div className="min-w-0">
                       <label className="mb-1 block text-[11px] font-bold text-gray-500">내용</label>
                       <div className="rounded-xl bg-white px-3 py-2.5 transition-colors focus-within:bg-blue-50/60">
                         <input
@@ -853,9 +1038,9 @@ export default function ClinicRecordFormModal({
                           className="w-full bg-transparent text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-300"
                         />
                       </div>
-                    </div>
+                    </div>}
 
-                    <div className="min-w-0">
+                    {configuredFields.has('result') && <div className="min-w-0">
                       <label className="mb-1 block text-[11px] font-bold text-gray-500">결과</label>
                       <div className="rounded-xl bg-white px-3 py-2.5 transition-colors focus-within:bg-blue-50/60">
                         <input
@@ -865,7 +1050,7 @@ export default function ClinicRecordFormModal({
                           className="w-full bg-transparent text-sm font-semibold text-gray-900 outline-none placeholder:text-gray-300"
                         />
                       </div>
-                    </div>
+                    </div>}
 
                     <button
                       type="button"
@@ -877,6 +1062,18 @@ export default function ClinicRecordFormModal({
                   </div>
                 ))}
               </div>
+            </FormSection>
+          )}
+
+          {configuredFields.has('overall_memo') && (
+            <FormSection label="전체 메모">
+              <textarea
+                value={overallMemo}
+                onChange={(event) => setOverallMemo(event.target.value)}
+                placeholder="학생에게 남길 전체 메모"
+                rows={3}
+                className="input resize-none"
+              />
             </FormSection>
           )}
 

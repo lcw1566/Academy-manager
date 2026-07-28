@@ -26,10 +26,12 @@ import useAcademyStore from '../../store/useAcademyStore';
 import { formatPhoneNumber, roleMap } from '../../utils/format';
 import {
   ACADEMY_SUBJECT_OPTIONS,
+  CLINIC_RECORD_FIELD_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
   inferAcademyTypeFromSubjects,
 } from '../../constants/academySettings';
+import { CLINIC_ACTIVITY_TYPES } from '../../constants/learningActivitySettings';
 import { generateQrToken } from '../academy/attendance/attendanceHelpers';
 import TuitionRateFields from '../academy/onboarding/TuitionRateFields';
 
@@ -74,6 +76,12 @@ export default function WorkspaceSelectionPage() {
   const [academyPhone, setAcademyPhone] = useState('');
   const [academySubjects, setAcademySubjects] = useState([]);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
+  const [clinicRecordFields, setClinicRecordFields] = useState(
+    DEFAULT_ACADEMY_SETTINGS.clinicRecordFields,
+  );
+  const [clinicDefaultActivityType, setClinicDefaultActivityType] = useState(
+    DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType,
+  );
   const tuitionPolicy = DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
   const [tuitionRates, setTuitionRates] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
   const [staffCheckMethod, setStaffCheckMethod] = useState('manual');
@@ -137,6 +145,8 @@ export default function WorkspaceSelectionPage() {
         academyType,
         academySubjects,
         clinicRequired,
+        clinicRecordFields,
+        clinicDefaultActivityType,
         tuitionPolicy,
         tuitionRates,
         address: academyAddress,
@@ -162,6 +172,8 @@ export default function WorkspaceSelectionPage() {
         academyType,
         academySubjects,
         clinicRequired,
+        clinicRecordFields,
+        clinicDefaultActivityType,
         tuitionPolicy,
         tuitionRates,
         address: academyAddress.trim(),
@@ -191,6 +203,8 @@ export default function WorkspaceSelectionPage() {
     setAcademyPhone('');
     setAcademySubjects([]);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
+    setClinicRecordFields(DEFAULT_ACADEMY_SETTINGS.clinicRecordFields);
+    setClinicDefaultActivityType(DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType);
     setTuitionRates(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
     setStaffCheckMethod('manual');
     setStudentCheckMethod('teacher_manual');
@@ -330,6 +344,8 @@ export default function WorkspaceSelectionPage() {
                 phone={academyPhone}
                 subjects={academySubjects}
                 clinicRequired={clinicRequired}
+                clinicRecordFields={clinicRecordFields}
+                clinicDefaultActivityType={clinicDefaultActivityType}
                 tuitionRates={tuitionRates}
                 staffCheckMethod={staffCheckMethod}
                 studentCheckMethod={studentCheckMethod}
@@ -339,6 +355,8 @@ export default function WorkspaceSelectionPage() {
                 onPhoneChange={setAcademyPhone}
                 onSubjectToggle={toggleAcademySubject}
                 onClinicRequiredChange={setClinicRequired}
+                onClinicRecordFieldsChange={setClinicRecordFields}
+                onClinicDefaultActivityTypeChange={setClinicDefaultActivityType}
                 onTuitionRatesChange={setTuitionRates}
                 onStaffCheckMethodChange={setStaffCheckMethod}
                 onStudentCheckMethodChange={setStudentCheckMethod}
@@ -401,6 +419,8 @@ function AcademyCreateOnboarding({
   phone,
   subjects,
   clinicRequired,
+  clinicRecordFields,
+  clinicDefaultActivityType,
   tuitionRates,
   staffCheckMethod,
   studentCheckMethod,
@@ -410,6 +430,8 @@ function AcademyCreateOnboarding({
   onPhoneChange,
   onSubjectToggle,
   onClinicRequiredChange,
+  onClinicRecordFieldsChange,
+  onClinicDefaultActivityTypeChange,
   onTuitionRatesChange,
   onStaffCheckMethodChange,
   onStudentCheckMethodChange,
@@ -420,20 +442,34 @@ function AcademyCreateOnboarding({
   const isNameReady = !!name.trim();
   const isSubjectReady = subjects.length > 0;
   const steps = [
-    { emoji: '🏫', title: '학원 기본 정보를 알려주세요', desc: '학원 기본정보는 나중에도 변경할 수 있어요.' },
-    { emoji: '📚', title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 수정할 수 있어요.' },
-    { emoji: '💳', title: '수강료 가격표를 설정해주세요', desc: '필요하면 세부설정을 바꿀 수 있어요.' },
-    { emoji: '📝', title: '클리닉을 어떻게 쓸까요?', desc: '설정에 따라 클리닉 기능이 바뀌어요.' },
-    { emoji: '⏱️', title: '직원 출퇴근은 어떻게 기록할까요?', desc: '직접 기록하거나 QR을 사용할 수 있어요.' },
-    { emoji: '✅', title: '학생 등하원은 어떻게 기록할까요?', desc: '학원에 맞는 방식을 골라주세요.' },
+    { id: 'basic', emoji: '🏫', title: '학원 기본 정보를 알려주세요', desc: '학원 기본정보는 나중에도 변경할 수 있어요.' },
+    { id: 'subjects', emoji: '📚', title: '어떤 과목을 운영하나요?', desc: '여러 개를 골라도 괜찮아요. 나중에 수정할 수 있어요.' },
+    { id: 'tuition', emoji: '💳', title: '수강료 가격표를 설정해주세요', desc: '필요하면 세부설정을 바꿀 수 있어요.' },
+    { id: 'clinic_mode', emoji: '📝', title: '클리닉을 어떻게 쓸까요?', desc: '설정에 따라 클리닉 기능이 바뀌어요.' },
+    ...(clinicRequired ? [{
+      id: 'clinic_template',
+      emoji: '🧩',
+      title: '클리닉 기록을 구성해주세요',
+      desc: '학생을 누르면 이 형식이 기본으로 열려요.',
+    }] : []),
+    { id: 'staff_attendance', emoji: '⏱️', title: '직원 출퇴근은 어떻게 기록할까요?', desc: '직접 기록하거나 QR을 사용할 수 있어요.' },
+    { id: 'student_attendance', emoji: '✅', title: '학생 등하원은 어떻게 기록할까요?', desc: '학원에 맞는 방식을 골라주세요.' },
   ];
-  const canGoNext = step === 0 ? isNameReady : step === 1 ? isSubjectReady : true;
-  const primaryLabel = step === steps.length - 1 ? '만들기' : '다음';
+  const safeStep = Math.min(step, steps.length - 1);
+  const currentStep = steps[safeStep];
+  const canGoNext = currentStep.id === 'basic'
+    ? isNameReady
+    : currentStep.id === 'subjects'
+      ? isSubjectReady
+      : currentStep.id === 'clinic_template'
+        ? clinicRecordFields.length > 0
+        : true;
+  const primaryLabel = safeStep === steps.length - 1 ? '만들기' : '다음';
 
   const handlePrimary = () => {
     if (!canGoNext || submitting) return;
-    if (step < steps.length - 1) {
-      onStepChange(step + 1);
+    if (safeStep < steps.length - 1) {
+      onStepChange(safeStep + 1);
       return;
     }
     onCreate();
@@ -441,8 +477,8 @@ function AcademyCreateOnboarding({
 
   const handleSecondary = () => {
     if (submitting) return;
-    if (step === 0) onCancel();
-    else onStepChange(step - 1);
+    if (safeStep === 0) onCancel();
+    else onStepChange(safeStep - 1);
   };
 
   return (
@@ -450,13 +486,13 @@ function AcademyCreateOnboarding({
       <div>
         <div className="mb-2 flex items-center justify-between text-[11px] font-bold">
           <span className="text-blue-600">학원 설정</span>
-          <span className="text-gray-400">{step + 1} / {steps.length}</span>
+          <span className="text-gray-400">{safeStep + 1} / {steps.length}</span>
         </div>
         <div className="h-1.5 overflow-hidden rounded-full bg-blue-100">
           <motion.div
             className="h-full rounded-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.45)]"
             initial={false}
-            animate={{ width: `${((step + 1) / steps.length) * 100}%` }}
+            animate={{ width: `${((safeStep + 1) / steps.length) * 100}%` }}
             transition={{ type: 'spring', stiffness: 180, damping: 24 }}
           />
         </div>
@@ -464,15 +500,15 @@ function AcademyCreateOnboarding({
 
       <div className="flex items-start gap-3">
         <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gray-50 text-xl">
-          {steps[step].emoji}
+          {currentStep.emoji}
         </span>
         <div className="min-w-0 pt-0.5">
-          <p className="text-lg font-bold text-gray-900">{steps[step].title}</p>
-          <p className="mt-1 text-xs leading-relaxed text-gray-500">{steps[step].desc}</p>
+          <p className="text-lg font-bold text-gray-900">{currentStep.title}</p>
+          <p className="mt-1 text-xs leading-relaxed text-gray-500">{currentStep.desc}</p>
         </div>
       </div>
 
-      {step === 0 && (
+      {currentStep.id === 'basic' && (
         <div className="flex flex-col gap-3">
           <label className="block">
             <span className="mb-1.5 block text-xs font-bold text-gray-600">학원 이름</span>
@@ -508,7 +544,7 @@ function AcademyCreateOnboarding({
         </div>
       )}
 
-      {step === 1 && (
+      {currentStep.id === 'subjects' && (
         <div className="grid grid-cols-2 gap-2">
           {ACADEMY_SUBJECT_OPTIONS.map((subject) => {
             const selected = subjects.includes(subject.id);
@@ -540,7 +576,7 @@ function AcademyCreateOnboarding({
         </div>
       )}
 
-      {step === 2 && (
+      {currentStep.id === 'tuition' && (
         <div>
           <TuitionRateFields
             rates={tuitionRates}
@@ -550,7 +586,7 @@ function AcademyCreateOnboarding({
         </div>
       )}
 
-      {step === 3 && (
+      {currentStep.id === 'clinic_mode' && (
         <div className="flex flex-col gap-2">
           {CLINIC_REQUIRED_OPTIONS.map((option) => {
             const selected = clinicRequired === option.value;
@@ -585,7 +621,62 @@ function AcademyCreateOnboarding({
         </div>
       )}
 
-      {step === 4 && (
+      {currentStep.id === 'clinic_template' && (
+        <div className="flex flex-col gap-4">
+          <div>
+            <p className="mb-2 text-xs font-bold text-gray-600">기본 활동</p>
+            <div className="flex flex-wrap gap-2">
+              {CLINIC_ACTIVITY_TYPES.filter((option) => option.id !== 'other').map((option) => {
+                const selected = clinicDefaultActivityType === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => onClinicDefaultActivityTypeChange(option.id)}
+                    className={`rounded-xl border px-3 py-2 text-xs font-bold ${
+                      selected
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 bg-white text-gray-600'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-bold text-gray-600">기록 항목</p>
+            <div className="grid grid-cols-2 gap-2">
+              {CLINIC_RECORD_FIELD_OPTIONS.map((option) => {
+                const selected = clinicRecordFields.includes(option.id);
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => onClinicRecordFieldsChange(
+                      selected
+                        ? clinicRecordFields.filter((id) => id !== option.id)
+                        : [...clinicRecordFields, option.id],
+                    )}
+                    className={`flex min-h-[48px] items-center justify-between rounded-2xl border px-3 py-3 text-left ${
+                      selected
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-100 bg-gray-50 text-gray-700'
+                    }`}
+                  >
+                    <span className="text-sm font-bold">{option.label}</span>
+                    <Check size={15} className={selected ? 'text-blue-600' : 'invisible'} />
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[11px] text-gray-400">나중에 학생별로 조정할 수 있어요.</p>
+          </div>
+        </div>
+      )}
+
+      {currentStep.id === 'staff_attendance' && (
         <div className="flex flex-col gap-2">
           <AttendanceMethodChoice
             selected={staffCheckMethod === 'manual'}
@@ -604,7 +695,7 @@ function AcademyCreateOnboarding({
         </div>
       )}
 
-      {step === 5 && (
+      {currentStep.id === 'student_attendance' && (
         <div className="flex flex-col gap-2">
           <AttendanceMethodChoice
             selected={studentCheckMethod === 'teacher_manual'}
@@ -637,7 +728,7 @@ function AcademyCreateOnboarding({
           disabled={submitting}
           className="flex-1 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-gray-100 text-gray-700 text-sm font-bold disabled:opacity-50"
         >
-          {step === 0 ? '취소' : '이전'}
+          {safeStep === 0 ? '취소' : '이전'}
         </button>
         <button
           type="button"

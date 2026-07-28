@@ -11,7 +11,10 @@
 //
 // 이 매퍼는 호출처에서 충돌/머지 정책을 적용하기 전 단계의 순수 변환만 담당한다.
 
-import { normalizeClassRecordBlocks } from '../../constants/learningActivitySettings';
+import {
+  normalizeClassRecordBlocks,
+  normalizeRecordSchema,
+} from '../../constants/learningActivitySettings';
 
 // ─── students ────────────────────────────────────────────────
 export function mapServerStudentToLocal(s) {
@@ -28,6 +31,8 @@ export function mapServerStudentToLocal(s) {
     parentName: s.parent_name ?? '',
     parentPhone: s.parent_phone ?? '',
     checkinPin: s.checkin_pin ?? '',
+    clinicRecordFields: Array.isArray(s.clinic_record_fields) ? s.clinic_record_fields : null,
+    clinicDefaultActivityType: s.clinic_default_activity_type ?? null,
     enrollmentDate: s.enrollment_date ?? '',
     status: s.status ?? 'active',
     memo: s.memo ?? '',
@@ -51,6 +56,7 @@ export function mapServerClassGroupToLocal(g) {
     activityType: g.activity_type ?? 'regular_class',
     activityName: g.activity_name ?? '',
     recordBlocks: normalizeClassRecordBlocks(g.record_blocks),
+    recordSchema: normalizeRecordSchema(g.record_schema || g.record_blocks),
     teacherId: g.teacher_id ?? '',
     // Phase 44 — 서버측 auth.users.id. cross-device 매칭 1순위.
     teacherUserId: g.teacher_user_id ?? '',
@@ -96,6 +102,11 @@ export function mapServerClassSessionToLocal(cs) {
     studentIds: Array.isArray(cs.student_ids) ? cs.student_ids : [],
     status: cs.status ?? 'scheduled',
     memo: cs.memo ?? '',
+    recordSchema: Array.isArray(cs.record_schema) ? normalizeRecordSchema(cs.record_schema, []) : null,
+    activityType: cs.activity_type ?? '',
+    activityName: cs.activity_name ?? '',
+    sessionKind: cs.session_kind ?? 'regular',
+    originSessionId: cs.origin_session_id ?? null,
     // Phase 30/31 — 대체 강사 (server user_id 그대로 보존).
     // local academyTeachers 매핑은 사용 시점에 serverUserId 비교로 해결.
     substituteTeacherUserId: cs.substitute_teacher_user_id ?? null,
@@ -125,6 +136,10 @@ export function expandServerLessonRecordToLocal(lr) {
     commonHomework: lr.common_homework ?? '',
     nextLessonPlan: lr.next_lesson_plan ?? '',
     teacherMemo: lr.teacher_memo ?? '',
+    customValues:
+      lr.common_custom_values && typeof lr.common_custom_values === 'object'
+        ? lr.common_custom_values
+        : {},
     createdAt: baseTs,
     updatedAt: baseTs,
   });
@@ -149,6 +164,7 @@ export function expandServerLessonRecordToLocal(lr) {
       memo: rec?.memo ?? '',
       supportTags: Array.isArray(rec?.supportTags) ? rec.supportTags : [],
       supportMemo: rec?.supportMemo ?? '',
+      customValues: rec?.customValues && typeof rec.customValues === 'object' ? rec.customValues : {},
       createdAt: baseTs,
       updatedAt: baseTs,
     });

@@ -1,5 +1,5 @@
 import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronUp, Check, UserCheck, X as XIcon, QrCode, Info } from 'lucide-react';
+import { ChevronDown, ChevronUp, Check, UserCheck, X as XIcon, QrCode, Info, SlidersHorizontal } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -22,10 +22,11 @@ import {
   CLASS_ACTIVITY_TYPES,
   getActivityLabel,
   getClassCompletionLabel,
-  normalizeClassRecordBlocks,
+  normalizeRecordSchema,
 } from '../../../constants/learningActivitySettings';
 // Phase 44.7 / Phase C — 회차 변경 sheet.
 import SessionExceptionSheet from './SessionExceptionSheet';
+import RecordTemplateModal from './RecordTemplateModal';
 
 // ─── 평가 옵션 ──────────────────────────────────────────────────────────────
 const ATTITUDE_OPTIONS = [
@@ -78,6 +79,7 @@ function buildCommonRecord(lr) {
     commonHomework:    lr?.commonHomework     ?? '',
     nextLessonPlan:    lr?.nextLessonPlan     ?? '',
     teacherMemo:       lr?.teacherMemo        ?? '',
+    customValues:      lr?.customValues && typeof lr.customValues === 'object' ? lr.customValues : {},
   };
 }
 
@@ -94,6 +96,7 @@ function buildStudentRecord(lr) {
     memo:           lr?.memo            ?? '',
     supportTags:    Array.isArray(lr?.supportTags) ? lr.supportTags : [],
     supportMemo:    lr?.supportMemo     ?? '',
+    customValues:   lr?.customValues && typeof lr.customValues === 'object' ? lr.customValues : {},
   };
 }
 
@@ -128,7 +131,7 @@ function EvalRow({ label, options, value, onChange }) {
 const StudentCard = memo(function StudentCard({
   student, sessionId, canEdit, canEditAttendance = canEdit,
   attendance, initialRecord, onRecordChange, saveCount,
-  recordBlocks,
+  recordBlocks, recordSchema,
   qrHint, // Phase 42 — { statusHint, checkInTime, checkOutTime } or null
 }) {
   const updateAcademyAttendance = useAcademyStore((s) => s.updateAcademyAttendance);
@@ -172,6 +175,7 @@ const StudentCard = memo(function StudentCard({
   };
 
   const hasBlock = (blockId) => recordBlocks.has(blockId);
+  const customBlocks = recordSchema.filter((block) => !block.system && block.scope === 'student');
   const supportCount = hasBlock('support')
     ? (rec.supportTags?.length || 0) + (rec.supportMemo?.trim() ? 1 : 0)
     : 0;
@@ -352,6 +356,18 @@ const StudentCard = memo(function StudentCard({
                 </div>
               )}
 
+              {canEdit && customBlocks.map((block) => (
+                <DynamicRecordField
+                  key={block.id}
+                  block={block}
+                  value={rec.customValues?.[block.id]}
+                  onChange={(value) => setField('customValues', {
+                    ...(rec.customValues || {}),
+                    [block.id]: value,
+                  })}
+                />
+              ))}
+
               {/* 읽기 전용 평가 표시 */}
               {!canEdit && hasEval && (
                 <div className="flex flex-wrap gap-2">
@@ -423,18 +439,25 @@ export default function ClassSessionPage() {
     () => (session ? classGroups.find((g) => g.id === session.classGroupId) : null) ?? null,
     [classGroups, session]
   );
+  const recordSchema = useMemo(
+    () => normalizeRecordSchema(
+      session?.recordSchema || group?.recordSchema || group?.recordBlocks,
+    ),
+    [session?.recordSchema, group?.recordSchema, group?.recordBlocks],
+  );
   const recordBlocks = useMemo(
-    () => new Set(normalizeClassRecordBlocks(group?.recordBlocks)),
-    [group?.recordBlocks],
+    () => new Set(recordSchema.filter((block) => block.system).map((block) => block.id)),
+    [recordSchema],
   );
   const activityLabel = getActivityLabel(
     CLASS_ACTIVITY_TYPES,
-    group?.activityType || 'regular_class',
-    group?.activityName,
+    session?.activityType || group?.activityType || 'regular_class',
+    session?.activityName || group?.activityName,
   );
-  const completionLabel = getClassCompletionLabel(group?.activityType || 'regular_class');
-  const hasCommonRecordBlocks = ['progress', 'content', 'homework', 'next_plan', 'teacher_memo']
-    .some((blockId) => recordBlocks.has(blockId));
+  const completionLabel = getClassCompletionLabel(
+    session?.activityType || group?.activityType || 'regular_class',
+  );
+  const hasCommonRecordBlocks = recordSchema.some((block) => block.scope === 'common');
   // Phase 44 — session 의 teacherUserId 가 더 신뢰 가능. group 으로 fallback.
   const teacherName = useMemo(() => {
     if (!session && !group) return null;
@@ -561,6 +584,8 @@ export default function ClassSessionPage() {
   const [substituteModalOpen, setSubstituteModalOpen] = useState(false);
   // Phase 44.7 / Phase C — 회차 변경 sheet.
   const [exceptionSheetOpen, setExceptionSheetOpen] = useState(false);
+  const [recordTemplateOpen, setRecordTemplateOpen] = useState(false);
+  const [recordTemplateSaving, setRecordTemplateSaving] = useState(false);
 
   // Phase 34 — 대체 강사 배정 시 근무 cover 여부 확인 + 자동 추가.
   const { check: ensureCoverage, sheetProps: coverageSheetProps } = useEnsureShiftCoverage();
@@ -688,6 +713,7 @@ export default function ClassSessionPage() {
           common_homework: commonRec.commonHomework || null,
           next_lesson_plan: commonRec.nextLessonPlan || null,
           teacher_memo: commonRec.teacherMemo || null,
+          common_custom_values: commonRec.customValues || {},
           student_records: serverStudentRecords,
         });
         await loadServerLessonRecords();
@@ -872,13 +898,21 @@ export default function ClassSessionPage() {
 
             {/* Phase 44.7 / Phase C — 회차 변경 (휴강/시간변경/보강) */}
             {canManageSession && (
-              <div className="mt-2">
+              <div className="mt-2 grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setExceptionSheetOpen(true)}
                   className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gray-50 text-gray-700 text-xs font-bold active:bg-gray-100"
                 >
                   회차 변경
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRecordTemplateOpen(true)}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-50 py-2 text-xs font-bold text-blue-700 active:bg-blue-100"
+                >
+                  <SlidersHorizontal size={12} />
+                  기록 구성
                 </button>
               </div>
             )}
@@ -891,7 +925,7 @@ export default function ClassSessionPage() {
             <div className="bg-blue-50 rounded-2xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <p className="text-sm font-bold text-blue-900">{activityLabel} 기록</p>
-                <p className="text-xs text-blue-500">참여 학생에게 공통으로 적용돼요</p>
+                <p className="min-w-0 flex-1 text-xs text-blue-500">참여 학생에게 공통으로 적용돼요</p>
               </div>
               <div className="flex flex-col gap-3">
                 {recordBlocks.has('progress') && (
@@ -914,6 +948,19 @@ export default function ClassSessionPage() {
                   <CommonField label="강사 메모" placeholder="내부 메모 (학부모에게 공개 안 됨)"
                     value={commonRec.teacherMemo} onChange={(v) => setCommonField('teacherMemo', v)} />
                 )}
+                {recordSchema
+                  .filter((block) => !block.system && block.scope === 'common')
+                  .map((block) => (
+                    <DynamicRecordField
+                      key={block.id}
+                      block={block}
+                      value={commonRec.customValues?.[block.id]}
+                      onChange={(value) => setCommonField('customValues', {
+                        ...(commonRec.customValues || {}),
+                        [block.id]: value,
+                      })}
+                    />
+                  ))}
               </div>
             </div>
           </div>
@@ -959,6 +1006,7 @@ export default function ClassSessionPage() {
                     onRecordChange={handleRecordChange}
                     saveCount={saveCount}
                     recordBlocks={recordBlocks}
+                    recordSchema={recordSchema}
                     qrHint={qrHint}
                   />
                 );
@@ -1022,6 +1070,31 @@ export default function ClassSessionPage() {
             }
             setSubstituteModalOpen(false);
             showToast(substituteTeacherId ? '대체 강사를 지정했어요.' : '대체 강사 지정을 해제했어요.');
+          }}
+        />
+      )}
+
+      {recordTemplateOpen && (
+        <RecordTemplateModal
+          title="이번 회차 기록 구성"
+          description="이 수업에만 적용돼요. 반의 기본 구성과 다른 항목을 자유롭게 추가하거나 순서를 바꿀 수 있어요."
+          initialSchema={recordSchema}
+          saving={recordTemplateSaving}
+          onClose={() => setRecordTemplateOpen(false)}
+          onSave={async (nextSchema) => {
+            setRecordTemplateSaving(true);
+            try {
+              updateClassSession(session.id, { recordSchema: nextSchema });
+              if (session.serverId && isAuthenticated && currentAcademyId) {
+                await updateServerClassSession(session.serverId, { record_schema: nextSchema });
+                await loadServerClassSessions();
+              }
+              setRecordTemplateOpen(false);
+            } catch (error) {
+              showToast(error?.message || '기록 구성을 저장하지 못했어요.', 'error');
+            } finally {
+              setRecordTemplateSaving(false);
+            }
           }}
         />
       )}
@@ -1102,6 +1175,67 @@ function CommonField({ label, placeholder, value, onChange, single }) {
           placeholder={placeholder}
           rows={2}
           className="w-full border border-blue-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white resize-none"
+        />
+      )}
+    </div>
+  );
+}
+
+function DynamicRecordField({ block, value, onChange }) {
+  const label = block.required ? `${block.label} *` : block.label;
+  if (block.type === 'checkbox') {
+    return (
+      <button
+        type="button"
+        onClick={() => onChange(!value)}
+        className="flex w-full items-center justify-between rounded-xl border border-blue-200 bg-white px-3 py-3 text-left"
+      >
+        <span className="text-sm font-bold text-[#191F28]">{label}</span>
+        <span className={`flex h-6 w-6 items-center justify-center rounded-lg ${
+          value ? 'bg-[#3182F6] text-white' : 'bg-[#F2F4F6] text-transparent'
+        }`}>
+          <Check size={14} />
+        </span>
+      </button>
+    );
+  }
+  if (block.type === 'select') {
+    return (
+      <div>
+        <p className="mb-1 text-[11px] font-semibold text-blue-700">{label}</p>
+        <select
+          value={value || ''}
+          onChange={(event) => onChange(event.target.value)}
+          className="input border-blue-200 bg-white"
+        >
+          <option value="">선택</option>
+          {(block.options || []).map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+  const isLong = block.type === 'long_text';
+  const inputType = block.type === 'number' ? 'number' : 'text';
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-semibold text-blue-700">{label}</p>
+      {isLong ? (
+        <textarea
+          value={value || ''}
+          onChange={(event) => onChange(event.target.value)}
+          rows={2}
+          placeholder={`${block.label} 입력`}
+          className="w-full resize-none rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-400"
+        />
+      ) : (
+        <input
+          type={inputType}
+          value={value ?? ''}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={`${block.label} 입력`}
+          className="input border-blue-200 bg-white"
         />
       )}
     </div>
