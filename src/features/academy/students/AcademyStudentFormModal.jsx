@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Check, Pencil } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import useAcademyStore from '../../../store/useAcademyStore';
