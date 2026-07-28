@@ -439,6 +439,34 @@ export default function ClassSessionPage() {
     () => (session ? classGroups.find((g) => g.id === session.classGroupId) : null) ?? null,
     [classGroups, session]
   );
+  const previousSession = useMemo(() => {
+    if (!session) return null;
+    return classSessions
+      .filter((candidate) => (
+        candidate.classGroupId === session.classGroupId
+        && candidate.id !== session.id
+        && `${candidate.date || ''} ${candidate.startTime || ''}`
+          < `${session.date || ''} ${session.startTime || ''}`
+      ))
+      .sort((a, b) => (
+        `${b.date || ''} ${b.startTime || ''}`
+          .localeCompare(`${a.date || ''} ${a.startTime || ''}`)
+      ))[0] || null;
+  }, [classSessions, session]);
+  const previousCommonRecord = useMemo(
+    () => previousSession
+      ? academyLessonRecords.find((record) => (
+        record.sessionId === previousSession.id && record.studentId === '_common_'
+      )) || null
+      : null,
+    [academyLessonRecords, previousSession],
+  );
+  const carriedHomework = previousCommonRecord?.commonHomework
+    || (!previousSession ? group?.initialHomework : '')
+    || '';
+  const carriedNextPlan = previousCommonRecord?.nextLessonPlan
+    || (!previousSession ? group?.initialNextPlan : '')
+    || '';
   const recordSchema = useMemo(
     () => normalizeRecordSchema(
       session?.recordSchema || group?.recordSchema || group?.recordBlocks,
@@ -918,6 +946,33 @@ export default function ClassSessionPage() {
             )}
           </div>
         </div>
+
+        {(carriedHomework || carriedNextPlan) && (
+          <div className="px-4 mb-4">
+            <div className="rounded-2xl border border-blue-100 bg-white px-4 py-3.5 shadow-sm">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-sm font-bold text-gray-900">이번 수업 준비</p>
+                <span className="text-[11px] font-semibold text-blue-500">
+                  {previousSession ? '이전 수업에서 이어짐' : '반 생성 시 입력'}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                {carriedHomework && (
+                  <div className="rounded-xl bg-blue-50 px-3 py-2.5">
+                    <p className="text-[11px] font-bold text-blue-500">숙제</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">{carriedHomework}</p>
+                  </div>
+                )}
+                {carriedNextPlan && (
+                  <div className="rounded-xl bg-gray-50 px-3 py-2.5">
+                    <p className="text-[11px] font-bold text-gray-500">수업 계획</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-800">{carriedNextPlan}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── 공통 수업 기록 ─────────────────────────────── */}
         {canEdit && hasCommonRecordBlocks && (

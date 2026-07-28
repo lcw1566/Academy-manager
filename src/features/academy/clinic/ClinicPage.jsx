@@ -91,6 +91,7 @@ export default function ClinicPage() {
   const [showForm, setShowForm] = useState(false);
   const [editRecord, setEditRecord] = useState(null);
   const [quickTarget, setQuickTarget] = useState(null);
+  const [batchExpectedTargets, setBatchExpectedTargets] = useState(null);
   const [expandedExpectedIds, setExpandedExpectedIds] = useState(() => new Set());
   const [expandedId, setExpandedId] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
@@ -310,6 +311,35 @@ export default function ClinicPage() {
                   >
                     <div className="overflow-hidden">
                       <div className="divide-y divide-gray-50 border-t border-gray-50">
+                        {canEditClinic && students.some((student) => !student.clinicRecord) && (
+                          <div className="bg-blue-50/60 px-4 py-2.5">
+                            <button
+                              type="button"
+                              onClick={() => setBatchExpectedTargets(
+                                students
+                                  .filter((student) => !student.clinicRecord)
+                                  .map((student) => ({
+                                    studentId: student.id,
+                                    date: todayStr,
+                                    subject: group?.subject || '',
+                                    classGroupId: group?.id || '',
+                                    classSessionId: session.id,
+                                  })),
+                              )}
+                              className="flex w-full items-center justify-between rounded-xl bg-white px-3 py-2.5 text-left shadow-sm"
+                            >
+                              <span>
+                                <span className="block text-xs font-bold text-blue-700">미작성 학생 이어서 기록</span>
+                                <span className="mt-0.5 block text-[11px] text-gray-400">
+                                  저장하면 다음 학생으로 바로 넘어가요.
+                                </span>
+                              </span>
+                              <span className="flex-shrink-0 text-xs font-bold text-blue-600">
+                                {students.filter((student) => !student.clinicRecord).length}명
+                              </span>
+                            </button>
+                          </div>
+                        )}
                         {students.map((student) => (
                           <button
                             key={student.id}
@@ -497,6 +527,13 @@ export default function ClinicPage() {
           relayTargets={showClinicFromSupport.targets}
           initialRelayIndex={showClinicFromSupport.initialRelayIndex}
           onClose={() => setShowClinicFromSupport(null)}
+        />
+      )}
+
+      {batchExpectedTargets?.length > 0 && (
+        <ClinicRecordFormModal
+          relayTargets={batchExpectedTargets}
+          onClose={() => setBatchExpectedTargets(null)}
         />
       )}
 

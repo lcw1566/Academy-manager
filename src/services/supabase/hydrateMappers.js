@@ -61,6 +61,8 @@ export function mapServerClassGroupToLocal(g) {
     activityName: g.activity_name ?? '',
     recordBlocks: normalizeClassRecordBlocks(g.record_blocks),
     recordSchema: normalizeRecordSchema(g.record_schema || g.record_blocks),
+    initialHomework: g.initial_homework ?? '',
+    initialNextPlan: g.initial_next_plan ?? '',
     teacherId: g.teacher_id ?? '',
     // Phase 44 — 서버측 auth.users.id. cross-device 매칭 1순위.
     teacherUserId: g.teacher_user_id ?? '',

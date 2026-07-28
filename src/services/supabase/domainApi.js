@@ -984,6 +984,7 @@ const CLASS_GROUP_ALLOWED_FIELDS = new Set([
   'id', 'academy_id', 'user_id', 'mode',
   'name', 'subject', 'level',
   'activity_type', 'activity_name', 'record_blocks', 'record_schema',
+  'initial_homework', 'initial_next_plan',
   'teacher_id', 'teacher_type',
   // Phase 44 — server-stable auth.users.id 매칭용 (SQL 013)
   'teacher_user_id',

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, AlertTriangle, Check, Plus, X } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import OptionSelectSheet from '../../../components/OptionSelectSheet';
@@ -57,6 +57,28 @@ function addDaysYMD(ymd, days) {
   return base.toISOString().slice(0, 10);
 }
 
+function buildSuggestedClassName({ subject, level, students = [] }) {
+  const trimmedSubject = String(subject || '').trim();
+  const trimmedLevel = String(level || '').trim();
+  const schools = [...new Set(
+    students.map((student) => String(student.school || '').trim()).filter(Boolean),
+  )];
+
+  let basis = trimmedLevel;
+  if (schools.length === 1) {
+    const school = schools[0].replace(/학교$/, '');
+    const gradeNumber = trimmedLevel.match(/\d+/)?.[0] || '';
+    const schoolLevel = school.match(/[초중고]$/)?.[0] || '';
+    const levelPrefix = trimmedLevel.match(/^[초중고]/)?.[0] || '';
+    basis = schoolLevel && levelPrefix === schoolLevel && gradeNumber
+      ? `${school}${gradeNumber}`
+      : [school, trimmedLevel].filter(Boolean).join(' ');
+  }
+
+  const core = [basis, trimmedSubject].filter(Boolean).join(' ');
+  return core ? `${core} A반` : '';
+}
+
 // 로컬 반 폼 → Supabase class_groups snake_case payload.
 // student_ids / student_billings 는 academyStudents 에서 serverId 가 있는 학생만
 // 서버 uuid 로 매핑. serverId 없는 학생은 서버 row 에서 제외 (로컬은 그대로 유지).
@@ -100,6 +122,8 @@ function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistan
     activity_name: emptyToNull(form.activityName),
     record_blocks: recordSchemaToBlockIds(form.recordSchema),
     record_schema: normalizeRecordSchema(form.recordSchema),
+    initial_homework: emptyToNull(form.initialHomework),
+    initial_next_plan: emptyToNull(form.initialNextPlan),
     teacher_id: emptyToNull(form.teacherId),
     teacher_type: form.teacherId === OWNER_TEACHER_ID ? 'owner' : 'teacher',
     teacher_user_id: resolveTeacherUserId(form.teacherId, academyTeachers, ownerUserId),
@@ -332,6 +356,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     activityType: editGroup?.activityType || 'regular_class',
     activityName: editGroup?.activityName || '',
     recordSchema: normalizeRecordSchema(editGroup?.recordSchema || editGroup?.recordBlocks),
+    initialHomework: editGroup?.initialHomework || '',
+    initialNextPlan: editGroup?.initialNextPlan || '',
     teacherId: editGroup?.teacherId || '',
     studentIds: editGroup?.studentIds || [],
     weekdays: editGroup?.weekdays || [],
@@ -348,6 +374,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     memo: editGroup?.memo || '',
     status: editGroup?.status || 'active',
   });
+  const [nameManuallyEdited, setNameManuallyEdited] = useState(!!editGroup);
   const [periodStartMode, setPeriodStartMode] = useState(editGroup ? 'custom' : 'today');
   const [periodEndMode, setPeriodEndMode] = useState(editGroup?.endDate ? 'until' : 'forever');
   const roomOptions = useMemo(
@@ -358,6 +385,27 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     )],
     [classGroups, form.room],
   );
+  const selectedStudentsForName = useMemo(
+    () => academyStudents.filter((student) => form.studentIds.includes(student.id)),
+    [academyStudents, form.studentIds],
+  );
+  const suggestedClassName = useMemo(
+    () => buildSuggestedClassName({
+      subject: form.subject,
+      level: form.level,
+      students: selectedStudentsForName,
+    }),
+    [form.subject, form.level, selectedStudentsForName],
+  );
+
+  useEffect(() => {
+    if (editGroup || nameManuallyEdited || !suggestedClassName) return;
+    setForm((current) => (
+      current.name === suggestedClassName
+        ? current
+        : { ...current, name: suggestedClassName }
+    ));
+  }, [editGroup, nameManuallyEdited, suggestedClassName]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -731,7 +779,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     }
   };
 
-  const selectedStudents = academyStudents.filter((s) => form.studentIds.includes(s.id));
+  const selectedStudents = selectedStudentsForName;
   const studentSchools = useMemo(
     () => [...new Set(academyStudents.map((student) => student.school).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'ko')),
@@ -827,15 +875,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         <div className="flex flex-col gap-4">
           <SectionTitle>기본 정보</SectionTitle>
 
-          <Field label="반 이름 *">
-            <input
-              value={form.name}
-              onChange={(e) => set('name', e.target.value)}
-              placeholder="예: 중2 영어 A반"
-              className="input"
-            />
-          </Field>
-
           <div className="grid grid-cols-2 gap-3">
             <Field label="과목">
               <SelectRow
@@ -854,7 +893,103 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {academyStudents.length > 0 && (
+            <Field label={`학생 배정 (${form.studentIds.length}/${academyStudents.length})`}>
+              <div className="mb-2 grid grid-cols-2 gap-2">
+                <div className="col-span-2">
+                  <input
+                    value={studentSearch}
+                    onChange={(event) => setStudentSearch(event.target.value)}
+                    placeholder="학생 검색"
+                    aria-label="학생 검색"
+                    className="input"
+                  />
+                </div>
+                <select
+                  value={studentSchoolFilter}
+                  onChange={(event) => setStudentSchoolFilter(event.target.value)}
+                  aria-label="학교 필터"
+                  className="input"
+                >
+                  <option value="">학교 전체</option>
+                  {studentSchools.map((school) => (
+                    <option key={school} value={school}>{school}</option>
+                  ))}
+                </select>
+                <select
+                  value={studentGradeFilter}
+                  onChange={(event) => setStudentGradeFilter(event.target.value)}
+                  aria-label="학년 필터"
+                  className="input"
+                >
+                  <option value="">학년 전체</option>
+                  {studentGrades.map((grade) => (
+                    <option key={grade} value={grade}>{grade}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex max-h-48 flex-col gap-1.5 overflow-y-auto pr-1">
+                {filteredStudents.length === 0 ? (
+                  <p className="py-5 text-center text-xs text-gray-400">검색 결과 없음</p>
+                ) : filteredStudents.map((student) => (
+                  <button
+                    key={student.id}
+                    type="button"
+                    onClick={() => toggleStudent(student.id)}
+                    className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                      form.studentIds.includes(student.id)
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 bg-white'
+                    }`}
+                  >
+                    <span className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${
+                      form.studentIds.includes(student.id)
+                        ? 'border-blue-500 bg-blue-500'
+                        : 'border-gray-300'
+                    }`} />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">
+                      {student.name || '?'}
+                    </span>
+                    {student.school && (
+                      <span className="max-w-28 truncate text-xs text-gray-400">{student.school}</span>
+                    )}
+                    {student.grade && <span className="flex-shrink-0 text-xs text-gray-400">{student.grade}</span>}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+
+          <Field label="반 이름 *">
+            <div className="flex items-center gap-2">
+              <input
+                value={form.name}
+                onChange={(event) => {
+                  setNameManuallyEdited(true);
+                  set('name', event.target.value);
+                }}
+                placeholder="과목·학년·학생을 고르면 자동으로 만들어요"
+                className="input min-w-0 flex-1"
+              />
+              {nameManuallyEdited && suggestedClassName && form.name !== suggestedClassName && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNameManuallyEdited(false);
+                    set('name', suggestedClassName);
+                  }}
+                  className="h-11 flex-shrink-0 rounded-xl bg-blue-50 px-3 text-xs font-bold text-blue-600"
+                >
+                  자동 완성
+                </button>
+              )}
+            </div>
+            {!nameManuallyEdited && suggestedClassName && (
+              <p className="mt-1.5 text-[11px] font-medium text-blue-500">학생의 학교·학년과 과목으로 만들었어요.</p>
+            )}
+          </Field>
+
+          <div className="grid grid-cols-1 gap-3">
             <Field label="담당 강사">
               <select
                 value={form.teacherId}
@@ -1083,6 +1218,25 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
               )}
             </Field>
 
+            <div className="mt-4 grid grid-cols-1 gap-3 border-t border-[#F2F4F6] pt-4 md:grid-cols-2">
+              <Field label="첫 수업 숙제">
+                <input
+                  value={form.initialHomework}
+                  onChange={(event) => set('initialHomework', event.target.value)}
+                  placeholder="예: 단어 1과 암기"
+                  className="input"
+                />
+              </Field>
+              <Field label="첫 수업 계획">
+                <input
+                  value={form.initialNextPlan}
+                  onChange={(event) => set('initialNextPlan', event.target.value)}
+                  placeholder="예: 문법 1단원 시작"
+                  className="input"
+                />
+              </Field>
+            </div>
+
             <div className="mt-4 border-t border-[#F2F4F6] pt-4">
               <p className="mb-2 text-xs font-semibold text-gray-600">기록 항목</p>
               <RecordTemplateBuilder
@@ -1094,63 +1248,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
               </p>
             </div>
           </div>
-
-          {academyStudents.length > 0 && (
-            <Field label={`학생 배정 (${form.studentIds.length}/${academyStudents.length})`}>
-              <div className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-[minmax(0,1fr)_150px_130px]">
-                <div className="col-span-2 md:col-span-1">
-                  <input
-                    value={studentSearch}
-                    onChange={(event) => setStudentSearch(event.target.value)}
-                    placeholder="학생 검색"
-                    aria-label="학생 검색"
-                    className="input"
-                  />
-                </div>
-                <select
-                  value={studentSchoolFilter}
-                  onChange={(event) => setStudentSchoolFilter(event.target.value)}
-                  aria-label="학교 필터"
-                  className="input"
-                >
-                  <option value="">학교 전체</option>
-                  {studentSchools.map((school) => (
-                    <option key={school} value={school}>{school}</option>
-                  ))}
-                </select>
-                <select
-                  value={studentGradeFilter}
-                  onChange={(event) => setStudentGradeFilter(event.target.value)}
-                  aria-label="학년 필터"
-                  className="input"
-                >
-                  <option value="">학년 전체</option>
-                  {studentGrades.map((grade) => (
-                    <option key={grade} value={grade}>{grade}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-1">
-                {filteredStudents.length === 0 ? (
-                  <p className="py-5 text-center text-xs text-gray-400">검색 결과 없음</p>
-                ) : filteredStudents.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => toggleStudent(s.id)}
-                      className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                        form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'
-                      }`}
-                    >
-                      <span className={`h-4 w-4 flex-shrink-0 rounded-full border-2 ${form.studentIds.includes(s.id) ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`} />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{s.name || '?'}</span>
-                      {s.school && <span className="max-w-32 truncate text-xs text-gray-400">{s.school}</span>}
-                      {s.grade && <span className="flex-shrink-0 text-xs text-gray-400">{s.grade}</span>}
-                    </button>
-                  ))}
-              </div>
-            </Field>
-          )}
 
           <Field label={`월 수강료 · ${getTuitionPolicyLabel(tuitionPolicy)}`}>
             <div className="flex gap-2">
@@ -1396,7 +1493,7 @@ function RoomTagPicker({ value, options = [], onChange }) {
         />
       </div>
       {adding ? (
-        <div className="mt-2 flex items-center gap-2 rounded-2xl bg-gray-50 p-2">
+        <div className="mt-2 rounded-2xl bg-gray-50 p-2">
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -1408,26 +1505,28 @@ function RoomTagPicker({ value, options = [], onChange }) {
             }}
             autoFocus
             placeholder="예: A강의실"
-            className="h-10 min-w-0 flex-1 rounded-xl bg-white px-3 text-sm font-semibold text-gray-900 outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-blue-100"
+            className="h-11 w-full rounded-xl bg-white px-3 text-sm font-semibold text-gray-900 outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-blue-100"
           />
-          <button
-            type="button"
-            onClick={commit}
-            disabled={!trimmedDraft}
-            className="h-10 rounded-xl bg-blue-600 px-3 text-xs font-bold text-white disabled:bg-gray-200"
-          >
-            추가
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAdding(false);
-              setDraft('');
-            }}
-            className="h-10 rounded-xl bg-white px-3 text-xs font-bold text-gray-500"
-          >
-            취소
-          </button>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={commit}
+              disabled={!trimmedDraft}
+              className="h-10 rounded-xl bg-blue-600 px-3 text-xs font-bold text-white disabled:bg-gray-200"
+            >
+              추가
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAdding(false);
+                setDraft('');
+              }}
+              className="h-10 rounded-xl bg-white px-3 text-xs font-bold text-gray-500"
+            >
+              취소
+            </button>
+          </div>
         </div>
       ) : null}
     </div>

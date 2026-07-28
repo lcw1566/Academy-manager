@@ -80,7 +80,7 @@ export default function ClinicDefaultItemsEditor({
       {
         categoryKey: `custom_${Date.now()}`,
         title,
-        description: customDraft.description.trim(),
+        description: '',
         custom: true,
       },
     ]);
@@ -152,7 +152,6 @@ export default function ClinicDefaultItemsEditor({
             <div key={item.categoryKey} className="flex items-start gap-2 rounded-2xl bg-violet-50 px-3 py-3">
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-violet-700">{item.title}</p>
-                {item.description && <p className="mt-0.5 text-[11px] text-violet-500">{item.description}</p>}
               </div>
               <button
                 type="button"
@@ -177,13 +176,6 @@ export default function ClinicDefaultItemsEditor({
             placeholder="예: 본문 암기"
             className="input"
             autoFocus
-          />
-          <textarea
-            value={customDraft.description}
-            onChange={(event) => setCustomDraft((current) => ({ ...current, description: event.target.value }))}
-            placeholder="어떻게 진행하는지 적어주세요."
-            rows={2}
-            className="input mt-2 resize-none"
           />
           <div className="mt-2 flex gap-2">
             <button

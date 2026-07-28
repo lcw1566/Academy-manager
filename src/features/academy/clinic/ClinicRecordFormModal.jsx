@@ -910,7 +910,7 @@ export default function ClinicRecordFormModal({
                   );
                 })}
 
-                {!showCustomInput ? (
+                {!showCustomInput && (
                   <button
                     type="button"
                     onClick={() => setShowCustomInput(true)}
@@ -919,40 +919,46 @@ export default function ClinicRecordFormModal({
                     <Plus size={16} />
                     직접 추가
                   </button>
-                ) : (
-                  <div className="border-2 border-blue-200 rounded-2xl p-4 bg-blue-50">
-                    <p className="text-xs font-bold text-blue-700 mb-2">직접 추가</p>
-                    <input
-                      value={customItemDraft.title}
-                      onChange={(e) => setCustomItemDraft((d) => ({ ...d, title: e.target.value }))}
-                      placeholder="항목명 *"
-                      className="input mb-2"
-                    />
-                    <input
-                      value={customItemDraft.description}
-                      onChange={(e) => setCustomItemDraft((d) => ({ ...d, description: e.target.value }))}
-                      placeholder="설명 (선택)"
-                      className="input mb-2"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={addCustomItem}
-                        className="flex-1 bg-blue-600 text-white text-xs font-bold py-2.5 rounded-xl"
-                      >
-                        추가
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setShowCustomInput(false); setCustomItemDraft({ title: '', description: '' }); }}
-                        className="px-4 bg-white text-gray-500 text-xs font-bold py-2.5 rounded-xl border border-gray-200"
-                      >
-                        취소
-                      </button>
-                    </div>
-                  </div>
                 )}
               </div>
+              {showCustomInput && (
+                <div className="mt-2 flex max-w-md items-center gap-2 rounded-2xl bg-blue-50 p-2">
+                  <input
+                    value={customItemDraft.title}
+                    onChange={(event) => setCustomItemDraft((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addCustomItem();
+                      }
+                    }}
+                    placeholder="활동 이름"
+                    className="h-10 min-w-0 flex-1 rounded-xl bg-white px-3 text-sm font-semibold outline-none ring-1 ring-blue-100"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomItem}
+                    disabled={!customItemDraft.title.trim()}
+                    className="h-10 rounded-xl bg-blue-600 px-4 text-xs font-bold text-white disabled:bg-blue-300"
+                  >
+                    추가
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCustomInput(false);
+                      setCustomItemDraft({ title: '', description: '' });
+                    }}
+                    className="h-10 rounded-xl bg-white px-3 text-xs font-bold text-gray-500"
+                  >
+                    취소
+                  </button>
+                </div>
+              )}
             </FormSection>
           )}
 
