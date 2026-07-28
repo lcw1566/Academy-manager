@@ -1424,6 +1424,7 @@ function StaffShiftSection({ staff }) {
       Number(rule.break_minutes || 0),
       rule.effective_start_date || '',
       rule.effective_end_date || '',
+      Number(rule.repeat_interval_weeks) === 2 ? 2 : 1,
       rule.memo || '',
     ].join('__');
     const targetKey = sourceRule ? keyOfRule(sourceRule) : null;
@@ -1447,6 +1448,7 @@ function StaffShiftSection({ staff }) {
         weekdays,
         startDate: first.effective_start_date || todayStr,
         endDate: first.effective_end_date || '',
+        repeatIntervalWeeks: Number(first.repeat_interval_weeks) === 2 ? 2 : 1,
         scheduledStartTime: (first.start_time || '').slice(0, 5),
         scheduledEndTime: (first.end_time || '').slice(0, 5),
         breakMinutes: first.break_minutes ? String(first.break_minutes) : '',
@@ -1459,6 +1461,7 @@ function StaffShiftSection({ staff }) {
         weekdays: [getKoreanWeekdayFromYMD(sourceShift.date)].filter(Boolean),
         startDate: sourceShift.date || todayStr,
         endDate: '',
+        repeatIntervalWeeks: 1,
         scheduledStartTime: sourceShift.scheduledStartTime || '',
         scheduledEndTime: sourceShift.scheduledEndTime || '',
         breakMinutes: sourceShift.breakMinutes ? String(sourceShift.breakMinutes) : '',
@@ -1533,6 +1536,7 @@ function StaffShiftSection({ staff }) {
       breakMinutes: data.breakMinutes,
       effectiveStartDate: data.startDate,
       effectiveEndDate: data.endDate || null,
+      repeatIntervalWeeks: data.repeatIntervalWeeks,
       memo: data.memo,
       todayYMD: todayStr,
       existingRules: staffWorkRules,
@@ -2179,6 +2183,7 @@ function ShiftFormModal({
     weekdays: initialRecurring?.weekdays || [],
     startDate: initialRecurring?.startDate || todayDate(),
     endDate: initialRecurring?.endDate || '',
+    repeatIntervalWeeks: Number(initialRecurring?.repeatIntervalWeeks) === 2 ? 2 : 1,
     scheduledStartTime: initialRecurring?.scheduledStartTime || '',
     scheduledEndTime: initialRecurring?.scheduledEndTime || '',
     breakMinutes: initialRecurring?.breakMinutes || '',
@@ -2195,11 +2200,18 @@ function ShiftFormModal({
         weekdays: daysOfWeek,
         effectiveStartDate: recurring.startDate,
         effectiveEndDate: recurring.endDate || null,
+        repeatIntervalWeeks: recurring.repeatIntervalWeeks,
         todayYMD: todayDate(),
       });
       return { ...preview, dates: preview.dates.slice(0, 3) };
     } catch { return null; }
-  }, [mode, recurring.startDate, recurring.endDate, recurring.weekdays]);
+  }, [
+    mode,
+    recurring.startDate,
+    recurring.endDate,
+    recurring.weekdays,
+    recurring.repeatIntervalWeeks,
+  ]);
 
   const recurringSummary = useMemo(() => {
     const start = hhmmToMin(recurring.scheduledStartTime);
@@ -2264,6 +2276,7 @@ function ShiftFormModal({
         weekdays: recurring.weekdays,
         startDate: recurring.startDate,
         endDate: recurringEndMode === 'until' ? recurring.endDate : '',
+        repeatIntervalWeeks: recurring.repeatIntervalWeeks,
         scheduledStartTime: recurring.scheduledStartTime,
         scheduledEndTime: recurring.scheduledEndTime,
         breakMinutes: recurring.breakMinutes,
@@ -2366,6 +2379,23 @@ function ShiftFormModal({
         {mode === 'recurring' && (
           <>
             <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">반복 주기</label>
+              <div className="grid grid-cols-2 gap-2">
+                <ChoiceCard
+                  active={recurring.repeatIntervalWeeks === 1}
+                  title="매주"
+                  subtitle="선택한 요일마다"
+                  onClick={() => setRecurring((f) => ({ ...f, repeatIntervalWeeks: 1 }))}
+                />
+                <ChoiceCard
+                  active={recurring.repeatIntervalWeeks === 2}
+                  title="격주"
+                  subtitle="한 주 근무, 한 주 휴무"
+                  onClick={() => setRecurring((f) => ({ ...f, repeatIntervalWeeks: 2 }))}
+                />
+              </div>
+            </div>
+            <div>
               <label className="text-xs font-semibold text-gray-600 mb-1.5 block">반복 요일 *</label>
               <div className="grid grid-cols-7 gap-1.5">
                 {KOREAN_WEEKDAYS.map((d) => {
@@ -2399,11 +2429,13 @@ function ShiftFormModal({
               <p className="text-[11px] text-red-500 -mt-1">{recurringTimeError}</p>
             )}
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">언제부터 적용할까요?</label>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">
+                {recurring.repeatIntervalWeeks === 2 ? '첫 근무 주는 언제인가요?' : '언제부터 적용할까요?'}
+              </label>
               <div className="grid grid-cols-2 gap-2">
                 <ChoiceCard
                   active={recurringStartMode === 'today'}
-                  title="오늘부터"
+                  title={recurring.repeatIntervalWeeks === 2 ? '이번 주부터' : '오늘부터'}
                   onClick={() => {
                     setRecurringStartMode('today');
                     setRecurring((f) => ({ ...f, startDate: todayDate() }));
@@ -2419,6 +2451,11 @@ function ShiftFormModal({
             {recurringStartMode === 'custom' && (
               <div>
                 <input type="date" value={recurring.startDate} onChange={(e) => setRecurring((f) => ({ ...f, startDate: e.target.value }))} className="input" />
+                {recurring.repeatIntervalWeeks === 2 && (
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-[#8B95A1]">
+                    선택한 날짜가 포함된 주를 첫 근무 주로 계산해요.
+                  </p>
+                )}
               </div>
             )}
             <div>
@@ -2462,33 +2499,41 @@ function ShiftFormModal({
                   <p className="text-sm font-bold text-[#3182F6]">이 패턴으로 근무표에 표시돼요</p>
                 </div>
                 <p className="text-[11px] text-[#4E5968] leading-relaxed">
+                  {recurring.repeatIntervalWeeks === 2 ? '격주 ' : '매주 '}
                   {recurring.weekdays.join(', ')} {formatShiftTimeRange(recurring.scheduledStartTime, recurring.scheduledEndTime)}
                 </p>
                 {recurringSummary && (
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     <div className="rounded-xl bg-white/70 px-3 py-2">
-                      <p className="text-[10px] font-semibold text-[#8B95A1]">주 근무</p>
+                      <p className="text-[10px] font-semibold text-[#8B95A1]">
+                        {recurring.repeatIntervalWeeks === 2 ? '근무하는 주' : '주 근무'}
+                      </p>
                       <p className="text-sm font-extrabold text-[#191F28]">
                         {formatShiftHoursFromMinutes(recurringSummary.weeklyGrossMin)}h
                       </p>
                     </div>
                     <div className="rounded-xl bg-white/70 px-3 py-2">
-                      <p className="text-[10px] font-semibold text-[#8B95A1]">휴게 제외</p>
+                      <p className="text-[10px] font-semibold text-[#8B95A1]">
+                        {recurring.repeatIntervalWeeks === 2 ? '주 평균' : '휴게 제외'}
+                      </p>
                       <p className="text-sm font-extrabold text-[#191F28]">
-                        {formatShiftHoursFromMinutes(recurringSummary.weeklyNetMin)}h
+                        {formatShiftHoursFromMinutes(
+                          recurringSummary.weeklyNetMin / recurring.repeatIntervalWeeks,
+                        )}h
                       </p>
                     </div>
                   </div>
                 )}
                 {recurringSummary?.weeklyBreakMin > 0 && (
                   <p className="text-[11px] text-[#4E5968] mt-2 leading-relaxed">
-                    휴게 {formatShiftHoursFromMinutes(recurringSummary.weeklyBreakMin)}h가 빠져서 급여 기준 시간은 {formatShiftHoursFromMinutes(recurringSummary.weeklyNetMin)}h예요.
+                    근무하는 주에 휴게 {formatShiftHoursFromMinutes(recurringSummary.weeklyBreakMin)}h를 제외해요.
                   </p>
                 )}
                 <p className="text-[11px] text-[#8B95A1] mt-2 leading-relaxed">
                   {recurringEndMode === 'until' && recurring.endDate
                     ? `${recurring.startDate}부터 ${recurring.endDate}까지 반복돼요.`
                     : `${recurring.startDate}부터 계속 반복돼요.`}
+                  {recurring.repeatIntervalWeeks === 2 ? ' 시작일이 포함된 주부터 한 주 걸러 근무해요.' : ''}
                   {recurringPreview.dates.length > 0 ? ` 다음 일정: ${recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}` : ''}
                 </p>
                 <p className="text-[11px] text-[#8B95A1] mt-1 leading-relaxed">

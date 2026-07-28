@@ -38,7 +38,8 @@ supabase/
     ├── 027_attendance_choices_and_invitation_display.sql (출결 선택 + 초대 학원명 RPC)
     ├── 028_role_permissions_and_payroll_privacy.sql (역할별 RLS + 급여/근태 개인정보 보호)
     ├── ...                               (후속 기능 마이그레이션)
-    └── 041_assistant_attendance_default_permission.sql (보조강사 기본 등하원 권한)
+    ├── 041_assistant_attendance_default_permission.sql (보조강사 기본 등하원 권한)
+    └── 042_staff_biweekly_work_rules.sql (직원 격주 근무 규칙)
 ```
 
 ## 실행 순서 요약
@@ -74,6 +75,7 @@ supabase/
 | 27 | `027_attendance_choices_and_invitation_display.sql` | 직원 직접 기록/QR 선택, 초대받은 사용자에게 학원 이름을 안전하게 표시하는 RPC |
 | 28 | `028_role_permissions_and_payroll_privacy.sql` | 화면 권한을 DB RLS에서도 강제, 직원 급여 본인 조회 및 근태 승인 조작 차단 |
 | 41 | `041_assistant_attendance_default_permission.sql` | 보조강사 기본 등하원·출석 기록 권한 활성화 |
+| 42 | `042_staff_biweekly_work_rules.sql` | 직원 반복 근무의 매주/격주 주기 저장 |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -123,6 +125,16 @@ supabase/
 - 별도 권한을 설정하지 않은 보조강사에게 등하원 탭과 기록 권한이 기본 제공됩니다.
 - 원장이 `등하원·출석 기록` 권한을 명시적으로 끈 보조강사는 계속 접근할 수 없습니다.
 - 기존 직원·학생·등하원 데이터는 변경하지 않습니다.
+
+### 직원 격주 근무 배포 (042)
+
+`041_assistant_attendance_default_permission.sql`까지 실행한 환경에서
+`supabase/sql/042_staff_biweekly_work_rules.sql`을 실행하세요.
+
+- 기존 근무 규칙은 자동으로 `매주`를 유지합니다.
+- 새 반복 근무에서 `매주 / 격주`를 선택할 수 있습니다.
+- 격주는 시작일이 포함된 주를 첫 근무 주로 계산합니다.
+- 날짜별 휴무·시간 변경·추가 근무 예외는 기존과 동일하게 적용됩니다.
 
 ### 공유 드라이브 배포 (024)
 

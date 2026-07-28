@@ -66,6 +66,24 @@ function isRuleActiveOnDate(rule, ymd) {
   if (rule.is_active === false) return false;
   if (rule.effective_start_date && ymd < rule.effective_start_date) return false;
   if (rule.effective_end_date && ymd > rule.effective_end_date) return false;
+  const repeatIntervalWeeks = Number(rule.repeat_interval_weeks) || 1;
+  if (repeatIntervalWeeks > 1 && rule.effective_start_date) {
+    const anchor = parseYMD(rule.effective_start_date);
+    const current = parseYMD(ymd);
+    if (Number.isNaN(anchor.getTime()) || Number.isNaN(current.getTime())) return false;
+    const mondayOf = (date) => {
+      const copy = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const dow = copy.getDay();
+      copy.setDate(copy.getDate() + (dow === 0 ? -6 : 1 - dow));
+      return copy;
+    };
+    const anchorMonday = mondayOf(anchor);
+    const currentMonday = mondayOf(current);
+    const weekDiff = Math.round(
+      (currentMonday.getTime() - anchorMonday.getTime()) / (7 * 24 * 60 * 60 * 1000),
+    );
+    if (weekDiff < 0 || weekDiff % repeatIntervalWeeks !== 0) return false;
+  }
   return true;
 }
 

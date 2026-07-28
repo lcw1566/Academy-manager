@@ -14,6 +14,7 @@ export function buildRecurringStaffWorkPreview({
   weekdays = [],
   effectiveStartDate,
   effectiveEndDate,
+  repeatIntervalWeeks = 1,
   todayYMD,
 } = {}) {
   if (!effectiveStartDate || weekdays.length === 0) {
@@ -25,7 +26,7 @@ export function buildRecurringStaffWorkPreview({
     daysOfWeek: weekdays,
     startDate: effectiveStartDate,
     endDate: capEndDate,
-    repeatType: '매주',
+    repeatType: Number(repeatIntervalWeeks) === 2 ? '격주' : '매주',
   });
   return {
     dates,
@@ -55,6 +56,7 @@ export async function saveRecurringStaffWorkSchedule({
   breakMinutes = 0,
   effectiveStartDate,
   effectiveEndDate,
+  repeatIntervalWeeks = 1,
   memo = '',
   todayYMD,
   existingRules = [],
@@ -69,6 +71,7 @@ export async function saveRecurringStaffWorkSchedule({
     weekdays,
     effectiveStartDate,
     effectiveEndDate,
+    repeatIntervalWeeks,
     todayYMD,
   });
 
@@ -106,6 +109,7 @@ export async function saveRecurringStaffWorkSchedule({
           break_minutes: normalizedBreakMinutes,
           effective_start_date: effectiveStartDate,
           effective_end_date: effectiveEndDate || null,
+          repeat_interval_weeks: Number(repeatIntervalWeeks) === 2 ? 2 : 1,
           is_active: true,
           memo: normalizedMemo || null,
         });
