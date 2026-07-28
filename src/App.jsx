@@ -94,6 +94,7 @@ export default function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isAuthInitialized = useAuthStore((s) => s.isInitialized);
   const isSupabaseReady = useAuthStore((s) => s.isSupabaseReady);
+  const isPasswordRecovery = useAuthStore((s) => s.isPasswordRecovery);
 
   const initializeWorkspace = useWorkspaceStore((s) => s.initializeWorkspace);
   const clearWorkspace = useWorkspaceStore((s) => s.clearWorkspace);
@@ -491,6 +492,15 @@ export default function App() {
   const renderLayout = () => {
     if (isPublicCheckin) return <PublicCheckinPage />;
 
+    if (isPasswordRecovery) {
+      return (
+        <AuthPage
+          initialMode="resetPassword"
+          onAuthSuccess={() => setAuthEntryMode(null)}
+        />
+      );
+    }
+
     // Phase 26 — 인증 우선. Supabase 가 설정돼 있을 때만 login-first 적용.
     // (env 미설정 환경에서는 인증이 불가하므로 RoleSelectPage / 기존 흐름으로 폴백)
     if (isSupabaseReady) {
@@ -569,12 +579,12 @@ export default function App() {
         {/* Phase 26: 미인증 상태에서는 renderLayout 이 AuthPage 를 노출하므로
             isAuthPanelOpen 으로 모달을 띄울 필요가 없다. 인증된 사용자가
             "다른 계정으로 로그인" 등을 트리거하면 이 패널이 열린다. */}
-        {!isPublicCheckin && isAuthenticated && isAuthPanelOpen && (
+        {!isPublicCheckin && !isPasswordRecovery && isAuthenticated && isAuthPanelOpen && (
           <div className="fixed inset-0 z-50 bg-[#F2F4F6] overflow-y-auto">
             <AuthPage onAuthSuccess={closeAuthPanel} onCancel={closeAuthPanel} />
           </div>
         )}
-        {!isPublicCheckin && !isAuthenticated && authEntryMode && (
+        {!isPublicCheckin && !isPasswordRecovery && !isAuthenticated && authEntryMode && (
           <div className="fixed inset-0 z-50 bg-[#F2F4F6] overflow-y-auto">
             <AuthPage
               key={authEntryMode}

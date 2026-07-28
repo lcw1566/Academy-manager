@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured, setAuthRememberPreference } from '../../lib/supabase';
 
 const AUTH_SESSION_TIMEOUT_MS = 8000;
+const AUTH_SIGN_IN_TIMEOUT_MS = 15000;
 
 function assertSupabaseConfigured() {
   if (!isSupabaseConfigured || !supabase) {
@@ -42,20 +43,36 @@ export async function getCurrentUser() {
 
 export async function signUpWithEmail({ email, password, metadata } = {}) {
   assertSupabaseConfigured();
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) throw new Error('이메일을 입력해주세요.');
   setAuthRememberPreference(true);
   const options = metadata && Object.keys(metadata).length > 0
     ? { data: metadata }
     : undefined;
-  const { data, error } = await supabase.auth.signUp({ email, password, options });
+  const { data, error } = await supabase.auth.signUp({
+    email: normalizedEmail,
+    password,
+    options,
+  });
   if (error) throw error;
   return data;
 }
 
 export async function signInWithEmail({ email, password, remember = true }) {
   assertSupabaseConfigured();
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) throw new Error('이메일을 입력해주세요.');
+  if (!password) throw new Error('비밀번호를 입력해주세요.');
   setAuthRememberPreference(remember);
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await withTimeout(
+    supabase.auth.signInWithPassword({ email: normalizedEmail, password }),
+    AUTH_SIGN_IN_TIMEOUT_MS,
+    '로그인 요청 시간이 초과됐어요. 네트워크를 확인하고 다시 시도해주세요.',
+  );
   if (error) throw error;
+  if (!data?.session?.user) {
+    throw new Error('로그인 정보를 받지 못했어요. 다시 시도해주세요.');
+  }
   return data;
 }
 
@@ -67,6 +84,35 @@ export async function resendSignUpConfirmation(email) {
     type: 'signup',
     email: normalizedEmail,
   });
+  if (error) throw error;
+  return data;
+}
+
+export async function requestPasswordResetEmail(email) {
+  assertSupabaseConfigured();
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) throw new Error('이메일을 입력해주세요.');
+  const redirectUrl = typeof window !== 'undefined'
+    ? new URL(window.location.href)
+    : null;
+  if (redirectUrl) {
+    redirectUrl.search = '';
+    redirectUrl.hash = '';
+    redirectUrl.searchParams.set('passwordRecovery', '1');
+  }
+  const { data, error } = await supabase.auth.resetPasswordForEmail(
+    normalizedEmail,
+    redirectUrl ? { redirectTo: redirectUrl.toString() } : undefined,
+  );
+  if (error) throw error;
+  return data;
+}
+
+export async function completePasswordRecovery(newPassword) {
+  assertSupabaseConfigured();
+  const next = String(newPassword || '');
+  if (next.length < 8) throw new Error('새 비밀번호는 8자 이상 입력해주세요.');
+  const { data, error } = await supabase.auth.updateUser({ password: next });
   if (error) throw error;
   return data;
 }

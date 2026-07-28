@@ -102,6 +102,12 @@ const TAB_CONFIG = {
   ],
 };
 
+// 모바일은 매일 가장 자주 쓰는 기능 5개 + 더보기로 고정한다.
+// 권한이나 학원 설정으로 항목이 빠지면 뒤의 후보(채팅·직원 등)로 채워
+// 가능한 경우 항상 6칸을 유지한다.
+const MOBILE_PRIMARY_TAB_IDS = ['home', 'attendance', 'classes', 'students', 'clinic'];
+const MOBILE_FALLBACK_TAB_IDS = ['chat', 'staff', 'payments', 'payroll', 'owner-payroll', 'drive'];
+
 function FallbackScreen() {
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   return (
@@ -358,6 +364,29 @@ export default function AcademyAppLayout() {
     () => totalUnread({ messages: chatMessages, reads: chatReads }, authUserId),
     [chatMessages, chatReads, authUserId],
   );
+  const mobileTabs = useMemo(() => {
+    const moreTab = tabs.find((tab) => tab.id === 'more');
+    const selected = [];
+    const seen = new Set();
+    for (const id of [...MOBILE_PRIMARY_TAB_IDS, ...MOBILE_FALLBACK_TAB_IDS]) {
+      const tab = tabs.find((item) => item.id === id);
+      if (!tab || seen.has(tab.id) || tab.id === 'more') continue;
+      selected.push(tab);
+      seen.add(tab.id);
+      if (selected.length === 5) break;
+    }
+    if (moreTab) selected.push(moreTab);
+    return selected;
+  }, [tabs]);
+  const mobileTabIds = useMemo(
+    () => new Set(mobileTabs.map((tab) => tab.id)),
+    [mobileTabs],
+  );
+  const mobileOverflowTabs = useMemo(
+    () => tabs.filter((tab) => tab.id !== 'more' && !mobileTabIds.has(tab.id)),
+    [tabs, mobileTabIds],
+  );
+  const mobileActiveTab = mobileTabIds.has(activeTab) ? activeTab : 'more';
 
   // 역할이 바뀌어 현재 activeTab이 해당 역할 탭 목록에 없으면 첫 번째 탭으로 보정.
   // Phase 40 호환 — 이전에 저장된 'work' 는 새 'staff' 로 자동 마이그레이션.
@@ -443,7 +472,15 @@ export default function AcademyAppLayout() {
       }
       // Phase 40 호환 — 이전 버전 store 에 'work' 가 저장되어 있어도 staff 로 매핑.
       if (activeTab === 'work')       return <StaffPage />;
-      if (activeTab === 'more')       return <AcademyMorePage />;
+      if (activeTab === 'more') {
+        return (
+          <AcademyMorePage
+            mobileNavigationItems={mobileOverflowTabs}
+            navigationBadges={{ chat: chatUnread }}
+            onNavigate={setActiveTab}
+          />
+        );
+      }
 
       // 탭이 유효하지 않을 경우 대시보드 렌더
       const validTabIds = tabs.map((t) => t.id);
@@ -514,9 +551,13 @@ export default function AcademyAppLayout() {
           Phase 39 — 6개 탭이 들어가도록 아이콘/너비 살짝 축소. */}
       <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
         <div className="max-w-md mx-auto flex pt-2">
-          {tabs.filter((t) => t.mobileBottomNav !== false).map(({ id, label, Icon, pilotLocked }) => {
-            const active = activeTab === id;
-            const badge = id === 'chat' ? chatUnread : 0;
+          {mobileTabs.map(({ id, label, Icon, pilotLocked }) => {
+            const active = mobileActiveTab === id;
+            const badge = id === 'chat'
+              ? chatUnread
+              : id === 'more' && mobileOverflowTabs.some((tab) => tab.id === 'chat')
+                ? chatUnread
+                : 0;
             return (
               <button
                 key={id}

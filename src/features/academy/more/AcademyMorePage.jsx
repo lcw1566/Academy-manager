@@ -36,7 +36,11 @@ import {
 } from '../../../constants/academySettings';
 import ClinicDefaultItemsEditor from '../clinic/ClinicDefaultItemsEditor';
 
-export default function AcademyMorePage() {
+export default function AcademyMorePage({
+  mobileNavigationItems = [],
+  navigationBadges = {},
+  onNavigate,
+}) {
   const role = useAcademyStore((s) => s.role);
   const academyProfile = useAcademyStore((s) => s.academyProfile);
   const setAcademyProfile = useAcademyStore((s) => s.setAcademyProfile);
@@ -202,6 +206,13 @@ export default function AcademyMorePage() {
     <div>
       <Header title="더보기" />
       <div className="pt-14 md:pt-0 pb-6">
+        {mobileNavigationItems.length > 0 && (
+          <MobileExtraMenu
+            items={mobileNavigationItems}
+            badges={navigationBadges}
+            onNavigate={onNavigate}
+          />
+        )}
         {isOwner ? (
           ownerHasNoAcademy ? (
             <OwnerEmptyState
@@ -282,6 +293,53 @@ export default function AcademyMorePage() {
 }
 
 // ─── 공통 layout 헬퍼 ────────────────────────────────────────────
+function MobileExtraMenu({ items = [], badges = {}, onNavigate }) {
+  return (
+    <section className="md:hidden">
+      <SectionTitle className="mt-4">전체 메뉴</SectionTitle>
+      <div className="mx-4 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        {items.map((item, index) => {
+          const Icon = item.Icon;
+          const badge = Number(badges[item.id]) || 0;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onNavigate?.(item.id)}
+              className={`flex min-h-[58px] w-full items-center gap-3 px-4 text-left active:bg-gray-50 ${
+                index > 0 ? 'border-t border-gray-50' : ''
+              }`}
+              aria-label={item.pilotLocked ? `${item.label}, 추후 제공 예정` : item.label}
+            >
+              <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${
+                item.pilotLocked ? 'bg-gray-100 text-gray-400' : 'bg-blue-50 text-blue-600'
+              }`}>
+                {Icon && <Icon size={17} />}
+              </span>
+              <span className={`min-w-0 flex-1 text-sm font-bold ${
+                item.pilotLocked ? 'text-gray-400' : 'text-gray-900'
+              }`}>
+                {item.label}
+              </span>
+              {item.pilotLocked && (
+                <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-400">
+                  준비 중
+                </span>
+              )}
+              {badge > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-black text-white">
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              )}
+              <ChevronRight size={15} className="flex-shrink-0 text-gray-300" />
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function SectionTitle({ children, className = '' }) {
   return (
     <p className={`mx-4 mt-6 mb-2 text-xs font-bold text-gray-800 ${className}`}>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   X, Building2, Users, GraduationCap, CheckCircle2, ShieldCheck, Sparkles, Eye, EyeOff,
+  MailCheck, KeyRound,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useAcademyStore from '../../store/useAcademyStore';
@@ -61,9 +62,10 @@ function setPendingProfileInfo(info) {
 }
 
 export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signIn' }) {
-  const [mode, setMode] = useState(initialMode); // 'signIn' | 'signUp'
+  const [mode, setMode] = useState(initialMode); // signIn | signUp | forgotPassword | resetPassword
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [accountType, setAccountType] = useState(null); // 'owner' | 'staff' | null
   const [displayName, setDisplayName] = useState('');
@@ -71,10 +73,13 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
   const [rememberLogin, setRememberLogin] = useState(true);
   const [localMessage, setLocalMessage] = useState(null);
   const [verificationEmail, setVerificationEmail] = useState('');
+  const [resetEmailSent, setResetEmailSent] = useState(false);
 
   const signIn = useAuthStore((s) => s.signIn);
   const signUp = useAuthStore((s) => s.signUp);
   const resendConfirmation = useAuthStore((s) => s.resendConfirmation);
+  const requestPasswordReset = useAuthStore((s) => s.requestPasswordReset);
+  const finishPasswordRecovery = useAuthStore((s) => s.finishPasswordRecovery);
   const isAuthLoading = useAuthStore((s) => s.isAuthLoading);
   const authError = useAuthStore((s) => s.authError);
   const isSupabaseReady = useAuthStore((s) => s.isSupabaseReady);
@@ -87,7 +92,44 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
     setLocalMessage(null);
     clearAuthError();
 
-    if (!email || !password) {
+    if (mode === 'forgotPassword') {
+      if (!email.trim()) {
+        setLocalMessage({ type: 'error', text: '이메일을 입력해주세요.' });
+        return;
+      }
+      try {
+        await requestPasswordReset(email);
+        setResetEmailSent(true);
+        setLocalMessage({
+          type: 'success',
+          text: '재설정 링크를 보냈어요. 메일함과 스팸함을 확인해주세요.',
+        });
+      } catch {
+        // store.authError가 안내 문구를 제공한다.
+      }
+      return;
+    }
+
+    if (mode === 'resetPassword') {
+      if (password.length < 8) {
+        setLocalMessage({ type: 'error', text: '새 비밀번호는 8자 이상 입력해주세요.' });
+        return;
+      }
+      if (password !== confirmPassword) {
+        setLocalMessage({ type: 'error', text: '새 비밀번호가 서로 일치하지 않아요.' });
+        return;
+      }
+      try {
+        await finishPasswordRecovery(password);
+        showToast('새 비밀번호로 변경했어요.');
+        onAuthSuccess?.();
+      } catch {
+        // store.authError가 안내 문구를 제공한다.
+      }
+      return;
+    }
+
+    if (!email.trim() || !password) {
       setLocalMessage({ type: 'error', text: '이메일과 비밀번호를 모두 입력해주세요.' });
       return;
     }
@@ -99,6 +141,21 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
     const trimmedName = (displayName || '').trim();
     if (mode === 'signUp' && !trimmedName) {
       setLocalMessage({ type: 'error', text: '이름을 입력해주세요.' });
+      return;
+    }
+    if (mode === 'signUp' && password.length < 8) {
+      setLocalMessage({ type: 'error', text: '비밀번호는 8자 이상 입력해주세요.' });
+      return;
+    }
+    if (mode === 'signUp' && password !== confirmPassword) {
+      setLocalMessage({ type: 'error', text: '비밀번호가 서로 일치하지 않아요.' });
+      return;
+    }
+    if (
+      mode === 'signUp'
+      && password.toLowerCase() === email.trim().toLowerCase()
+    ) {
+      setLocalMessage({ type: 'error', text: '이메일과 다른 비밀번호를 사용해주세요.' });
       return;
     }
     const cleanedPhone = (phone || '').trim() || null;
@@ -194,8 +251,11 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
   const switchMode = (next) => {
     setMode(next);
     setShowPassword(false);
+    setPassword('');
+    setConfirmPassword('');
     setLocalMessage(null);
     setVerificationEmail('');
+    setResetEmailSent(false);
     clearAuthError();
     if (next === 'signIn') {
       // 로그인 모드로 돌아오면 선택 상태 초기화 (재가입 시 다시 선택하도록)
@@ -204,14 +264,39 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
   };
 
   const submitDisabled =
-    isAuthLoading || (mode === 'signUp' && (!accountType || !displayName.trim()));
+    isAuthLoading
+    || (mode === 'signUp' && (!accountType || !displayName.trim()))
+    || (mode === 'forgotPassword' && resetEmailSent);
+
+  const modeCopy = {
+    signIn: {
+      eyebrow: '다시 만나서 반가워요',
+      title: '로그인',
+      description: '학원 워크스페이스로 안전하게 이어집니다.',
+    },
+    signUp: {
+      eyebrow: '씨닛을 시작해볼까요?',
+      title: '회원가입',
+      description: '원장 또는 직원 중 내 계정 유형을 선택해주세요.',
+    },
+    forgotPassword: {
+      eyebrow: '금방 다시 시작할 수 있어요',
+      title: '비밀번호 재설정',
+      description: '가입한 이메일로 안전한 재설정 링크를 보내드려요.',
+    },
+    resetPassword: {
+      eyebrow: '새 비밀번호를 정해주세요',
+      title: '비밀번호 변경',
+      description: '다른 기기에서도 기억하기 쉬운 고유한 비밀번호를 사용해주세요.',
+    },
+  }[mode] || {};
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-white text-gray-950">
+    <div className="relative min-h-screen overflow-x-hidden bg-white text-gray-950">
       <CloseButton onClick={onCancel} />
 
       <header className="absolute inset-x-0 top-0 z-10">
-        <div className="mx-auto flex h-16 max-w-6xl items-center px-5 md:px-6">
+        <div className="mx-auto flex h-14 max-w-6xl items-center px-4 md:h-16 md:px-6">
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white">
               <GraduationCap size={18} />
@@ -221,7 +306,7 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
         </div>
       </header>
 
-      <main className="mx-auto grid min-h-screen w-full max-w-6xl grid-cols-1 items-center gap-10 px-5 pb-12 pt-24 md:grid-cols-[0.9fr_1.1fr] md:px-6 md:py-24">
+      <main className="mx-auto grid min-h-[100dvh] w-full max-w-6xl grid-cols-1 items-center gap-8 px-4 pb-8 pt-20 md:min-h-screen md:grid-cols-[0.9fr_1.1fr] md:gap-10 md:px-6 md:py-24">
         <motion.section
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -261,28 +346,49 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
           transition={{ duration: 0.35 }}
           className="mx-auto w-full max-w-lg"
         >
-          <div className="mb-7">
+          <div className="mb-5 md:mb-7">
             <p className="text-sm font-black text-blue-600">
-              {mode === 'signIn' ? '다시 만나서 반가워요' : '씨닛을 시작해볼까요?'}
+              {modeCopy.eyebrow}
             </p>
-            <h2 className="mt-2 text-3xl font-black">
-              {mode === 'signIn' ? '로그인' : '회원가입'}
-            </h2>
+            <h2 className="mt-1.5 text-[28px] font-black md:mt-2 md:text-3xl">{modeCopy.title}</h2>
             <p className="mt-2 text-sm font-semibold text-gray-500">
-              {mode === 'signIn'
-                ? '학원 워크스페이스로 안전하게 이어집니다.'
-                : '원장 또는 직원 중 내 계정 유형을 선택해주세요.'}
+              {modeCopy.description}
             </p>
           </div>
 
           <form
             onSubmit={handleSubmit}
-            className="space-y-4 rounded-[28px] bg-[#F7F8FA] p-5 shadow-sm ring-1 ring-gray-100 md:p-7"
+            className="space-y-3.5 rounded-[24px] bg-[#F7F8FA] p-4 shadow-sm ring-1 ring-gray-100 md:space-y-4 md:rounded-[28px] md:p-7"
           >
+            {mode === 'resetPassword' && (
+              <div className="flex items-center gap-3 rounded-2xl bg-blue-50 px-4 py-3">
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white text-blue-600">
+                  <KeyRound size={18} />
+                </span>
+                <p className="text-xs font-bold leading-5 text-blue-700">
+                  링크 확인이 완료됐어요. 이제 새 비밀번호만 저장하면 돼요.
+                </p>
+              </div>
+            )}
+
+            {mode === 'forgotPassword' && resetEmailSent && (
+              <div className="flex items-start gap-3 rounded-2xl bg-emerald-50 px-4 py-4">
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white text-emerald-600">
+                  <MailCheck size={19} />
+                </span>
+                <div>
+                  <p className="text-sm font-black text-emerald-800">메일을 보냈어요</p>
+                  <p className="mt-1 break-all text-xs font-semibold leading-5 text-emerald-700">
+                    {email.trim().toLowerCase()}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {mode === 'signUp' && (
               <div>
                 <label className="mb-2 block text-xs font-bold text-gray-600">계정 유형</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="grid grid-cols-2 gap-2">
                   {ACCOUNT_TYPES.map(({ id, title, desc, Icon, iconBg, iconColor, borderActive }) => {
                     const active = accountType === id;
                     return (
@@ -291,7 +397,7 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
                         type="button"
                         onClick={() => setAccountType(id)}
                         disabled={isAuthLoading}
-                        className={`flex min-h-[104px] items-start gap-3 rounded-2xl border-2 bg-white p-3.5 text-left transition-colors ${
+                        className={`flex min-h-[92px] flex-col items-start gap-2 rounded-2xl border-2 bg-white p-3 text-left transition-colors sm:min-h-[104px] sm:flex-row sm:gap-3 sm:p-3.5 ${
                           active ? borderActive : 'border-transparent active:bg-gray-50'
                         }`}
                       >
@@ -300,7 +406,7 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block text-sm font-black text-gray-900">{title}</span>
-                          <span className="mt-1 block text-xs leading-relaxed text-gray-500">{desc}</span>
+                          <span className="mt-1 hidden text-xs leading-relaxed text-gray-500 sm:block">{desc}</span>
                         </span>
                       </button>
                     );
@@ -309,27 +415,34 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
               </div>
             )}
 
-            <AuthField label="이메일">
-              <input
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-[52px] w-full rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold outline-none transition-colors focus:border-blue-500"
-                placeholder="you@example.com"
-                disabled={isAuthLoading}
-              />
-            </AuthField>
+            {mode !== 'resetPassword' && (
+              <AuthField label="이메일">
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="h-[52px] w-full rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-base font-semibold outline-none transition-colors focus:border-blue-500 md:text-sm"
+                  placeholder="you@example.com"
+                  disabled={isAuthLoading || resetEmailSent}
+                />
+              </AuthField>
+            )}
 
-            <AuthField label="비밀번호">
+            {mode !== 'forgotPassword' && (
+            <AuthField label={mode === 'resetPassword' ? '새 비밀번호' : '비밀번호'}>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="h-[52px] w-full rounded-2xl border border-gray-200 bg-white py-3.5 pl-4 pr-12 text-sm font-semibold outline-none transition-colors focus:border-blue-500"
-                  placeholder="6자 이상"
+                  className="h-[52px] w-full rounded-2xl border border-gray-200 bg-white py-3.5 pl-4 pr-12 text-base font-semibold outline-none transition-colors focus:border-blue-500 md:text-sm"
+                  placeholder={mode === 'signIn' ? '비밀번호 입력' : '8자 이상'}
                   disabled={isAuthLoading}
                 />
                 <button
@@ -343,6 +456,36 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
                 </button>
               </div>
             </AuthField>
+            )}
+
+            {(mode === 'signUp' || mode === 'resetPassword') && (
+              <AuthField label="비밀번호 확인">
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    className={`h-[52px] w-full rounded-2xl border bg-white py-3.5 pl-4 pr-20 text-base font-semibold outline-none transition-colors md:text-sm ${
+                      confirmPassword && password !== confirmPassword
+                        ? 'border-red-300 focus:border-red-400'
+                        : confirmPassword && password === confirmPassword
+                          ? 'border-emerald-300 focus:border-emerald-400'
+                          : 'border-gray-200 focus:border-blue-500'
+                    }`}
+                    placeholder="한 번 더 입력"
+                    disabled={isAuthLoading}
+                  />
+                  {confirmPassword && (
+                    <span className={`absolute inset-y-0 right-4 flex items-center text-xs font-black ${
+                      password === confirmPassword ? 'text-emerald-600' : 'text-red-500'
+                    }`}>
+                      {password === confirmPassword ? '일치' : '불일치'}
+                    </span>
+                  )}
+                </div>
+              </AuthField>
+            )}
 
             {mode === 'signUp' && (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -373,16 +516,26 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
             )}
 
             {mode === 'signIn' && (
-              <label className="flex items-center gap-2 text-sm font-bold text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={rememberLogin}
-                  onChange={(e) => setRememberLogin(e.target.checked)}
+              <div className="flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm font-bold text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={rememberLogin}
+                    onChange={(e) => setRememberLogin(e.target.checked)}
+                    disabled={isAuthLoading}
+                    className="h-4 w-4 rounded border-gray-300 accent-blue-600"
+                  />
+                  로그인 유지
+                </label>
+                <button
+                  type="button"
+                  onClick={() => switchMode('forgotPassword')}
                   disabled={isAuthLoading}
-                  className="h-4 w-4 rounded border-gray-300 accent-blue-600"
-                />
-                로그인 유지
-              </label>
+                  className="rounded-xl px-2 py-1.5 text-xs font-black text-blue-600 active:bg-blue-50"
+                >
+                  비밀번호를 잊으셨나요?
+                </button>
+              </div>
             )}
 
             {(authError || localMessage) && (
@@ -410,24 +563,46 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
               disabled={submitDisabled}
               className="w-full rounded-2xl bg-blue-600 py-3.5 text-sm font-black text-white shadow-lg shadow-blue-600/15 transition-all hover:-translate-y-0.5 hover:shadow-xl disabled:translate-y-0 disabled:opacity-50"
             >
-              {isAuthLoading ? '처리 중...' : mode === 'signIn' ? '로그인' : '회원가입'}
+              {isAuthLoading
+                ? '처리 중...'
+                : mode === 'signIn'
+                  ? '로그인'
+                  : mode === 'signUp'
+                    ? '회원가입'
+                    : mode === 'forgotPassword'
+                      ? resetEmailSent ? '메일을 보냈어요' : '재설정 링크 받기'
+                      : '새 비밀번호 저장'}
             </button>
 
-            <div className="text-center text-xs font-semibold text-gray-500">
-              {mode === 'signIn' ? '계정이 없으면 ' : '이미 계정이 있으면 '}
-              <button
-                type="button"
-                onClick={() => switchMode(mode === 'signIn' ? 'signUp' : 'signIn')}
-                className="font-black text-blue-600"
-              >
-                {mode === 'signIn' ? '회원가입' : '로그인'}
-              </button>
-            </div>
+            {mode !== 'resetPassword' && (
+              <div className="text-center text-xs font-semibold text-gray-500">
+                {mode === 'signIn'
+                  ? '계정이 없으면 '
+                  : mode === 'signUp'
+                    ? '이미 계정이 있으면 '
+                    : ''}
+                <button
+                  type="button"
+                  onClick={() => switchMode(
+                    mode === 'signIn' ? 'signUp' : 'signIn',
+                  )}
+                  className="font-black text-blue-600"
+                >
+                  {mode === 'signIn'
+                    ? '회원가입'
+                    : mode === 'signUp'
+                      ? '로그인'
+                      : '로그인으로 돌아가기'}
+                </button>
+              </div>
+            )}
           </form>
 
-          <div className="mt-5 md:hidden">
+          {(mode === 'signIn' || mode === 'signUp') && (
+          <div className="mt-4 md:hidden">
             <AuthPromotionSlot compact />
           </div>
+          )}
         </motion.section>
       </main>
     </div>

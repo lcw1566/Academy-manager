@@ -5,6 +5,8 @@ import {
   signUpWithEmail,
   signInWithEmail,
   resendSignUpConfirmation,
+  requestPasswordResetEmail,
+  completePasswordRecovery,
   updateCurrentUserPassword,
   signOut,
   subscribeAuthStateChange,
@@ -26,6 +28,7 @@ const useAuthStore = create((set, get) => ({
   isAuthenticated: false,
   isAuthLoading: false,
   authError: null,
+  isPasswordRecovery: false,
   isSupabaseReady: isSupabaseConfigured,
   isInitialized: false,
 
@@ -47,23 +50,32 @@ const useAuthStore = create((set, get) => ({
     const initialization = (async () => {
       set({ isAuthLoading: true, authError: null });
 
+      // 초기 세션 조회가 일시적으로 실패해도 이후 로그인·토큰 갱신 이벤트는
+      // 계속 받을 수 있어야 한다.
+      if (!authSubscription) {
+        authSubscription = subscribeAuthStateChange((event, nextSession) => {
+          set({
+            session: nextSession,
+            user: nextSession?.user ?? null,
+            isAuthenticated: Boolean(nextSession?.user),
+            isPasswordRecovery:
+              event === 'PASSWORD_RECOVERY'
+              || (get().isPasswordRecovery && Boolean(nextSession?.user)),
+          });
+        });
+      }
+
       try {
         const session = await getCurrentSession();
         set({
           session,
           user: session?.user ?? null,
           isAuthenticated: Boolean(session?.user),
+          isPasswordRecovery:
+            Boolean(session?.user)
+            && typeof window !== 'undefined'
+            && new URL(window.location.href).searchParams.get('passwordRecovery') === '1',
         });
-
-        if (!authSubscription) {
-          authSubscription = subscribeAuthStateChange((_event, nextSession) => {
-            set({
-              session: nextSession,
-              user: nextSession?.user ?? null,
-              isAuthenticated: Boolean(nextSession?.user),
-            });
-          });
-        }
       } catch (err) {
         set({ authError: localizeError(err, '로그인 상태를 확인하지 못했어요.') });
       } finally {
@@ -128,6 +140,37 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+  requestPasswordReset: async (email) => {
+    set({ isAuthLoading: true, authError: null });
+    try {
+      return await requestPasswordResetEmail(email);
+    } catch (err) {
+      set({ authError: localizeError(err, '비밀번호 재설정 메일을 보내지 못했어요.') });
+      throw err;
+    } finally {
+      set({ isAuthLoading: false });
+    }
+  },
+
+  finishPasswordRecovery: async (newPassword) => {
+    set({ isAuthLoading: true, authError: null });
+    try {
+      const data = await completePasswordRecovery(newPassword);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('passwordRecovery');
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+      }
+      set({ isPasswordRecovery: false });
+      return data;
+    } catch (err) {
+      set({ authError: localizeError(err, '새 비밀번호를 저장하지 못했어요.') });
+      throw err;
+    } finally {
+      set({ isAuthLoading: false });
+    }
+  },
+
   changePassword: async ({ currentPassword, newPassword } = {}) => {
     set({ isAuthLoading: true, authError: null });
     try {
@@ -160,6 +203,7 @@ const useAuthStore = create((set, get) => ({
       isAuthenticated: false,
       isAuthLoading: true,
       authError: null,
+      isPasswordRecovery: false,
     });
 
     const operation = (async () => {
