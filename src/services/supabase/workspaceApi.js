@@ -435,6 +435,7 @@ function isMissingAcademySettingsColumnError(error) {
     message.includes('clinic_required') ||
     message.includes('clinic_record_fields') ||
     message.includes('clinic_default_activity_type') ||
+    message.includes('clinic_default_items') ||
     message.includes('tuition_policy') ||
     message.includes('tuition_rates') ||
     message.includes('tuition_policy_onboarded_at') ||
@@ -448,6 +449,7 @@ function buildAcademySettingsPayload({
   academyType,
   academySubjects,
   clinicRequired,
+  clinicDefaultItems,
   clinicRecordFields,
   clinicDefaultActivityType,
   tuitionPolicy,
@@ -459,6 +461,12 @@ function buildAcademySettingsPayload({
   if (academyType !== undefined) out.academy_type = academyType || null;
   if (academySubjects !== undefined) out.academy_subjects = Array.isArray(academySubjects) ? academySubjects : [];
   if (clinicRequired !== undefined) out.clinic_required = clinicRequired !== false;
+  if (clinicDefaultItems !== undefined) {
+    out.clinic_default_items =
+      clinicDefaultItems && typeof clinicDefaultItems === 'object' && !Array.isArray(clinicDefaultItems)
+        ? clinicDefaultItems
+        : {};
+  }
   if (clinicRecordFields !== undefined) {
     out.clinic_record_fields = Array.isArray(clinicRecordFields) ? clinicRecordFields : [];
   }
@@ -487,6 +495,7 @@ export async function createAcademyAsOwner({
   academyType,
   academySubjects,
   clinicRequired,
+  clinicDefaultItems,
   clinicRecordFields,
   clinicDefaultActivityType,
   tuitionPolicy,
@@ -504,6 +513,7 @@ export async function createAcademyAsOwner({
     academyType,
     academySubjects,
     clinicRequired,
+    clinicDefaultItems,
     clinicRecordFields,
     clinicDefaultActivityType,
     tuitionPolicy,
@@ -563,6 +573,14 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
   if (patch.academyType !== undefined) dbPatch.academy_type = patch.academyType || null;
   if (patch.academySubjects !== undefined) dbPatch.academy_subjects = Array.isArray(patch.academySubjects) ? patch.academySubjects : [];
   if (patch.clinicRequired !== undefined) dbPatch.clinic_required = patch.clinicRequired !== false;
+  if (patch.clinicDefaultItems !== undefined) {
+    dbPatch.clinic_default_items =
+      patch.clinicDefaultItems
+      && typeof patch.clinicDefaultItems === 'object'
+      && !Array.isArray(patch.clinicDefaultItems)
+        ? patch.clinicDefaultItems
+        : {};
+  }
   if (patch.clinicRecordFields !== undefined) {
     dbPatch.clinic_record_fields = Array.isArray(patch.clinicRecordFields) ? patch.clinicRecordFields : [];
   }

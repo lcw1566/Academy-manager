@@ -966,7 +966,7 @@ const STUDENT_ALLOWED_FIELDS = new Set([
   'phone', 'parent_phone', 'parent_title', 'parent_name',
   'enrollment_date', 'status', 'memo', 'class_group_ids',
   'checkin_pin',
-  'clinic_record_fields', 'clinic_default_activity_type',
+  'clinic_record_fields', 'clinic_default_activity_type', 'clinic_default_items',
 ]);
 
 function sanitizeStudentPayload(input, { strip = [] } = {}) {

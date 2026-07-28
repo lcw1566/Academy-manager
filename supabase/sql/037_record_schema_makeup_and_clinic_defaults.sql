@@ -40,7 +40,8 @@ alter table public.lesson_records
 alter table public.academies
   add column if not exists clinic_record_fields jsonb not null default
     '["materials","description","result"]'::jsonb,
-  add column if not exists clinic_default_activity_type text not null default 'clinic';
+  add column if not exists clinic_default_activity_type text not null default 'clinic',
+  add column if not exists clinic_default_items jsonb not null default '{}'::jsonb;
 
 alter table public.academies
   drop constraint if exists academies_clinic_record_fields_array_chk;
@@ -49,10 +50,18 @@ alter table public.academies
   add constraint academies_clinic_record_fields_array_chk
   check (jsonb_typeof(clinic_record_fields) = 'array');
 
+alter table public.academies
+  drop constraint if exists academies_clinic_default_items_object_chk;
+
+alter table public.academies
+  add constraint academies_clinic_default_items_object_chk
+  check (jsonb_typeof(clinic_default_items) = 'object');
+
 -- 학원 기본값을 그대로 쓰는 학생은 null, 예외 학생만 별도 구성을 저장한다.
 alter table public.students
   add column if not exists clinic_record_fields jsonb,
-  add column if not exists clinic_default_activity_type text;
+  add column if not exists clinic_default_activity_type text,
+  add column if not exists clinic_default_items jsonb;
 
 alter table public.students
   drop constraint if exists students_clinic_record_fields_array_chk;
@@ -60,3 +69,10 @@ alter table public.students
 alter table public.students
   add constraint students_clinic_record_fields_array_chk
   check (clinic_record_fields is null or jsonb_typeof(clinic_record_fields) = 'array');
+
+alter table public.students
+  drop constraint if exists students_clinic_default_items_object_chk;
+
+alter table public.students
+  add constraint students_clinic_default_items_object_chk
+  check (clinic_default_items is null or jsonb_typeof(clinic_default_items) = 'object');

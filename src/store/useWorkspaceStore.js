@@ -97,6 +97,10 @@ function syncAcademyProfileFromServer(academy) {
       ? academy.clinic_record_fields
       : ['materials', 'description', 'result'],
     clinicDefaultActivityType: academy.clinic_default_activity_type || 'clinic',
+    clinicDefaultItems:
+      academy.clinic_default_items && typeof academy.clinic_default_items === 'object'
+        ? academy.clinic_default_items
+        : {},
     tuitionPolicy: academy.tuition_policy || 'school_level',
     tuitionRates:
       academy.tuition_rates && typeof academy.tuition_rates === 'object'
@@ -702,6 +706,7 @@ const useWorkspaceStore = create(
         academyType,
         academySubjects,
         clinicRequired,
+        clinicDefaultItems,
         clinicRecordFields,
         clinicDefaultActivityType,
         tuitionPolicy,
@@ -719,6 +724,7 @@ const useWorkspaceStore = create(
             academyType,
             academySubjects,
             clinicRequired,
+            clinicDefaultItems,
             clinicRecordFields,
             clinicDefaultActivityType,
             tuitionPolicy,

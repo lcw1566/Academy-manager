@@ -33,6 +33,10 @@ export function mapServerStudentToLocal(s) {
     checkinPin: s.checkin_pin ?? '',
     clinicRecordFields: Array.isArray(s.clinic_record_fields) ? s.clinic_record_fields : null,
     clinicDefaultActivityType: s.clinic_default_activity_type ?? null,
+    clinicDefaultItems:
+      s.clinic_default_items && typeof s.clinic_default_items === 'object'
+        ? s.clinic_default_items
+        : null,
     enrollmentDate: s.enrollment_date ?? '',
     status: s.status ?? 'active',
     memo: s.memo ?? '',

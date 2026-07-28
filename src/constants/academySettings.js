@@ -107,6 +107,7 @@ export const DEFAULT_ACADEMY_SETTINGS = {
   academyType: 'core_subjects',
   academySubjects: ['korean', 'english', 'math'],
   clinicRequired: true,
+  clinicDefaultItems: {},
   clinicRecordFields: ['materials', 'description', 'result'],
   clinicDefaultActivityType: 'clinic',
   tuitionPolicy: 'school_level',

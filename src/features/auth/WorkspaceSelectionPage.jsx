@@ -26,14 +26,13 @@ import useAcademyStore from '../../store/useAcademyStore';
 import { formatPhoneNumber, roleMap } from '../../utils/format';
 import {
   ACADEMY_SUBJECT_OPTIONS,
-  CLINIC_RECORD_FIELD_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
   inferAcademyTypeFromSubjects,
 } from '../../constants/academySettings';
-import { CLINIC_ACTIVITY_TYPES } from '../../constants/learningActivitySettings';
 import { generateQrToken } from '../academy/attendance/attendanceHelpers';
 import TuitionRateFields from '../academy/onboarding/TuitionRateFields';
+import ClinicDefaultItemsEditor from '../academy/clinic/ClinicDefaultItemsEditor';
 
 export const WORKSPACE_PICKED_KEY = 'workspace-picked';
 
@@ -76,11 +75,8 @@ export default function WorkspaceSelectionPage() {
   const [academyPhone, setAcademyPhone] = useState('');
   const [academySubjects, setAcademySubjects] = useState([]);
   const [clinicRequired, setClinicRequired] = useState(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
-  const [clinicRecordFields, setClinicRecordFields] = useState(
-    DEFAULT_ACADEMY_SETTINGS.clinicRecordFields,
-  );
-  const [clinicDefaultActivityType, setClinicDefaultActivityType] = useState(
-    DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType,
+  const [clinicDefaultItems, setClinicDefaultItems] = useState(
+    DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems,
   );
   const tuitionPolicy = DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
   const [tuitionRates, setTuitionRates] = useState(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
@@ -145,8 +141,7 @@ export default function WorkspaceSelectionPage() {
         academyType,
         academySubjects,
         clinicRequired,
-        clinicRecordFields,
-        clinicDefaultActivityType,
+        clinicDefaultItems,
         tuitionPolicy,
         tuitionRates,
         address: academyAddress,
@@ -172,8 +167,7 @@ export default function WorkspaceSelectionPage() {
         academyType,
         academySubjects,
         clinicRequired,
-        clinicRecordFields,
-        clinicDefaultActivityType,
+        clinicDefaultItems,
         tuitionPolicy,
         tuitionRates,
         address: academyAddress.trim(),
@@ -203,8 +197,7 @@ export default function WorkspaceSelectionPage() {
     setAcademyPhone('');
     setAcademySubjects([]);
     setClinicRequired(DEFAULT_ACADEMY_SETTINGS.clinicRequired);
-    setClinicRecordFields(DEFAULT_ACADEMY_SETTINGS.clinicRecordFields);
-    setClinicDefaultActivityType(DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType);
+    setClinicDefaultItems(DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems);
     setTuitionRates(DEFAULT_ACADEMY_SETTINGS.tuitionRates);
     setStaffCheckMethod('manual');
     setStudentCheckMethod('teacher_manual');
@@ -344,8 +337,7 @@ export default function WorkspaceSelectionPage() {
                 phone={academyPhone}
                 subjects={academySubjects}
                 clinicRequired={clinicRequired}
-                clinicRecordFields={clinicRecordFields}
-                clinicDefaultActivityType={clinicDefaultActivityType}
+                clinicDefaultItems={clinicDefaultItems}
                 tuitionRates={tuitionRates}
                 staffCheckMethod={staffCheckMethod}
                 studentCheckMethod={studentCheckMethod}
@@ -355,8 +347,7 @@ export default function WorkspaceSelectionPage() {
                 onPhoneChange={setAcademyPhone}
                 onSubjectToggle={toggleAcademySubject}
                 onClinicRequiredChange={setClinicRequired}
-                onClinicRecordFieldsChange={setClinicRecordFields}
-                onClinicDefaultActivityTypeChange={setClinicDefaultActivityType}
+                onClinicDefaultItemsChange={setClinicDefaultItems}
                 onTuitionRatesChange={setTuitionRates}
                 onStaffCheckMethodChange={setStaffCheckMethod}
                 onStudentCheckMethodChange={setStudentCheckMethod}
@@ -419,8 +410,7 @@ function AcademyCreateOnboarding({
   phone,
   subjects,
   clinicRequired,
-  clinicRecordFields,
-  clinicDefaultActivityType,
+  clinicDefaultItems,
   tuitionRates,
   staffCheckMethod,
   studentCheckMethod,
@@ -430,8 +420,7 @@ function AcademyCreateOnboarding({
   onPhoneChange,
   onSubjectToggle,
   onClinicRequiredChange,
-  onClinicRecordFieldsChange,
-  onClinicDefaultActivityTypeChange,
+  onClinicDefaultItemsChange,
   onTuitionRatesChange,
   onStaffCheckMethodChange,
   onStudentCheckMethodChange,
@@ -461,9 +450,7 @@ function AcademyCreateOnboarding({
     ? isNameReady
     : currentStep.id === 'subjects'
       ? isSubjectReady
-      : currentStep.id === 'clinic_template'
-        ? clinicRecordFields.length > 0
-        : true;
+      : true;
   const primaryLabel = safeStep === steps.length - 1 ? '만들기' : '다음';
 
   const handlePrimary = () => {

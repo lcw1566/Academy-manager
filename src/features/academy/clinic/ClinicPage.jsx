@@ -91,6 +91,7 @@ export default function ClinicPage() {
   const [showForm, setShowForm] = useState(false);
   const [editRecord, setEditRecord] = useState(null);
   const [quickTarget, setQuickTarget] = useState(null);
+  const [expandedExpectedIds, setExpandedExpectedIds] = useState(() => new Set());
   const [expandedId, setExpandedId] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
@@ -166,6 +167,14 @@ export default function ClinicPage() {
   ]);
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
+  const toggleExpectedGroup = (sessionId) => {
+    setExpandedExpectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(sessionId)) next.delete(sessionId);
+      else next.add(sessionId);
+      return next;
+    });
+  };
 
   // Phase 31 — 권한 게이팅. 클리닉 작성 권한이 있어야 + 버튼 노출.
   const canEditClinic = currentUserCan(
@@ -264,7 +273,12 @@ export default function ClinicPage() {
             <div className="flex flex-col gap-2">
               {todayExpectedGroups.map(({ session, group, students }) => (
                 <div key={session.id} className="overflow-hidden rounded-2xl bg-white shadow-sm">
-                  <div className="flex items-center gap-2 border-b border-gray-50 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpectedGroup(session.id)}
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors active:bg-gray-50"
+                    aria-expanded={expandedExpectedIds.has(session.id)}
+                  >
                     <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                       <Clock3 size={15} />
                     </span>
@@ -276,47 +290,67 @@ export default function ClinicPage() {
                         {[session.startTime, group?.subject, session.room || group?.room].filter(Boolean).join(' · ')}
                       </p>
                     </div>
-                  </div>
-                  <div className="divide-y divide-gray-50">
-                    {students.map((student) => (
-                      <button
-                        key={student.id}
-                        type="button"
-                        disabled={!canEditClinic}
-                        onClick={() => {
-                          if (student.clinicRecord) {
-                            setEditRecord(student.clinicRecord);
-                            return;
-                          }
-                          setQuickTarget({
-                            studentId: student.id,
-                            date: todayStr,
-                            subject: group?.subject || '',
-                            classGroupId: group?.id || '',
-                            classSessionId: session.id,
-                          });
-                        }}
-                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-gray-50 disabled:cursor-default"
-                      >
-                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-50 text-xs font-bold text-gray-500">
-                          {student.name?.slice(0, 1) || '학'}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-bold text-gray-900">{student.name}</span>
-                          {student.grade && (
-                            <span className="mt-0.5 block text-[11px] text-gray-400">{student.grade}</span>
-                          )}
-                        </span>
-                        {student.clinicRecord ? (
-                          <span className="flex items-center gap-1 text-xs font-bold text-emerald-600">
-                            <CheckCircle2 size={14} />
-                            완료
-                          </span>
-                        ) : (
-                          <span className="text-xs font-bold text-blue-600">기록</span>
-                        )}
-                      </button>
-                    ))}
+                    <span className="flex flex-shrink-0 items-center gap-2">
+                      <span className="text-[11px] font-semibold text-gray-400">
+                        {students.filter((student) => student.clinicRecord).length}/{students.length}
+                      </span>
+                      <ChevronDown
+                        size={16}
+                        className={`text-gray-400 transition-transform duration-200 ${
+                          expandedExpectedIds.has(session.id) ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </span>
+                  </button>
+                  <div
+                    className="grid transition-[grid-template-rows] duration-200 ease-out"
+                    style={{
+                      gridTemplateRows: expandedExpectedIds.has(session.id) ? '1fr' : '0fr',
+                    }}
+                  >
+                    <div className="overflow-hidden">
+                      <div className="divide-y divide-gray-50 border-t border-gray-50">
+                        {students.map((student) => (
+                          <button
+                            key={student.id}
+                            type="button"
+                            disabled={!canEditClinic}
+                            onClick={() => {
+                              if (student.clinicRecord) {
+                                setEditRecord(student.clinicRecord);
+                                return;
+                              }
+                              setQuickTarget({
+                                studentId: student.id,
+                                date: todayStr,
+                                subject: group?.subject || '',
+                                classGroupId: group?.id || '',
+                                classSessionId: session.id,
+                              });
+                            }}
+                            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-gray-50 disabled:cursor-default"
+                          >
+                            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-50 text-xs font-bold text-gray-500">
+                              {student.name?.slice(0, 1) || '학'}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-bold text-gray-900">{student.name}</span>
+                              {student.grade && (
+                                <span className="mt-0.5 block text-[11px] text-gray-400">{student.grade}</span>
+                              )}
+                            </span>
+                            {student.clinicRecord ? (
+                              <span className="flex items-center gap-1 text-xs font-bold text-emerald-600">
+                                <CheckCircle2 size={14} />
+                                완료
+                              </span>
+                            ) : (
+                              <span className="text-xs font-bold text-blue-600">기록</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
