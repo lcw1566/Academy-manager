@@ -36,7 +36,9 @@ supabase/
     ├── 025_operations_manager_role.sql (운영 매니저 역할 + 데스크 운영 권한/RLS)
     ├── 026_deferred_staff_role_assignment.sql (직원 초대 수락 후 역할 배정/RLS)
     ├── 027_attendance_choices_and_invitation_display.sql (출결 선택 + 초대 학원명 RPC)
-    └── 028_role_permissions_and_payroll_privacy.sql (역할별 RLS + 급여/근태 개인정보 보호)
+    ├── 028_role_permissions_and_payroll_privacy.sql (역할별 RLS + 급여/근태 개인정보 보호)
+    ├── ...                               (후속 기능 마이그레이션)
+    └── 041_assistant_attendance_default_permission.sql (보조강사 기본 등하원 권한)
 ```
 
 ## 실행 순서 요약
@@ -71,6 +73,7 @@ supabase/
 | 26 | `026_deferred_staff_role_assignment.sql` | 역할 없는 직원 초대, 수락 후 역할 배정 대기, 원장/운영 매니저의 활성화 권한 및 보안 경계 |
 | 27 | `027_attendance_choices_and_invitation_display.sql` | 직원 직접 기록/QR 선택, 초대받은 사용자에게 학원 이름을 안전하게 표시하는 RPC |
 | 28 | `028_role_permissions_and_payroll_privacy.sql` | 화면 권한을 DB RLS에서도 강제, 직원 급여 본인 조회 및 근태 승인 조작 차단 |
+| 41 | `041_assistant_attendance_default_permission.sql` | 보조강사 기본 등하원·출석 기록 권한 활성화 |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -111,6 +114,15 @@ supabase/
 - 일반 직원은 자기 근태 로그를 `approved/rejected`로 바꿀 수 없습니다.
 - 예전 급여 중 `teacher_<uuid>` 형태가 아닌 로컬 ID 행은 자동 연결할 수 없습니다.
   해당 직원에게 과거 급여가 보이지 않으면 원장 계정에서 해당 월 급여를 다시 생성하세요.
+
+### 보조강사 기본 등하원 권한 배포 (041)
+
+`040_member_role_source_of_truth.sql`까지 실행한 환경에서
+`supabase/sql/041_assistant_attendance_default_permission.sql`을 실행하세요.
+
+- 별도 권한을 설정하지 않은 보조강사에게 등하원 탭과 기록 권한이 기본 제공됩니다.
+- 원장이 `등하원·출석 기록` 권한을 명시적으로 끈 보조강사는 계속 접근할 수 없습니다.
+- 기존 직원·학생·등하원 데이터는 변경하지 않습니다.
 
 ### 공유 드라이브 배포 (024)
 

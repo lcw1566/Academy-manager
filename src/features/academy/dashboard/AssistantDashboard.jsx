@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ClipboardList, ChevronRight, Check } from 'lucide-react';
+import { ClipboardList, ChevronRight, Check, CheckSquare } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -217,7 +217,18 @@ export default function AssistantDashboard() {
             <h2 className="text-xl font-bold text-gray-900 mt-0.5">클리닉 기록</h2>
             <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
           </div>
-          <StaffHomeQrButton staff={myAssistant} staffRole="assistant" />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('attendance')}
+              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-xs font-bold text-blue-700 sm:w-auto sm:gap-1.5 sm:px-3"
+              aria-label="학생 등하원"
+            >
+              <CheckSquare size={14} />
+              <span className="hidden sm:inline">등하원</span>
+            </button>
+            <StaffHomeQrButton staff={myAssistant} staffRole="assistant" />
+          </div>
         </div>
       </div>
 

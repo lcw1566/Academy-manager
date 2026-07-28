@@ -80,7 +80,7 @@ const TAB_CONFIG = {
   // 역할 변경 및 개별 권한 수정이 즉시 탭 구성에 반영되도록 탭 배열 자체에 예외를 두지 않는다.
   assistant: [
     { id: 'home',     label: '홈',   Icon: Home },
-    { id: 'attendance', label: '등하원', Icon: CheckSquare, mobileBottomNav: false },
+    { id: 'attendance', label: '등하원', Icon: CheckSquare },
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
