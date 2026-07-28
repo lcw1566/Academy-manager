@@ -92,6 +92,12 @@ export default function StudentAttendancePage() {
   const isLoading = useWorkspaceStore((state) => state.isStudentCheckEventsLoading);
   const eventsError = useWorkspaceStore((state) => state.studentCheckEventsError);
   const loadStudentCheckEvents = useWorkspaceStore((state) => state.loadStudentCheckEvents);
+  const ensureClassSessionsForRangeLocal = useWorkspaceStore(
+    (state) => state.ensureClassSessionsForRangeLocal,
+  );
+  const materializePlannedClassSession = useWorkspaceStore(
+    (state) => state.materializePlannedClassSession,
+  );
   const toggleStudentCheckEventLocal = useWorkspaceStore((state) => state.toggleStudentCheckEventLocal);
   const createStudentCheckEventLocal = useWorkspaceStore((state) => state.createStudentCheckEventLocal);
 
@@ -128,7 +134,18 @@ export default function StudentAttendancePage() {
   useEffect(() => {
     if (!selectedDate || !currentAcademyId) return;
     loadStudentCheckEvents({ sinceDateYMD: selectedDate, limit: 1000 });
-  }, [selectedDate, currentAcademyId, loadStudentCheckEvents]);
+    void ensureClassSessionsForRangeLocal({
+      fromDate: selectedDate,
+      toDate: selectedDate,
+    }).catch((error) => {
+      console.warn('[attendance] 선택일 수업 회차 준비 실패', error);
+    });
+  }, [
+    selectedDate,
+    currentAcademyId,
+    ensureClassSessionsForRangeLocal,
+    loadStudentCheckEvents,
+  ]);
 
   const daySessions = useMemo(() => {
     const planned = plannedToClassSessionShape(
@@ -247,10 +264,17 @@ export default function StudentAttendancePage() {
       left: leftIds.size,
     };
   }, [academyStudents, sessionsByStudentId, selectedDate, studentCheckEvents, role]);
-  const actualSessionIds = useMemo(
-    () => new Set(classSessions.map((session) => session.id)),
-    [classSessions],
-  );
+  const openSession = async (session) => {
+    try {
+      const actual = session?.isPlanned
+        ? await materializePlannedClassSession(session)
+        : session;
+      if (!actual?.id) throw new Error('수업 회차를 준비하지 못했어요.');
+      navigateToClassSession(actual.id);
+    } catch (error) {
+      showToast(error?.message || '수업 회차를 열지 못했어요.', 'error');
+    }
+  };
 
   const recordNextEvent = async (row) => {
     if (!canRecordNow || savingStudentId || !row.student.serverId) return;
@@ -402,14 +426,13 @@ export default function StudentAttendancePage() {
                 canAddPast={canEdit && !isToday && selectedDate < todayYmd}
                 saving={savingStudentId === row.student.id}
                 hasServerId={!!row.student.serverId}
-                actualSessionIds={actualSessionIds}
                 classGroups={classGroups}
                 onRecord={() => recordNextEvent(row)}
                 onAddPast={() => {
                   setManualEntryTarget(row);
                   setManualEntry({ eventType: 'check_in', time: '15:00' });
                 }}
-                onOpenSession={navigateToClassSession}
+                onOpenSession={(session) => void openSession(session)}
               />
             ))}
           </div>
@@ -499,7 +522,6 @@ function StudentPresenceRow({
   canAddPast,
   saving,
   hasServerId,
-  actualSessionIds,
   classGroups,
   onRecord,
   onAddPast,
@@ -529,15 +551,13 @@ function StudentPresenceRow({
           {sessions.length > 0 ? (
             <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
               {sessions.map((session) => {
-                const canOpen = actualSessionIds.has(session.id);
                 const group = classGroups.find((item) => item.id === session.classGroupId);
                 return (
                   <button
                     key={session.id}
                     type="button"
-                    disabled={!canOpen}
-                    onClick={() => onOpenSession(session.id)}
-                    className="flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-2 text-left active:bg-gray-100 disabled:cursor-default"
+                    onClick={() => onOpenSession(session)}
+                    className="flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-2 text-left active:bg-gray-100"
                   >
                     <span className="text-xs font-black text-[#191F28]">{session.startTime || '미정'}</span>
                     <span className="max-w-28 truncate text-[11px] font-semibold text-[#4E5968]">{group?.name || '수업'}</span>

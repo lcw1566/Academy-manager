@@ -1,22 +1,18 @@
 import {
-  createAcademyClassSessionsBulk,
   createAcademyStaffShift,
 } from './supabase/domainApi';
 import useAcademyStore from '../store/useAcademyStore';
 import useWorkspaceStore from '../store/useWorkspaceStore';
-import { OWNER_TEACHER_ID } from '../utils/format';
-
-function formatMonthFromDate(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function nextMonthOf(date) {
-  return formatMonthFromDate(new Date(date.getFullYear(), date.getMonth() + 1, 1));
-}
+import {
+  formatDateToYMD,
+  getDaysInMonth,
+  nextMonth,
+} from '../utils/date';
 
 export function isMonthEnd(date = new Date()) {
-  const last = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
-  return date.getDate() === last;
+  const ymd = formatDateToYMD(date);
+  const month = ymd.slice(0, 7);
+  return Number(ymd.slice(8, 10)) === getDaysInMonth(month);
 }
 
 function autoGenerationKey(academyId, targetMonth) {
@@ -39,90 +35,6 @@ function markGenerated(academyId, targetMonth) {
   } catch {
     /* ignore */
   }
-}
-
-function resolveTeacherUserId(localTeacherId, academyTeachers, ownerUserId) {
-  if (!localTeacherId) return null;
-  if (localTeacherId === OWNER_TEACHER_ID) return ownerUserId || null;
-  const teacher = academyTeachers.find((item) => item.id === localTeacherId);
-  return teacher?.serverUserId || null;
-}
-
-function mapClassSessionToServerPayload(session, classGroupServerId, {
-  academyStudents,
-  academyTeachers,
-  ownerUserId,
-} = {}) {
-  const studentById = new Map((academyStudents || []).map((item) => [item.id, item]));
-  return {
-    class_group_id: classGroupServerId,
-    date: session.date,
-    start_time: session.startTime || null,
-    end_time: session.endTime || null,
-    room: session.room || null,
-    teacher_id: session.teacherId || null,
-    teacher_type: session.teacherId === OWNER_TEACHER_ID ? 'owner' : 'teacher',
-    teacher_user_id: session.teacherUserId
-      || resolveTeacherUserId(session.teacherId, academyTeachers || [], ownerUserId)
-      || null,
-    student_ids: (session.studentIds || [])
-      .map((localId) => studentById.get(localId)?.serverId || localId)
-      .filter(Boolean),
-    assistant_ids: [],
-    status: session.status || 'scheduled',
-    memo: session.memo || null,
-  };
-}
-
-function matchClassSessionPairs(localSessions, serverSessions) {
-  const serverByKey = new Map(
-    (serverSessions || []).map((row) => [`${row.date}__${row.start_time || ''}`, row]),
-  );
-  return (localSessions || [])
-    .map((local) => {
-      const server = serverByKey.get(`${local.date}__${local.startTime || ''}`);
-      return server?.id ? { localId: local.id, serverId: server.id } : null;
-    })
-    .filter(Boolean);
-}
-
-async function syncClassSessions({ academyId, targetMonth, ownerUserId }) {
-  const academyState = useAcademyStore.getState();
-  const {
-    classGroups = [],
-    academyStudents = [],
-    academyTeachers = [],
-    ensureClassSessionsForMonth,
-    setClassSessionServerIds,
-  } = academyState;
-  const createdByGroup = [];
-  let createdCount = 0;
-
-  for (const group of classGroups) {
-    if (!group || group.status === 'inactive') continue;
-    const created = ensureClassSessionsForMonth?.(group.id, targetMonth) || [];
-    if (created.length === 0) continue;
-    createdCount += created.length;
-    createdByGroup.push({ group, sessions: created });
-  }
-
-  for (const { group, sessions } of createdByGroup) {
-    if (!group.serverId || sessions.length === 0) continue;
-    const payloads = sessions.map((session) =>
-      mapClassSessionToServerPayload(session, group.serverId, {
-        academyStudents,
-        academyTeachers,
-        ownerUserId,
-      })
-    );
-    const serverSessions = await createAcademyClassSessionsBulk({
-      academyId,
-      sessions: payloads,
-    });
-    setClassSessionServerIds?.(matchClassSessionPairs(sessions, serverSessions));
-  }
-
-  return createdCount;
 }
 
 async function syncStaffShifts({ academyId, targetMonth }) {
@@ -160,23 +72,20 @@ async function syncStaffShifts({ academyId, targetMonth }) {
 
 export async function runMonthEndScheduleGeneration({
   academyId,
-  ownerUserId,
   now = new Date(),
   force = false,
 } = {}) {
   if (!academyId) return { skipped: true, reason: 'no-academy' };
   if (!force && !isMonthEnd(now)) return { skipped: true, reason: 'not-month-end' };
 
-  const targetMonth = nextMonthOf(now);
+  const targetMonth = nextMonth(formatDateToYMD(now).slice(0, 7));
   if (!force && wasGenerated(academyId, targetMonth)) {
     return { skipped: true, reason: 'already-generated', targetMonth };
   }
 
-  const classSessionsCreated = await syncClassSessions({
-    academyId,
-    targetMonth,
-    ownerUserId,
-  });
+  // 수업 회차는 SQL 046의 날짜 범위 실체화가 담당한다. 월말 로컬 생성과 함께
+  // 실행하면 동시 접속에서 중복될 수 있으므로 이 자동화는 근무표만 유지한다.
+  const classSessionsCreated = 0;
   const staffShiftsCreated = await syncStaffShifts({
     academyId,
     targetMonth,

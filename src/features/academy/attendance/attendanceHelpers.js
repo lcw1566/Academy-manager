@@ -3,6 +3,11 @@
 // 출결·등하원 설정 / QR 토큰 / 페이로드 유틸. 어디서나 import 해서 사용.
 
 import { hhmmToMin } from '../../../utils/shiftCoverage';
+import {
+  formatDateToYMD,
+  getKoreaHHMM,
+  getKoreaMinutes,
+} from '../../../utils/date';
 
 // memberships[i].academy 로부터 출결 설정을 읽어 일관된 default 값을 반환.
 //
@@ -199,33 +204,8 @@ export const SHIFT_STATUS_LABELS = {
   canceled:   '취소',
 };
 
-const ACADEMY_TIME_ZONE = 'Asia/Seoul';
-const academyDateTimeFormatter = new Intl.DateTimeFormat('en-CA', {
-  timeZone: ACADEMY_TIME_ZONE,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-
-function getAcademyDateTimeParts(value) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const parts = {};
-  for (const part of academyDateTimeFormatter.formatToParts(date)) {
-    if (part.type !== 'literal') parts[part.type] = part.value;
-  }
-  return {
-    ymd: `${parts.year}-${parts.month}-${parts.day}`,
-    minuteOfDay: Number(parts.hour) * 60 + Number(parts.minute),
-    hhmm: `${parts.hour}:${parts.minute}`,
-  };
-}
-
 export function getAcademyYmd(value = new Date()) {
-  return getAcademyDateTimeParts(value)?.ymd || null;
+  return formatDateToYMD(value) || null;
 }
 
 export function getStudentDayCheckState(studentServerId, ymd, events = []) {
@@ -343,10 +323,12 @@ export function getQrAttendanceHint(studentServerId, session, events = [], { gra
 }
 
 function evtTimeToMin(ts) {
-  return getAcademyDateTimeParts(ts)?.minuteOfDay ?? null;
+  if (!ts || Number.isNaN(new Date(ts).getTime())) return null;
+  return getKoreaMinutes(ts);
 }
 function evtTimeToHHmm(ts) {
-  return getAcademyDateTimeParts(ts)?.hhmm ?? null;
+  if (!ts || Number.isNaN(new Date(ts).getTime())) return null;
+  return getKoreaHHMM(ts);
 }
 
 // Attendance row 의 source 값 → 라벨.

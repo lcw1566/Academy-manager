@@ -81,9 +81,10 @@ export async function createAcademyStudent({ academyId, ...payload } = {}) {
     academy_id: academyId,
     user_id: user.id,
   });
-  const { data, error } = await supabase
-    .from('students')
-    .insert(row)
+  const mutation = row.id
+    ? supabase.from('students').upsert(row, { onConflict: 'id' })
+    : supabase.from('students').insert(row);
+  const { data, error } = await mutation
     .select()
     .single();
   if (error) throw error;
@@ -591,9 +592,10 @@ export async function createAcademyClinicRecord({ academyId, ...payload } = {}) 
     academy_id: academyId,
     user_id: user.id,
   });
-  const { data, error } = await supabase
-    .from('clinic_records')
-    .insert(row)
+  const mutation = row.id
+    ? supabase.from('clinic_records').upsert(row, { onConflict: 'id' })
+    : supabase.from('clinic_records').insert(row);
+  const { data, error } = await mutation
     .select()
     .single();
   if (error) throw error;
@@ -1064,6 +1066,8 @@ const ATTENDANCE_ALLOWED_FIELDS = new Set([
   'date', 'status', 'memo',
   // Phase 41 — SQL 011 추가 컬럼.
   'source', 'checked_at',
+  // SQL 049 — 등원 기반 추론과 선생님 확정 분리.
+  'confirmation_state', 'confirmed_at', 'confirmed_by',
 ]);
 
 function sanitizeAttendancePayload(input, { strip = [] } = {}) {

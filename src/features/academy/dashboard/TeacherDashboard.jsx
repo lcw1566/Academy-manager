@@ -1,10 +1,16 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Clock, FileText, LogIn } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { today, formatDateShort, greetingByTime } from '../../../utils/date';
+import {
+  today,
+  addDaysYMD,
+  formatDateShort,
+  getKoreaMinutes,
+  greetingByTime,
+} from '../../../utils/date';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
@@ -12,6 +18,8 @@ import MyPayrollCard from './MyPayrollCard';
 import StaffHomeQrButton from './StaffHomeQrButton';
 import HomeActionList from './HomeActionList';
 import { summarizeStudentPresence } from './homeDashboardUtils';
+import { isConfirmedAttendance } from '../../../utils/attendanceRecords';
+import { readAttendanceSettings } from '../attendance/attendanceHelpers';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
 import {
   buildPlannedClassSessions,
@@ -51,6 +59,7 @@ export default function TeacherDashboard() {
   const navigateToClassGroup = useAcademyStore((s) => s.navigateToClassGroup);
   const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
+  const showToast = useAcademyStore((s) => s.showToast);
 
   // Phase 25 — 본인(local academyTeachers) 식별. 서버 멤버십 정보 기반.
   const authUserId = useAuthStore((s) => s.user?.id);
@@ -62,10 +71,15 @@ export default function TeacherDashboard() {
   // Phase 44.6 / Phase B — 룰/예외 데이터.
   const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
   const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
+  const materializePlannedClassSession = useWorkspaceStore(
+    (s) => s.materializePlannedClassSession,
+  );
   const myMembership = useMemo(
     () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
     [memberships, currentAcademyId],
   );
+  const studentAttendanceEnabled =
+    readAttendanceSettings(myMembership?.academy).studentCheckMethod !== 'disabled';
   const myTeacher = useMemo(
     () => findLocalStaffForUser(academyTeachers, {
       userId: authUserId,
@@ -78,10 +92,22 @@ export default function TeacherDashboard() {
   const [selectedDate, setSelectedDate] = useState(today());
   const todayStr = today();
 
+  const openSession = useCallback(async (session) => {
+    try {
+      const actual = session?.isPlanned
+        ? await materializePlannedClassSession(session)
+        : session;
+      if (!actual?.id) throw new Error('수업 회차를 준비하지 못했어요.');
+      navigateToClassSession(actual.id);
+    } catch (error) {
+      showToast(error?.message || '수업 회차를 열지 못했어요.', 'error');
+    }
+  }, [materializePlannedClassSession, navigateToClassSession, showToast]);
+
   useEffect(() => {
-    if (!currentAcademyId || !todayStr) return;
+    if (!studentAttendanceEnabled || !currentAcademyId || !todayStr) return;
     loadStudentCheckEvents({ sinceDateYMD: todayStr, limit: 1000 });
-  }, [currentAcademyId, todayStr, loadStudentCheckEvents]);
+  }, [studentAttendanceEnabled, currentAcademyId, todayStr, loadStudentCheckEvents]);
 
   // 1분마다 갱신 — "곧 시작" 카드 표시/숨김 자동 업데이트
   const [now, setNow] = useState(() => new Date());
@@ -113,11 +139,7 @@ export default function TeacherDashboard() {
   // 향후 60일 윈도우. teacher_user_id 매칭이 있는 rule 도 자동으로 포함된다.
   const mergedClassSessions = useMemo(() => {
     const from = todayStr;
-    const to = (() => {
-      const d = new Date(todayStr);
-      d.setDate(d.getDate() + 60);
-      return d.toISOString().slice(0, 10);
-    })();
+    const to = addDaysYMD(todayStr, 60);
     const plannedRaw = buildPlannedClassSessions({
       rules: classScheduleRules,
       exceptions: classSessionExceptions,
@@ -180,7 +202,14 @@ export default function TeacherDashboard() {
   );
 
   const checkedTodayIds = useMemo(
-    () => new Set(academyAttendanceRecords.filter((a) => todaySessions.some((s) => s.id === a.sessionId)).map((a) => a.studentId)),
+    () => new Set(
+      academyAttendanceRecords
+        .filter((a) => (
+          isConfirmedAttendance(a)
+          && todaySessions.some((s) => s.id === a.sessionId)
+        ))
+        .map((a) => a.studentId),
+    ),
     [academyAttendanceRecords, todaySessions]
   );
 
@@ -207,7 +236,7 @@ export default function TeacherDashboard() {
   );
 
   const currentOrNextSession = useMemo(() => {
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const nowMinutes = getKoreaMinutes(now);
     return todaySessions
       .map((session) => ({
         session,
@@ -220,20 +249,23 @@ export default function TeacherDashboard() {
   }, [now, todaySessions]);
 
   const homeActions = useMemo(() => {
-    const actions = [{
-      id: 'attendance',
-      icon: LogIn,
-      tone: 'green',
-      title: '등하원',
-      detail: `오늘 등원 ${todayStudentPresence.checkedInToday}명`,
-      value: `현재 원내 ${todayStudentPresence.inside}명`,
-      live: true,
-      onClick: () => setActiveTab('attendance'),
-    }];
+    const actions = [];
+    if (studentAttendanceEnabled) {
+      actions.push({
+        id: 'attendance',
+        icon: LogIn,
+        tone: 'green',
+        title: '등하원',
+        detail: `오늘 등원 ${todayStudentPresence.checkedInToday}명`,
+        value: `현재 원내 ${todayStudentPresence.inside}명`,
+        live: true,
+        onClick: () => setActiveTab('attendance'),
+      });
+    }
 
     if (currentOrNextSession) {
       const { session, start, end } = currentOrNextSession;
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const nowMinutes = getKoreaMinutes(now);
       const group = classGroups.find((item) => item.id === session.classGroupId);
       const status = start !== null && end !== null && start <= nowMinutes && nowMinutes <= end
         ? '진행 중'
@@ -244,7 +276,7 @@ export default function TeacherDashboard() {
         tone: 'blue',
         title: group?.name || '다음 수업',
         detail: `${status} · 수업 기록 열기`,
-        onClick: () => navigateToClassSession(session.id),
+        onClick: () => void openSession(session),
       });
     }
 
@@ -267,7 +299,9 @@ export default function TeacherDashboard() {
     currentOrNextSession,
     navigateToClassSession,
     now,
+    openSession,
     setActiveTab,
+    studentAttendanceEnabled,
     todayStudentPresence,
     unfinishedRecordSessions,
   ]);
@@ -317,7 +351,9 @@ export default function TeacherDashboard() {
           <div className="flex flex-col gap-2">
             {daySessions.map((session) => {
               const group = classGroups.find((g) => g.id === session.classGroupId);
-              const sessionAttended = academyAttendanceRecords.filter((a) => a.sessionId === session.id).length;
+              const sessionAttended = academyAttendanceRecords.filter((a) => (
+                a.sessionId === session.id && isConfirmedAttendance(a)
+              )).length;
               return (
                 <motion.button
                   key={session.id}

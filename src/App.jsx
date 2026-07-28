@@ -22,6 +22,7 @@ import { membershipRoleToAppRole } from './utils/format';
 import { tossSpring } from './utils/motion';
 import { retryAsync } from './utils/asyncRetry';
 import { initializePushNotifications, showForegroundChatNotification } from './services/pushNotifications';
+import { getTodayYMD } from './utils/date';
 
 const ACADEMY_ROLES = ['owner', 'teacher', 'assistant', 'manager'];
 
@@ -460,7 +461,7 @@ export default function App() {
     if (!wasAutoHydratedThisSession(currentAcademyId)) return;
     if (hydratingRef.current) return;
 
-    const runKey = `${currentAcademyId}:${new Date().toISOString().slice(0, 10)}`;
+    const runKey = `${currentAcademyId}:${getTodayYMD()}`;
     if (monthEndGenerationRef.current === runKey) return;
     monthEndGenerationRef.current = runKey;
 
@@ -471,10 +472,10 @@ export default function App() {
           ownerUserId: authUserId,
         });
         if (result?.skipped) return;
-        const total = (result.classSessionsCreated || 0) + (result.staffShiftsCreated || 0);
+        const total = result.staffShiftsCreated || 0;
         if (total > 0) {
           showToast(
-            `${result.targetMonth} 운영 일정이 준비됐어요. 수업 ${result.classSessionsCreated || 0}개, 근무 ${result.staffShiftsCreated || 0}개`,
+            `${result.targetMonth} 근무 일정 ${result.staffShiftsCreated || 0}개가 준비됐어요.`,
           );
           await Promise.all([
             loadServerClassSessions?.(),

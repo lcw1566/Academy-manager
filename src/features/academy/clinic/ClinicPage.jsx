@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Plus, ChevronDown, ChevronUp, Pencil, Trash2, Clock3, CheckCircle2,
@@ -12,7 +12,12 @@ import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import ClinicRecordFormModal from './ClinicRecordFormModal';
 import ClinicInlineWorksheet from './ClinicInlineWorksheet';
-import { today, formatDateShort } from '../../../utils/date';
+import {
+  today,
+  formatDateShort,
+  getKoreanWeekdayFromYMD,
+  isThisWeek,
+} from '../../../utils/date';
 import { CLINIC_SUBJECT_FILTERS, DATE_FILTER_OPTIONS } from '../../../constants/labels';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import {
@@ -20,6 +25,11 @@ import {
   getActivityLabel,
 } from '../../../constants/learningActivitySettings';
 import { ACADEMY_SUBJECT_OPTIONS } from '../../../constants/academySettings';
+import {
+  buildPlannedClassSessions,
+  mergePlannedAndActualClassSessions,
+  plannedToClassSessionShape,
+} from '../../../utils/schedule';
 
 function groupByDate(records) {
   const map = {};
@@ -34,25 +44,17 @@ function groupByDate(records) {
 function formatGroupDate(dateStr) {
   if (!dateStr || dateStr === 'unknown') return '날짜 없음';
   const [y, m, d] = dateStr.split('-');
-  const days = ['일', '월', '화', '수', '목', '금', '토'];
-  const weekday = days[new Date(dateStr).getDay()];
+  const weekday = getKoreanWeekdayFromYMD(dateStr);
   return `${y}년 ${parseInt(m)}월 ${parseInt(d)}일 ${weekday}요일`;
 }
 
 function isInDateRange(dateStr, filter) {
   if (filter === 'all') return true;
-  const now = new Date();
-  const d = new Date(dateStr);
   if (filter === 'today') {
     return dateStr === today();
   }
   if (filter === 'week') {
-    const start = new Date(now);
-    start.setDate(now.getDate() - now.getDay());
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    return d >= start && d <= end;
+    return isThisWeek(dateStr);
   }
   if (filter === 'month') {
     return dateStr.slice(0, 7) === today().slice(0, 7);
@@ -81,6 +83,14 @@ export default function ClinicPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerClinicRecords = useWorkspaceStore((s) => s.loadServerClinicRecords);
+  const ensureClassSessionsForRangeLocal = useWorkspaceStore(
+    (s) => s.ensureClassSessionsForRangeLocal,
+  );
+  const materializePlannedClassSession = useWorkspaceStore(
+    (s) => s.materializePlannedClassSession,
+  );
+  const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
+  const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
   const authUserId = useAuthStore((s) => s.user?.id);
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const myStaffProfile = useMemo(
@@ -98,6 +108,16 @@ export default function ClinicPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
   const todayStr = today();
+
+  useEffect(() => {
+    if (!currentAcademyId || !todayStr) return;
+    void ensureClassSessionsForRangeLocal({
+      fromDate: todayStr,
+      toDate: todayStr,
+    }).catch((error) => {
+      console.warn('[clinic] 오늘 수업 회차 준비 실패', error);
+    });
+  }, [currentAcademyId, ensureClassSessionsForRangeLocal, todayStr]);
 
   // 보조강사: 강사가 수업에서 남긴 보완 항목 목록
   const supportItems = useMemo(() => {
@@ -130,17 +150,41 @@ export default function ClinicPage() {
 
   const todayCount = useMemo(() => clinicRecords.filter((r) => r.date === todayStr).length, [clinicRecords, todayStr]);
   const weekCount = useMemo(() => clinicRecords.filter((r) => isInDateRange(r.date, 'week')).length, [clinicRecords]);
-  const todayExpectedGroups = useMemo(() => classSessions
-    .filter((session) => (
-      session.date === todayStr
-      && !['canceled', 'cancelled'].includes(session.status)
-    ))
+  // 수업·등하원과 같은 계산기를 사용한다. RPC가 실제 회차를 반영하기 전에도
+  // 규칙상 오늘 수업은 보이고, 실제 행이 도착하면 자연키 기준으로 하나만 남는다.
+  const todayScheduleSessions = useMemo(() => {
+    const planned = plannedToClassSessionShape(
+      buildPlannedClassSessions({
+        rules: classScheduleRules,
+        exceptions: classSessionExceptions,
+        fromDate: todayStr,
+        toDate: todayStr,
+      }),
+      classGroups,
+    );
+    return mergePlannedAndActualClassSessions(planned, classSessions)
+      .filter((session) => (
+        session.date === todayStr
+        && !['canceled', 'cancelled'].includes(session.status)
+      ));
+  }, [
+    classGroups,
+    classScheduleRules,
+    classSessionExceptions,
+    classSessions,
+    todayStr,
+  ]);
+
+  const todayExpectedGroups = useMemo(() => todayScheduleSessions
+    .slice()
     .sort((a, b) => (
       (a.startTime || '').localeCompare(b.startTime || '')
       || String(a.id).localeCompare(String(b.id))
     ))
     .map((session) => {
-      const group = classGroups.find((item) => item.id === session.classGroupId);
+      const group = classGroups.find((item) => (
+        item.id === session.classGroupId || item.serverId === session.classGroupId
+      ));
       const studentIds = Array.isArray(session.studentIds) && session.studentIds.length > 0
         ? session.studentIds
         : group?.studentIds || [];
@@ -154,14 +198,21 @@ export default function ClinicPage() {
             && record.studentId === student.id
             && (
               record.classSessionId === session.id
-              || (!record.classSessionId && record.classGroupId === group?.id)
+              || (
+                !record.classSessionId
+                && (record.classGroupId === group?.id || record.classGroupId === group?.serverId)
+              )
+              || (
+                session.isPlanned
+                && (record.classGroupId === group?.id || record.classGroupId === group?.serverId)
+              )
             )
           )) || null,
         }));
       return { session, group, students };
     })
     .filter((item) => item.students.length > 0), [
-    classSessions,
+    todayScheduleSessions,
     classGroups,
     academyStudents,
     clinicRecords,
@@ -209,6 +260,31 @@ export default function ClinicPage() {
     });
   };
 
+  const openExpectedStudentRecord = async ({ student, session, group }) => {
+    if (student.clinicRecord) {
+      setEditRecord(student.clinicRecord);
+      return;
+    }
+    try {
+      const actualSession = session?.isPlanned
+        ? await materializePlannedClassSession(session)
+        : session;
+      if (!actualSession?.id) {
+        throw new Error('오늘 수업 회차를 준비하지 못했어요.');
+      }
+      setQuickTarget({
+        studentId: student.id,
+        date: todayStr,
+        subject: group?.subject || '',
+        classGroupId: group?.id || '',
+        classSessionId: actualSession.id,
+      });
+    } catch (error) {
+      console.error('[clinic] 예정 회차 상세 기록 열기 실패', error);
+      showToast(error?.message || '클리닉 기록을 열지 못했어요.', 'error');
+    }
+  };
+
   // Phase 31 — 권한 게이팅. 클리닉 작성 권한이 있어야 + 버튼 노출.
   const canEditClinic = currentUserCan(
     { role, staffProfile: myStaffProfile },
@@ -242,21 +318,17 @@ export default function ClinicPage() {
       return;
     }
     const serverId = target?.serverId || null;
-    // Phase 33 — optimistic delete. local 이 즉시 갱신되고 server 실패는 토스트만.
-    // full loadServerClinicRecords 호출 안 함 (local 이 이미 정답).
-    deleteClinicRecord(id);
-    setDeleteConfirmId(null);
-    setExpandedId(null);
-    if (serverId && isAuthenticated && currentAcademyId) {
-      try {
+    try {
+      if (serverId && isAuthenticated && currentAcademyId) {
         await deleteServerClinicRecord(serverId);
-      } catch (err) {
-        console.error('[supabase] deleteClinicRecord failed', err);
-        showToast(
-          '클리닉 기록은 삭제되었지만 동기화에 실패했어요.',
-          'error',
-        );
+        await loadServerClinicRecords();
       }
+      deleteClinicRecord(id);
+      setDeleteConfirmId(null);
+      setExpandedId(null);
+    } catch (err) {
+      console.error('[supabase] deleteClinicRecord failed', err);
+      showToast(err?.message || '클리닉 기록을 삭제하지 못했어요.', 'error');
     }
   };
 
@@ -349,19 +421,11 @@ export default function ClinicPage() {
                             group={group}
                             students={students}
                             academyProfile={academyProfile}
-                            onOpenRecord={(student) => {
-                              if (student.clinicRecord) {
-                                setEditRecord(student.clinicRecord);
-                                return;
-                              }
-                              setQuickTarget({
-                                studentId: student.id,
-                                date: todayStr,
-                                subject: group?.subject || '',
-                                classGroupId: group?.id || '',
-                                classSessionId: session.id,
-                              });
-                            }}
+                            onOpenRecord={(student) => void openExpectedStudentRecord({
+                              student,
+                              session,
+                              group,
+                            })}
                           />
                         ) : (
                           students.map((student) => (

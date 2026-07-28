@@ -34,10 +34,10 @@ import {
   getStudentDayCheckState,
 } from './attendanceHelpers';
 import { canUseNativeQrScanner, scanNativeQrCode } from './nativeQrScanner';
+import { getKoreaHHMM } from '../../../utils/date';
 
 function nowHHmm() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return getKoreaHHMM();
 }
 
 const hasBarcodeDetector = typeof globalThis !== 'undefined'

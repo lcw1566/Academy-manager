@@ -34,6 +34,8 @@ import {
   addDaysYMD,
   getCurrentMonth,
   getMonthDates,
+  getKoreaHHMM,
+  getDaysInMonth,
   getWeekDates,
   getKoreanWeekdayFromYMD,
   nextMonth,
@@ -102,17 +104,25 @@ const INVITATION_STATUS_META = {
 
 const SUB_TABS = [
   { id: 'shift',      label: '근무' },
-  { id: 'contract',   label: '계약' },
+  { id: 'contract',   label: '급여' },
   { id: 'permission', label: '권한' },
 ];
+const PILOT_LOCKED_PERMISSION_KEYS = new Set([
+  'canViewPayroll',
+  'canViewPayments',
+  'canManagePayments',
+  'canManageDrive',
+]);
+const ACTIVE_PERMISSION_KEYS = PERMISSION_KEYS.filter(
+  (key) => !PILOT_LOCKED_PERMISSION_KEYS.has(key),
+);
 
 function formatClock(value) {
   if (!value) return '';
   return String(value).slice(0, 5);
 }
 function nowHHmm() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return getKoreaHHMM();
 }
 function formatShiftTimeRange(start, end) {
   const s = formatClock(start);
@@ -151,6 +161,7 @@ function formatInvitationDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',
@@ -163,7 +174,7 @@ function monthStart(month) {
 function monthEnd(month) {
   const [year, m] = String(month || '').split('-').map(Number);
   if (!year || !m) return '';
-  const last = new Date(year, m, 0).getDate();
+  const last = getDaysInMonth(year, m);
   return `${month}-${String(last).padStart(2, '0')}`;
 }
 function minYMD(a, b) {
@@ -900,7 +911,7 @@ function StaffDetailPanel({
 
       {/* sub-tab 본문 */}
       {subTab === 'shift'      && <StaffShiftSection staff={staff} />}
-      {subTab === 'contract'   && <StaffContractSection staff={staff} />}
+      {subTab === 'contract'   && <PayrollLockedPanel />}
       {subTab === 'permission' && <StaffPermissionSection
         staff={staff}
         canManageManager={canManageManager}
@@ -916,6 +927,23 @@ function SummaryStat({ label, value, hint }) {
       <p className="text-base font-extrabold text-[#191F28]">{value}</p>
       <p className="text-[11px] text-[#8B95A1] mt-0.5">{label}</p>
       {hint && <p className="text-[10px] text-[#8B95A1] mt-0.5 truncate">{hint}</p>}
+    </div>
+  );
+}
+
+function PayrollLockedPanel() {
+  return (
+    <div className="rounded-2xl border border-[#E5E8EB] bg-white px-5 py-8 text-center shadow-sm">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F2F4F6] text-[#8B95A1]">
+        <Clock size={21} />
+      </div>
+      <p className="mt-4 text-base font-extrabold text-[#191F28]">급여 기능을 준비하고 있어요</p>
+      <p className="mt-1 text-sm leading-6 text-[#8B95A1]">
+        근무 기록과 급여 계산을 충분히 검증한 뒤 제공할 예정이에요.
+      </p>
+      <span className="mt-4 inline-flex rounded-full bg-[#F2F4F6] px-3 py-1 text-xs font-bold text-[#6B7684]">
+        파일럿 이후 제공 예정
+      </span>
     </div>
   );
 }
@@ -1649,8 +1677,8 @@ function CalendarCell({ date, shifts, sessions, classGroupById, todayStr, onClic
             {formatShiftTimeRange(firstShift?.scheduledStartTime, firstShift?.scheduledEndTime)}
           </p>
           <p className="mt-0.5 text-[9px] font-semibold text-[#8B95A1] md:text-[10px]">
-            {formatShiftHoursFromMinutes(grossMin)}h
-            {grossMin !== netMin ? <span className="hidden md:inline">{` · 급여 ${formatShiftHoursFromMinutes(netMin)}h`}</span> : ''}
+            근무 {formatShiftHoursFromMinutes(grossMin)}h
+            {grossMin !== netMin ? <span className="hidden md:inline">{` · 휴게 제외 ${formatShiftHoursFromMinutes(netMin)}h`}</span> : ''}
           </p>
           {sessions.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1 md:mt-2">
@@ -2445,7 +2473,7 @@ function ShiftFormModal({
                   {recurringPreview.dates.length > 0 ? ` 다음 일정: ${recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}` : ''}
                 </p>
                 <p className="text-[11px] text-[#8B95A1] mt-1 leading-relaxed">
-                  실제 급여는 이 예정표가 아니라 저장된 출퇴근 기록을 기준으로 계산돼요.
+                  실제 근무 기록은 출근·퇴근 시간을 기준으로 따로 저장돼요.
                 </p>
               </div>
             ) : (
@@ -2778,7 +2806,7 @@ function StaffPermissionSection({
           <p className="text-sm font-bold text-[#191F28]">기능 권한</p>
         </div>
         <div className="flex flex-col gap-1">
-          {PERMISSION_KEYS.map((key) => (
+          {ACTIVE_PERMISSION_KEYS.map((key) => (
             <label key={key} className="flex items-center justify-between py-2 cursor-pointer">
               <span className="text-sm text-[#191F28]">{PERMISSION_LABELS[key]}</span>
               <input
@@ -2790,6 +2818,12 @@ function StaffPermissionSection({
               />
             </label>
           ))}
+          <div className="mt-1 flex items-center justify-between rounded-xl bg-[#F8F9FA] px-3 py-2.5">
+            <span className="text-sm font-medium text-[#8B95A1]">수납 · 급여 · 드라이브</span>
+            <span className="rounded-full bg-[#F2F4F6] px-2 py-1 text-[10px] font-bold text-[#8B95A1]">
+              파일럿 이후
+            </span>
+          </div>
         </div>
         <button
           type="button"

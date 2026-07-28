@@ -2,7 +2,13 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { localizeUserMessage } from '../utils/localizeError';
 import { generateClassDates } from '../utils/recurringClass';
-import { getCurrentMonth, getMonthsBetween, today as getTodayYMD } from '../utils/date';
+import {
+  getCurrentMonth,
+  getDaysInMonth,
+  getKoreanWeekdayIndex,
+  getMonthsBetween,
+  today as getTodayYMD,
+} from '../utils/date';
 import {
   buildPlannedStaffSchedule,
   plannedToStaffShiftShape,
@@ -47,7 +53,7 @@ function monthStartYMD(month) {
 function monthEndYMD(month) {
   const [year, m] = String(month || '').split('-').map(Number);
   if (!year || !m) return '';
-  const last = new Date(year, m, 0).getDate();
+  const last = getDaysInMonth(year, m);
   return `${month}-${String(last).padStart(2, '0')}`;
 }
 
@@ -1066,8 +1072,7 @@ const useAcademyStore = create(
     const dates = generateClassDates({ daysOfWeek, startDate: fromDate, endDate: toDate, repeatType: '매주' });
     const ts = Date.now();
     return dates.map((date, i) => {
-      const [y, m, d] = date.split('-').map(Number);
-      const dayName = numToDayName[new Date(y, m - 1, d).getDay()];
+      const dayName = numToDayName[getKoreanWeekdayIndex(date)];
       const perDay = weekdayTimes?.[dayName];
       const sessionStart = perDay?.startTime || startTime;
       const sessionEnd = perDay?.endTime || endTime;
@@ -1094,16 +1099,20 @@ const useAcademyStore = create(
       };
     });
   },
-  addClassGroup: (groupData) => {
+  addClassGroup: (groupData, { generateSessions = true } = {}) => {
     const groupId = `cg${Date.now()}`;
     const newGroup = { ...groupData, id: groupId, createdAt: new Date().toISOString() };
-    const sessions = get().generateClassSessions(newGroup);
+    const sessions = generateSessions ? get().generateClassSessions(newGroup) : [];
     set((s) => ({
       classGroups: [...s.classGroups, newGroup],
       classSessions: [...s.classSessions, ...sessions],
     }));
-    const monthLabel = (newGroup.startDate || getTodayYMD()).slice(0, 7);
-    get().showToast(`반이 생성되었어요. ${monthLabel} 수업 ${sessions.length}회차를 만들었어요.`);
+    if (generateSessions) {
+      const monthLabel = (newGroup.startDate || getTodayYMD()).slice(0, 7);
+      get().showToast(`반이 생성되었어요. ${monthLabel} 수업 ${sessions.length}회차를 만들었어요.`);
+    } else {
+      get().showToast('반이 생성되었어요.');
+    }
     // 10단계: write-through 호출처가 생성된 sessions 에 serverId 매핑할 수 있도록
     // group 과 sessions 를 함께 반환. 기존 caller 는 newGroup.id / .name 등으로
     // 사용 중이라 group 을 그대로 spread 한다 (호환).
@@ -1274,6 +1283,116 @@ const useAcademyStore = create(
       ),
     }));
   },
+  // 날짜 범위 실체화나 실시간 새로고침 직후 class_sessions만 가볍게 동기화한다.
+  // 전체 snapshot hydrate를 다시 돌리지 않아 작성 중인 학생/클리닉 상태를 건드리지 않는다.
+  syncClassSessionsFromServer: (serverRows = [], { preserveLocalOnly = true } = {}) => {
+    const mapped = (Array.isArray(serverRows) ? serverRows : [])
+      .map(mapServerClassSessionToLocal)
+      .filter(Boolean);
+    set((s) => {
+      const assistantByUserId = new Map(
+        (s.academyAssistants || [])
+          .filter((assistant) => assistant?.serverUserId)
+          .map((assistant) => [assistant.serverUserId, assistant.id]),
+      );
+      const resolved = mapped.map((session) => ({
+        ...session,
+        assistantIds: (session.assistantUserIds || [])
+          .map((userId) => assistantByUserId.get(userId))
+          .filter(Boolean),
+      }));
+      const serverIds = new Set(resolved.map((session) => session.id));
+      const preserved = preserveLocalOnly
+        ? (s.classSessions || []).filter((session) => (
+            !serverIds.has(session.id)
+            && (!session.serverId || !serverIds.has(session.serverId))
+          ))
+        : [];
+      return { classSessions: [...preserved, ...resolved] };
+    });
+    return mapped;
+  },
+  // Realtime 부분 갱신용. 서버에서 다시 읽은 한 테이블만 로컬 화면 캐시에
+  // 반영해 다른 화면에서 작성 중인 데이터가 불필요하게 교체되지 않도록 한다.
+  syncAcademyTableFromServer: (
+    dataset,
+    serverRows = [],
+    { preserveLocalOnly = false } = {},
+  ) => {
+    const rows = Array.isArray(serverRows) ? serverRows : [];
+    const mergeById = (localRows, mappedRows) => {
+      const serverIds = new Set(mappedRows.map((row) => row.id));
+      const preserved = preserveLocalOnly
+        ? (localRows || []).filter((row) => (
+            !serverIds.has(row.id)
+            && (!row.serverId || !serverIds.has(row.serverId))
+          ))
+        : [];
+      return [...preserved, ...mappedRows];
+    };
+    const resolveAssistantIds = (mappedRows, assistants) => {
+      const localIdByUserId = new Map(
+        (assistants || [])
+          .filter((assistant) => assistant?.serverUserId)
+          .map((assistant) => [assistant.serverUserId, assistant.id]),
+      );
+      return mappedRows.map((row) => ({
+        ...row,
+        assistantIds: (row.assistantUserIds || [])
+          .map((userId) => localIdByUserId.get(userId))
+          .filter(Boolean),
+      }));
+    };
+
+    let mapped = [];
+    set((state) => {
+      switch (dataset) {
+        case 'students':
+          mapped = rows.map(mapServerStudentToLocal).filter(Boolean);
+          return { academyStudents: mergeById(state.academyStudents, mapped) };
+        case 'classGroups':
+          mapped = resolveAssistantIds(
+            rows.map(mapServerClassGroupToLocal).filter(Boolean),
+            state.academyAssistants,
+          );
+          return { classGroups: mergeById(state.classGroups, mapped) };
+        case 'lessonRecords': {
+          mapped = rows.flatMap(expandServerLessonRecordToLocal);
+          const serverSessionIds = new Set(mapped.map((row) => row.sessionId));
+          const preserved = preserveLocalOnly
+            ? (state.academyLessonRecords || []).filter(
+                (row) => !serverSessionIds.has(row.sessionId),
+              )
+            : [];
+          return { academyLessonRecords: [...preserved, ...mapped] };
+        }
+        case 'attendanceRecords': {
+          mapped = rows.map(mapServerAttendanceRecordToLocal).filter(Boolean);
+          const serverKeys = new Set(
+            mapped.map((row) => `${row.sessionId}__${row.studentId}`),
+          );
+          const preserved = preserveLocalOnly
+            ? (state.academyAttendanceRecords || []).filter(
+                (row) => !serverKeys.has(`${row.sessionId}__${row.studentId}`),
+              )
+            : [];
+          return { academyAttendanceRecords: [...preserved, ...mapped] };
+        }
+        case 'clinicRecords':
+          mapped = rows.map(mapServerClinicRecordToLocal).filter(Boolean);
+          return { clinicRecords: mergeById(state.clinicRecords, mapped) };
+        case 'payments':
+          mapped = rows.map(mapServerPaymentToLocal).filter(Boolean);
+          return { academyPayments: mergeById(state.academyPayments, mapped) };
+        case 'payrolls':
+          mapped = rows.map(mapServerPayrollToLocal).filter(Boolean);
+          return { academyPayrolls: mergeById(state.academyPayrolls, mapped) };
+        default:
+          return {};
+      }
+    });
+    return mapped;
+  },
   deleteClassSession: (sessionId) => {
     set((s) => ({
       classSessions: s.classSessions.filter((s2) => s2.id !== sessionId),
@@ -1284,10 +1403,21 @@ const useAcademyStore = create(
   },
 
   // ─── Academy Attendance ───────────────────────────
-  // Phase 42 — source / checkedAt 같이 받음. 선생님이 버튼을 눌러 수정한
-  // 경우 호출자는 source='teacher_manual' 을 명시한다. 비지정 시 기존 row 의
-  // source 를 유지하고, 신규 row 면 DB 제약과 같은 'teacher_manual' 로 default.
-  updateAcademyAttendance: (sessionId, studentId, status, { source, checkedAt, silent } = {}) => {
+  // SQL 049 — 등원 추론은 이 액션으로 만들지 않는다. 선생님이 출석 버튼을
+  // 눌렀을 때 확정 출석과 확정 시각/담당자를 로컬 캐시에 기록한다.
+  updateAcademyAttendance: (
+    sessionId,
+    studentId,
+    status,
+    {
+      source = 'teacher_manual',
+      checkedAt,
+      confirmationState = 'teacher_confirmed',
+      confirmedAt,
+      confirmedBy,
+      silent,
+    } = {},
+  ) => {
     const existing = get().academyAttendanceRecords.find(
       (a) => a.sessionId === sessionId && a.studentId === studentId
     );
@@ -1300,8 +1430,11 @@ const useAcademyStore = create(
             ? {
                 ...a,
                 status,
-                source: source ?? a.source ?? 'teacher_manual',
-                checkedAt: checkedAt ?? (source ? now : a.checkedAt ?? null),
+                source,
+                checkedAt: checkedAt ?? a.checkedAt ?? null,
+                confirmationState,
+                confirmedAt: confirmedAt || now,
+                confirmedBy: confirmedBy ?? a.confirmedBy ?? null,
               }
             : a
         ),
@@ -1316,8 +1449,11 @@ const useAcademyStore = create(
             studentId,
             date: session?.date || '',
             status,
-            source: source || 'teacher_manual',
-            checkedAt: checkedAt || now,
+            source,
+            checkedAt: checkedAt || null,
+            confirmationState,
+            confirmedAt: confirmedAt || now,
+            confirmedBy: confirmedBy || null,
           },
         ],
       }));
@@ -1800,7 +1936,7 @@ const useAcademyStore = create(
     const [year, monthNumber] = String(month || '').split('-').map(Number);
     if (!year || !monthNumber) return [];
     const dueDay = Math.max(1, Number(academyProfile?.tuitionDueDay) || 1);
-    const lastDay = new Date(year, monthNumber, 0).getDate();
+    const lastDay = getDaysInMonth(year, monthNumber);
     const dueDate = `${month}-${String(Math.min(dueDay, lastDay)).padStart(2, '0')}`;
     // 아직 화면에서 해당 월을 열지 않아 회차가 materialize 되지 않았더라도
     // 별도 비용 계산은 빠지지 않아야 한다. 저장된 취소/변경 회차를 우선하고,
@@ -2075,7 +2211,7 @@ const useAcademyStore = create(
   markPayrollPaid: (payrollId) => {
     set((s) => ({
       academyPayrolls: s.academyPayrolls.map((p) =>
-        p.id === payrollId ? { ...p, status: 'completed', paidDate: new Date().toISOString().slice(0, 10) } : p
+        p.id === payrollId ? { ...p, status: 'completed', paidDate: getTodayYMD() } : p
       ),
     }));
     get().showToast('급여 지급 완료 처리되었습니다.');
@@ -2459,10 +2595,7 @@ const useAcademyStore = create(
     const sampleAssistant = { id: `ast${ts}`, name: '박보조', phone: '010-8888-9999', taskTypes: ['homework', 'wrong_answer', 'vocabulary'], status: 'active' };
 
     // 오늘 기준으로 이번 달 1일 시작
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const startDate = `${y}-${m}-01`;
+    const startDate = `${getCurrentMonth()}-01`;
 
     const sampleGroup = {
       id: `cg${ts}`,
@@ -2502,7 +2635,7 @@ const useAcademyStore = create(
       createdAt: new Date().toISOString(),
     }));
 
-    const todayStr = `${y}-${m}-${String(now.getDate()).padStart(2, '0')}`;
+    const todayStr = getTodayYMD();
     const nextSession = sampleSessions.find((s) => s.date >= todayStr) || sampleSessions[0];
     const sampleClinics = [
       {

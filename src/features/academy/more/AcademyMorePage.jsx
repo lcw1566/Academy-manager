@@ -160,7 +160,11 @@ export default function AcademyMorePage({
     || useWorkspaceStore((s) => s.serverClassGroupsLoadedAt)
     || useWorkspaceStore((s) => s.serverClassSessionsLoadedAt);
   const lastSyncedLabel = lastSyncedAt
-    ? new Date(lastSyncedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+    ? new Date(lastSyncedAt).toLocaleTimeString('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
     : null;
 
   const isOwner = role === 'owner';

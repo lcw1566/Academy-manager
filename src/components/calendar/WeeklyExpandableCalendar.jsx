@@ -4,9 +4,11 @@ import {
   getTodayYMD,
   getWeekDatesFromYMD,
   getMonthCalendarDatesFromYMD,
+  getKoreanWeekdayIndex,
+  addDaysYMD,
   isSameMonth,
-  parseYMD,
-  formatDateToYMD,
+  nextMonth,
+  prevMonth,
 } from '../../utils/date';
 
 // schedules: [{ date: 'YYYY-MM-DD', type: 'class'|'consultation'|'payment'|'exam'|'performance'|'school' }]
@@ -30,8 +32,8 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
   const monthDates = getMonthCalendarDatesFromYMD(pivotDate);
   const displayedDates = isExpanded ? monthDates : weekDates;
 
-  const pivot = parseYMD(pivotDate);
-  const monthLabel = `${pivot.getFullYear()}년 ${pivot.getMonth() + 1}월`;
+  const [pivotYear, pivotMonth] = pivotDate.split('-').map(Number);
+  const monthLabel = `${pivotYear}년 ${pivotMonth}월`;
 
   const scheduleTypesByDate = useMemo(() => {
     const map = new Map();
@@ -47,13 +49,14 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
   }, [schedules]);
 
   const shift = (delta) => {
-    const d = parseYMD(pivotDate);
     if (isExpanded) {
-      d.setMonth(d.getMonth() + delta);
+      const shiftedMonth = delta > 0
+        ? nextMonth(pivotDate.slice(0, 7))
+        : prevMonth(pivotDate.slice(0, 7));
+      setPivotDate(`${shiftedMonth}-01`);
     } else {
-      d.setDate(d.getDate() + delta * 7);
+      setPivotDate(addDaysYMD(pivotDate, delta * 7));
     }
-    setPivotDate(formatDateToYMD(d));
   };
 
   const dotsForDate = (dateStr) => {
@@ -106,8 +109,7 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
           {displayedDates.map((dateStr, i) => {
             if (!dateStr) return <div key={`empty-${i}`} className="h-11" />;
 
-            const d = parseYMD(dateStr);
-            const dow = d.getDay();
+            const dow = getKoreanWeekdayIndex(dateStr);
             const isSelected  = dateStr === selectedDate;
             const isToday     = dateStr === todayStr;
             const inThisMonth = isSameMonth(dateStr, pivotDate);
@@ -133,7 +135,7 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
                     ? 'text-blue-400'
                     : 'text-gray-800'
                 }`}>
-                  {d.getDate()}
+                  {Number(dateStr.slice(8))}
                 </div>
                 <div className="flex gap-0.5 mt-0.5 h-1.5">
                   {dots.map((type, j) => (

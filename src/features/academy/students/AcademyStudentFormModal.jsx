@@ -20,6 +20,7 @@ import {
   DEFAULT_ACADEMY_SETTINGS,
 } from '../../../constants/academySettings';
 import { calculateSuggestedStudentTuition } from '../../../utils/studentBilling';
+import { createClientUuid } from '../../../utils/uuid';
 
 const SCHOOL_TYPES = [
   { id: 'elementary', label: '초등' },
@@ -188,6 +189,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     () => !(editStudent?.school || editStudent?.schoolName),
   );
   const schoolInputRef = useRef(null);
+  const createStudentRequestIdRef = useRef(createClientUuid());
   const schoolNames = useMemo(
     () => [...new Set(
       academyStudents
@@ -298,66 +300,67 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     try {
       if (isEdit) {
         // ── 수정 ──────────────────────────────────────────────
-        // 1) localStorage 수정 (source of truth, 항상 성공)
-        updateAcademyStudent(editStudent.id, data);
-
-        // 2) Supabase write-through — serverId 가 있고 로그인 + 학원 선택 시에만 시도.
-        //    serverId 없는 기존 로컬 학생은 조용히 skip.
-        if (editStudent.serverId && isAuthenticated && currentAcademyId) {
-          try {
-            await updateStudent(editStudent.serverId, mapAcademyStudentFormToServerPayload(data));
-            await loadServerStudents();
-          } catch (err) {
-            console.error('[supabase] updateStudent failed', err);
-            showToast(
-              err?.message
-                ? `서버 동기화 실패: ${err.message}`
-                : '학생 정보는 수정되었지만 서버 동기화는 실패했어요.',
-              'error',
+        let serverStudent = null;
+        if (isAuthenticated && currentAcademyId) {
+          if (editStudent.serverId) {
+            serverStudent = await updateStudent(
+              editStudent.serverId,
+              mapAcademyStudentFormToServerPayload(data),
             );
+          } else {
+            // 과거 로컬 전용 학생도 수정 순간 서버 레코드로 승격한다.
+            serverStudent = await createAcademyStudent({
+              academyId: currentAcademyId,
+              id: createStudentRequestIdRef.current,
+              ...mapAcademyStudentFormToServerPayload(data),
+            });
           }
         }
 
+        // 서버가 확정된 뒤에만 로컬 캐시를 바꾼다.
+        updateAcademyStudent(editStudent.id, {
+          ...data,
+          serverId: serverStudent?.id || editStudent.serverId || null,
+        });
+        if (serverStudent?.id && !editStudent.serverId) {
+          setAcademyStudentServerId(editStudent.id, serverStudent.id);
+        }
+        if (serverStudent) await loadServerStudents();
         onClose();
         return;
       }
 
       // ── 추가 ────────────────────────────────────────────────
-      // 1) localStorage 저장 (source of truth, 항상 성공). 반환된 localStudent.id 확보.
-      const localStudent = addAcademyStudent(data);
-
-      // 2) Supabase write-through — 로그인 + 학원 선택 시에만 시도
       let serverStudent = null;
       if (isAuthenticated && currentAcademyId) {
-        try {
-          serverStudent = await createAcademyStudent({
-            academyId: currentAcademyId,
-            ...mapAcademyStudentFormToServerPayload(data),
-          });
-          // 3) 반환된 server uuid 를 local 학생에 매핑 (이후 수정/삭제 라우팅용)
-          if (serverStudent?.id && localStudent?.id) {
-            setAcademyStudentServerId(localStudent.id, serverStudent.id);
-          }
-          await loadServerStudents();
-          showToast('학생이 추가되고 서버에도 저장되었어요.');
-        } catch (err) {
-          console.error('[supabase] createAcademyStudent failed', err);
-          showToast(
-            err?.message
-              ? `서버 저장 실패: ${err.message}`
-              : '학생은 추가되었지만 서버 저장은 실패했어요.',
-            'error',
-          );
-        }
+        serverStudent = await createAcademyStudent({
+          academyId: currentAcademyId,
+          id: createStudentRequestIdRef.current,
+          ...mapAcademyStudentFormToServerPayload(data),
+        });
       }
 
+      // 서버 저장 성공 뒤에 로컬 캐시를 생성한다.
+      const localStudent = addAcademyStudent({
+        ...data,
+        serverId: serverStudent?.id || null,
+      });
+      if (serverStudent) await loadServerStudents();
       setCreatedStudent({
         ...localStudent,
         ...data,
         id: serverStudent?.id || localStudent.id,
-        serverId: serverStudent?.id || localStudent.serverId || null,
+        serverId: serverStudent?.id || null,
       });
       setPhase('assignment');
+    } catch (err) {
+      console.error('[student] save failed', err);
+      showToast(
+        err?.message || (isEdit
+          ? '학생 정보를 수정하지 못했어요.'
+          : '학생을 추가하지 못했어요. 연결을 확인하고 다시 시도해주세요.'),
+        'error',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -396,21 +399,21 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
         subjectIds: nextTuitionSubjects,
       });
 
-    assignAcademyStudentToClassGroups({
-      studentId: createdStudent.id,
-      classGroupIds: selectedClassGroupIds,
-      fromDate: effectiveFromDate,
-    });
     const localStudent = academyStudents.find((student) => (
       student.id === createdStudent.id
       || (createdStudent.serverId && student.serverId === createdStudent.serverId)
     ));
-    updateAcademyStudent(localStudent?.id || createdStudent.id, {
-      tuitionSubjects: nextTuitionSubjects,
-      baseTuition: nextBaseTuition,
-    });
 
     if (!isAuthenticated || !currentAcademyId || !createdStudent.serverId) {
+      assignAcademyStudentToClassGroups({
+        studentId: createdStudent.id,
+        classGroupIds: selectedClassGroupIds,
+        fromDate: effectiveFromDate,
+      });
+      updateAcademyStudent(localStudent?.id || createdStudent.id, {
+        tuitionSubjects: nextTuitionSubjects,
+        baseTuition: nextBaseTuition,
+      });
       onClose();
       return;
     }
@@ -418,6 +421,9 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     setAssigning(true);
     try {
       const serverGroupIds = selectedGroups.map((group) => group.serverId).filter(Boolean);
+      if (serverGroupIds.length !== selectedGroups.length) {
+        throw new Error('일부 반의 서버 정보를 확인하지 못했어요. 수업 목록을 새로고침해주세요.');
+      }
       await updateStudent(createdStudent.serverId, {
         class_group_ids: serverGroupIds,
         tuition_subjects: nextTuitionSubjects,
@@ -460,13 +466,22 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
         loadServerClassGroups?.(),
         loadServerClassSessions?.(),
       ]);
+      assignAcademyStudentToClassGroups({
+        studentId: createdStudent.id,
+        classGroupIds: selectedClassGroupIds,
+        fromDate: effectiveFromDate,
+      });
+      updateAcademyStudent(localStudent?.id || createdStudent.id, {
+        tuitionSubjects: nextTuitionSubjects,
+        baseTuition: nextBaseTuition,
+      });
       onClose();
     } catch (err) {
       console.error('[supabase] assign student to class groups failed', err);
       showToast(
         err?.message
-          ? `수업은 배정됐지만 서버 동기화에 실패했어요: ${err.message}`
-          : '수업은 배정됐지만 서버 동기화에 실패했어요.',
+          ? `수업을 배정하지 못했어요: ${err.message}`
+          : '수업을 배정하지 못했어요. 다시 시도해주세요.',
         'error',
       );
     } finally {

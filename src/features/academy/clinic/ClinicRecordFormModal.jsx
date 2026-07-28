@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, MessageCircle, Plus, SlidersHorizontal, X } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -21,6 +21,7 @@ import { DEFAULT_ACADEMY_SETTINGS } from '../../../constants/academySettings';
 import ClinicDefaultItemsEditor, {
   normalizeClinicDefaultItems,
 } from './ClinicDefaultItemsEditor';
+import { createClientUuid } from '../../../utils/uuid';
 
 const SUBJECTS = ['국어', '수학', '영어', '과학', '사회', '기타'];
 
@@ -257,6 +258,7 @@ export default function ClinicRecordFormModal({
   );
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const createRecordRequestIdRef = useRef(createClientUuid());
 
   useEffect(() => {
     if (!activeRelayTarget || editRecord) return;
@@ -575,55 +577,74 @@ export default function ClinicRecordFormModal({
         created_by_id: writerId || null,
       });
 
-      const canSyncServer = isAuthenticated && currentAcademyId && student?.serverId;
-
+      let serverRecord = null;
       if (editRecord) {
-        updateClinicRecord(editRecord.id, payload);
-        if (editRecord.serverId && isAuthenticated && currentAcademyId) {
-          try {
-            const serverPatch = buildServerPayload();
-            if (!student?.serverId) delete serverPatch.student_id;
-            await updateServerClinicRecord(editRecord.serverId, serverPatch);
-            await loadServerClinicRecords();
-          } catch (err) {
-            console.error('[supabase] updateClinicRecord failed', err);
-            showToast(
-              err?.message
-                ? `클리닉 기록 서버 동기화 실패: ${err.message}`
-                : '클리닉 기록은 수정되었지만 서버 동기화는 실패했어요.',
-              'error',
-            );
+        if (isAuthenticated && currentAcademyId) {
+          if (!student?.serverId) {
+            throw new Error('학생 서버 정보를 확인하지 못했어요. 학생 목록을 새로고침해주세요.');
           }
-        }
-      } else {
-        const localRecord = addClinicRecord(payload);
-        if (canSyncServer && localRecord?.id) {
-          try {
-            const created = await createAcademyClinicRecord({
+          if (groupForServer && !groupForServer.serverId) {
+            throw new Error('반 서버 정보를 확인하지 못했어요. 수업 목록을 새로고침해주세요.');
+          }
+          if (sessionForServer && !sessionForServer.serverId) {
+            throw new Error('수업 회차를 준비하지 못했어요. 일정을 새로고침해주세요.');
+          }
+          if (editRecord.serverId) {
+            serverRecord = await updateServerClinicRecord(
+              editRecord.serverId,
+              buildServerPayload(),
+            );
+          } else {
+            serverRecord = await createAcademyClinicRecord({
               academyId: currentAcademyId,
+              id: createRecordRequestIdRef.current,
               ...buildServerPayload(),
             });
-            if (created?.id) {
-              setClinicRecordServerId(localRecord.id, created.id);
-            }
-            await loadServerClinicRecords();
-          } catch (err) {
-            console.error('[supabase] createAcademyClinicRecord failed', err);
-            showToast(
-              err?.message
-                ? `클리닉 기록 서버 동기화 실패: ${err.message}`
-                : '클리닉 기록은 저장되었지만 서버 동기화는 실패했어요.',
-              'error',
-            );
           }
         }
+        updateClinicRecord(editRecord.id, {
+          ...payload,
+          serverId: serverRecord?.id || editRecord.serverId || null,
+        });
+        if (serverRecord?.id && !editRecord.serverId) {
+          setClinicRecordServerId(editRecord.id, serverRecord.id);
+        }
+      } else {
+        if (isAuthenticated && currentAcademyId) {
+          if (!student?.serverId) {
+            throw new Error('학생 서버 정보를 확인하지 못했어요. 학생 목록을 새로고침해주세요.');
+          }
+          if (groupForServer && !groupForServer.serverId) {
+            throw new Error('반 서버 정보를 확인하지 못했어요. 수업 목록을 새로고침해주세요.');
+          }
+          if (sessionForServer && !sessionForServer.serverId) {
+            throw new Error('수업 회차를 준비하지 못했어요. 일정을 새로고침해주세요.');
+          }
+          serverRecord = await createAcademyClinicRecord({
+            academyId: currentAcademyId,
+            id: createRecordRequestIdRef.current,
+            ...buildServerPayload(),
+          });
+        }
+        addClinicRecord({
+          ...payload,
+          serverId: serverRecord?.id || null,
+        });
       }
+      if (serverRecord) await loadServerClinicRecords();
 
       if (mode === 'next' && hasNextRelayTarget) {
+        createRecordRequestIdRef.current = createClientUuid();
         setRelayIndex((idx) => Math.min(idx + 1, normalizedRelayTargets.length - 1));
       } else {
         onClose();
       }
+    } catch (err) {
+      console.error('[clinic] record save failed', err);
+      showToast(
+        err?.message || '클리닉 기록을 저장하지 못했어요. 다시 시도해주세요.',
+        'error',
+      );
     } finally {
       setIsSaving(false);
     }
@@ -636,12 +657,15 @@ export default function ClinicRecordFormModal({
     };
     setSavingTemplate(true);
     try {
-      updateAcademyStudent(selectedStudent.id, localPatch);
+      if (isAuthenticated && currentAcademyId && !selectedStudent.serverId) {
+        throw new Error('학생 서버 정보를 확인하지 못했어요. 학생 목록을 새로고침해주세요.');
+      }
       if (selectedStudent.serverId && isAuthenticated && currentAcademyId) {
         await updateServerStudent(selectedStudent.serverId, {
           clinic_default_items: localPatch.clinicDefaultItems,
         });
       }
+      updateAcademyStudent(selectedStudent.id, localPatch);
       if (useAcademyDefault) {
         const academyItems = normalizeClinicDefaultItems(
           academyProfile?.clinicDefaultItems

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Clock,
@@ -11,7 +11,13 @@ import {
 } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { today, formatDateShort, greetingByTime } from '../../../utils/date';
+import {
+  today,
+  addDaysYMD,
+  formatDateShort,
+  getKoreaMinutes,
+  greetingByTime,
+} from '../../../utils/date';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import {
   classifyShiftStatus,
@@ -57,6 +63,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const navigateToClassGroup = useAcademyStore((s) => s.navigateToClassGroup);
   const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
+  const showToast = useAcademyStore((s) => s.showToast);
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
   const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
   const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
@@ -65,9 +72,13 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const currentAcademy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
   const attendance = readAttendanceSettings(currentAcademy);
+  const studentAttendanceEnabled = attendance.studentCheckMethod !== 'disabled';
   // Phase 44.6 / Phase B — 룰 기반 예정 세션 데이터.
   const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
   const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
+  const materializePlannedClassSession = useWorkspaceStore(
+    (s) => s.materializePlannedClassSession,
+  );
   const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
   const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
 
@@ -75,10 +86,22 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const [now, setNow] = useState(() => new Date());
   const todayStr = getAcademyYmd() || today();
 
+  const openSession = useCallback(async (session) => {
+    try {
+      const actual = session?.isPlanned
+        ? await materializePlannedClassSession(session)
+        : session;
+      if (!actual?.id) throw new Error('수업 회차를 준비하지 못했어요.');
+      navigateToClassSession(actual.id);
+    } catch (error) {
+      showToast(error?.message || '수업 회차를 열지 못했어요.', 'error');
+    }
+  }, [materializePlannedClassSession, navigateToClassSession, showToast]);
+
   useEffect(() => {
-    if (!currentAcademyId || !todayStr) return;
+    if (!studentAttendanceEnabled || !currentAcademyId || !todayStr) return;
     loadStudentCheckEvents({ sinceDateYMD: todayStr, limit: 1000 });
-  }, [currentAcademyId, todayStr, loadStudentCheckEvents]);
+  }, [studentAttendanceEnabled, currentAcademyId, todayStr, loadStudentCheckEvents]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
@@ -113,11 +136,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   // 기존 classSessions 와 머지. 14일 너머에도 자연스럽게 예정 세션이 노출됨.
   const mergedClassSessions = useMemo(() => {
     const from = todayStr;
-    const to = (() => {
-      const d = new Date(todayStr);
-      d.setDate(d.getDate() + 60);
-      return d.toISOString().slice(0, 10);
-    })();
+    const to = addDaysYMD(todayStr, 60);
     const plannedRaw = buildPlannedClassSessions({
       rules: classScheduleRules,
       exceptions: classSessionExceptions,
@@ -181,7 +200,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
 
   // 진행 중 / 곧 시작 수업 (시작 90분 이내)
   const nowMinutes = useMemo(() => {
-    return now.getHours() * 60 + now.getMinutes();
+    return getKoreaMinutes(now);
   }, [now]);
   const inProgressOrSoonSessions = useMemo(() => {
     return todaySessions.filter((s) => {
@@ -197,7 +216,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
 
   // 미작성 수업 기록 — 오늘 또는 어제까지 status='completed' 인데 lesson_records (_common_) 없음
   const unfinishedLessonRecordSessions = useMemo(() => {
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const yesterday = addDaysYMD(todayStr, -1);
     return classSessions.filter((s) => {
       if (s.status !== 'completed') return false;
       if (s.date !== todayStr && s.date !== yesterday) return false;
@@ -231,16 +250,19 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   );
 
   const homeActions = useMemo(() => {
-    const actions = [{
-      id: 'attendance',
-      icon: LogIn,
-      tone: 'green',
-      title: '등하원',
-      detail: `오늘 등원 ${todayStudentPresence.checkedInToday}명`,
-      value: `현재 원내 ${todayStudentPresence.inside}명`,
-      live: true,
-      onClick: () => setActiveTab('attendance'),
-    }];
+    const actions = [];
+    if (studentAttendanceEnabled) {
+      actions.push({
+        id: 'attendance',
+        icon: LogIn,
+        tone: 'green',
+        title: '등하원',
+        detail: `오늘 등원 ${todayStudentPresence.checkedInToday}명`,
+        value: `현재 원내 ${todayStudentPresence.inside}명`,
+        live: true,
+        onClick: () => setActiveTab('attendance'),
+      });
+    }
 
     const activeSession = inProgressOrSoonSessions[0];
     if (activeSession) {
@@ -251,7 +273,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
         tone: 'blue',
         title: group?.name || '곧 시작하는 수업',
         detail: `${formatTimeRange(activeSession.startTime, activeSession.endTime)} · 수업 기록 열기`,
-        onClick: () => navigateToClassSession(activeSession.id),
+        onClick: () => void openSession(activeSession),
       });
     }
 
@@ -281,9 +303,11 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   }, [
     classGroups,
     inProgressOrSoonSessions,
+    openSession,
     navigateToClassSession,
     pendingInvitations.length,
     setActiveTab,
+    studentAttendanceEnabled,
     todayStudentPresence,
     unfinishedLessonRecordSessions,
   ]);
@@ -359,7 +383,9 @@ export default function OwnerDashboard({ operationsOnly = false }) {
       {/* 요약 카드 */}
       <div className="px-4 grid grid-cols-2 gap-3 mb-5">
         <SummaryCard label="오늘 수업" value={`${todaySessions.length}개`} onClick={() => setActiveTab('classes')} />
-        <SummaryCard label="등원 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('attendance')} />
+        {studentAttendanceEnabled && (
+          <SummaryCard label="등원 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('attendance')} />
+        )}
         <SummaryCard label="오늘 출근 예정" value={`${todayShiftStaffIds.length}명`} onClick={() => setActiveTab('staff')} />
         {academyProfile?.clinicRequired !== false && (
           <SummaryCard
@@ -384,13 +410,13 @@ export default function OwnerDashboard({ operationsOnly = false }) {
         )}
       </div>
 
-      {/* Phase 41 — 오늘 근무·등하원 요약 카드 */}
+      {/* 오늘 직원 근무 요약 */}
       <div className="px-4 mb-5">
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
               <CheckSquare size={14} className="text-emerald-600" />
-              오늘 근무·등하원
+              오늘 직원 근무
             </p>
           </div>
           <div className="grid grid-cols-4 gap-2">

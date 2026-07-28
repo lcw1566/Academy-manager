@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -21,12 +21,13 @@ import {
 } from '../../../utils/schedule';
 import {
   today, addDaysYMD, formatDateShort, compareYMD, getKoreanWeekdayFromYMD,
-  getWeekDates, getMonthDates, formatMonth, nextMonth, prevMonth,
+  getWeekDates, getMonthDates, getDaysInMonth, formatMonth, nextMonth, prevMonth,
 } from '../../../utils/date';
 import { hhmmToMin } from '../../../utils/shiftCoverage';
 import { getTeacherDisplayName } from '../../../utils/format';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getRoomTagClassName } from '../../../utils/roomTags';
+import { isConfirmedAttendance } from '../../../utils/attendanceRecords';
 import {
   CLASS_ACTIVITY_TYPES,
   getActivityLabel,
@@ -51,7 +52,7 @@ const DOW_TO_KO = ['일', '월', '화', '수', '목', '금', '토'];
 function monthEndYMD(month) {
   const [year, m] = String(month || '').split('-').map(Number);
   if (!year || !m) return '';
-  const last = new Date(year, m, 0).getDate();
+  const last = getDaysInMonth(year, m);
   return `${month}-${String(last).padStart(2, '0')}`;
 }
 
@@ -113,6 +114,12 @@ export default function ClassGroupDetailPage() {
   );
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
+  const ensureClassSessionsForRangeLocal = useWorkspaceStore(
+    (s) => s.ensureClassSessionsForRangeLocal,
+  );
+  const materializePlannedClassSession = useWorkspaceStore(
+    (s) => s.materializePlannedClassSession,
+  );
 
   const [showEditForm, setShowEditForm] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
@@ -124,8 +131,47 @@ export default function ClassGroupDetailPage() {
   const [showSessionTypePicker, setShowSessionTypePicker] = useState(false);
   const [sessionCreateKind, setSessionCreateKind] = useState(null);
   const todayStr = today();
+  const confirmedAttendanceRecords = useMemo(
+    () => academyAttendanceRecords.filter(isConfirmedAttendance),
+    [academyAttendanceRecords],
+  );
 
   const group = classGroups.find((g) => g.id === selectedClassGroupId) ?? null;
+
+  useEffect(() => {
+    if (!currentAcademyId || !group?.serverId || !calendarAnchor) return;
+    const month = calendarAnchor.slice(0, 7);
+    void ensureClassSessionsForRangeLocal({
+      fromDate: `${month}-01`,
+      toDate: monthEndYMD(month),
+      classGroupId: group.serverId,
+    }).catch((error) => {
+      console.warn('[class-group] 달력 회차 준비 실패', error);
+    });
+  }, [
+    calendarAnchor,
+    currentAcademyId,
+    ensureClassSessionsForRangeLocal,
+    group?.serverId,
+  ]);
+
+  const openSession = async (session, { closeAll = false } = {}) => {
+    try {
+      const actual = session?.isPlanned
+        ? await materializePlannedClassSession(session)
+        : session;
+      if (!actual?.id) {
+        showToast('수업 회차를 준비하지 못했어요. 잠시 후 다시 시도해주세요.', 'error');
+        return;
+      }
+      if (closeAll) setShowAllSessions(false);
+      navigateToClassSession(actual.id);
+    } catch (error) {
+      console.error('[class-group] 예정 회차 열기 실패', error);
+      showToast(error?.message || '수업 회차를 준비하지 못했어요.', 'error');
+    }
+  };
+
   const activityLabel = getActivityLabel(
     CLASS_ACTIVITY_TYPES,
     group?.activityType || 'regular_class',
@@ -139,11 +185,7 @@ export default function ClassGroupDetailPage() {
   const mergedClassSessions = useMemo(() => {
     if (!group) return [];
     const from = todayStr;
-    const to = (() => {
-      const d = new Date(todayStr);
-      d.setDate(d.getDate() + 60);
-      return d.toISOString().slice(0, 10);
-    })();
+    const to = addDaysYMD(todayStr, 60);
     const plannedRaw = buildPlannedClassSessions({
       rules: classScheduleRules,
       exceptions: classSessionExceptions,
@@ -231,27 +273,21 @@ export default function ClassGroupDetailPage() {
 
     const serverId = group.serverId;
 
-    // 1) localStorage 삭제 (source of truth) — class_sessions / clinicTasks cascade 포함
-    deleteClassGroup(selectedClassGroupId);
-
-    // 2) Supabase write-through — serverId 있을 때만.
-    //    class_sessions 는 FK on delete cascade 로 자동 삭제됨.
-    if (serverId && isAuthenticated && currentAcademyId) {
-      try {
+    try {
+      // class_sessions는 서버 FK on delete cascade로 함께 정리된다.
+      if (serverId && isAuthenticated && currentAcademyId) {
         await deleteServerClassGroup(serverId);
         await Promise.all([loadServerClassGroups(), loadServerClassSessions()]);
-      } catch (err) {
-        console.error('[supabase] deleteClassGroup failed', err);
-        showToast(
-          err?.message
-            ? `서버 삭제 실패: ${err.message}`
-            : '반은 삭제되었지만 서버 삭제는 실패했어요.',
-          'error',
-        );
       }
+      deleteClassGroup(selectedClassGroupId);
+      goBackFromClassGroup();
+    } catch (err) {
+      console.error('[supabase] deleteClassGroup failed', err);
+      showToast(
+        err?.message || '반을 삭제하지 못했어요. 다시 시도해주세요.',
+        'error',
+      );
     }
-
-    goBackFromClassGroup();
   };
 
   const handleGenerateActiveMonth = async () => {
@@ -409,7 +445,7 @@ export default function ClassGroupDetailPage() {
         <ClassGroupScheduleCalendar
           sessions={calendarSessions}
           students={students}
-          attendanceRecords={academyAttendanceRecords}
+          attendanceRecords={confirmedAttendanceRecords}
           calendarAnchor={calendarAnchor}
           calendarMode={calendarMode}
           todayYMD={todayStr}
@@ -424,13 +460,7 @@ export default function ClassGroupDetailPage() {
           )}
           onCalendarModeChange={setCalendarMode}
           onAddSession={canManageClasses ? () => setShowSessionTypePicker(true) : null}
-          onSessionClick={(session) => {
-            if (session.isPlanned) {
-              showToast('아직 실제 회차로 저장되지 않은 예정 수업이에요. 기록을 시작할 때 회차를 생성하도록 바꾸는 게 좋아요.', 'info');
-              return;
-            }
-            navigateToClassSession(session.id);
-          }}
+          onSessionClick={(session) => void openSession(session)}
         />
 
         {/* 전체 수업일 보기 */}
@@ -467,11 +497,6 @@ export default function ClassGroupDetailPage() {
             const normalized = normalizeRecordSchema(schema, []);
             setSavingRecordTemplate(true);
             try {
-              updateClassGroup(group.id, {
-                recordSchema: normalized,
-                recordBlocks: recordSchemaToBlockIds(normalized),
-              });
-              applyRecordSchemaToFutureSessions(group.id, normalized, todayStr);
               if (group.serverId && isAuthenticated && currentAcademyId) {
                 await updateServerClassGroup(group.serverId, {
                   record_schema: normalized,
@@ -483,6 +508,13 @@ export default function ClassGroupDetailPage() {
                   fromDate: todayStr,
                   recordSchema: normalized,
                 });
+              }
+              updateClassGroup(group.id, {
+                recordSchema: normalized,
+                recordBlocks: recordSchemaToBlockIds(normalized),
+              });
+              applyRecordSchemaToFutureSessions(group.id, normalized, todayStr);
+              if (group.serverId && isAuthenticated && currentAcademyId) {
                 await Promise.all([loadServerClassGroups(), loadServerClassSessions()]);
               }
               setShowRecordTemplate(false);
@@ -551,16 +583,9 @@ export default function ClassGroupDetailPage() {
         <AllSessionsModal
           sessions={sessions}
           students={students}
-          attendanceRecords={academyAttendanceRecords}
+          attendanceRecords={confirmedAttendanceRecords}
           todayYMD={todayStr}
-          onSessionClick={(session) => {
-            if (session.isPlanned) {
-              showToast('아직 실제 회차로 저장되지 않은 예정 수업이에요. 기록을 시작할 때 회차를 생성하도록 바꾸는 게 좋아요.', 'info');
-              return;
-            }
-            setShowAllSessions(false);
-            navigateToClassSession(session.id);
-          }}
+          onSessionClick={(session) => void openSession(session, { closeAll: true })}
           onClose={() => setShowAllSessions(false)}
         />
       )}

@@ -14,7 +14,12 @@
 //
 // 모든 함수는 어떤 외부 상태(store, fetch)도 건드리지 않는다.
 
-import { parseYMD, formatDateToYMD } from './date';
+import {
+  addDaysYMD,
+  formatDateToYMD,
+  getKoreanWeekdayIndex,
+  parseYMD,
+} from './date';
 
 // ─────────────────────────────────────────────────────────────────
 // 범용 유틸
@@ -30,55 +35,54 @@ export function isYMDInRange(ymd, fromYMD, toYMD) {
 // 'YYYY-MM-DD' 두 사이의 모든 날짜 배열.
 export function enumerateDates(fromYMD, toYMD) {
   if (!fromYMD || !toYMD) return [];
+  if (fromYMD > toYMD) return [];
   const result = [];
-  const start = parseYMD(fromYMD);
-  const end = parseYMD(toYMD);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
-  const cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  while (cur <= end) {
-    result.push(formatDateToYMD(cur));
-    cur.setDate(cur.getDate() + 1);
+  let current = fromYMD;
+  while (current <= toYMD) {
+    result.push(current);
+    current = addDaysYMD(current, 1);
+    if (!current) return [];
   }
   return result;
 }
 
-// 이번 주 [월~일] 시작/끝 YMD 반환. tz 의존 없이 local 기준.
+// 이번 주 [월~일] 시작/끝 YMD 반환. 한국 날짜 문자열 기준.
 export function getWeekRangeYMD(refDate = new Date()) {
-  const d = new Date(refDate);
-  const dow = d.getDay(); // 0=Sun
+  const ymd = typeof refDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(refDate)
+    ? refDate
+    : formatDateToYMD(refDate);
+  const dow = getKoreanWeekdayIndex(ymd);
+  if (dow < 0) return { fromYMD: '', toYMD: '' };
   // 월요일 시작. dow=0(일) → -6, dow=1(월) → 0, ...
   const diffToMonday = dow === 0 ? -6 : 1 - dow;
-  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() + diffToMonday);
-  const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
-  return { fromYMD: formatDateToYMD(monday), toYMD: formatDateToYMD(sunday) };
+  const fromYMD = addDaysYMD(ymd, diffToMonday);
+  return { fromYMD, toYMD: addDaysYMD(fromYMD, 6) };
 }
 
 // YYYY-MM-DD → JS day_of_week (0=Sun ... 6=Sat).
 export function dayOfWeekOfYMD(ymd) {
-  const d = parseYMD(ymd);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.getDay();
+  const weekday = getKoreanWeekdayIndex(ymd);
+  return weekday < 0 ? null : weekday;
 }
 
 // rule.effective_start_date 와 effective_end_date 가 ymd 를 포함하는지.
 function isRuleActiveOnDate(rule, ymd) {
   if (!rule) return false;
   if (rule.is_active === false) return false;
-  if (rule.effective_start_date && ymd < rule.effective_start_date) return false;
-  if (rule.effective_end_date && ymd > rule.effective_end_date) return false;
-  const repeatIntervalWeeks = Number(rule.repeat_interval_weeks) || 1;
-  if (repeatIntervalWeeks > 1 && rule.effective_start_date) {
-    const anchor = parseYMD(rule.effective_start_date);
-    const current = parseYMD(ymd);
-    if (Number.isNaN(anchor.getTime()) || Number.isNaN(current.getTime())) return false;
-    const mondayOf = (date) => {
-      const copy = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      const dow = copy.getDay();
-      copy.setDate(copy.getDate() + (dow === 0 ? -6 : 1 - dow));
-      return copy;
+  const effectiveStartDate = rule.effective_start_date || rule.effectiveStartDate || null;
+  const effectiveEndDate = rule.effective_end_date || rule.effectiveEndDate || null;
+  if (effectiveStartDate && ymd < effectiveStartDate) return false;
+  if (effectiveEndDate && ymd > effectiveEndDate) return false;
+  const repeatIntervalWeeks = Number(rule.repeat_interval_weeks || rule.repeatIntervalWeeks) || 1;
+  if (repeatIntervalWeeks > 1 && effectiveStartDate) {
+    const mondayOf = (dateYMD) => {
+      const dow = getKoreanWeekdayIndex(dateYMD);
+      if (dow < 0) return '';
+      return addDaysYMD(dateYMD, dow === 0 ? -6 : 1 - dow);
     };
-    const anchorMonday = mondayOf(anchor);
-    const currentMonday = mondayOf(current);
+    const anchorMonday = parseYMD(mondayOf(effectiveStartDate));
+    const currentMonday = parseYMD(mondayOf(ymd));
+    if (Number.isNaN(anchorMonday.getTime()) || Number.isNaN(currentMonday.getTime())) return false;
     const weekDiff = Math.round(
       (currentMonday.getTime() - anchorMonday.getTime()) / (7 * 24 * 60 * 60 * 1000),
     );
@@ -237,8 +241,8 @@ export function buildPlannedClassSessions({ rules = [], exceptions = [], fromDat
     const dow = dayOfWeekOfYMD(ymd);
     if (dow == null) continue;
     for (const rule of filteredRules) {
-      if (!rule.is_active) continue;
       if (rule.day_of_week !== dow) continue;
+      if (!isRuleActiveOnDate(rule, ymd)) continue;
       const relatedExc = filteredExceptions.find(
         (e) => e.class_group_id === rule.class_group_id
           && e.session_date === ymd
@@ -318,10 +322,8 @@ export const FUTURE_GENERATION_WINDOW_DAYS = 14;
 
 export function clampGenerationEndDate(originalEndYMD, { todayYMD, windowDays = FUTURE_GENERATION_WINDOW_DAYS } = {}) {
   if (!todayYMD) return originalEndYMD || null;
-  const today = parseYMD(todayYMD);
-  if (Number.isNaN(today.getTime())) return originalEndYMD || null;
-  const capDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + windowDays);
-  const capYMD = formatDateToYMD(capDate);
+  const capYMD = addDaysYMD(todayYMD, windowDays);
+  if (!capYMD) return originalEndYMD || null;
   if (!originalEndYMD) return capYMD;
   // 두 후보 중 더 빠른 날짜 반환.
   return originalEndYMD < capYMD ? originalEndYMD : capYMD;
@@ -365,12 +367,14 @@ export function mergePlannedAndActualClassSessions(plannedItems = [], actualSess
   for (const s of actualSessions) {
     if (!s) continue;
     out.push({ ...s, isPlanned: false });
-    const k = `${s.date}__${s.classGroupId}__${(s.startTime || '').slice(0, 5)}`;
+    const groupKey = s.classGroupServerId || s.classGroupId;
+    const k = `${s.date}__${groupKey}__${(s.startTime || '').slice(0, 5)}`;
     actualKeys.add(k);
   }
   for (const p of plannedItems) {
     if (!p) continue;
-    const k = `${p.date}__${p.classGroupId}__${(p.startTime || '').slice(0, 5)}`;
+    const groupKey = p.classGroupServerId || p.classGroupId;
+    const k = `${p.date}__${groupKey}__${(p.startTime || '').slice(0, 5)}`;
     if (actualKeys.has(k)) continue;
     out.push({ ...p, isPlanned: true });
   }
@@ -433,9 +437,15 @@ export function plannedToClassSessionShape(plannedItems = [], classGroups = []) 
     // p.classGroupId 는 룰 row 의 server uuid → local id 로 매핑.
     const group = byServerId.get(p.classGroupId) || byLocalId.get(p.classGroupId) || null;
     if (!group) continue; // 모르는 그룹은 건너뜀
+    // 반복 규칙 자체에는 유효 기간이 없고 반의 시작일/종료일이 기준이다.
+    // 이 필터가 없으면 개강 전·종강 후에도 UI에만 가짜 예정 회차가 나타난다.
+    if (group.status && group.status !== 'active') continue;
+    if (group.startDate && p.date < group.startDate) continue;
+    if (group.endDate && p.date > group.endDate) continue;
     out.push({
       id: p.id,
       classGroupId: group.id, // local id 로 통일
+      classGroupServerId: group.serverId || group.id,
       date: p.date,
       startTime: p.startTime || '',
       endTime: p.endTime || '',

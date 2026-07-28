@@ -10,6 +10,7 @@ import {
 import { DEFAULT_ACADEMY_SETTINGS } from '../../../constants/academySettings';
 import { getClinicOptions, subjectToKey } from '../../../constants/clinicOptions';
 import { normalizeClinicDefaultItems } from './ClinicDefaultItemsEditor';
+import { createClientUuid } from '../../../utils/uuid';
 
 function splitMaterials(value) {
   return Array.from(new Set(
@@ -99,6 +100,7 @@ function buildStudentDraft({
   return {
     recordId: currentRecord?.id || null,
     serverId: currentRecord?.serverId || null,
+    requestId: currentRecord?.serverId || createClientUuid(),
     items,
   };
 }
@@ -113,12 +115,14 @@ export default function ClinicInlineWorksheet({
   const clinicRecords = useAcademyStore((state) => state.clinicRecords) ?? [];
   const addClinicRecord = useAcademyStore((state) => state.addClinicRecord);
   const updateClinicRecord = useAcademyStore((state) => state.updateClinicRecord);
-  const setClinicRecordServerId = useAcademyStore((state) => state.setClinicRecordServerId);
   const showToast = useAcademyStore((state) => state.showToast);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const authUserId = useAuthStore((state) => state.user?.id);
   const currentAcademyId = useWorkspaceStore((state) => state.currentAcademyId);
   const loadServerClinicRecords = useWorkspaceStore((state) => state.loadServerClinicRecords);
+  const materializePlannedClassSession = useWorkspaceStore(
+    (state) => state.materializePlannedClassSession,
+  );
   const subject = group?.subject || '';
   const date = session?.date || '';
   const configuredFields = useMemo(
@@ -196,79 +200,102 @@ export default function ClinicInlineWorksheet({
     if (saving || dirtyStudentIds.size === 0) return;
     const targetStudents = students.filter((student) => dirtyStudentIds.has(student.id));
     setSaving(true);
-    let serverFailed = false;
+    const failedStudentIds = new Set();
+    let savedCount = 0;
 
     try {
+      const resolvedSession = session?.isPlanned
+        ? await materializePlannedClassSession(session)
+        : session;
+      if (!session?.isTemporary && !resolvedSession?.id) {
+        throw new Error('오늘 수업 회차를 준비하지 못했어요.');
+      }
+
       for (const student of targetStudents) {
-        const draft = drafts[student.id];
-        const existing = student.clinicRecord || (
-          draft.recordId ? clinicRecords.find((record) => record.id === draft.recordId) : null
-        );
-        const items = draft.items.map((item) => ({
-          id: item.id,
-          categoryKey: item.categoryKey,
-          activityType: item.activityType || item.title,
-          title: item.title,
-          materialTags: splitMaterials(item.materialsText),
-          description: item.description.trim(),
-          result: item.result.trim(),
-          memo: item.memo || '',
-        }));
-        const payload = {
-          studentId: student.id,
-          date,
-          subject,
-          activityType: existing?.activityType || academyProfile?.clinicDefaultActivityType || 'clinic',
-          activityName: existing?.activityName || '',
-          classGroupId: group?.id || '',
-          classSessionId: session?.isTemporary ? '' : (session?.id || ''),
-          sourceLessonRecordId: existing?.sourceLessonRecordId || null,
-          sourceSupportTags: existing?.sourceSupportTags || [],
-          sourceSupportMemo: existing?.sourceSupportMemo || '',
-          items,
-          overallMemo: existing?.overallMemo || '',
-          createdByRole: existing?.createdByRole || useAcademyStore.getState().role || '',
-          createdById: existing?.createdById || authUserId || '',
-        };
-
-        let localRecord = existing;
-        if (existing) {
-          updateClinicRecord(existing.id, payload, { silent: true });
-        } else {
-          localRecord = addClinicRecord(payload, { silent: true });
-        }
-
-        if (!isAuthenticated || !currentAcademyId || !student.serverId) continue;
-        const serverPayload = {
-          student_id: student.serverId,
-          class_group_id: group?.serverId || null,
-          class_session_id: session?.serverId || null,
-          date,
-          subject: subject || null,
-          activity_type: payload.activityType,
-          activity_name: payload.activityName || null,
-          source_lesson_record_id: null,
-          source_support_tags: payload.sourceSupportTags,
-          source_support_memo: payload.sourceSupportMemo || null,
-          items,
-          overall_memo: payload.overallMemo || null,
-          created_by_role: payload.createdByRole || null,
-          created_by_id: payload.createdById || null,
-        };
         try {
-          if (existing?.serverId) {
-            await updateServerClinicRecord(existing.serverId, serverPayload);
-          } else {
-            const created = await createAcademyClinicRecord({
-              academyId: currentAcademyId,
-              ...serverPayload,
-            });
-            if (created?.id && localRecord?.id) {
-              setClinicRecordServerId(localRecord.id, created.id);
+          const draft = drafts[student.id];
+          const existing = student.clinicRecord || (
+            draft.recordId ? clinicRecords.find((record) => record.id === draft.recordId) : null
+          );
+          const items = draft.items.map((item) => ({
+            id: item.id,
+            categoryKey: item.categoryKey,
+            activityType: item.activityType || item.title,
+            title: item.title,
+            materialTags: splitMaterials(item.materialsText),
+            description: item.description.trim(),
+            result: item.result.trim(),
+            memo: item.memo || '',
+          }));
+          const payload = {
+            studentId: student.id,
+            date,
+            subject,
+            activityType: existing?.activityType || academyProfile?.clinicDefaultActivityType || 'clinic',
+            activityName: existing?.activityName || '',
+            classGroupId: group?.id || '',
+            classSessionId: session?.isTemporary ? '' : (resolvedSession?.id || ''),
+            sourceLessonRecordId: existing?.sourceLessonRecordId || null,
+            sourceSupportTags: existing?.sourceSupportTags || [],
+            sourceSupportMemo: existing?.sourceSupportMemo || '',
+            items,
+            overallMemo: existing?.overallMemo || '',
+            createdByRole: existing?.createdByRole || useAcademyStore.getState().role || '',
+            createdById: existing?.createdById || authUserId || '',
+          };
+
+          let serverRecord = null;
+          if (isAuthenticated && currentAcademyId) {
+            if (!student.serverId) {
+              throw new Error(`${student.name} 학생의 서버 정보를 확인하지 못했어요.`);
+            }
+            if (group && !group.serverId) {
+              throw new Error('반 서버 정보를 확인하지 못했어요.');
+            }
+            if (!session?.isTemporary && resolvedSession && !resolvedSession.serverId) {
+              throw new Error('수업 회차를 준비하지 못했어요.');
+            }
+            const serverPayload = {
+              student_id: student.serverId,
+              class_group_id: group?.serverId || null,
+              class_session_id: resolvedSession?.serverId || null,
+              date,
+              subject: subject || null,
+              activity_type: payload.activityType,
+              activity_name: payload.activityName || null,
+              source_lesson_record_id: null,
+              source_support_tags: payload.sourceSupportTags,
+              source_support_memo: payload.sourceSupportMemo || null,
+              items,
+              overall_memo: payload.overallMemo || null,
+              created_by_role: payload.createdByRole || null,
+              created_by_id: payload.createdById || null,
+            };
+            if (existing?.serverId) {
+              serverRecord = await updateServerClinicRecord(existing.serverId, serverPayload);
+            } else {
+              serverRecord = await createAcademyClinicRecord({
+                academyId: currentAcademyId,
+                id: draft.requestId,
+                ...serverPayload,
+              });
             }
           }
+
+          if (existing) {
+            updateClinicRecord(existing.id, {
+              ...payload,
+              serverId: serverRecord?.id || existing.serverId || null,
+            }, { silent: true });
+          } else {
+            addClinicRecord({
+              ...payload,
+              serverId: serverRecord?.id || null,
+            }, { silent: true });
+          }
+          savedCount += 1;
         } catch (error) {
-          serverFailed = true;
+          failedStudentIds.add(student.id);
           console.error('[supabase] inline clinic record sync failed', error);
         }
       }
@@ -277,17 +304,19 @@ export default function ClinicInlineWorksheet({
         try {
           await loadServerClinicRecords();
         } catch (error) {
-          serverFailed = true;
           console.error('[supabase] clinic records refresh failed', error);
         }
       }
-      setDirtyStudentIds(new Set());
+      setDirtyStudentIds(failedStudentIds);
       showToast(
-        serverFailed
-          ? '기록은 저장했지만 일부 서버 동기화에 실패했어요.'
-          : `${targetStudents.length}명의 클리닉 기록을 저장했어요.`,
-        serverFailed ? 'error' : 'success',
+        failedStudentIds.size > 0
+          ? `${savedCount}명 저장, ${failedStudentIds.size}명은 저장하지 못했어요. 다시 시도해주세요.`
+          : `${savedCount}명의 클리닉 기록을 저장했어요.`,
+        failedStudentIds.size > 0 ? 'error' : 'success',
       );
+    } catch (error) {
+      console.error('[clinic] inline clinic record save failed', error);
+      showToast(error?.message || '클리닉 기록을 저장하지 못했어요.', 'error');
     } finally {
       setSaving(false);
     }

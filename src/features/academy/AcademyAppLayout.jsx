@@ -7,6 +7,7 @@ import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useChatStore, { totalUnread } from '../../store/useChatStore';
 import { currentUserCan } from '../../utils/staffPermissions';
 import AttendanceSettingsSheet from './attendance/AttendanceSettingsSheet';
+import { readAttendanceSettings } from './attendance/attendanceHelpers';
 import TuitionPolicyOnboardingSheet from './onboarding/TuitionPolicyOnboardingSheet';
 import Sidebar from '../../components/Sidebar';
 
@@ -78,7 +79,7 @@ const TAB_CONFIG = {
   // 역할 변경 및 개별 권한 수정이 즉시 탭 구성에 반영되도록 탭 배열 자체에 예외를 두지 않는다.
   assistant: [
     { id: 'home',     label: '홈',   Icon: Home },
-    { id: 'attendance', label: '등하원', Icon: CheckSquare },
+    { id: 'attendance', label: '등하원', Icon: CheckSquare, mobileBottomNav: false },
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
@@ -299,6 +300,8 @@ export default function AcademyAppLayout() {
   const currentAcademy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
   const clinicEnabled = academyProfile?.clinicRequired
     ?? (currentAcademy?.clinic_required !== false);
+  const studentAttendanceEnabled =
+    readAttendanceSettings(currentAcademy).studentCheckMethod !== 'disabled';
   const needsAttendanceOnboarding = role === 'owner'
     && isWorkspaceReady
     && !!currentAcademy
@@ -332,7 +335,8 @@ export default function AcademyAppLayout() {
           && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditClinicRecords');
       }
       if (tab.id === 'attendance') {
-        return currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance');
+        return studentAttendanceEnabled
+          && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance');
       }
       if (tab.id === 'classes') {
         return currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
@@ -355,7 +359,7 @@ export default function AcademyAppLayout() {
       }
       return true;
     });
-  }, [baseTabs, role, myStaffProfile, clinicEnabled]);
+  }, [baseTabs, role, myStaffProfile, clinicEnabled, studentAttendanceEnabled]);
 
   // 채팅 안 읽음 — 하단 탭/사이드바 배지.
   const chatMessages = useChatStore((s) => s.messages);
@@ -370,7 +374,7 @@ export default function AcademyAppLayout() {
     const seen = new Set();
     for (const id of [...MOBILE_PRIMARY_TAB_IDS, ...MOBILE_FALLBACK_TAB_IDS]) {
       const tab = tabs.find((item) => item.id === id);
-      if (!tab || seen.has(tab.id) || tab.id === 'more') continue;
+      if (!tab || tab.pilotLocked || seen.has(tab.id) || tab.id === 'more') continue;
       selected.push(tab);
       seen.add(tab.id);
       if (selected.length === 5) break;

@@ -10,14 +10,19 @@ import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import { checkNotificationPermission, requestNotificationPermission } from '../../../services/pushNotifications';
 import { tossSpring } from '../../../utils/motion';
+import {
+  addDaysYMD,
+  formatDateToYMD,
+  getKoreaDateTimeParts,
+  getTodayYMD,
+} from '../../../utils/date';
 
 const ROLE_LABELS = { owner: '원장', teacher: '선생님', assistant: '선생님', manager: '운영 매니저' };
 
 function formatTime(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const h = d.getHours();
-  const m = d.getMinutes();
+  const parts = getKoreaDateTimeParts(iso);
+  if (!parts) return '';
+  const { hour: h, minute: m } = parts;
   const ampm = h < 12 ? '오전' : '오후';
   const hh = h % 12 || 12;
   return `${ampm} ${hh}:${String(m).padStart(2, '0')}`;
@@ -25,14 +30,12 @@ function formatTime(iso) {
 
 function formatThreadStamp(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return formatTime(iso);
-  const yest = new Date(now);
-  yest.setDate(now.getDate() - 1);
-  if (d.toDateString() === yest.toDateString()) return '어제';
-  return `${d.getMonth() + 1}월 ${d.getDate()}일`;
+  const ymd = formatDateToYMD(new Date(iso));
+  const todayYmd = getTodayYMD();
+  if (ymd === todayYmd) return formatTime(iso);
+  if (ymd === addDaysYMD(todayYmd, -1)) return '어제';
+  const [, month, day] = ymd.split('-').map(Number);
+  return `${month}월 ${day}일`;
 }
 
 export default function ChatPage({ displayMode = 'page' }) {

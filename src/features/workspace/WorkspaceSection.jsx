@@ -381,7 +381,11 @@ function useLastSyncedLabel() {
   const c = useWorkspaceStore((s) => s.serverClassSessionsLoadedAt);
   const latest = [a, b, c].filter(Boolean).sort().pop() || null;
   if (!latest) return null;
-  return new Date(latest).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  return new Date(latest).toLocaleTimeString('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 // Phase 28: "현재 학원" 카드. 학원 이름 + 권한 + 마지막 동기화 시간 + 새로고침.

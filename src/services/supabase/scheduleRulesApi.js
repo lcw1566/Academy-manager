@@ -261,6 +261,7 @@ const CLASS_SCHEDULE_RULE_FIELDS = new Set([
   'academy_id', 'class_group_id',
   'day_of_week', 'start_time', 'end_time',
   'teacher_user_id', 'assistant_ids', 'room', 'is_active',
+  'effective_start_date', 'effective_end_date',
 ]);
 
 function sanitizeClassScheduleRule(input, { strip = [] } = {}) {
@@ -325,6 +326,80 @@ export async function deleteClassScheduleRule(id) {
     .eq('id', id);
   if (error) throw error;
   return true;
+}
+
+// SQL 048 — 반과 반복 규칙을 한 트랜잭션으로 생성한다.
+// classGroupId는 클라이언트에서 한 번 만든 UUID를 재사용하므로, 응답이 유실되어
+// 같은 요청을 다시 보내도 서버에는 반이 하나만 남는다.
+export async function createClassGroupWithRulesTransaction({
+  academyId,
+  classGroupId,
+  group,
+  rules,
+} = {}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!classGroupId) throw new Error('classGroupId가 필요해요.');
+  if (!group || typeof group !== 'object') throw new Error('반 정보가 필요해요.');
+  if (!Array.isArray(rules) || rules.length === 0) {
+    throw new Error('수업 규칙이 필요해요.');
+  }
+
+  const { data, error } = await supabase.rpc('create_class_group_with_rules', {
+    p_academy_id: academyId,
+    p_class_group_id: classGroupId,
+    p_group: group,
+    p_rules: rules,
+  });
+  if (error) {
+    if (['42883', 'PGRST202'].includes(error.code)) {
+      const migrationError = new Error(
+        '반 안전 생성 기능이 아직 서버에 적용되지 않았어요. SQL 048을 먼저 실행해주세요.',
+      );
+      migrationError.code = 'TRANSACTIONAL_CLASS_CREATION_NOT_INSTALLED';
+      throw migrationError;
+    }
+    throw error;
+  }
+  return data ?? null;
+}
+
+// SQL 047 — 반 정보와 반복 규칙 전체를 한 PostgreSQL 트랜잭션으로 수정한다.
+export async function updateClassGroupWithRulesTransaction({
+  academyId,
+  classGroupId,
+  groupPatch,
+  rules,
+  effectiveFrom,
+} = {}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!classGroupId) throw new Error('classGroupId가 필요해요.');
+  if (!groupPatch || typeof groupPatch !== 'object') {
+    throw new Error('반 수정 정보가 필요해요.');
+  }
+  if (!Array.isArray(rules) || rules.length === 0) {
+    throw new Error('수업 규칙이 필요해요.');
+  }
+
+  const { data, error } = await supabase.rpc('update_class_group_with_rules', {
+    p_academy_id: academyId,
+    p_class_group_id: classGroupId,
+    p_group_patch: groupPatch,
+    p_rules: rules,
+    p_effective_from: effectiveFrom || undefined,
+  });
+  if (error) {
+    if (['42883', 'PGRST202'].includes(error.code)) {
+      const migrationError = new Error(
+        '반 규칙 안전 저장 기능이 아직 서버에 적용되지 않았어요. SQL 047을 먼저 실행해주세요.',
+      );
+      migrationError.code = 'TRANSACTIONAL_CLASS_RULE_UPDATE_NOT_INSTALLED';
+      throw migrationError;
+    }
+    throw error;
+  }
+  return data ?? null;
 }
 
 
@@ -403,4 +478,36 @@ export async function deleteClassSessionException(id) {
     .eq('id', id);
   if (error) throw error;
   return true;
+}
+
+// SQL 046 — 반복 규칙을 필요한 날짜 범위의 실제 class_sessions로 준비한다.
+// 서버 함수가 멱등성과 동시 호출 잠금을 담당하므로 여러 화면/기기에서 호출해도
+// 같은 회차가 중복 생성되지 않는다.
+export async function ensureClassSessionsForRange({
+  academyId,
+  fromDate,
+  toDate,
+  classGroupId = null,
+} = {}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!fromDate || !toDate) throw new Error('수업을 준비할 날짜 범위가 필요해요.');
+
+  const { data, error } = await supabase.rpc('ensure_class_sessions_for_range', {
+    p_academy_id: academyId,
+    p_from_date: fromDate,
+    p_to_date: toDate,
+    p_class_group_id: classGroupId || null,
+  });
+  if (error) {
+    if (['42883', 'PGRST202'].includes(error.code)) {
+      const migrationError = new Error(
+        '수업 일정 자동 준비 기능이 아직 서버에 적용되지 않았어요. SQL 046을 먼저 실행해주세요.',
+      );
+      migrationError.code = 'CLASS_SESSION_MATERIALIZATION_NOT_INSTALLED';
+      throw migrationError;
+    }
+    throw error;
+  }
+  return data ?? [];
 }

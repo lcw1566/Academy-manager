@@ -7,6 +7,7 @@ import { createAcademyClassSession } from '../../../services/supabase/domainApi'
 import { today, formatDateShort } from '../../../utils/date';
 import { normalizeRecordSchema } from '../../../constants/learningActivitySettings';
 import { mapClassSessionToServerPayload } from './ClassGroupFormModal';
+import { isConfirmedAttendance } from '../../../utils/attendanceRecords';
 
 export default function MakeupSessionModal({
   group,
@@ -58,6 +59,7 @@ export default function MakeupSessionModal({
     const absentIds = attendanceRecords
       .filter((record) => (
         record.sessionId === originSessionId
+        && isConfirmedAttendance(record)
         && ['absent', 'makeup'].includes(record.status)
       ))
       .map((record) => record.studentId)

@@ -103,6 +103,7 @@ export function mapServerClassSessionToLocal(cs) {
     id: cs.id,
     serverId: cs.id,
     classGroupId: cs.class_group_id,
+    classGroupServerId: cs.class_group_id,
     date: cs.date,
     startTime: cs.start_time ?? '',
     endTime: cs.end_time ?? '',
@@ -201,6 +202,10 @@ export function mapServerAttendanceRecordToLocal(a) {
     // Phase 41 — SQL 011 컬럼.
     source: a.source ?? null,
     checkedAt: a.checked_at ?? null,
+    confirmationState: a.confirmation_state
+      ?? (a.source === 'qr' ? 'auto_inferred' : 'legacy_confirmed'),
+    confirmedAt: a.confirmed_at ?? null,
+    confirmedBy: a.confirmed_by ?? null,
   };
 }
 

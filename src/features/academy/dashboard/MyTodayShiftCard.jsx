@@ -16,7 +16,7 @@ import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { updateAcademyStaffShift as updateServerStaffShift } from '../../../services/supabase/domainApi';
-import { today as todayDate } from '../../../utils/date';
+import { getKoreaHHMM, today as todayDate } from '../../../utils/date';
 // Phase 44.6 / Phase B — 룰 기반 예정 근무 머지.
 import {
   buildPlannedStaffSchedule,
@@ -26,10 +26,7 @@ import {
 import { readAttendanceSettings } from '../attendance/attendanceHelpers';
 
 function nowHHmm() {
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
+  return getKoreaHHMM();
 }
 
 function formatClock(value) {

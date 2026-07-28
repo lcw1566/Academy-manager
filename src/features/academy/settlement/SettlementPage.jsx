@@ -15,7 +15,14 @@ import {
 import { updateAcademyBillingSettings } from '../../../services/supabase/workspaceApi';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
-import { formatMonth } from '../../../utils/date';
+import {
+  formatMonth,
+  getCurrentMonth,
+  getDaysInMonth,
+  nextMonth,
+  prevMonth,
+  today,
+} from '../../../utils/date';
 import { currentUserCan } from '../../../utils/staffPermissions';
 
 // local 수납 → server payments 컬럼 매핑. student.serverId 없으면 null 반환.
@@ -67,26 +74,25 @@ function formatHours(h) {
 
 function getRecentMonths() {
   const result = [];
-  const now = new Date();
+  let month = getCurrentMonth();
   for (let i = 0; i <= MONTHS_BACK; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    result.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    result.push(month);
+    month = prevMonth(month);
   }
   return result;
 }
 
 function addMonth(value, delta) {
-  const [year, month] = value.split('-').map(Number);
-  const d = new Date(year, month - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  let result = value;
+  const move = delta >= 0 ? nextMonth : prevMonth;
+  for (let i = 0; i < Math.abs(delta); i += 1) result = move(result);
+  return result;
 }
 
 function getMonthDateRange(month) {
-  const [year, monthNum] = month.split('-').map(Number);
-  const last = new Date(year, monthNum, 0);
   return {
     fromDate: `${month}-01`,
-    toDate: `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`,
+    toDate: `${month}-${String(getDaysInMonth(month)).padStart(2, '0')}`,
   };
 }
 
@@ -220,7 +226,7 @@ export default function SettlementPage({ operationsOnly = false }) {
   const handleTogglePaid = async (payment) => {
     if (!canManagePayments) return;
     const nextStatus = payment.status === 'paid' ? 'unpaid' : 'paid';
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = today();
     const patch = nextStatus === 'paid'
       ? { status: 'paid', paidDate: payment.paidDate || todayStr }
       : { status: 'unpaid', paidDate: null };
@@ -289,7 +295,7 @@ export default function SettlementPage({ operationsOnly = false }) {
       try {
         await updateServerPayroll(payroll.serverId, {
           status: 'completed',
-          paid_date: new Date().toISOString().slice(0, 10),
+          paid_date: today(),
         });
         await loadServerPayrolls();
       } catch (err) {

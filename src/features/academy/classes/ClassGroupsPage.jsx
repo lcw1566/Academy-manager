@@ -7,7 +7,7 @@ import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import ClassGroupFormModal from './ClassGroupFormModal';
-import { today, formatDateShort } from '../../../utils/date';
+import { today, addDaysYMD, formatDateShort } from '../../../utils/date';
 import { getTeacherDisplayName, OWNER_TEACHER_ID } from '../../../utils/format';
 import { useState } from 'react';
 import { currentUserCan } from '../../../utils/staffPermissions';
@@ -68,11 +68,7 @@ export default function ClassGroupsPage() {
   const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
   const mergedClassSessions = useMemo(() => {
     const from = todayStr;
-    const to = (() => {
-      const d = new Date(todayStr);
-      d.setDate(d.getDate() + 60);
-      return d.toISOString().slice(0, 10);
-    })();
+    const to = addDaysYMD(todayStr, 60);
     const plannedRaw = buildPlannedClassSessions({
       rules: classScheduleRules,
       exceptions: classSessionExceptions,

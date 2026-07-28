@@ -2,6 +2,7 @@ import {
   ACADEMY_SUBJECT_OPTIONS,
   getTuitionRateForLevel,
 } from '../constants/academySettings.js';
+import { getDaysInMonth } from './date.js';
 
 export function getStudentTuitionLevel(schoolType = '', grade = '') {
   const prefix = {
@@ -50,7 +51,7 @@ export function calculateSuggestedStudentTuition({
 function monthRange(month) {
   const [year, monthNumber] = String(month || '').split('-').map(Number);
   if (!year || !monthNumber) return null;
-  const lastDay = new Date(year, monthNumber, 0).getDate();
+  const lastDay = getDaysInMonth(year, monthNumber);
   return {
     start: `${month}-01`,
     end: `${month}-${String(lastDay).padStart(2, '0')}`,

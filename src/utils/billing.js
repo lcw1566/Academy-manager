@@ -1,4 +1,5 @@
 import { generateClassDates } from './recurringClass';
+import { getDaysInMonth } from './date';
 
 /**
  * Calculate duration in decimal hours between two HH:MM times.
@@ -40,7 +41,7 @@ export function calculateMonthSessionCount({ yearMonth, daysOfWeek, startDate, e
 
   const [year, month] = yearMonth.split('-').map(Number);
   const monthStart = `${yearMonth}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
+  const lastDay = getDaysInMonth(year, month);
   const monthEnd = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
 
   const effectiveStart = !startDate || startDate < monthStart ? monthStart : startDate;
@@ -65,7 +66,7 @@ export function calculateMonthSessionCount({ yearMonth, daysOfWeek, startDate, e
  */
 export function calculateFullMonthSessionCount({ yearMonth, daysOfWeek, endDate, repeatType }) {
   const [year, month] = yearMonth.split('-').map(Number);
-  const lastDay = new Date(year, month, 0).getDate();
+  const lastDay = getDaysInMonth(year, month);
   const monthEnd = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
 
   return calculateMonthSessionCount({
@@ -125,7 +126,7 @@ export function generatePaymentForMonth({ group, classes, month, studentId }) {
   const sessionCount = monthClasses.length;
 
   const [year, monthNum] = month.split('-').map(Number);
-  const lastDay = new Date(year, monthNum, 0).getDate();
+  const lastDay = getDaysInMonth(year, monthNum);
   const monthStart = `${month}-01`;
   const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
 

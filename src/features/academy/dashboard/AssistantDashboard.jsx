@@ -4,7 +4,13 @@ import { ClipboardList, ChevronRight, Check, CheckSquare } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { today, formatDateShort, greetingByTime } from '../../../utils/date';
+import {
+  getKoreaMinutes,
+  getWeekDates,
+  today,
+  formatDateShort,
+  greetingByTime,
+} from '../../../utils/date';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
@@ -130,7 +136,7 @@ export default function AssistantDashboard() {
   // 홈 우선 노출 대상: 오늘 종료 후 2시간 이내 + 아직 기록이 남은 학생이 있는 세션.
   // 모든 학생 기록을 마친 세션은 우선 표시에서 제외한다.
   const justFinishedSessions = useMemo(() => {
-    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const nowMin = getKoreaMinutes(now);
 
     // 배정 세션이 하나도 없으면(배정 미설정 학원) 오늘 모든 세션을 후보로 사용.
     const pool = myAssignedSessions.length > 0
@@ -168,15 +174,8 @@ export default function AssistantDashboard() {
     [clinicRecords, todayStr],
   );
   const weekRecordCount = useMemo(() => {
-    const start = new Date(todayStr);
-    start.setDate(start.getDate() - start.getDay());
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    return clinicRecords.filter((r) => {
-      if (!r.date) return false;
-      const d = new Date(r.date);
-      return d >= start && d <= end;
-    }).length;
+    const weekDates = new Set(getWeekDates(todayStr));
+    return clinicRecords.filter((record) => weekDates.has(record.date)).length;
   }, [clinicRecords, todayStr]);
 
   // Phase 32 — 내 급여 (이번 달)

@@ -9,9 +9,9 @@
 // 로그인 직후 initializeWorkspace() 1회 호출.
 // 로그아웃 시 clearWorkspace() 로 정리.
 //
-// ⚠ 이 store 는 useAcademyStore (localStorage 기반 도메인 데이터) 와 무관합니다.
-//   현재 단계에서 서버 학생은 "fetch 동작 확인용 read-only" 로만 보관하고,
-//   기존 학생 추가/수정/삭제 흐름은 그대로 localStorage 만 사용합니다.
+// useAcademyStore는 화면용 로컬 캐시를 담당하고, 로그인된 학원의 핵심 쓰기는
+// Supabase 성공 뒤 해당 캐시를 갱신한다. 이 store는 서버 목록과 현재 학원 상태를
+// 관리한다.
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
@@ -61,11 +61,18 @@ import {
   createStaffAttendanceLog,
   updateStaffAttendanceLog,
   createClassSessionException,
+  ensureClassSessionsForRange as ensureClassSessionsForRangeRpc,
 } from '../services/supabase/scheduleRulesApi';
 import useAuthStore from './useAuthStore';
 import useAcademyStore from './useAcademyStore';
 import { isTransientRequestError, retryAsync } from '../utils/asyncRetry';
 import { localizeError } from '../utils/localizeError';
+import {
+  getCurrentMonth,
+  getDaysInMonth,
+  getTodayYMD,
+  nextMonth,
+} from '../utils/date';
 
 // Phase 32 — 학원 선택 picked 여부. sessionStorage 에도 동기화하지만 React 가
 // 변화를 감지할 수 있도록 store state 로도 관리한다. WorkspaceSelectionPage 의
@@ -78,6 +85,16 @@ const WORKSPACE_STORAGE_KEY = 'seenit-workspace';
 // 두 벌씩 보내지 않도록 같은 사용자의 실행 중인 Promise를 공유한다.
 let workspaceInitializationPromise = null;
 let workspaceInitializationUserId = null;
+const classSessionMaterializationPromises = new Map();
+const pendingWorkspaceRealtimeReasons = new Set();
+
+function getDefaultClassSessionRange() {
+  const targetMonth = nextMonth(getCurrentMonth());
+  return {
+    fromDate: getTodayYMD(),
+    toDate: `${targetMonth}-${String(getDaysInMonth(targetMonth)).padStart(2, '0')}`,
+  };
+}
 
 function ensureCurrentAcademyDataScope(academyId) {
   const userId = useAuthStore.getState().user?.id;
@@ -336,6 +353,7 @@ const useWorkspaceStore = create(
         if (channel && supabase) {
           supabase.removeChannel(channel);
         }
+        pendingWorkspaceRealtimeReasons.clear();
         set({
           workspaceRealtimeChannel: null,
           workspaceRealtimeRefreshTimer: null,
@@ -343,20 +361,127 @@ const useWorkspaceStore = create(
       },
 
       scheduleWorkspaceRealtimeRefresh: (reason = 'realtime') => {
+        pendingWorkspaceRealtimeReasons.add(reason);
         const prevTimer = get().workspaceRealtimeRefreshTimer;
         if (prevTimer) clearTimeout(prevTimer);
         const timer = setTimeout(async () => {
           set({ workspaceRealtimeRefreshTimer: null });
+          const reasons = [...pendingWorkspaceRealtimeReasons];
+          pendingWorkspaceRealtimeReasons.clear();
           try {
-            await get().refreshWorkspaceCollaborationState({ reason });
-            if (reason === 'staff_attendance_logs' && useAcademyStore.getState().role === 'owner') {
+            const requiresFullRefresh = reasons.some(
+              (item) => item === 'realtime' || item === 'realtime-subscribed',
+            );
+            if (requiresFullRefresh) {
+              await get().refreshWorkspaceCollaborationState({
+                reason: reasons.join(','),
+              });
+            } else {
+              await get().refreshWorkspaceTables({ tables: reasons });
+            }
+            if (
+              reasons.includes('staff_attendance_logs')
+              && useAcademyStore.getState().role === 'owner'
+            ) {
               useAcademyStore.getState().showToast?.('직원 근퇴 기록이 업데이트됐어요.');
             }
           } catch (err) {
-            console.warn('[workspace realtime] refresh failed', reason, err);
+            console.warn('[workspace realtime] refresh failed', reasons, err);
           }
         }, 250);
         set({ workspaceRealtimeRefreshTimer: timer });
+      },
+
+      // Realtime 이벤트가 발생한 테이블만 다시 읽는다. 여러 테이블 이벤트가
+      // 250ms 안에 함께 오면 중복 없이 한 번씩 병렬 조회한다.
+      refreshWorkspaceTables: async ({ tables = [] } = {}) => {
+        if (!isSupabaseConfigured) return;
+        const uniqueTables = [...new Set(tables)].filter(Boolean);
+        if (uniqueTables.length === 0) return;
+
+        const tasks = new Map();
+        const queue = (key, task) => {
+          if (!tasks.has(key)) tasks.set(key, task);
+        };
+        let shouldSyncStaff = false;
+        for (const table of uniqueTables) {
+          switch (table) {
+            case 'academies':
+              queue('memberships', () => get().loadMemberships());
+              break;
+            case 'academy_invitations':
+              queue('academyInvitations', () => get().loadAcademyInvitations());
+              queue('myPendingInvitations', () => get().loadMyPendingInvitations());
+              shouldSyncStaff = true;
+              break;
+            case 'academy_members':
+              queue('memberships', () => get().loadMemberships());
+              queue('memberProfiles', () => get().loadAcademyMemberProfiles());
+              queue('staffProfiles', () => get().loadAcademyStaffProfiles());
+              shouldSyncStaff = true;
+              break;
+            case 'academy_staff_profiles':
+              queue('staffProfiles', () => get().loadAcademyStaffProfiles());
+              shouldSyncStaff = true;
+              break;
+            case 'academy_staff_work_rules':
+              queue('staffWorkRules', () => get().loadStaffWorkRules());
+              break;
+            case 'academy_staff_work_exceptions':
+              queue('staffWorkExceptions', () => get().loadStaffWorkExceptions());
+              break;
+            case 'students':
+              queue('students', () => get().loadServerStudents());
+              break;
+            case 'class_groups':
+              queue('classGroups', () => get().loadServerClassGroups());
+              break;
+            case 'class_sessions':
+              queue('classSessions', () => get().loadServerClassSessions());
+              break;
+            case 'lesson_records':
+              queue('lessonRecords', () => get().loadServerLessonRecords());
+              break;
+            case 'attendance_records':
+              queue('attendanceRecords', () => get().loadServerAttendanceRecords());
+              break;
+            case 'clinic_records':
+              queue('clinicRecords', () => get().loadServerClinicRecords());
+              break;
+            case 'payments':
+              queue('payments', () => get().loadServerPayments());
+              break;
+            case 'payrolls':
+              queue('payrolls', () => get().loadServerPayrolls());
+              break;
+            case 'academy_staff_shifts':
+              queue('staffShifts', () => get().loadServerStaffShifts());
+              break;
+            case 'student_check_events':
+              queue('studentCheckEvents', () => get().loadStudentCheckEvents());
+              break;
+            case 'class_schedule_rules':
+              queue('classScheduleRules', () => get().loadClassScheduleRules());
+              break;
+            case 'class_session_exceptions':
+              queue('classSessionExceptions', () => get().loadClassSessionExceptions());
+              break;
+            case 'staff_attendance_logs':
+              queue('staffAttendanceLogs', () => get().loadStaffAttendanceLogs({ limit: 200 }));
+              break;
+            case 'profiles':
+              queue('profile', () => get().syncProfile({ reportError: false }));
+              if (get().currentAcademyId) {
+                queue('memberProfiles', () => get().loadAcademyMemberProfiles());
+              }
+              shouldSyncStaff = true;
+              break;
+            default:
+              break;
+          }
+        }
+        await Promise.all([...tasks.values()].map((task) => task()));
+        if (shouldSyncStaff) get().syncLocalStaffFromServerMembers();
       },
 
       refreshWorkspaceCollaborationState: async () => {
@@ -816,7 +941,11 @@ const useWorkspaceStore = create(
         // 학원 전환 시 서버 데이터 갱신
         get().loadServerStudents();
         get().loadServerClassGroups();
-        get().loadServerClassSessions();
+        void get().loadServerClassSessions().then(
+          () => get().ensureClassSessionsForRangeLocal(),
+        ).catch((error) => {
+          console.warn('[class-session-materialization] 학원 전환 후 준비 실패', error);
+        });
         get().loadServerLessonRecords();
         get().loadServerAttendanceRecords();
         get().loadServerClinicRecords();
@@ -901,6 +1030,7 @@ const useWorkspaceStore = create(
             serverStudents: list,
             serverStudentsLoadedAt: new Date().toISOString(),
           });
+          useAcademyStore.getState().syncAcademyTableFromServer?.('students', list);
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
@@ -933,6 +1063,7 @@ const useWorkspaceStore = create(
             serverClassGroups: list,
             serverClassGroupsLoadedAt: new Date().toISOString(),
           });
+          useAcademyStore.getState().syncAcademyTableFromServer?.('classGroups', list);
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
@@ -965,6 +1096,9 @@ const useWorkspaceStore = create(
             serverClassSessions: list,
             serverClassSessionsLoadedAt: new Date().toISOString(),
           });
+          useAcademyStore.getState().syncClassSessionsFromServer?.(list, {
+            preserveLocalOnly: false,
+          });
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
@@ -976,6 +1110,91 @@ const useWorkspaceStore = create(
         } finally {
           if (isCurrentAcademy(get, academyId)) set({ isServerClassSessionsLoading: false });
         }
+      },
+
+      // SQL 046: 필요한 범위의 반복 수업을 실제 회차로 준비하고 즉시 로컬에 반영한다.
+      // 같은 학원/범위 요청은 브라우저 안에서도 Promise를 공유해 불필요한 왕복을 줄인다.
+      ensureClassSessionsForRangeLocal: async ({
+        fromDate,
+        toDate,
+        classGroupId = null,
+      } = {}) => {
+        if (!isSupabaseConfigured) return [];
+        const academyId = get().currentAcademyId;
+        if (!academyId) return [];
+        const defaults = getDefaultClassSessionRange();
+        const safeFromDate = fromDate || defaults.fromDate;
+        const safeToDate = toDate || defaults.toDate;
+        const requestKey = [
+          academyId,
+          safeFromDate,
+          safeToDate,
+          classGroupId || 'all',
+        ].join(':');
+        const running = classSessionMaterializationPromises.get(requestKey);
+        if (running) return running;
+
+        const request = (async () => {
+          const materialized = await ensureClassSessionsForRangeRpc({
+            academyId,
+            fromDate: safeFromDate,
+            toDate: safeToDate,
+            classGroupId,
+          });
+          if (!isCurrentAcademy(get, academyId)) return [];
+          const byId = new Map(
+            (get().serverClassSessions || []).map((session) => [session.id, session]),
+          );
+          for (const session of materialized) byId.set(session.id, session);
+          set({
+            serverClassSessions: [...byId.values()],
+            serverClassSessionsLoadedAt: new Date().toISOString(),
+          });
+          // 범위 RPC가 반환한 행만 병합하므로 날짜 이동 때마다 전체 회차 목록을
+          // 다시 다운로드하지 않는다.
+          useAcademyStore.getState().syncClassSessionsFromServer?.(materialized, {
+            preserveLocalOnly: true,
+          });
+          return materialized;
+        })();
+        classSessionMaterializationPromises.set(requestKey, request);
+        try {
+          return await request;
+        } finally {
+          if (classSessionMaterializationPromises.get(requestKey) === request) {
+            classSessionMaterializationPromises.delete(requestKey);
+          }
+        }
+      },
+
+      // UI에만 존재하던 규칙 예정 회차를 클릭하는 순간 실제 회차로 바꿔 반환한다.
+      materializePlannedClassSession: async (plannedSession) => {
+        if (!plannedSession) return null;
+        if (!plannedSession.isPlanned) return plannedSession;
+        const academyState = useAcademyStore.getState();
+        const group = (academyState.classGroups || []).find(
+          (item) => item.id === plannedSession.classGroupId
+            || item.serverId === plannedSession.classGroupId,
+        );
+        const serverGroupId = group?.serverId || group?.id || plannedSession.classGroupId;
+        await get().ensureClassSessionsForRangeLocal({
+          fromDate: plannedSession.date,
+          toDate: plannedSession.date,
+          classGroupId: serverGroupId,
+        });
+
+        const start = String(plannedSession.startTime || '').slice(0, 5);
+        return (useAcademyStore.getState().classSessions || []).find((session) => (
+          !session.isPlanned
+          && !['canceled', 'cancelled'].includes(session.status)
+          && session.date === plannedSession.date
+          && (
+            session.classGroupId === group?.id
+            || session.classGroupId === group?.serverId
+            || session.classGroupId === serverGroupId
+          )
+          && String(session.startTime || '').slice(0, 5) === start
+        )) || null;
       },
 
       // 서버 수업 기록 목록 조회 (read-only).
@@ -997,6 +1216,7 @@ const useWorkspaceStore = create(
             serverLessonRecords: list,
             serverLessonRecordsLoadedAt: new Date().toISOString(),
           });
+          useAcademyStore.getState().syncAcademyTableFromServer?.('lessonRecords', list);
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
@@ -1029,6 +1249,7 @@ const useWorkspaceStore = create(
             serverPayrolls: list,
             serverPayrollsLoadedAt: new Date().toISOString(),
           });
+          useAcademyStore.getState().syncAcademyTableFromServer?.('payrolls', list);
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
@@ -1097,6 +1318,7 @@ const useWorkspaceStore = create(
             serverPayments: list,
             serverPaymentsLoadedAt: new Date().toISOString(),
           });
+          useAcademyStore.getState().syncAcademyTableFromServer?.('payments', list);
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
@@ -1129,6 +1351,7 @@ const useWorkspaceStore = create(
             serverClinicRecords: list,
             serverClinicRecordsLoadedAt: new Date().toISOString(),
           });
+          useAcademyStore.getState().syncAcademyTableFromServer?.('clinicRecords', list);
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
@@ -1161,6 +1384,7 @@ const useWorkspaceStore = create(
             serverAttendanceRecords: list,
             serverAttendanceRecordsLoadedAt: new Date().toISOString(),
           });
+          useAcademyStore.getState().syncAcademyTableFromServer?.('attendanceRecords', list);
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
@@ -1457,7 +1681,12 @@ const useWorkspaceStore = create(
         await Promise.all([
           get().loadServerStudents(),
           get().loadServerClassGroups(),
-          get().loadServerClassSessions(),
+          get().loadServerClassSessions().then(
+            () => get().ensureClassSessionsForRangeLocal(),
+          ).catch((error) => {
+            console.warn('[class-session-materialization] 초대 수락 후 준비 실패', error);
+            return [];
+          }),
           get().loadServerLessonRecords(),
           get().loadServerAttendanceRecords(),
           get().loadServerClinicRecords(),
@@ -1840,7 +2069,9 @@ const useWorkspaceStore = create(
               }),
               get().loadServerStudents(),
               get().loadServerClassGroups(),
-              get().loadServerClassSessions(),
+              get().loadServerClassSessions().then(
+                () => get().ensureClassSessionsForRangeLocal(),
+              ),
               get().loadServerLessonRecords(),
               get().loadServerAttendanceRecords(),
               get().loadServerClinicRecords(),

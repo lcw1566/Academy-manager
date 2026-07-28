@@ -1,4 +1,10 @@
-import { parseYMD, formatDateToYMD } from './date';
+import {
+  addDaysYMD,
+  getDaysInMonth,
+  getKoreanWeekdayIndex,
+  nextMonth,
+  parseYMD,
+} from './date';
 
 export const DAY_OPTIONS = [
   { id: 1, label: '월' },
@@ -19,13 +25,25 @@ export const formatDays = (daysOfWeek) =>
     .map((d) => DAY_NAMES[d])
     .join(', ');
 
-const getMonday = (date) => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
+const getMondayYMD = (ymd) => {
+  const day = getKoreanWeekdayIndex(ymd);
+  if (day < 0) return '';
+  return addDaysYMD(ymd, day === 0 ? -6 : 1 - day);
+};
+
+const diffWeeks = (fromMondayYMD, toMondayYMD) => {
+  const from = parseYMD(fromMondayYMD);
+  const to = parseYMD(toMondayYMD);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return -1;
+  return Math.round((to.getTime() - from.getTime()) / (7 * 24 * 60 * 60 * 1000));
+};
+
+const addMonthsClamped = (ymd, count) => {
+  const [, , rawDay] = String(ymd).split('-').map(Number);
+  let month = ymd.slice(0, 7);
+  for (let index = 0; index < count; index += 1) month = nextMonth(month);
+  const day = Math.min(rawDay, getDaysInMonth(month));
+  return `${month}-${String(day).padStart(2, '0')}`;
 };
 
 /**
@@ -39,44 +57,29 @@ const getMonday = (date) => {
  */
 export function generateClassDates({ daysOfWeek, startDate, endDate, repeatType }) {
   const dates = [];
-  const start = parseYMD(startDate);
+  if (Number.isNaN(parseYMD(startDate).getTime())) return dates;
+  const finalDate = endDate || addMonthsClamped(startDate, 3);
+  const startMonday = getMondayYMD(startDate);
+  let current = startDate;
 
-  let end;
-  if (endDate) {
-    end = parseYMD(endDate);
-  } else {
-    end = new Date(start.getFullYear(), start.getMonth() + 3, start.getDate());
-  }
-
-  const startMonday = getMonday(start);
-  const current = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-
-  while (current <= end) {
-    const dow = current.getDay();
+  while (current <= finalDate) {
+    const dow = getKoreanWeekdayIndex(current);
 
     if (daysOfWeek.includes(dow)) {
       if (repeatType === '매주') {
-        dates.push(formatDateToYMD(current));
+        dates.push(current);
       } else if (repeatType === '격주') {
-        const currentMonday = getMonday(current);
-        const weekDiff = Math.round((currentMonday - startMonday) / (7 * 24 * 60 * 60 * 1000));
-        if (weekDiff % 2 === 0) dates.push(formatDateToYMD(current));
+        const weekDiff = diffWeeks(startMonday, getMondayYMD(current));
+        if (weekDiff >= 0 && weekDiff % 2 === 0) dates.push(current);
       } else if (repeatType === '매월') {
-        const firstOccurrence = getFirstWeekdayOfMonth(current.getFullYear(), current.getMonth(), dow);
-        if (current.getDate() === firstOccurrence) dates.push(formatDateToYMD(current));
+        const dayOfMonth = Number(current.slice(8, 10));
+        if (dayOfMonth <= 7) dates.push(current);
       }
     }
 
-    current.setDate(current.getDate() + 1);
+    current = addDaysYMD(current, 1);
+    if (!current) break;
   }
 
   return dates;
-}
-
-function getFirstWeekdayOfMonth(year, month, weekday) {
-  const firstDay = new Date(year, month, 1);
-  const firstDow = firstDay.getDay();
-  let diff = weekday - firstDow;
-  if (diff < 0) diff += 7;
-  return 1 + diff;
 }

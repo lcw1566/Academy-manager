@@ -13,7 +13,12 @@ import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import Header from '../../../components/Header';
-import { formatMonth } from '../../../utils/date';
+import {
+  formatMonth,
+  getCurrentMonth,
+  getDaysInMonth,
+  prevMonth,
+} from '../../../utils/date';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import { currentUserCan } from '../../../utils/staffPermissions';
 
@@ -31,17 +36,17 @@ function formatWon(value) {
 
 function getRecentMonths() {
   const result = [];
-  const now = new Date();
+  let month = getCurrentMonth();
   for (let i = 0; i <= MONTHS_BACK; i += 1) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    result.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    result.push(month);
+    month = prevMonth(month);
   }
   return result;
 }
 
 function getMonthRange(month) {
   const [year, monthNo] = String(month).split('-').map(Number);
-  const last = new Date(year, monthNo, 0).getDate();
+  const last = getDaysInMonth(year, monthNo);
   return {
     fromDate: `${month}-01`,
     toDate: `${month}-${String(last).padStart(2, '0')}`,

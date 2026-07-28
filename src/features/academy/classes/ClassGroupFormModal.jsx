@@ -1,20 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, AlertTriangle, Check, Plus, X } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import OptionSelectSheet from '../../../components/OptionSelectSheet';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
+// 반 생성·수정과 class_schedule_rules를 서버 트랜잭션으로 저장한다.
 import {
-  createAcademyClassGroup,
-  updateClassGroup as updateServerClassGroup,
-  createAcademyClassSessionsBulk,
-} from '../../../services/supabase/domainApi';
-// Phase 44.6 / Phase B — class_schedule_rules write-through.
-import {
-  createClassScheduleRule,
-  listClassScheduleRules,
-  updateClassScheduleRule,
+  createClassGroupWithRulesTransaction,
+  updateClassGroupWithRulesTransaction,
 } from '../../../services/supabase/scheduleRulesApi';
 import { formatKoreanCurrency, OWNER_TEACHER_ID } from '../../../utils/format';
 import BulkShiftSuggestionSheet from '../work/BulkShiftSuggestionSheet';
@@ -34,6 +28,8 @@ import {
   recordSchemaToBlockIds,
 } from '../../../constants/learningActivitySettings';
 import RecordTemplateBuilder from './RecordTemplateBuilder';
+import { addDaysYMD, getKoreanWeekdayIndex, getTodayYMD } from '../../../utils/date';
+import { createClientUuid } from '../../../utils/uuid';
 
 function emptyToNull(v) {
   if (v === undefined) return null;
@@ -45,13 +41,6 @@ function uuidOrNull(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''))
     ? value
     : null;
-}
-
-function addDaysYMD(ymd, days) {
-  const base = ymd ? new Date(`${ymd}T00:00:00`) : new Date();
-  if (Number.isNaN(base.getTime())) return new Date().toISOString().slice(0, 10);
-  base.setDate(base.getDate() + days);
-  return base.toISOString().slice(0, 10);
 }
 
 function buildSuggestedClassName({ subject, level, students = [] }) {
@@ -282,9 +271,8 @@ function classifyTeacherAvailability({
   const shiftsByDow = new Map();
   for (const sh of live) {
     if (!sh.date) continue;
-    const [y, m, d] = sh.date.split('-').map(Number);
-    if (!y || !m || !d) continue;
-    const dow = new Date(y, m - 1, d).getDay();
+    const dow = getKoreanWeekdayIndex(sh.date);
+    if (dow < 0) continue;
     if (!shiftsByDow.has(dow)) shiftsByDow.set(dow, []);
     shiftsByDow.get(dow).push(sh);
   }
@@ -311,7 +299,7 @@ function classifyTeacherAvailability({
 
 export default function ClassGroupFormModal({ editGroup, onClose }) {
   const {
-    addClassGroup, updateClassGroup, setClassGroupServerId, setClassSessionServerIds,
+    addClassGroup, updateClassGroup,
     academyStudents, academyTeachers, academyAssistants = [], academyManagers = [],
     academyProfile, classGroups,
     showToast,
@@ -330,6 +318,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const [submitting, setSubmitting] = useState(false);
   // Phase 35 — 반 생성/수정 후 근무표 자동 추가 제안 sheet.
   const [shiftSuggestion, setShiftSuggestion] = useState(null);
+  const createGroupRequestIdRef = useRef(createClientUuid());
   // Phase 37 — 과목/학년 bottom sheet 열림 상태.
   const [subjectSheetOpen, setSubjectSheetOpen] = useState(false);
   const [levelSheetOpen, setLevelSheetOpen] = useState(false);
@@ -395,7 +384,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     useSameTime: initialUseSameTime,
     weekdayTimes: editGroup?.weekdayTimes || {},
     room: editGroup?.room || '',
-    startDate: editGroup?.startDate || new Date().toISOString().slice(0, 10),
+    startDate: editGroup?.startDate || getTodayYMD(),
     endDate: editGroup?.endDate || '',
     billingMode: editGroup?.billingMode || 'same',
     monthlyFee: editGroup?.feePolicy === 'additional' && editGroup?.monthlyFee
@@ -460,7 +449,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   };
 
   const coverageRange = useMemo(() => {
-    const fromDate = form.startDate || new Date().toISOString().slice(0, 10);
+    const fromDate = form.startDate || getTodayYMD();
     return { fromDate, toDate: addDaysYMD(fromDate, 56) };
   }, [form.startDate]);
 
@@ -622,68 +611,104 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     try {
       if (editGroup) {
         // ── 수정 ──────────────────────────────────────────────
-        // 1) localStorage 수정 (source of truth)
-        updateClassGroup(editGroup.id, data);
-
-        // 2) Supabase write-through — serverId 가 있을 때만 시도
+        // 서버 반 정보와 반복 규칙을 먼저 한 트랜잭션으로 확정한다.
+        // 실패하면 localStorage도 바꾸지 않아 화면과 서버가 갈라지지 않는다.
         if (editGroup.serverId && isAuthenticated && currentAcademyId) {
-          try {
-            await updateServerClassGroup(
-              editGroup.serverId,
-              mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants, instructors, ownerUserId),
-            );
-            await loadServerClassGroups();
-          } catch (err) {
-            console.error('[supabase] updateClassGroup failed', err);
-            showToast(
-              err?.message
-                ? `서버 동기화 실패: ${err.message}`
-                : '반 정보는 수정되었지만 서버 동기화는 실패했어요.',
-              'error',
-            );
-          }
+          const groupPatch = mapClassGroupFormToServerPayload(
+            data,
+            academyStudents,
+            academyAssistants,
+            instructors,
+            ownerUserId,
+          );
+          const rulePayloads = buildClassScheduleRulePayloads(
+            data,
+            instructors,
+            academyAssistants,
+            ownerUserId,
+          );
+          await updateClassGroupWithRulesTransaction({
+            academyId: currentAcademyId,
+            classGroupId: editGroup.serverId,
+            groupPatch,
+            rules: rulePayloads,
+            effectiveFrom: getTodayYMD(),
+          });
 
-          // Phase 44.6 / Phase B — class_schedule_rules 재정의 (best-effort).
-          // 안전한 패턴: 기존 active rule 들 deactivate → 새 rule INSERT.
-          // 기존 lesson_records / attendance_records 는 별도 테이블이므로 영향 없음.
+          // 서버 커밋 성공 이후에만 로컬을 갱신한다.
+          updateClassGroup(editGroup.id, data);
+          await Promise.all([
+            loadServerClassGroups(),
+            loadServerClassSessions(),
+            useWorkspaceStore.getState().loadClassScheduleRules?.(),
+          ]);
           try {
-            const existingRules = await listClassScheduleRules(currentAcademyId);
-            const groupRules = existingRules.filter(
-              (r) => r.class_group_id === editGroup.serverId && r.is_active,
-            );
-            for (const r of groupRules) {
-              try { await updateClassScheduleRule(r.id, { is_active: false }); }
-              catch (err) { console.warn('[supabase] deactivate rule failed', err); }
-            }
-            const rulePayloads = buildClassScheduleRulePayloads(data, instructors, academyAssistants, ownerUserId);
-            for (const rp of rulePayloads) {
-              try {
-                await createClassScheduleRule({
-                  academyId: currentAcademyId,
-                  class_group_id: editGroup.serverId,
-                  ...rp,
-                });
-              } catch (err) {
-                console.warn('[supabase] createClassScheduleRule (edit) failed', err);
-              }
-            }
-            await useWorkspaceStore.getState().loadClassScheduleRules?.();
-          } catch (err) {
-            console.warn('[supabase] reapply class rules failed', err);
+            await useWorkspaceStore.getState().ensureClassSessionsForRangeLocal?.({
+              classGroupId: editGroup.serverId,
+            });
+          } catch (error) {
+            // 규칙과 반 정보는 이미 원자적으로 저장됐다. 회차 사전 준비 실패는
+            // 다음 화면 진입 시 다시 시도되므로 저장 성공을 되돌리지 않는다.
+            console.warn('[class-group] updated rules materialization deferred', error);
           }
+        } else if (isAuthenticated && currentAcademyId) {
+          throw new Error('반 서버 정보를 확인하지 못했어요. 수업 목록을 새로고침해주세요.');
+        } else {
+          // Supabase를 사용하지 않는 로컬 개발 모드의 fallback.
+          updateClassGroup(editGroup.id, data);
         }
       } else {
         // ── 생성 ──────────────────────────────────────────────
-        // 1) localStorage: classGroup 생성 + classSessions 자동 생성. 둘 다 확보.
-        const result = addClassGroup(data);
-        const localGroup = result.group;
+        // 로그인된 학원에서는 서버의 반+반복 규칙 트랜잭션을 먼저 확정한다.
+        // 응답 유실 후 재시도해도 같은 UUID를 사용하므로 반이 중복되지 않는다.
+        let serverGroup = null;
+        if (isAuthenticated && currentAcademyId) {
+          const groupPayload = mapClassGroupFormToServerPayload(
+            data,
+            academyStudents,
+            academyAssistants,
+            instructors,
+            ownerUserId,
+          );
+          const rulePayloads = buildClassScheduleRulePayloads(
+            data,
+            instructors,
+            academyAssistants,
+            ownerUserId,
+          );
+          let transaction = await createClassGroupWithRulesTransaction({
+            academyId: currentAcademyId,
+            classGroupId: createGroupRequestIdRef.current,
+            group: groupPayload,
+            rules: rulePayloads,
+          });
+          // 첫 응답만 유실된 재시도라면 서버에는 이미 반이 있다. 사용자가 그 사이
+          // 폼을 수정했을 수 있으므로 현재 입력값을 같은 트랜잭션 수정 RPC로 맞춘다.
+          if (transaction?.replayed) {
+            transaction = await updateClassGroupWithRulesTransaction({
+              academyId: currentAcademyId,
+              classGroupId: createGroupRequestIdRef.current,
+              groupPatch: groupPayload,
+              rules: rulePayloads,
+              effectiveFrom: getTodayYMD(),
+            });
+          }
+          serverGroup = transaction?.group || null;
+          if (!serverGroup?.id) throw new Error('서버에서 생성된 반 정보를 확인하지 못했어요.');
+        }
+
+        // 서버 확정 뒤에만 로컬 캐시를 만든다. 서버 학원은 RPC가 실제 회차를
+        // 준비하므로 로컬 전용 회차를 먼저 만들지 않아 중복을 방지한다.
+        const result = addClassGroup(
+          { ...data, serverId: serverGroup?.id || null },
+          { generateSessions: !serverGroup },
+        );
         const localSessions = result.sessions ?? [];
 
         // Phase 35 — 다음 7일 안에 있는 세션에 대해 담당 강사 근무표 제안.
         // (전체 세션은 너무 많아서 부담. 가까운 1주만 미리 셋업하면 충분.)
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const oneWeekLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-          .toISOString().slice(0, 10);
+        const todayStr = getTodayYMD();
+        const oneWeekLater = addDaysYMD(todayStr, 7);
         const upcoming = localSessions.filter((s) => s.date >= todayStr && s.date <= oneWeekLater);
         const lessonsByStaff = new Map();
         const teacher = data.teacherId && data.teacherId !== OWNER_TEACHER_ID
@@ -703,76 +728,21 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             sessions: teacherSessions,
           });
         }
-        // 2) Supabase write-through — 화면은 로컬 저장 직후 닫고, 서버 동기화는 백그라운드 처리.
-        if (isAuthenticated && currentAcademyId) {
-          void (async () => {
-            let serverGroup = null;
-            try {
-              serverGroup = await createAcademyClassGroup({
-                academyId: currentAcademyId,
-                ...mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants, instructors, ownerUserId),
-              });
-              if (serverGroup?.id && localGroup?.id) {
-                setClassGroupServerId(localGroup.id, serverGroup.id);
-              }
-              await loadServerClassGroups();
-            } catch (err) {
-              console.error('[supabase] createAcademyClassGroup failed', err);
-              showToast(
-                err?.message
-                  ? `반은 저장됐지만 서버 동기화에 실패했어요: ${err.message}`
-                  : '반은 저장됐지만 서버 동기화에 실패했어요.',
-                'error',
-              );
-              return;
-            }
-
-            // class_group 서버 저장 성공 시 sessions bulk insert 시도
-            if (serverGroup?.id && localSessions.length > 0) {
-              try {
-                const sessionPayloads = localSessions.map((ls) =>
-                  mapClassSessionToServerPayload(ls, serverGroup.id, academyStudents, academyAssistants, instructors, ownerUserId)
-                );
-                const serverSessions = await createAcademyClassSessionsBulk({
-                  academyId: currentAcademyId,
-                  sessions: sessionPayloads,
-                });
-                // local ↔ server 매칭 (date + start_time 기준)
-                const pairs = matchSessionPairs(localSessions, serverSessions);
-                setClassSessionServerIds(pairs);
-                await loadServerClassSessions();
-              } catch (err) {
-                console.error('[supabase] createAcademyClassSessionsBulk failed', err);
-                showToast(
-                  err?.message
-                    ? `수업은 저장됐지만 서버 동기화에 실패했어요: ${err.message}`
-                    : '수업은 저장됐지만 서버 동기화에 실패했어요.',
-                  'error',
-                );
-              }
-            }
-
-            // Phase 44.6 / Phase B — class_schedule_rules INSERT (best-effort).
-            // 룰 저장이 실패해도 사용자 흐름은 막지 않음 (legacy class_sessions 가 fallback).
-            if (serverGroup?.id) {
-              const rulePayloads = buildClassScheduleRulePayloads(data, instructors, academyAssistants, ownerUserId);
-              for (const rp of rulePayloads) {
-                try {
-                  await createClassScheduleRule({
-                    academyId: currentAcademyId,
-                    class_group_id: serverGroup.id,
-                    ...rp,
-                  });
-                } catch (err) {
-                  console.warn('[supabase] createClassScheduleRule failed', err);
-                }
-              }
-              // 캐시 갱신 (best-effort).
-              try {
-                await useWorkspaceStore.getState().loadClassScheduleRules?.();
-              } catch { /* ignore */ }
-            }
-          })();
+        if (serverGroup?.id) {
+          await Promise.all([
+            loadServerClassGroups(),
+            useWorkspaceStore.getState().loadClassScheduleRules?.(),
+          ]);
+          try {
+            await useWorkspaceStore.getState().ensureClassSessionsForRangeLocal?.({
+              classGroupId: serverGroup.id,
+            });
+          } catch (error) {
+            // 반과 규칙은 이미 안전하게 저장됐다. 회차는 다음 화면 진입 때
+            // 동일 RPC로 다시 준비할 수 있으므로 반 생성 성공은 유지한다.
+            console.warn('[class-group] initial materialization deferred', error);
+          }
+          await loadServerClassSessions();
         }
 
         // Phase 35 — 생성된 회차에 대해 근무표 제안. 영향 받는 강사가 1명 이상이면
@@ -785,6 +755,14 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         }
       }
       onClose();
+    } catch (error) {
+      console.error('[class-group] save failed', error);
+      showToast(
+        error?.message || (editGroup
+          ? '반 정보를 수정하지 못했어요.'
+          : '반을 만들지 못했어요.'),
+        'error',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -1135,7 +1113,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
                 title="오늘부터"
                 onClick={() => {
                   setPeriodStartMode('today');
-                  set('startDate', new Date().toISOString().slice(0, 10));
+                  set('startDate', getTodayYMD());
                 }}
               />
               <ChoiceCard

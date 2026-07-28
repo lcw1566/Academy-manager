@@ -10,8 +10,9 @@ import {
   updatePayment as updateServerPayment,
   deletePayment as deleteServerPayment,
 } from '../../../services/supabase/domainApi';
-import { getKoreanWeekdayFromYMD, today } from '../../../utils/date';
+import { getKoreaHHMM, getKoreanWeekdayFromYMD, today } from '../../../utils/date';
 import { attendanceStatusMap, formatCurrency, toTelHref } from '../../../utils/format';
+import { isConfirmedAttendance } from '../../../utils/attendanceRecords';
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
@@ -31,13 +32,12 @@ import {
 const TABS_BY_ROLE = {
   owner:     ['요약', '등하원', '수업 기록', '클리닉 기록', '정산'],
   teacher:   ['요약', '등하원', '수업 기록', '클리닉 기록'],
-  assistant: ['요약', '등하원', '클리닉 기록'],
+  assistant: ['요약', '등하원', '수업 기록', '클리닉 기록'],
   manager:   ['요약', '등하원', '수업 기록', '클리닉 기록', '정산'],
 };
 
 function nowHHMM() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return getKoreaHHMM();
 }
 
 function formatAttendanceTime(value) {
@@ -74,7 +74,11 @@ function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, a
     .filter((s) => (s.studentIds || []).includes(studentId))
     .map((session) => {
       const group = classGroups.find((g) => g.id === session.classGroupId) || {};
-      const attendance = academyAttendanceRecords.find((a) => a.sessionId === session.id && a.studentId === studentId);
+      const attendance = academyAttendanceRecords.find((a) => (
+        a.sessionId === session.id
+        && a.studentId === studentId
+        && isConfirmedAttendance(a)
+      ));
       const lessonRecord = academyLessonRecords.find((lr) => lr.sessionId === session.id && lr.studentId === studentId);
       const commonRecord = academyLessonRecords.find((lr) => lr.sessionId === session.id && lr.studentId === '_common_');
       const teacher = academyTeachers.find((t) => t.id === session.teacherId);
@@ -376,7 +380,12 @@ export default function AcademyStudentDetailPage() {
     () => memberships.find((membership) => membership.academy_id === currentAcademyId)?.academy || null,
     [memberships, currentAcademyId],
   );
-  const showCheckinPin = readAttendanceSettings(currentAcademy).studentCheckMethod === 'qr';
+  const attendanceSettings = useMemo(
+    () => readAttendanceSettings(currentAcademy),
+    [currentAcademy],
+  );
+  const studentAttendanceEnabled = attendanceSettings.studentCheckMethod !== 'disabled';
+  const showCheckinPin = attendanceSettings.studentCheckMethod === 'qr';
   const canEditClinicRecords = currentUserCan(
     { role, staffProfile: myStaffProfile },
     'canEditClinicRecords',
@@ -460,7 +469,9 @@ export default function AcademyStudentDetailPage() {
       .map((session) => {
         const group = classGroups.find((item) => item.id === session.classGroupId);
         const attendance = academyAttendanceRecords.find((record) => (
-          record.sessionId === session.id && record.studentId === student.id
+          record.sessionId === session.id
+          && record.studentId === student.id
+          && isConfirmedAttendance(record)
         ));
         const sessionStateLabels = {
           present: '정상',
@@ -498,7 +509,16 @@ export default function AcademyStudentDetailPage() {
     academyAttendanceRecords,
   ]);
 
-  const tabs = TABS_BY_ROLE[role] || TABS_BY_ROLE.owner;
+  const tabs = useMemo(
+    () => (TABS_BY_ROLE[role] || TABS_BY_ROLE.owner).filter((tab) => {
+      if (tab === '등하원') return studentAttendanceEnabled;
+      if (tab === '클리닉 기록') {
+        return currentAcademy?.clinic_required !== false && canEditClinicRecords;
+      }
+      return true;
+    }),
+    [role, studentAttendanceEnabled, currentAcademy?.clinic_required, canEditClinicRecords],
+  );
 
   useEffect(() => {
     if (!tabs.includes(activeTab)) {
@@ -507,9 +527,20 @@ export default function AcademyStudentDetailPage() {
   }, [tabs, activeTab]);
 
   useEffect(() => {
-    if (activeTab !== '등하원' || !currentAcademyId || !student?.serverId) return;
+    if (
+      !studentAttendanceEnabled
+      || activeTab !== '등하원'
+      || !currentAcademyId
+      || !student?.serverId
+    ) return;
     loadStudentCheckEvents({ studentId: student.serverId, limit: 1000 });
-  }, [activeTab, currentAcademyId, student?.serverId, loadStudentCheckEvents]);
+  }, [
+    studentAttendanceEnabled,
+    activeTab,
+    currentAcademyId,
+    student?.serverId,
+    loadStudentCheckEvents,
+  ]);
 
   if (!student) {
     return (
@@ -539,29 +570,21 @@ export default function AcademyStudentDetailPage() {
   const handleDelete = async () => {
     if (!window.confirm(`${student.name} 학생을 삭제할까요?`)) return;
 
-    // 서버 매핑된 uuid 는 삭제 전 캡처 (local 삭제 후엔 student 객체에서 사라짐)
     const serverId = student.serverId;
-
-    // 1) localStorage 삭제 (source of truth, 항상 성공)
-    deleteAcademyStudent(student.id);
-
-    // 2) Supabase write-through — serverId 가 있고 로그인 + 학원 선택 시에만 시도
-    if (serverId && isAuthenticated && currentAcademyId) {
-      try {
+    try {
+      if (serverId && isAuthenticated && currentAcademyId) {
         await deleteServerStudent(serverId);
         await loadServerStudents();
-      } catch (err) {
-        console.error('[supabase] deleteStudent failed', err);
-        showToast(
-          err?.message
-            ? `서버 삭제 실패: ${err.message}`
-            : '학생은 삭제되었지만 서버 삭제는 실패했어요.',
-          'error',
-        );
       }
+      deleteAcademyStudent(student.id);
+      goBackFromAcademyStudent();
+    } catch (err) {
+      console.error('[supabase] deleteStudent failed', err);
+      showToast(
+        err?.message || '학생을 삭제하지 못했어요. 다시 시도해주세요.',
+        'error',
+      );
     }
-
-    goBackFromAcademyStudent();
   };
 
   // ── 렌더 함수들 ───────────────────────────────────────────────────
@@ -868,7 +891,7 @@ export default function AcademyStudentDetailPage() {
 
     const handleTogglePaid = async (p) => {
       const nextStatus = p.status === 'paid' ? 'unpaid' : 'paid';
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = today();
       const patch = nextStatus === 'paid'
         ? { status: 'paid', paidDate: p.paidDate || todayStr }
         : { status: 'unpaid', paidDate: null };
