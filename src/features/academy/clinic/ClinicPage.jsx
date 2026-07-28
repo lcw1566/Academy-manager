@@ -19,6 +19,7 @@ import {
   CLINIC_ACTIVITY_TYPES,
   getActivityLabel,
 } from '../../../constants/learningActivitySettings';
+import { ACADEMY_SUBJECT_OPTIONS } from '../../../constants/academySettings';
 
 function groupByDate(records) {
   const map = {};
@@ -166,6 +167,37 @@ export default function ClinicPage() {
     clinicRecords,
     todayStr,
   ]);
+  const temporaryClinicSubject = useMemo(() => {
+    const subjects = Array.isArray(academyProfile?.academySubjects)
+      ? academyProfile.academySubjects
+      : [];
+    if (subjects.length !== 1) return '';
+    return ACADEMY_SUBJECT_OPTIONS.find((option) => option.id === subjects[0])?.label || '';
+  }, [academyProfile?.academySubjects]);
+  const temporaryClinicStudents = useMemo(() => {
+    if (classGroups.length > 0 || todayExpectedGroups.length > 0) return [];
+    return academyStudents
+      .filter((student) => (student.status || 'active') !== 'inactive')
+      .slice()
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'))
+      .map((student) => ({
+        ...student,
+        clinicRecord: clinicRecords.find((record) => (
+          record.date === todayStr && record.studentId === student.id
+        )) || null,
+      }));
+  }, [classGroups.length, todayExpectedGroups.length, academyStudents, clinicRecords, todayStr]);
+  const temporaryClinicSession = useMemo(() => ({
+    id: `temporary-clinic-${todayStr}`,
+    date: todayStr,
+    isTemporary: true,
+  }), [todayStr]);
+  const temporaryClinicGroup = useMemo(() => ({
+    id: '',
+    name: '전체 학생',
+    subject: temporaryClinicSubject,
+    isTemporary: true,
+  }), [temporaryClinicSubject]);
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
   const toggleExpectedGroup = (sessionId) => {
@@ -362,6 +394,76 @@ export default function ClinicPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </section>
+        )}
+
+        {temporaryClinicStudents.length > 0 && (
+          <section className="px-4 mb-5">
+            <div className="mb-2">
+              <p className="text-sm font-bold text-gray-900">학생 목록</p>
+              <p className="mt-0.5 text-[11px] text-gray-400">
+                반을 만들기 전에는 전체 재원 학생을 임시로 보여드려요.
+              </p>
+            </div>
+            <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+              <div className="flex items-center gap-2 px-4 py-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <Clock3 size={15} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-gray-900">전체 학생</p>
+                  <p className="mt-0.5 text-[11px] text-gray-400">
+                    {temporaryClinicSubject || '과목 미지정'} · {temporaryClinicStudents.length}명
+                  </p>
+                </div>
+                <span className="text-[11px] font-semibold text-gray-400">
+                  {temporaryClinicStudents.filter((student) => student.clinicRecord).length}/{temporaryClinicStudents.length}
+                </span>
+              </div>
+              {canEditClinic ? (
+                <ClinicInlineWorksheet
+                  session={temporaryClinicSession}
+                  group={temporaryClinicGroup}
+                  students={temporaryClinicStudents}
+                  academyProfile={academyProfile}
+                  onOpenRecord={(student) => {
+                    if (student.clinicRecord) {
+                      setEditRecord(student.clinicRecord);
+                      return;
+                    }
+                    setQuickTarget({
+                      studentId: student.id,
+                      date: todayStr,
+                      subject: temporaryClinicSubject,
+                      classGroupId: '',
+                      classSessionId: '',
+                    });
+                  }}
+                />
+              ) : (
+                <div className="divide-y divide-gray-50 border-t border-gray-50">
+                  {temporaryClinicStudents.map((student) => (
+                    <div key={student.id} className="flex items-center gap-3 px-4 py-3">
+                      <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-50 text-xs font-bold text-gray-500">
+                        {student.name?.slice(0, 1) || '학'}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold text-gray-900">{student.name}</span>
+                        {student.grade && (
+                          <span className="mt-0.5 block text-[11px] text-gray-400">{student.grade}</span>
+                        )}
+                      </span>
+                      {student.clinicRecord && (
+                        <span className="flex items-center gap-1 text-xs font-bold text-emerald-600">
+                          <CheckCircle2 size={14} />
+                          완료
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
         )}

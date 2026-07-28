@@ -200,7 +200,7 @@ export default function ClinicInlineWorksheet({
           activityType: existing?.activityType || academyProfile?.clinicDefaultActivityType || 'clinic',
           activityName: existing?.activityName || '',
           classGroupId: group?.id || '',
-          classSessionId: session?.id || '',
+          classSessionId: session?.isTemporary ? '' : (session?.id || ''),
           sourceLessonRecordId: existing?.sourceLessonRecordId || null,
           sourceSupportTags: existing?.sourceSupportTags || [],
           sourceSupportMemo: existing?.sourceSupportMemo || '',
