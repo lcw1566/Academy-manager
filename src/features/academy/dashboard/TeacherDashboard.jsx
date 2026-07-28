@@ -47,6 +47,7 @@ export default function TeacherDashboard() {
   const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords);
   const academyAttendanceRecords = useAcademyStore((s) => s.academyAttendanceRecords);
   const academyTeachers = useAcademyStore((s) => s.academyTeachers);
+  const academyProfile = useAcademyStore((s) => s.academyProfile);
   const navigateToClassGroup = useAcademyStore((s) => s.navigateToClassGroup);
   const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -306,11 +307,13 @@ export default function TeacherDashboard() {
           value={`${todayStudentIds.filter((id) => !notesWrittenToday.has(id)).length}건`}
           color={todayStudentIds.some((id) => !notesWrittenToday.has(id)) ? 'text-blue-600' : 'text-gray-900'}
         />
-        <SummaryCard
-          label="클리닉"
-          value={`${myClinics.length}건`}
-          color={myClinics.length > 0 ? 'text-purple-600' : 'text-gray-900'}
-        />
+        {academyProfile?.clinicRequired !== false && (
+          <SummaryCard
+            label="클리닉"
+            value={`${myClinics.length}건`}
+            color={myClinics.length > 0 ? 'text-purple-600' : 'text-gray-900'}
+          />
+        )}
       </div>
 
       {/* Phase 32 — 작성 필요한 수업 기록 (본인 담당 완료 세션 중 기록 없음) */}
@@ -359,7 +362,7 @@ export default function TeacherDashboard() {
       />
 
       {/* 클리닉 현황 */}
-      {myClinics.length > 0 && (
+      {academyProfile?.clinicRequired !== false && myClinics.length > 0 && (
         <div className="px-4">
           <p className="text-sm font-bold text-gray-700 mb-3">클리닉 현황</p>
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">

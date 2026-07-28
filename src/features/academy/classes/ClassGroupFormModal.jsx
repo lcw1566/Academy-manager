@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronRight, AlertTriangle, Check, Plus, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, AlertTriangle, Check, Plus, X } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import OptionSelectSheet from '../../../components/OptionSelectSheet';
 import useAcademyStore from '../../../store/useAcademyStore';

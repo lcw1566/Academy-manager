@@ -529,7 +529,7 @@ export async function createAcademyAsOwner({
   if (aErr && isMissingAcademySettingsColumnError(aErr)) {
     const missingColumnMessage = `${aErr?.message || ''} ${aErr?.details || ''}`.toLowerCase();
     if (missingColumnMessage.includes('clinic_default_items')) {
-      throw new Error('클리닉 기본 구성 저장을 위해 SQL 037을 먼저 적용해주세요.');
+      throw new Error('클리닉 기본 구성 저장을 위해 SQL 038을 먼저 적용해주세요.');
     }
     if (missingColumnMessage.includes('tuition_rates')) {
       throw new Error('수강료 가격표 저장을 위해 SQL 033을 먼저 적용해주세요.');
@@ -633,7 +633,7 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
   let { data, error } = await runUpdate(dbPatch);
   if (error && isMissingAcademySettingsColumnError(error)) {
     if (dbPatch.clinic_default_items !== undefined) {
-      throw new Error('클리닉 기본 구성 저장을 위해 SQL 037을 먼저 적용해주세요.');
+      throw new Error('클리닉 기본 구성 저장을 위해 SQL 038을 먼저 적용해주세요.');
     }
     if (dbPatch.address !== undefined || dbPatch.phone !== undefined) {
       throw new Error('학원 주소·전화번호 저장을 위해 SQL 031을 먼저 적용해주세요.');

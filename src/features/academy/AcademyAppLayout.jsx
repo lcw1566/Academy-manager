@@ -237,6 +237,7 @@ export default function AcademyAppLayout() {
   const classGroups = useAcademyStore((s) => s.classGroups);
   const classSessions = useAcademyStore((s) => s.classSessions);
   const academyStudents = useAcademyStore((s) => s.academyStudents);
+  const academyProfile = useAcademyStore((s) => s.academyProfile);
   const goBackFromClassGroup = useAcademyStore((s) => s.goBackFromClassGroup);
   const goBackFromClassSession = useAcademyStore((s) => s.goBackFromClassSession);
   const goBackFromAcademyStudent = useAcademyStore((s) => s.goBackFromAcademyStudent);
@@ -292,6 +293,8 @@ export default function AcademyAppLayout() {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
   const currentAcademy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
+  const clinicEnabled = academyProfile?.clinicRequired
+    ?? (currentAcademy?.clinic_required !== false);
   const needsAttendanceOnboarding = role === 'owner'
     && isWorkspaceReady
     && !!currentAcademy
@@ -320,6 +323,7 @@ export default function AcademyAppLayout() {
   const baseTabs = TAB_CONFIG[role] || TAB_CONFIG.owner;
   const tabs = useMemo(() => {
     return baseTabs.filter((tab) => {
+      if (tab.id === 'clinic' && !clinicEnabled) return false;
       if (tab.id === 'payroll') {
         return currentUserCan({ role, staffProfile: myStaffProfile }, 'canViewPayroll');
       }
@@ -337,7 +341,7 @@ export default function AcademyAppLayout() {
       }
       return true;
     });
-  }, [baseTabs, role, myStaffProfile]);
+  }, [baseTabs, role, myStaffProfile, clinicEnabled]);
 
   // 채팅 안 읽음 — 하단 탭/사이드바 배지.
   const chatMessages = useChatStore((s) => s.messages);
@@ -359,10 +363,11 @@ export default function AcademyAppLayout() {
       setActiveTab('payments');
       return;
     }
-    if (!validTabIds.includes(activeTab) && !HIDDEN_VALID_TABS.includes(activeTab)) {
+    const hiddenValidTabs = clinicEnabled ? HIDDEN_VALID_TABS : [];
+    if (!validTabIds.includes(activeTab) && !hiddenValidTabs.includes(activeTab)) {
       setActiveTab(tabs[0]?.id || 'home');
     }
-  }, [role, tabs, activeTab, setActiveTab]);
+  }, [role, tabs, activeTab, setActiveTab, clinicEnabled]);
 
   useEffect(() => {
     if (
@@ -414,7 +419,9 @@ export default function AcademyAppLayout() {
       if (activeTab === 'classes')    return selectedClassGroupId ? <ClassGroupDetailPage /> : <ClassGroupsPage />;
       if (activeTab === 'students')   return selectedAcademyStudentId ? <AcademyStudentDetailPage /> : <AcademyStudentsPage />;
       if (activeTab === 'attendance') return <StudentAttendancePage />;
-      if (activeTab === 'clinic')     return <ClinicPage />;
+      if (activeTab === 'clinic') {
+        return clinicEnabled ? <ClinicPage /> : renderDashboard();
+      }
       if (activeTab === 'payments' || activeTab === 'settlement') {
         return <PilotLockedFeature featureId="payments" onReturn={() => setActiveTab('classes')} />;
       }

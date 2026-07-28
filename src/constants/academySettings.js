@@ -40,13 +40,13 @@ export const ACADEMY_SUBJECT_OPTIONS = [
 export const CLINIC_REQUIRED_OPTIONS = [
   {
     value: true,
-    label: '클리닉 필수',
-    description: '수업과 별개로 클리닉·자습이 필수예요.',
+    label: '클리닉이 있어요',
+    description: '과목별 클리닉 활동과 학생 기록을 관리해요.',
   },
   {
     value: false,
-    label: '필요할 때만',
-    description: '필요한 학생만 클리닉·자습을 진행해요.',
+    label: '클리닉이 없어요',
+    description: '별도 클리닉 없이 수업과 자습만 운영해요.',
   },
 ];
 
@@ -128,7 +128,7 @@ export function getAcademyTypeLabel(type) {
 }
 
 export function getClinicRequiredLabel(required) {
-  return required === false ? '클리닉 선택 운영' : '클리닉 필수 운영';
+  return required === false ? '클리닉 없음' : '클리닉 운영';
 }
 
 export function getAcademySubjectsLabel(subjects = []) {

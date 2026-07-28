@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { localizeUserMessage } from '../utils/localizeError';
 import { generateClassDates } from '../utils/recurringClass';
 import { getCurrentMonth, getMonthsBetween, today as getTodayYMD } from '../utils/date';
 import {
@@ -155,6 +156,7 @@ function createDefaultAcademyProfile() {
     academyType: 'core_subjects',
     academySubjects: ['korean', 'english', 'math'],
     clinicRequired: true,
+    clinicDefaultItems: {},
     tuitionPolicy: 'school_level',
     tuitionRates: {},
   };
@@ -320,7 +322,7 @@ const useAcademyStore = create(
     const prev = get()._toastTimer;
     if (prev) clearTimeout(prev);
     const timer = setTimeout(() => set({ toast: null, _toastTimer: null }), 2500);
-    set({ toast: { message, type }, _toastTimer: timer });
+    set({ toast: { message: localizeUserMessage(message), type }, _toastTimer: timer });
   },
 
   // ─── Students ──────────────────────────────────────
@@ -918,6 +920,7 @@ const useAcademyStore = create(
         academyType: 'core_subjects',
         academySubjects: ['korean', 'english', 'math'],
         clinicRequired: true,
+        clinicDefaultItems: {},
         tuitionPolicy: 'school_level',
         tuitionRates: {},
       },
@@ -2331,10 +2334,13 @@ const useAcademyStore = create(
     ) {
       return;
     }
-    set(createEmptyAcademyScopeState({
-      ownerUserId: userId,
-      ownerAcademyId: academyId,
-    }));
+    set({
+      ...createEmptyAcademyScopeState({
+        ownerUserId: userId,
+        ownerAcademyId: academyId,
+      }),
+      schoolNames: [],
+    });
   },
 
   // 구버전 호출부/저장 데이터 호환용. 사용자만 먼저 확정된 시점에는 계정 간
@@ -2343,12 +2349,15 @@ const useAcademyStore = create(
     if (!userId) return;
     const current = get().academyDataOwnerUserId;
     if (current === userId) return;
-    set(createEmptyAcademyScopeState({ ownerUserId: userId }));
+    set({
+      ...createEmptyAcademyScopeState({ ownerUserId: userId }),
+      schoolNames: [],
+    });
   },
 
   // 로그아웃/세션 만료 시 개인정보가 브라우저 localStorage에 남지 않도록 조용히 제거한다.
   clearAcademyDataCache: () => {
-    set(createEmptyAcademyScopeState());
+    set({ ...createEmptyAcademyScopeState(), schoolNames: [] });
   },
 
   // ─── Academy Reset ────────────────────────────────

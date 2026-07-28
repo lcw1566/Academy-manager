@@ -128,7 +128,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     addAcademyStudent, updateAcademyStudent, setAcademyStudentServerId,
     assignAcademyStudentToClassGroups,
     classGroups, classSessions, academyStudents,
-    schoolNames, addSchoolName, showToast,
+    showToast,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
@@ -164,6 +164,14 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     () => !(editStudent?.school || editStudent?.schoolName),
   );
   const schoolInputRef = useRef(null);
+  const schoolNames = useMemo(
+    () => [...new Set(
+      academyStudents
+        .map((student) => String(student.school || student.schoolName || '').trim())
+        .filter(Boolean),
+    )],
+    [academyStudents],
+  );
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -220,8 +228,6 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
       parentName: parentDisplayName,
       parentDisplayName,
     };
-    if (form.school.trim()) addSchoolName(form.school.trim());
-
     setSubmitting(true);
     try {
       if (isEdit) {

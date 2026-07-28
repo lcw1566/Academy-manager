@@ -9,6 +9,7 @@ import {
   subscribeAuthStateChange,
 } from '../services/supabase/authApi';
 import { disableCurrentPushDevice } from '../services/pushNotifications';
+import { localizeError } from '../utils/localizeError';
 
 let authSubscription = null;
 let authInitializationPromise = null;
@@ -63,7 +64,7 @@ const useAuthStore = create((set, get) => ({
           });
         }
       } catch (err) {
-        set({ authError: err?.message ?? 'Auth 초기화에 실패했습니다.' });
+        set({ authError: localizeError(err, '로그인 상태를 확인하지 못했어요.') });
       } finally {
         set({ isAuthLoading: false, isInitialized: true });
       }
@@ -89,7 +90,7 @@ const useAuthStore = create((set, get) => ({
       });
       return data;
     } catch (err) {
-      set({ authError: err?.message ?? '회원가입에 실패했습니다.' });
+      set({ authError: localizeError(err, '회원가입에 실패했어요.') });
       throw err;
     } finally {
       set({ isAuthLoading: false });
@@ -107,7 +108,7 @@ const useAuthStore = create((set, get) => ({
       });
       return data;
     } catch (err) {
-      set({ authError: err?.message ?? '로그인에 실패했습니다.' });
+      set({ authError: localizeError(err, '로그인에 실패했어요.') });
       throw err;
     } finally {
       set({ isAuthLoading: false });
@@ -119,7 +120,7 @@ const useAuthStore = create((set, get) => ({
     try {
       return await resendSignUpConfirmation(email);
     } catch (err) {
-      set({ authError: err?.message ?? '인증 메일 재발송에 실패했습니다.' });
+      set({ authError: localizeError(err, '인증 메일을 다시 보내지 못했어요.') });
       throw err;
     } finally {
       set({ isAuthLoading: false });
@@ -159,7 +160,7 @@ const useAuthStore = create((set, get) => ({
       } catch (err) {
         set({
           ...previousAuth,
-          authError: err?.message ?? '로그아웃에 실패했습니다.',
+          authError: localizeError(err, '로그아웃에 실패했어요.'),
         });
         throw err;
       } finally {

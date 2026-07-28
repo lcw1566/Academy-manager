@@ -771,7 +771,7 @@ function AcademyProfileModal({
           />
         </div>
         <div>
-          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">클리닉(자습) 운영</label>
+          <label className="text-xs font-semibold text-gray-600 mb-1.5 block">클리닉 운영</label>
           <div className="grid grid-cols-1 gap-2">
             {CLINIC_REQUIRED_OPTIONS.map((option) => {
               const selected = form.clinicRequired === option.value;
@@ -795,7 +795,7 @@ function AcademyProfileModal({
         </div>
         {form.clinicRequired && (
           <div className="rounded-2xl bg-gray-50 p-4">
-            <label className="mb-2 block text-xs font-semibold text-gray-600">클리닉 기본 구성</label>
+            <label className="mb-2 block text-xs font-semibold text-gray-600">과목별 클리닉 기본 구성</label>
             <ClinicDefaultItemsEditor
               subjects={form.academySubjects}
               value={form.clinicDefaultItems}

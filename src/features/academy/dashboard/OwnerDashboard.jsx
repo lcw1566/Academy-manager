@@ -294,11 +294,13 @@ export default function OwnerDashboard({ operationsOnly = false }) {
         <SummaryCard label="오늘 수업" value={`${todaySessions.length}개`} onClick={() => setActiveTab('classes')} />
         <SummaryCard label="등원 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('attendance')} />
         <SummaryCard label="오늘 출근 예정" value={`${todayShiftStaffIds.length}명`} onClick={() => setActiveTab('staff')} />
-        <SummaryCard
-          label="오늘 클리닉 기록"
-          value={`${todayClinicCount}건`}
-          color={todayClinicCount > 0 ? 'text-blue-600' : 'text-gray-900'}
-        />
+        {academyProfile?.clinicRequired !== false && (
+          <SummaryCard
+            label="오늘 클리닉 기록"
+            value={`${todayClinicCount}건`}
+            color={todayClinicCount > 0 ? 'text-blue-600' : 'text-gray-900'}
+          />
+        )}
         <SummaryCard
           label="이달 미납"
           value="준비 중"
