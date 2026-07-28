@@ -671,6 +671,15 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
 export async function listAcademyMemberProfiles(academyId) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
+  const { data: v2Data, error: v2Error } = await supabase.rpc('list_academy_member_profiles_v2', {
+    p_academy_id: academyId,
+  });
+  if (!v2Error) return v2Data ?? [];
+
+  const missingV2 = (v2Error.code || '').toLowerCase() === '42883'
+    || String(v2Error.message || '').includes('list_academy_member_profiles_v2');
+  if (!missingV2) throw v2Error;
+
   const { data, error } = await supabase.rpc('list_academy_member_profiles', {
     p_academy_id: academyId,
   });

@@ -446,6 +446,14 @@ const useWorkspaceStore = create(
           .channel(`workspace-collaboration:${authUser.id}:${academyId}`)
           .on(
             'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'academies' },
+            (payload) => {
+              if (payload.new?.id !== get().currentAcademyId) return;
+              get().scheduleWorkspaceRealtimeRefresh('academies');
+            },
+          )
+          .on(
+            'postgres_changes',
             { event: '*', schema: 'public', table: 'academy_invitations' },
             () => get().scheduleWorkspaceRealtimeRefresh('academy_invitations'),
           )
@@ -1298,9 +1306,10 @@ const useWorkspaceStore = create(
 
         memberProfiles.forEach((profile) => {
           const staff = staffProfiles.find((sp) => sp.user_id === profile.user_id);
-          // Phase 1 — staff_profile.role 우선.
-          let role = staff?.role || null;
-          // Phase 2 (hotfix) — staff_profile 이 없거나 role 이 비어 있으면
+          // academy_members.role 이 실제 앱 역할의 source of truth다.
+          // SQL 040 적용 전 서버는 membership_role을 주지 않으므로 staff profile로 fallback.
+          let role = profile.membership_role || staff?.role || null;
+          // staff_profile과 membership 역할이 모두 없을 때만 초대 역할로 fallback.
           // academy_invitations 의 role 로 fallback. cancel 된 초대는 제외.
           if (!role && profile.email) {
             const target = (profile.email || '').toLowerCase();

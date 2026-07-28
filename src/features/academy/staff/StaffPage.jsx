@@ -1039,6 +1039,8 @@ function StaffDetailPanel({
   const isAssistant = staff?._role === 'assistant';
   const staffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const saveAcademyStaffProfile = useWorkspaceStore((s) => s.saveAcademyStaffProfile);
+  const loadAcademyMemberProfiles = useWorkspaceStore((s) => s.loadAcademyMemberProfiles);
+  const loadAcademyStaffProfiles = useWorkspaceStore((s) => s.loadAcademyStaffProfiles);
   const changeLocalStaffRole = useAcademyStore((s) => s.changeLocalStaffRole);
   const showToast = useAcademyStore((s) => s.showToast);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
@@ -1061,6 +1063,9 @@ function StaffDetailPanel({
       return;
     }
     const previousRole = staff._role;
+    const previousPermissions = serverProfile?.permissions || staff.permissions || {};
+    const previousScope = serverProfile?.scope || staff.scope || {};
+    let serverRoleChanged = false;
     setRoleSaving(true);
     try {
       // academy_members.role 이 실제 앱 권한의 source of truth다.
@@ -1071,8 +1076,8 @@ function StaffDetailPanel({
           userId: staff.serverUserId,
           role: roleDraft,
         });
+        serverRoleChanged = true;
       }
-      changeLocalStaffRole?.(staff.id, previousRole, roleDraft, { source: staff.source || 'server' });
       if (staff.serverUserId && saveAcademyStaffProfile) {
         await saveAcademyStaffProfile({
           userId: staff.serverUserId,
@@ -1083,14 +1088,49 @@ function StaffDetailPanel({
           monthlySalary: serverProfile?.monthly_salary ?? staff.monthlySalary ?? 0,
           memo: serverProfile?.memo ?? staff.memo ?? null,
           status: serverProfile?.status || staff.status || 'active',
-          permissions: serverProfile?.permissions || staff.permissions || {},
-          scope: serverProfile?.scope || staff.scope || {},
+          // 역할이 바뀌면 이전 역할의 예외 권한/범위를 그대로 물려주지 않는다.
+          // 빈 객체는 resolvePermissions 에서 새 역할의 기본 권한으로 해석된다.
+          permissions: {},
+          scope: {},
         });
       }
-      showToast('역할이 저장되었습니다.');
+      await Promise.all([
+        loadAcademyMemberProfiles?.(),
+        loadAcademyStaffProfiles?.(),
+      ]);
+      // SQL 040 적용 전이거나 로컬 전용 직원이어도 화면은 즉시 새 역할로 정리한다.
+      changeLocalStaffRole?.(staff.id, previousRole, roleDraft, { source: staff.source || 'server' });
+      showToast('역할과 기본 권한을 변경했어요.');
       setRoleEditing(false);
     } catch (err) {
+      if (serverRoleChanged && staff.serverUserId && currentAcademyId) {
+        try {
+          await updateAcademyMemberRole({
+            academyId: currentAcademyId,
+            userId: staff.serverUserId,
+            role: previousRole,
+          });
+          await saveAcademyStaffProfile?.({
+            userId: staff.serverUserId,
+            role: previousRole,
+            subjects: serverProfile?.subjects || staff.subjects || [],
+            wageType: serverProfile?.wage_type || staff.wageType || 'hourly',
+            hourlyWage: serverProfile?.hourly_wage ?? staff.hourlyWage ?? 0,
+            monthlySalary: serverProfile?.monthly_salary ?? staff.monthlySalary ?? 0,
+            memo: serverProfile?.memo ?? staff.memo ?? null,
+            status: serverProfile?.status || staff.status || 'active',
+            permissions: previousPermissions,
+            scope: previousScope,
+          });
+        } catch (rollbackError) {
+          console.warn('[staff] role rollback failed', rollbackError);
+        }
+      }
       changeLocalStaffRole?.(staff.id, roleDraft, previousRole, { source: staff.source || 'server' });
+      await Promise.allSettled([
+        loadAcademyMemberProfiles?.(),
+        loadAcademyStaffProfiles?.(),
+      ]);
       setRoleDraft(previousRole);
       showToast(err?.message ?? '역할 저장에 실패했어요.', 'error');
     } finally {
@@ -2731,6 +2771,11 @@ function StaffPermissionSection({
 
   const [permissions, setPermissions] = useState(initial);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setPermissions(initial);
+  }, [initial, staff.id, staff._role]);
+
   const dirty = useMemo(
     () => PERMISSION_KEYS.some((k) => !!permissions[k] !== !!initial[k]),
     [permissions, initial],

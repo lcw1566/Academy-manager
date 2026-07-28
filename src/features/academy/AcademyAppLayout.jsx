@@ -78,14 +78,14 @@ const TAB_CONFIG = {
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
-  // 보조강사는 강사와 동일한 탭 셸을 공유한다 (홈/수업/학생/급여/더보기).
-  // 기능 차이만 둔다: 홈은 클리닉 기록 중심(AssistantDashboard), 클리닉 전용 탭은 제거.
-  // 클리닉 기록 전체 목록(ClinicPage)은 탭에서 빠졌지만 홈의 "전체 클리닉 기록 보기"
-  // 버튼으로 setActiveTab('clinic') 라우트가 그대로 살아 있다.
+  // 모든 직원 역할에 같은 후보 탭을 제공한 뒤 아래 권한 필터에서 실제 노출을 결정한다.
+  // 역할 변경 및 개별 권한 수정이 즉시 탭 구성에 반영되도록 탭 배열 자체에 예외를 두지 않는다.
   assistant: [
     { id: 'home',     label: '홈',   Icon: Home },
+    { id: 'attendance', label: '등하원', Icon: CheckSquare, mobileBottomNav: false },
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
+    { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
     { id: 'payroll',  label: '급여', Icon: CreditCard },
     { id: 'drive',    label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
@@ -99,16 +99,12 @@ const TAB_CONFIG = {
     { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
     { id: 'staff',      label: '직원',  Icon: UserCog },
     { id: 'payments',   label: '수납',  Icon: CreditCard, pilotLocked: true },
+    { id: 'payroll',    label: '급여',  Icon: BarChart2 },
     { id: 'drive',      label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',       label: '채팅', Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
 };
-
-// 네비게이션 탭에는 없지만 프로그램적으로 진입 가능한 유효 라우트.
-// 보조강사 홈의 "전체 클리닉 기록 보기" → setActiveTab('clinic') 가 여기에 해당하며,
-// 아래 보정 effect 가 이 라우트를 홈으로 되돌리지 않도록 예외 처리한다.
-const HIDDEN_VALID_TABS = ['clinic'];
 
 function FallbackScreen() {
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -276,7 +272,7 @@ export default function AcademyAppLayout() {
       : role === 'teacher'
       ? [loadClinicPage, loadPayrollPage]
       : role === 'manager'
-      ? [loadClinicPage, loadStaffPage]
+      ? [loadClinicPage, loadStaffPage, loadPayrollPage]
       : [loadPayrollPage];
     const preload = () => [...COMMON_ACADEMY_TAB_LOADERS, ...roleLoaders]
       .forEach((load) => load().catch(() => {}));
@@ -323,7 +319,17 @@ export default function AcademyAppLayout() {
   const baseTabs = TAB_CONFIG[role] || TAB_CONFIG.owner;
   const tabs = useMemo(() => {
     return baseTabs.filter((tab) => {
-      if (tab.id === 'clinic' && !clinicEnabled) return false;
+      if (tab.id === 'clinic') {
+        return clinicEnabled
+          && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditClinicRecords');
+      }
+      if (tab.id === 'attendance') {
+        return currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance');
+      }
+      if (tab.id === 'classes') {
+        return currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
+          || currentUserCan({ role, staffProfile: myStaffProfile }, 'canManageClasses');
+      }
       if (tab.id === 'payroll') {
         return currentUserCan({ role, staffProfile: myStaffProfile }, 'canViewPayroll');
       }
@@ -363,11 +369,10 @@ export default function AcademyAppLayout() {
       setActiveTab('payments');
       return;
     }
-    const hiddenValidTabs = clinicEnabled ? HIDDEN_VALID_TABS : [];
-    if (!validTabIds.includes(activeTab) && !hiddenValidTabs.includes(activeTab)) {
+    if (!validTabIds.includes(activeTab)) {
       setActiveTab(tabs[0]?.id || 'home');
     }
-  }, [role, tabs, activeTab, setActiveTab, clinicEnabled]);
+  }, [role, tabs, activeTab, setActiveTab]);
 
   useEffect(() => {
     if (

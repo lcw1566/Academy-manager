@@ -1533,8 +1533,8 @@ const useAcademyStore = create(
   //     that reference it via teacherId stay valid, and payroll keeps matching)
   //   - no match → append a new entry with stable id `teacher_${userId}` /
   //     `assistant_${userId}` (so future syncs hit branch 1, not duplicate)
-  //   - never delete (matches the spec; orphans stay until the owner removes
-  //     them via the existing list UI)
+  //   - 같은 서버 직원이 다른 역할 배열에 남아 있으면 현재 역할 배열로 이동한다.
+  //     역할 변경 뒤 과거 역할 카드가 중복 노출되지 않도록 서버 신원을 기준으로 정리한다.
   //
   // Quiet by design — these are triggered from sync orchestration on the
   // workspace store, not direct user action, so no toast.
@@ -1548,12 +1548,16 @@ const useAcademyStore = create(
 
     let saved = null;
     set((s) => {
-      const idx = s.academyTeachers.findIndex((t) =>
-        (t.serverUserId && t.serverUserId === userId) ||
-        (memberId && t.academyMemberId && t.academyMemberId === memberId) ||
-        (normalizedEmail && (t.email || '').trim().toLowerCase() === normalizedEmail)
+      const matchesIdentity = (staff) => (
+        (staff.serverUserId && staff.serverUserId === userId)
+        || (memberId && staff.academyMemberId && staff.academyMemberId === memberId)
+        || (normalizedEmail && (staff.email || '').trim().toLowerCase() === normalizedEmail)
       );
-      const existing = idx >= 0 ? s.academyTeachers[idx] : null;
+      const existing = [
+        ...s.academyTeachers,
+        ...s.academyAssistants,
+        ...s.academyManagers,
+      ].find(matchesIdentity) || null;
       const stableId = existing?.id || `teacher_${userId}`;
 
       const merged = {
@@ -1581,13 +1585,14 @@ const useAcademyStore = create(
         source: 'server',
       };
       saved = merged;
-
-      if (existing) {
-        const next = s.academyTeachers.slice();
-        next[idx] = merged;
-        return { academyTeachers: next };
-      }
-      return { academyTeachers: [...s.academyTeachers, merged] };
+      return {
+        academyTeachers: [
+          ...s.academyTeachers.filter((staff) => !matchesIdentity(staff)),
+          merged,
+        ],
+        academyAssistants: s.academyAssistants.filter((staff) => !matchesIdentity(staff)),
+        academyManagers: s.academyManagers.filter((staff) => !matchesIdentity(staff)),
+      };
     });
     return saved;
   },
@@ -1602,12 +1607,16 @@ const useAcademyStore = create(
 
     let saved = null;
     set((s) => {
-      const idx = s.academyAssistants.findIndex((a) =>
-        (a.serverUserId && a.serverUserId === userId) ||
-        (memberId && a.academyMemberId && a.academyMemberId === memberId) ||
-        (normalizedEmail && (a.email || '').trim().toLowerCase() === normalizedEmail)
+      const matchesIdentity = (staff) => (
+        (staff.serverUserId && staff.serverUserId === userId)
+        || (memberId && staff.academyMemberId && staff.academyMemberId === memberId)
+        || (normalizedEmail && (staff.email || '').trim().toLowerCase() === normalizedEmail)
       );
-      const existing = idx >= 0 ? s.academyAssistants[idx] : null;
+      const existing = [
+        ...s.academyAssistants,
+        ...s.academyTeachers,
+        ...s.academyManagers,
+      ].find(matchesIdentity) || null;
       const stableId = existing?.id || `assistant_${userId}`;
 
       const merged = {
@@ -1635,13 +1644,14 @@ const useAcademyStore = create(
         source: 'server',
       };
       saved = merged;
-
-      if (existing) {
-        const next = s.academyAssistants.slice();
-        next[idx] = merged;
-        return { academyAssistants: next };
-      }
-      return { academyAssistants: [...s.academyAssistants, merged] };
+      return {
+        academyTeachers: s.academyTeachers.filter((staff) => !matchesIdentity(staff)),
+        academyAssistants: [
+          ...s.academyAssistants.filter((staff) => !matchesIdentity(staff)),
+          merged,
+        ],
+        academyManagers: s.academyManagers.filter((staff) => !matchesIdentity(staff)),
+      };
     });
     return saved;
   },
@@ -1655,12 +1665,16 @@ const useAcademyStore = create(
     const normalizedEmail = (email || '').trim().toLowerCase() || null;
     let saved = null;
     set((s) => {
-      const idx = s.academyManagers.findIndex((m) =>
-        (m.serverUserId && m.serverUserId === userId) ||
-        (memberId && m.academyMemberId && m.academyMemberId === memberId) ||
-        (normalizedEmail && (m.email || '').trim().toLowerCase() === normalizedEmail)
+      const matchesIdentity = (staff) => (
+        (staff.serverUserId && staff.serverUserId === userId)
+        || (memberId && staff.academyMemberId && staff.academyMemberId === memberId)
+        || (normalizedEmail && (staff.email || '').trim().toLowerCase() === normalizedEmail)
       );
-      const existing = idx >= 0 ? s.academyManagers[idx] : null;
+      const existing = [
+        ...s.academyManagers,
+        ...s.academyTeachers,
+        ...s.academyAssistants,
+      ].find(matchesIdentity) || null;
       const merged = {
         ...(existing || {}),
         id: existing?.id || `manager_${userId}`,
@@ -1680,12 +1694,14 @@ const useAcademyStore = create(
         source: 'server',
       };
       saved = merged;
-      if (existing) {
-        const next = s.academyManagers.slice();
-        next[idx] = merged;
-        return { academyManagers: next };
-      }
-      return { academyManagers: [...s.academyManagers, merged] };
+      return {
+        academyTeachers: s.academyTeachers.filter((staff) => !matchesIdentity(staff)),
+        academyAssistants: s.academyAssistants.filter((staff) => !matchesIdentity(staff)),
+        academyManagers: [
+          ...s.academyManagers.filter((staff) => !matchesIdentity(staff)),
+          merged,
+        ],
+      };
     });
     return saved;
   },

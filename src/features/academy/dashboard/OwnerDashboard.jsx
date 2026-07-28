@@ -245,7 +245,9 @@ export default function OwnerDashboard({ operationsOnly = false }) {
               className="h-11 px-4 rounded-2xl bg-[#0064FF] text-white text-sm font-bold flex items-center gap-1.5 shadow-sm active:bg-[#0050CC]"
             >
               <QrCode size={15} />
-              공용 QR
+              {attendance.staffCheckMethod === 'qr' && attendance.studentCheckMethod === 'qr'
+                ? '공용 QR'
+                : attendance.staffCheckMethod === 'qr' ? '직원 QR' : '학생 QR'}
             </button>
           )}
         </div>

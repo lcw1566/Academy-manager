@@ -15,8 +15,8 @@
 // 역할별 기본 권한 (PERMISSION_DEFAULTS)
 //   teacher:  학생/수업/등하원 상태 편집 + 급여 조회
 //   assistant: 클리닉 편집 + 학생/급여 조회 (수업/출결 편집은 default off)
-//   manager:   데스크 실무 운영(학생·수납·직원·공유자료)을 담당하되 원장 전용
-//              학원 삭제/최종 설정/급여 관리는 포함하지 않는다.
+//   manager:   데스크 실무 운영(학생·수납·직원·공유자료) + 본인 급여 조회.
+//              학원 삭제/최종 설정/다른 직원 급여 관리는 포함하지 않는다.
 export const PERMISSION_DEFAULTS = {
   teacher: {
     canViewStudents: true,
@@ -26,6 +26,11 @@ export const PERMISSION_DEFAULTS = {
     canViewPayroll: true,
     canViewPayments: false,
     canManageClasses: false,
+    canManageStudents: false,
+    canManagePayments: false,
+    canManageStaff: false,
+    canManageStaffPermissions: false,
+    canManageDrive: false,
   },
   assistant: {
     canViewStudents: true,
@@ -46,7 +51,7 @@ export const PERMISSION_DEFAULTS = {
     canEditLessonRecords: true,
     canEditAttendance: true,
     canEditClinicRecords: true,
-    canViewPayroll: false,
+    canViewPayroll: true,
     canViewPayments: true,
     canManageClasses: true,
     canManageStudents: true,
@@ -60,7 +65,7 @@ export const PERMISSION_DEFAULTS = {
 export const PERMISSION_LABELS = {
   canViewStudents: '학생 정보 조회',
   canEditLessonRecords: '수업 기록 작성/수정',
-  canEditAttendance: '등하원·수업 상태 기록',
+  canEditAttendance: '등하원·출석 기록',
   canEditClinicRecords: '클리닉 기록 작성/수정',
   canViewPayroll: '본인 급여 조회',
   canViewPayments: '학원 수납 정보 조회',
