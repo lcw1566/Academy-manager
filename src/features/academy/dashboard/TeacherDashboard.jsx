@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CheckSquare, Clock, FileText } from 'lucide-react';
+import { Clock, FileText, LogIn } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -10,6 +10,8 @@ import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
 import StaffHomeQrButton from './StaffHomeQrButton';
+import HomeActionList from './HomeActionList';
+import { summarizeStudentPresence } from './homeDashboardUtils';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
 import {
   buildPlannedClassSessions,
@@ -37,8 +39,6 @@ function formatTimeRange(start, end) {
   return `${s || '-'} - ${e || '-'}`;
 }
 
-const SOON_WINDOW_MIN = 10;
-
 export default function TeacherDashboard() {
   const academyStudents = useAcademyStore((s) => s.academyStudents);
   const classGroups = useAcademyStore((s) => s.classGroups);
@@ -57,6 +57,8 @@ export default function TeacherDashboard() {
   const authUserEmail = useAuthStore((s) => s.user?.email);
   const memberships = useWorkspaceStore((s) => s.memberships);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
+  const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
   // Phase 44.6 / Phase B — 룰/예외 데이터.
   const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
   const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
@@ -75,6 +77,11 @@ export default function TeacherDashboard() {
 
   const [selectedDate, setSelectedDate] = useState(today());
   const todayStr = today();
+
+  useEffect(() => {
+    if (!currentAcademyId || !todayStr) return;
+    loadStudentCheckEvents({ sinceDateYMD: todayStr, limit: 1000 });
+  }, [currentAcademyId, todayStr, loadStudentCheckEvents]);
 
   // 1분마다 갱신 — "곧 시작" 카드 표시/숨김 자동 업데이트
   const [now, setNow] = useState(() => new Date());
@@ -185,20 +192,6 @@ export default function TeacherDashboard() {
   const isToday = selectedDate === todayStr;
   const dateLabel = isToday ? '오늘 내 수업' : formatDateShort(selectedDate);
 
-  // 곧 시작하는 수업: 오늘 + 시작 10분 이내 (가장 가까운 1개)
-  const upcomingSoon = useMemo(() => {
-    const nowMin = now.getHours() * 60 + now.getMinutes();
-    const candidates = todaySessions
-      .map((s) => ({ session: s, startMin: parseHHmmToMinutes(s.startTime) }))
-      .filter(({ startMin }) => {
-        if (startMin === null) return false;
-        const diff = startMin - nowMin;
-        return diff >= 0 && diff <= SOON_WINDOW_MIN;
-      })
-      .sort((a, b) => a.startMin - b.startMin);
-    return candidates[0] || null;
-  }, [todaySessions, now]);
-
   // Phase 32 — 작성 필요한 수업 기록: 본인 담당 완료 세션 중 _common_ 기록 없는 것
   const unfinishedRecordSessions = useMemo(() => {
     if (!myTeacher) return [];
@@ -207,6 +200,77 @@ export default function TeacherDashboard() {
       .filter((s) => !academyLessonRecords.some((lr) => lr.sessionId === s.id && lr.studentId === '_common_'))
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [mySessions, myTeacher, academyLessonRecords]);
+
+  const todayStudentPresence = useMemo(
+    () => summarizeStudentPresence(studentCheckEvents, todayStr),
+    [studentCheckEvents, todayStr],
+  );
+
+  const currentOrNextSession = useMemo(() => {
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    return todaySessions
+      .map((session) => ({
+        session,
+        start: parseHHmmToMinutes(session.startTime),
+        end: parseHHmmToMinutes(session.endTime),
+      }))
+      .filter(({ end }) => end === null || end >= nowMinutes)
+      .sort((a, b) => (a.start ?? Number.MAX_SAFE_INTEGER) - (b.start ?? Number.MAX_SAFE_INTEGER))[0]
+      || null;
+  }, [now, todaySessions]);
+
+  const homeActions = useMemo(() => {
+    const actions = [{
+      id: 'attendance',
+      icon: LogIn,
+      tone: 'green',
+      title: '등하원',
+      detail: `오늘 등원 ${todayStudentPresence.checkedInToday}명`,
+      value: `현재 원내 ${todayStudentPresence.inside}명`,
+      live: true,
+      onClick: () => setActiveTab('attendance'),
+    }];
+
+    if (currentOrNextSession) {
+      const { session, start, end } = currentOrNextSession;
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      const group = classGroups.find((item) => item.id === session.classGroupId);
+      const status = start !== null && end !== null && start <= nowMinutes && nowMinutes <= end
+        ? '진행 중'
+        : `${formatClock(session.startTime)} 시작`;
+      actions.push({
+        id: `session-${session.id}`,
+        icon: Clock,
+        tone: 'blue',
+        title: group?.name || '다음 수업',
+        detail: `${status} · 수업 기록 열기`,
+        onClick: () => navigateToClassSession(session.id),
+      });
+    }
+
+    const missingRecord = unfinishedRecordSessions[0];
+    if (missingRecord) {
+      const group = classGroups.find((item) => item.id === missingRecord.classGroupId);
+      actions.push({
+        id: `record-${missingRecord.id}`,
+        icon: FileText,
+        tone: 'amber',
+        title: `수업 기록 ${unfinishedRecordSessions.length}건 미작성`,
+        detail: group?.name || '완료된 수업 기록을 작성해주세요.',
+        onClick: () => navigateToClassSession(missingRecord.id),
+      });
+    }
+
+    return actions;
+  }, [
+    classGroups,
+    currentOrNextSession,
+    navigateToClassSession,
+    now,
+    setActiveTab,
+    todayStudentPresence,
+    unfinishedRecordSessions,
+  ]);
 
   // Phase 32 — 내 급여 요약 (이번 달)
   const academyPayrolls = useAcademyStore((s) => s.academyPayrolls) ?? [];
@@ -228,19 +292,12 @@ export default function TeacherDashboard() {
             <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab('attendance')}
-              className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-xs font-bold text-blue-700 sm:w-auto sm:gap-1.5 sm:px-3"
-              aria-label="학생 등하원"
-            >
-              <CheckSquare size={14} />
-              <span className="hidden sm:inline">등하원</span>
-            </button>
             <StaffHomeQrButton staff={myTeacher} staffRole="teacher" />
           </div>
         </div>
       </div>
+
+      <HomeActionList items={homeActions} />
 
       <div className="mb-5">
         <WeeklyExpandableCalendar selectedDate={selectedDate} onSelectDate={setSelectedDate} schedules={schedules} />
@@ -248,17 +305,6 @@ export default function TeacherDashboard() {
 
       {/* Phase 31 — 오늘 근무 카드 + 출/퇴근 */}
       <MyTodayShiftCard staff={myTeacher} staffRole="teacher" />
-
-      {/* 곧 수업이 시작해요! — 시작 10분 전 */}
-      {upcomingSoon && (
-        <UpcomingSoonCard
-          session={upcomingSoon.session}
-          startMin={upcomingSoon.startMin}
-          nowMinutes={now.getHours() * 60 + now.getMinutes()}
-          classGroups={classGroups}
-          onClick={() => navigateToClassSession(upcomingSoon.session.id)}
-        />
-      )}
 
       {/* 선택 날짜 수업 */}
       <div className="px-4 mb-5">
@@ -409,35 +455,6 @@ export default function TeacherDashboard() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function UpcomingSoonCard({ session, startMin, nowMinutes, classGroups, onClick }) {
-  const group = classGroups.find((g) => g.id === session.classGroupId);
-  const remainMin = Math.max(0, startMin - nowMinutes);
-  const remainLabel = remainMin === 0 ? '지금 시작' : `${remainMin}분 후 시작`;
-  return (
-    <div className="px-4 mb-5">
-      <motion.button
-        type="button"
-        onClick={onClick}
-        whileTap={{ scale: 0.97 }}
-        className="w-full text-left bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-2xl p-4 shadow-md active:shadow-sm"
-      >
-        <div className="flex items-center gap-2 mb-2">
-          <Clock size={14} className="text-blue-100" />
-          <p className="text-xs font-bold text-blue-50">곧 수업이 시작해요!</p>
-          <span className="ml-auto text-[11px] font-bold bg-white/20 px-2 py-0.5 rounded-full">{remainLabel}</span>
-        </div>
-        <p className="text-base font-bold leading-tight">{group?.name || '수업'}</p>
-        <p className="text-xs text-blue-50 mt-1">
-          {formatTimeRange(session.startTime, session.endTime)}
-          {session.room ? ` · ${session.room}` : ''}
-          {` · ${session.studentIds?.length || 0}명`}
-        </p>
-        <p className="text-xs font-semibold text-white mt-2">수업 보기 →</p>
-      </motion.button>
     </div>
   );
 }

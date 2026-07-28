@@ -31,8 +31,8 @@ function normalizeEmail(value) {
 }
 
 const ROLE_OPTIONS = [
-  { id: 'teacher', label: '선생님', description: '배정된 수업·학생 기록 담당' },
-  { id: 'manager', label: '운영 매니저', description: '데스크 운영·직원 관리' },
+  { id: 'teacher', label: '선생님', description: '강사, 보조강사 모두 포함' },
+  { id: 'manager', label: '운영 매니저', description: '데스크 운영·직원 관리 담당' },
 ];
 
 export default function StaffInviteWidget({

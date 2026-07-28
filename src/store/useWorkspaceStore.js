@@ -64,6 +64,8 @@ import {
 } from '../services/supabase/scheduleRulesApi';
 import useAuthStore from './useAuthStore';
 import useAcademyStore from './useAcademyStore';
+import { isTransientRequestError, retryAsync } from '../utils/asyncRetry';
+import { localizeError } from '../utils/localizeError';
 
 // Phase 32 — 학원 선택 picked 여부. sessionStorage 에도 동기화하지만 React 가
 // 변화를 감지할 수 있도록 store state 로도 관리한다. WorkspaceSelectionPage 의
@@ -576,7 +578,7 @@ const useWorkspaceStore = create(
       // sessionStorage 의 pending-account-type 이 있으면 프로필에 반영하고 삭제.
       // (회원가입 시 이메일 인증이 필요해 session 이 없는 경우 account_type 을
       //  바로 저장하지 못하는 케이스를 위해 sessionStorage 에 임시 보관해둠.)
-      syncProfile: async ({ throwOnError = false } = {}) => {
+      syncProfile: async ({ throwOnError = false, reportError = true } = {}) => {
         if (!isSupabaseConfigured) return null;
         try {
           const authUser = useAuthStore.getState().user;
@@ -645,7 +647,9 @@ const useWorkspaceStore = create(
           set({ profile });
           return profile;
         } catch (err) {
-          set({ workspaceError: err?.message ?? '프로필 동기화에 실패했어요.' });
+          if (reportError) {
+            set({ workspaceError: err?.message ?? '프로필 동기화에 실패했어요.' });
+          }
           if (throwOnError) throw err;
           return null;
         }
@@ -681,6 +685,7 @@ const useWorkspaceStore = create(
       loadMemberships: async ({
         throwOnError = false,
         includeAcademy = true,
+        reportError = true,
       } = {}) => {
         if (!isSupabaseConfigured) return [];
         try {
@@ -699,10 +704,12 @@ const useWorkspaceStore = create(
           set({ memberships, currentAcademyId });
           return memberships;
         } catch (err) {
-          set({
-            workspaceError:
-              err?.message ?? '학원 목록을 불러오지 못했어요.',
-          });
+          if (reportError) {
+            set({
+              workspaceError:
+                err?.message ?? '학원 목록을 불러오지 못했어요.',
+            });
+          }
           if (throwOnError) throw err;
           return [];
         }
@@ -820,6 +827,59 @@ const useWorkspaceStore = create(
         get().loadAcademyInvitations();
         get().loadServerStaffShifts();
         get().loadStaffAttendanceLogs({ limit: 200 });
+      },
+
+      // 학원 선택 화면에서는 academy_members 조회가 먼저 끝나고 academies 상세
+      // 조인이 뒤늦게 도착할 수 있다. 상세 정보가 준비되기 전에 앱 화면을 열면
+      // 첫 렌더가 불완전한 설정을 읽게 되므로, 해당 학원 정보를 확인한 뒤 진입한다.
+      prepareAcademyWorkspace: async (academyId) => {
+        if (!academyId) throw new Error('학원을 다시 선택해주세요.');
+        const membership = get().memberships.find((item) => item.academy_id === academyId);
+        if (!membership) throw new Error('선택한 학원에 접근할 수 없어요.');
+
+        let preparedMembership = membership;
+        if (!preparedMembership.academy) {
+          preparedMembership = await retryAsync(
+            async () => {
+              const refreshedMemberships = await get().loadMemberships({
+                throwOnError: true,
+                includeAcademy: true,
+                reportError: false,
+              });
+              const selectedMembership = refreshedMemberships.find(
+                (item) => item.academy_id === academyId,
+              );
+              if (!selectedMembership?.academy) {
+                const notReadyError = new Error('학원 상세 정보가 아직 준비되지 않았어요.');
+                notReadyError.code = 'WORKSPACE_DETAILS_NOT_READY';
+                throw notReadyError;
+              }
+              return selectedMembership;
+            },
+            {
+              attempts: 4,
+              delays: [300, 800, 1600],
+              shouldRetry: (error) => (
+                error?.code === 'WORKSPACE_DETAILS_NOT_READY'
+                || isTransientRequestError(error)
+              ),
+              onRetry: (error, attempt) => {
+                console.warn(`[workspace] 학원 상세 조회 재시도 ${attempt}`, error);
+              },
+            },
+          );
+        }
+
+        if (!preparedMembership?.academy) {
+          throw new Error('선택한 학원 정보를 확인하지 못했어요. 잠시 후 다시 시도해주세요.');
+        }
+
+        ensureCurrentAcademyDataScope(academyId);
+        syncAcademyProfileFromServer(preparedMembership.academy);
+        if (academyId !== get().currentAcademyId) {
+          get().setCurrentAcademyId(academyId);
+        }
+        return preparedMembership;
       },
 
       // 서버 학생 목록 조회 (read-only). currentAcademyId 가 비어 있으면 빈 배열.
@@ -1711,27 +1771,73 @@ const useWorkspaceStore = create(
         const initialization = (async () => {
           set({ isWorkspaceLoading: true, workspaceError: null });
           try {
-            // 두 조회는 서로 의존하지 않으므로 동시에 실행한다.
-            await Promise.all([
-              get().syncProfile({ throwOnError: true }),
-              // 로그인에 필요한 소속/역할만 먼저 읽는다. academies 설정 전체는
-              // 아래 백그라운드 재조회에서 합친다.
-              get().loadMemberships({
-                throwOnError: true,
-                includeAcademy: false,
-              }),
-            ]);
+            const expectedAcademyId = get().currentAcademyId;
+            // 로그인 직후 세션 저장과 첫 DB 요청 사이에는 아주 짧은 경합이 생길
+            // 수 있고, 잠든 Supabase 인스턴스의 첫 응답도 늦을 수 있다. 이때 곧바로
+            // 실패 화면을 띄우지 않고 필수 조회만 짧은 간격으로 자동 재시도한다.
+            await retryAsync(
+              async (attempt) => {
+                const [, loadedMemberships] = await Promise.all([
+                  get().syncProfile({
+                    throwOnError: true,
+                    reportError: false,
+                  }),
+                  // 로그인에 필요한 소속/역할만 먼저 읽는다. academies 설정 전체는
+                  // 아래 백그라운드 재조회에서 합친다.
+                  get().loadMemberships({
+                    throwOnError: true,
+                    includeAcademy: false,
+                    reportError: false,
+                  }),
+                ]);
+
+                // 이 브라우저에 전에 선택한 학원이 있는데 첫 조회만 빈 목록이라면
+                // RLS가 인증 토큰을 읽기 전의 순간 응답일 수 있다. 마지막 시도 전까지만
+                // 다시 확인하고, 실제로 탈퇴된 계정은 최종적으로 빈 목록을 허용한다.
+                if (
+                  expectedAcademyId
+                  && attempt < 4
+                  && !loadedMemberships.some(
+                    (membership) => membership.academy_id === expectedAcademyId,
+                  )
+                ) {
+                  const membershipNotReadyError = new Error(
+                    '학원 소속 정보가 아직 준비되지 않았어요.',
+                  );
+                  membershipNotReadyError.code = 'WORKSPACE_MEMBERSHIP_NOT_READY';
+                  throw membershipNotReadyError;
+                }
+              },
+              {
+                attempts: 4,
+                delays: [300, 800, 1600],
+                shouldRetry: (error) => (
+                  error?.code === 'WORKSPACE_MEMBERSHIP_NOT_READY'
+                  || isTransientRequestError(error)
+                ),
+                onRetry: (error, attempt) => {
+                  console.warn(`[workspace] 초기화 재시도 ${attempt}`, error);
+                },
+              },
+            );
 
             if (useAuthStore.getState().user?.id !== authUserId) return;
 
             // 권한/학원 선택에 필요한 정보가 준비되면 즉시 첫 화면을 연다.
-            set({ isWorkspaceReady: true, isWorkspaceLoading: false });
+            set({
+              isWorkspaceReady: true,
+              isWorkspaceLoading: false,
+              workspaceError: null,
+            });
 
             // 아래 데이터는 화면별 로딩 상태로 갱신한다. 실패는 각 로더가 자체
             // 에러 상태에 기록하므로 전체 로그인 성공 여부를 막지 않는다.
             void Promise.allSettled([
               // 학원 이름·온보딩·수강료·연락처 등 academies 상세를 채운다.
-              get().loadMemberships({ includeAcademy: true }),
+              get().loadMemberships({
+                includeAcademy: true,
+                reportError: false,
+              }),
               get().loadServerStudents(),
               get().loadServerClassGroups(),
               get().loadServerClassSessions(),
@@ -1758,8 +1864,10 @@ const useWorkspaceStore = create(
             if (useAuthStore.getState().user?.id === authUserId) {
               set({
                 isWorkspaceReady: false,
-                workspaceError:
-                  error?.message ?? '학원 정보를 불러오지 못했어요.',
+                workspaceError: localizeError(
+                  error,
+                  '학원 정보를 불러오지 못했어요. 네트워크를 확인하고 다시 시도해주세요.',
+                ),
               });
             }
           } finally {

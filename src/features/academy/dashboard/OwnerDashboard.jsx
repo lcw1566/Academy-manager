@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, FileText, Users as UsersIcon, AlertCircle, CheckSquare, QrCode } from 'lucide-react';
+import {
+  Clock,
+  FileText,
+  Users as UsersIcon,
+  AlertCircle,
+  CheckSquare,
+  LogIn,
+  QrCode,
+} from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { today, formatDateShort, greetingByTime } from '../../../utils/date';
@@ -20,6 +28,8 @@ import {
   plannedToClassSessionShape,
   plannedToStaffShiftShape,
 } from '../../../utils/schedule';
+import HomeActionList from './HomeActionList';
+import { summarizeStudentPresence } from './homeDashboardUtils';
 
 function formatClock(value) {
   if (!value) return '';
@@ -62,12 +72,18 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
 
   const [selectedDate, setSelectedDate] = useState(() => getAcademyYmd() || today());
+  const [now, setNow] = useState(() => new Date());
   const todayStr = getAcademyYmd() || today();
 
   useEffect(() => {
     if (!currentAcademyId || !todayStr) return;
     loadStudentCheckEvents({ sinceDateYMD: todayStr, limit: 1000 });
   }, [currentAcademyId, todayStr, loadStudentCheckEvents]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const recentAttendanceEvents = useMemo(() => {
     const staffByUserId = new Map(
@@ -165,9 +181,8 @@ export default function OwnerDashboard({ operationsOnly = false }) {
 
   // 진행 중 / 곧 시작 수업 (시작 90분 이내)
   const nowMinutes = useMemo(() => {
-    const d = new Date();
-    return d.getHours() * 60 + d.getMinutes();
-  }, []);
+    return now.getHours() * 60 + now.getMinutes();
+  }, [now]);
   const inProgressOrSoonSessions = useMemo(() => {
     return todaySessions.filter((s) => {
       if (!s.startTime || !s.endTime) return false;
@@ -210,20 +225,68 @@ export default function OwnerDashboard({ operationsOnly = false }) {
     return { present, late, absent, completed };
   }, [todayShifts]);
 
-  // Phase 41 — 오늘 학생 등·하원 분류
-  const todayStudentCheckSummary = useMemo(() => {
-    const todayISO = todayStr;
-    const checkedStudentIds = new Set();
-    for (const ev of studentCheckEvents) {
-      if (!ev.event_time) continue;
-      if (getAcademyYmd(ev.event_time) !== todayISO) continue;
-      if (ev.event_type === 'check_in') checkedStudentIds.add(ev.student_id);
+  const todayStudentPresence = useMemo(
+    () => summarizeStudentPresence(studentCheckEvents, todayStr),
+    [studentCheckEvents, todayStr],
+  );
+
+  const homeActions = useMemo(() => {
+    const actions = [{
+      id: 'attendance',
+      icon: LogIn,
+      tone: 'green',
+      title: '등하원',
+      detail: `오늘 등원 ${todayStudentPresence.checkedInToday}명`,
+      value: `현재 원내 ${todayStudentPresence.inside}명`,
+      live: true,
+      onClick: () => setActiveTab('attendance'),
+    }];
+
+    const activeSession = inProgressOrSoonSessions[0];
+    if (activeSession) {
+      const group = classGroups.find((item) => item.id === activeSession.classGroupId);
+      actions.push({
+        id: `session-${activeSession.id}`,
+        icon: Clock,
+        tone: 'blue',
+        title: group?.name || '곧 시작하는 수업',
+        detail: `${formatTimeRange(activeSession.startTime, activeSession.endTime)} · 수업 기록 열기`,
+        onClick: () => navigateToClassSession(activeSession.id),
+      });
     }
-    return {
-      checkedIn: checkedStudentIds.size,
-      expected: todayStudentIds.length,
-    };
-  }, [studentCheckEvents, todayStr, todayStudentIds.length]);
+
+    const missingRecord = unfinishedLessonRecordSessions[0];
+    if (missingRecord) {
+      const group = classGroups.find((item) => item.id === missingRecord.classGroupId);
+      actions.push({
+        id: `record-${missingRecord.id}`,
+        icon: FileText,
+        tone: 'amber',
+        title: `수업 기록 ${unfinishedLessonRecordSessions.length}건 미작성`,
+        detail: group?.name || '완료된 수업 기록을 작성해주세요.',
+        onClick: () => navigateToClassSession(missingRecord.id),
+      });
+    } else if (pendingInvitations.length > 0) {
+      actions.push({
+        id: 'pending-invitations',
+        icon: UsersIcon,
+        tone: 'purple',
+        title: `직원 초대 ${pendingInvitations.length}명 대기`,
+        detail: '초대 현황 확인하기',
+        onClick: () => setActiveTab('staff'),
+      });
+    }
+
+    return actions;
+  }, [
+    classGroups,
+    inProgressOrSoonSessions,
+    navigateToClassSession,
+    pendingInvitations.length,
+    setActiveTab,
+    todayStudentPresence,
+    unfinishedLessonRecordSessions,
+  ]);
 
   const isToday = selectedDate === todayStr;
   const dateLabel = isToday ? '오늘 일정' : formatDateShort(selectedDate);
@@ -252,6 +315,8 @@ export default function OwnerDashboard({ operationsOnly = false }) {
           )}
         </div>
       </div>
+
+      <HomeActionList items={homeActions} />
 
       {/* 주간 캘린더 */}
       <div className="mb-5">
@@ -334,22 +399,11 @@ export default function OwnerDashboard({ operationsOnly = false }) {
             <AttendanceChip label="미출근" value={todayShiftSummary.absent} tone="red" />
             <AttendanceChip label="퇴근" value={todayShiftSummary.completed} tone="gray" />
           </div>
-          <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between">
-            <span className="text-xs text-gray-500">학생 등원</span>
-            <span className="text-sm font-bold text-gray-900">
-              {todayStudentCheckSummary.checkedIn}
-              <span className="text-xs text-gray-400 font-medium ml-1">
-                / {todayStudentCheckSummary.expected}명
-              </span>
-            </span>
-          </div>
         </div>
       </div>
 
       {/* Phase 30 — 운영 알림 카드 */}
-      {(inProgressOrSoonSessions.length > 0
-        || unfinishedLessonRecordSessions.length > 0
-        || pendingInvitations.length > 0
+      {(pendingInvitations.length > 0
         || recentAttendanceEvents.length > 0) && (
         <div className="px-4 mb-5 flex flex-col gap-2">
           {recentAttendanceEvents.length > 0 && (
@@ -361,33 +415,6 @@ export default function OwnerDashboard({ operationsOnly = false }) {
                 .map((event) => `${event.name} ${event.action} ${event.time}`)
                 .join(' · ')}
               onClick={() => setActiveTab('staff')}
-            />
-          )}
-          {inProgressOrSoonSessions.length > 0 && (
-            <OpsCard
-              icon={Clock}
-              tone="blue"
-              title={`진행 중/곧 시작 수업 ${inProgressOrSoonSessions.length}개`}
-              detail={inProgressOrSoonSessions
-                .slice(0, 3)
-                .map((s) => `${formatTimeRange(s.startTime, s.endTime)} ${classGroups.find((g) => g.id === s.classGroupId)?.name || ''}`)
-                .join(' · ')}
-              onClick={() => {
-                const first = inProgressOrSoonSessions[0];
-                if (first) navigateToClassSession(first.id);
-              }}
-            />
-          )}
-          {unfinishedLessonRecordSessions.length > 0 && (
-            <OpsCard
-              icon={FileText}
-              tone="amber"
-              title={`미작성 수업 기록 ${unfinishedLessonRecordSessions.length}개`}
-              detail="완료된 수업에 기록이 비어 있어요."
-              onClick={() => {
-                const first = unfinishedLessonRecordSessions[0];
-                if (first) navigateToClassSession(first.id);
-              }}
             />
           )}
           {pendingInvitations.length > 0 && (

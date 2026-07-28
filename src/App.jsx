@@ -20,6 +20,7 @@ import { fetchAcademySnapshot } from './services/supabase/hydrateApi';
 import { runMonthEndScheduleGeneration } from './services/monthlyScheduleAutomation';
 import { membershipRoleToAppRole } from './utils/format';
 import { tossSpring } from './utils/motion';
+import { retryAsync } from './utils/asyncRetry';
 import { initializePushNotifications, showForegroundChatNotification } from './services/pushNotifications';
 
 const ACADEMY_ROLES = ['owner', 'teacher', 'assistant', 'manager'];
@@ -409,7 +410,16 @@ export default function App() {
     hydratingRef.current = true;
     (async () => {
       try {
-        const snapshot = await fetchAcademySnapshot(currentAcademyId);
+        const snapshot = await retryAsync(
+          () => fetchAcademySnapshot(currentAcademyId),
+          {
+            attempts: 3,
+            delays: [500, 1200],
+            onRetry: (error, attempt) => {
+              console.warn(`[auto-hydrate] snapshot 재시도 ${attempt}`, error);
+            },
+          },
+        );
         // fetch 도중 사용자가 다른 학원으로 전환했다면 이전 학원 snapshot을 적용하지 않는다.
         if (useWorkspaceStore.getState().currentAcademyId !== currentAcademyId) return;
         const counts = hydrateAcademyFromServerSnapshot(snapshot, {

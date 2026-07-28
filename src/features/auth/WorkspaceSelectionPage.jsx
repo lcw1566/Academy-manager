@@ -33,6 +33,7 @@ import {
 import { generateQrToken } from '../academy/attendance/attendanceHelpers';
 import TuitionRateFields from '../academy/onboarding/TuitionRateFields';
 import ClinicDefaultItemsEditor from '../academy/clinic/ClinicDefaultItemsEditor';
+import { localizeError } from '../../utils/localizeError';
 
 export const WORKSPACE_PICKED_KEY = 'workspace-picked';
 
@@ -55,7 +56,7 @@ export function wasWorkspacePicked() {
 export default function WorkspaceSelectionPage() {
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
-  const setCurrentAcademyId = useWorkspaceStore((s) => s.setCurrentAcademyId);
+  const prepareAcademyWorkspace = useWorkspaceStore((s) => s.prepareAcademyWorkspace);
   const profile = useWorkspaceStore((s) => s.profile);
   const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
   const acceptInvitation = useWorkspaceStore((s) => s.acceptInvitation);
@@ -67,6 +68,7 @@ export default function WorkspaceSelectionPage() {
   const setAcademyProfile = useAcademyStore((s) => s.setAcademyProfile);
 
   const [submitting, setSubmitting] = useState(false);
+  const [pickingAcademyId, setPickingAcademyId] = useState(null);
   const [acceptingId, setAcceptingId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [createStep, setCreateStep] = useState(0);
@@ -87,15 +89,25 @@ export default function WorkspaceSelectionPage() {
   const isOwner = profile?.account_type === 'owner';
   const isStaff = profile?.account_type === 'staff';
 
-  const handlePick = (academyId) => {
+  const handlePick = async (academyId) => {
     if (submitting) return;
     setSubmitting(true);
+    setPickingAcademyId(academyId);
     try {
-      if (academyId !== currentAcademyId) setCurrentAcademyId(academyId);
+      await prepareAcademyWorkspace(academyId);
       setActiveTab('home');
       markWorkspacePicked();
+    } catch (error) {
+      showToast(
+        localizeError(
+          error,
+          '학원 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.',
+        ),
+        'error',
+      );
     } finally {
       setSubmitting(false);
+      setPickingAcademyId(null);
     }
   };
 
@@ -314,7 +326,11 @@ export default function WorkspaceSelectionPage() {
                       <p className="text-base font-bold text-gray-900 truncate">{academyName}</p>
                       <p className="text-xs text-gray-500 mt-0.5">{roleLabel}</p>
                     </div>
-                    <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
+                    {pickingAcademyId === m.academy_id ? (
+                      <Loader2 size={16} className="animate-spin text-blue-500 flex-shrink-0" />
+                    ) : (
+                      <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
+                    )}
                   </button>
                 );
               })}
