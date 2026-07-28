@@ -28,14 +28,13 @@ import {
 import TuitionRateFields from '../onboarding/TuitionRateFields';
 import {
   ACADEMY_SUBJECT_OPTIONS,
-  CLINIC_RECORD_FIELD_OPTIONS,
   CLINIC_REQUIRED_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
   getAcademySubjectsLabel,
   getClinicRequiredLabel,
   inferAcademyTypeFromSubjects,
 } from '../../../constants/academySettings';
-import { CLINIC_ACTIVITY_TYPES } from '../../../constants/learningActivitySettings';
+import ClinicDefaultItemsEditor from '../clinic/ClinicDefaultItemsEditor';
 
 export default function AcademyMorePage() {
   const role = useAcademyStore((s) => s.role);
@@ -75,6 +74,11 @@ export default function AcademyMorePage() {
     const serverClinicDefaultActivityType =
       currentAcademy?.clinic_default_activity_type
       || DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType;
+    const serverClinicDefaultItems =
+      currentAcademy?.clinic_default_items
+      && typeof currentAcademy.clinic_default_items === 'object'
+        ? currentAcademy.clinic_default_items
+        : DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems;
     const serverTuitionPolicy = currentAcademy?.tuition_policy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
     const serverTuitionRates =
       currentAcademy?.tuition_rates && typeof currentAcademy.tuition_rates === 'object'
@@ -92,6 +96,11 @@ export default function AcademyMorePage() {
     const localClinicDefaultActivityType =
       academyProfile?.clinicDefaultActivityType
       || DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType;
+    const localClinicDefaultItems =
+      academyProfile?.clinicDefaultItems
+      && typeof academyProfile.clinicDefaultItems === 'object'
+        ? academyProfile.clinicDefaultItems
+        : DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems;
     const localTuitionPolicy = academyProfile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
     const localTuitionRates = academyProfile?.tuitionRates || DEFAULT_ACADEMY_SETTINGS.tuitionRates;
     const localAddress = academyProfile?.address || '';
@@ -105,6 +114,7 @@ export default function AcademyMorePage() {
       localClinicRequired === serverClinicRequired &&
       JSON.stringify(localClinicRecordFields) === JSON.stringify(serverClinicRecordFields) &&
       localClinicDefaultActivityType === serverClinicDefaultActivityType &&
+      JSON.stringify(localClinicDefaultItems) === JSON.stringify(serverClinicDefaultItems) &&
       localTuitionPolicy === serverTuitionPolicy &&
       JSON.stringify(localTuitionRates) === JSON.stringify(serverTuitionRates) &&
       localAddress === serverAddress &&
@@ -118,6 +128,7 @@ export default function AcademyMorePage() {
       clinicRequired: serverClinicRequired,
       clinicRecordFields: serverClinicRecordFields,
       clinicDefaultActivityType: serverClinicDefaultActivityType,
+      clinicDefaultItems: serverClinicDefaultItems,
       tuitionPolicy: serverTuitionPolicy,
       tuitionRates: serverTuitionRates,
       address: serverAddress,
@@ -131,6 +142,7 @@ export default function AcademyMorePage() {
     currentAcademy?.clinic_required,
     currentAcademy?.clinic_record_fields,
     currentAcademy?.clinic_default_activity_type,
+    currentAcademy?.clinic_default_items,
     currentAcademy?.tuition_policy,
     currentAcademy?.tuition_rates,
     currentAcademy?.address,
@@ -159,6 +171,7 @@ export default function AcademyMorePage() {
         clinicRequired: data.clinicRequired,
         clinicRecordFields: data.clinicRecordFields,
         clinicDefaultActivityType: data.clinicDefaultActivityType,
+        clinicDefaultItems: data.clinicDefaultItems,
         tuitionPolicy: data.tuitionPolicy,
         tuitionRates: data.tuitionRates,
         address: data.address,
@@ -624,6 +637,11 @@ function AcademyProfileModal({
     clinicDefaultActivityType:
       profile?.clinicDefaultActivityType
       || DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType,
+    clinicDefaultItems:
+      profile?.clinicDefaultItems
+      && typeof profile.clinicDefaultItems === 'object'
+        ? profile.clinicDefaultItems
+        : DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems,
     tuitionPolicy: DEFAULT_ACADEMY_SETTINGS.tuitionPolicy,
     tuitionRates: profile?.tuitionRates || DEFAULT_ACADEMY_SETTINGS.tuitionRates,
   }), [profile]);
@@ -684,11 +702,7 @@ function AcademyProfileModal({
         <button
           type="button"
           onClick={handleSave}
-          disabled={
-            saving
-            || (form.academySubjects || []).length === 0
-            || (form.clinicRequired && form.clinicRecordFields.length === 0)
-          }
+          disabled={saving || (form.academySubjects || []).length === 0}
           className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl disabled:bg-blue-300"
         >
           {saving ? '저장 중…' : '저장'}
@@ -782,56 +796,15 @@ function AcademyProfileModal({
         {form.clinicRequired && (
           <div className="rounded-2xl bg-gray-50 p-4">
             <label className="mb-2 block text-xs font-semibold text-gray-600">클리닉 기본 구성</label>
-            <div className="mb-3 flex flex-wrap gap-2">
-              {CLINIC_ACTIVITY_TYPES.filter((option) => option.id !== 'other').map((option) => {
-                const selected = form.clinicDefaultActivityType === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setForm((current) => ({
-                      ...current,
-                      clinicDefaultActivityType: option.id,
-                    }))}
-                    className={`rounded-xl border px-3 py-2 text-xs font-bold ${
-                      selected
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-200 bg-white text-gray-600'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {CLINIC_RECORD_FIELD_OPTIONS.map((option) => {
-                const selected = form.clinicRecordFields.includes(option.id);
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setForm((current) => ({
-                      ...current,
-                      clinicRecordFields: selected
-                        ? current.clinicRecordFields.filter((id) => id !== option.id)
-                        : [...current.clinicRecordFields, option.id],
-                    }))}
-                    className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-xs font-bold ${
-                      selected
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-100 bg-white text-gray-600'
-                    }`}
-                  >
-                    {option.label}
-                    {selected && <Check size={13} />}
-                  </button>
-                );
-              })}
-            </div>
-            {form.clinicRecordFields.length === 0 && (
-              <p className="mt-2 text-[11px] font-semibold text-red-500">기록 항목을 하나 이상 골라주세요.</p>
-            )}
+            <ClinicDefaultItemsEditor
+              subjects={form.academySubjects}
+              value={form.clinicDefaultItems}
+              onChange={(clinicDefaultItems) => setForm((current) => ({
+                ...current,
+                clinicDefaultItems,
+              }))}
+              compact
+            />
           </div>
         )}
         <div>

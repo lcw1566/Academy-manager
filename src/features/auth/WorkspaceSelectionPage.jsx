@@ -609,57 +609,13 @@ function AcademyCreateOnboarding({
       )}
 
       {currentStep.id === 'clinic_template' && (
-        <div className="flex flex-col gap-4">
-          <div>
-            <p className="mb-2 text-xs font-bold text-gray-600">기본 활동</p>
-            <div className="flex flex-wrap gap-2">
-              {CLINIC_ACTIVITY_TYPES.filter((option) => option.id !== 'other').map((option) => {
-                const selected = clinicDefaultActivityType === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => onClinicDefaultActivityTypeChange(option.id)}
-                    className={`rounded-xl border px-3 py-2 text-xs font-bold ${
-                      selected
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-200 bg-white text-gray-600'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <p className="mb-2 text-xs font-bold text-gray-600">기록 항목</p>
-            <div className="grid grid-cols-2 gap-2">
-              {CLINIC_RECORD_FIELD_OPTIONS.map((option) => {
-                const selected = clinicRecordFields.includes(option.id);
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => onClinicRecordFieldsChange(
-                      selected
-                        ? clinicRecordFields.filter((id) => id !== option.id)
-                        : [...clinicRecordFields, option.id],
-                    )}
-                    className={`flex min-h-[48px] items-center justify-between rounded-2xl border px-3 py-3 text-left ${
-                      selected
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-100 bg-gray-50 text-gray-700'
-                    }`}
-                  >
-                    <span className="text-sm font-bold">{option.label}</span>
-                    <Check size={15} className={selected ? 'text-blue-600' : 'invisible'} />
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-2 text-[11px] text-gray-400">나중에 학생별로 조정할 수 있어요.</p>
-          </div>
+        <div>
+          <ClinicDefaultItemsEditor
+            subjects={subjects}
+            value={clinicDefaultItems}
+            onChange={onClinicDefaultItemsChange}
+          />
+          <p className="mt-2 text-[11px] text-gray-400">과목별 기본 항목이며 나중에 학생별로 조정할 수 있어요.</p>
         </div>
       )}
 

@@ -11,16 +11,16 @@ import {
   updateClinicRecord as updateServerClinicRecord,
 } from '../../../services/supabase/domainApi';
 import { today } from '../../../utils/date';
-import { getClinicOptions } from '../../../constants/clinicOptions';
+import { getClinicOptions, subjectToKey } from '../../../constants/clinicOptions';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import {
   CLINIC_ACTIVITY_TYPES,
   getActivityLabel,
 } from '../../../constants/learningActivitySettings';
-import {
-  CLINIC_RECORD_FIELD_OPTIONS,
-  DEFAULT_ACADEMY_SETTINGS,
-} from '../../../constants/academySettings';
+import { DEFAULT_ACADEMY_SETTINGS } from '../../../constants/academySettings';
+import ClinicDefaultItemsEditor, {
+  normalizeClinicDefaultItems,
+} from './ClinicDefaultItemsEditor';
 
 const SUBJECTS = ['국어', '수학', '영어', '과학', '사회', '기타'];
 
@@ -144,6 +144,15 @@ function buildSuggestedItems(subject, sourceSupportTags = []) {
     }));
 }
 
+function buildDefaultItems(defaultItems, subject) {
+  const subjectKey = subjectToKey(subject);
+  const configured = normalizeClinicDefaultItems(defaultItems)[subjectKey] || [];
+  return normalizeClinicItems(configured.map((item) => ({
+    ...item,
+    description: '',
+  })));
+}
+
 function looksLikeUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 }
@@ -211,6 +220,11 @@ export default function ClinicRecordFormModal({
     ?? presetSourceSupportMemo
     ?? editRecord?.sourceSupportMemo
     ?? '';
+  const initialDefaultItems =
+    initialStudent?.clinicDefaultItems
+    || academyProfile?.clinicDefaultItems
+    || DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems;
+  const initialSuggestedItems = buildSuggestedItems(initialSubject, initialSourceSupportTags);
 
   const [studentId, setStudentId] = useState(initialStudentId);
   const [date, setDate] = useState(initialDate);
@@ -225,7 +239,12 @@ export default function ClinicRecordFormModal({
   const [classGroupId, setClassGroupId] = useState(initialClassGroupId);
   const [classSessionId, setClassSessionId] = useState(initialClassSessionId);
   const [selectedItems, setSelectedItems] = useState(
-    normalizeClinicItems(editRecord?.items || buildSuggestedItems(initialSubject, initialSourceSupportTags)),
+    normalizeClinicItems(
+      editRecord?.items
+      || (initialSuggestedItems.length > 0
+        ? initialSuggestedItems
+        : buildDefaultItems(initialDefaultItems, initialSubject)),
+    ),
   );
   const [overallMemo, setOverallMemo] = useState(editRecord?.overallMemo || '');
   const [materialDrafts, setMaterialDrafts] = useState({});
@@ -233,15 +252,8 @@ export default function ClinicRecordFormModal({
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [showMetaEditor, setShowMetaEditor] = useState(!initialStudentId || !initialDate || !initialSubject);
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
-  const [templateFields, setTemplateFields] = useState(
-    Array.isArray(initialStudent?.clinicRecordFields)
-      ? initialStudent.clinicRecordFields
-      : academyProfile?.clinicRecordFields || DEFAULT_ACADEMY_SETTINGS.clinicRecordFields,
-  );
-  const [templateActivityType, setTemplateActivityType] = useState(
-    initialStudent?.clinicDefaultActivityType
-    || academyProfile?.clinicDefaultActivityType
-    || DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType,
+  const [templateItems, setTemplateItems] = useState(
+    normalizeClinicDefaultItems(initialDefaultItems),
   );
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -259,13 +271,28 @@ export default function ClinicRecordFormModal({
     setSubject(derivedSubject);
     setClassGroupId(activeRelayTarget.classGroupId || '');
     setClassSessionId(activeRelayTarget.classSessionId || '');
-    setSelectedItems(normalizeClinicItems(buildSuggestedItems(derivedSubject, activeRelayTarget.sourceSupportTags)));
+    const relayStudent = academyStudents.find((student) => student.id === activeRelayTarget.studentId);
+    const relayDefaults =
+      relayStudent?.clinicDefaultItems
+      || academyProfile?.clinicDefaultItems
+      || DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems;
+    const suggested = buildSuggestedItems(derivedSubject, activeRelayTarget.sourceSupportTags);
+    setSelectedItems(normalizeClinicItems(
+      suggested.length > 0 ? suggested : buildDefaultItems(relayDefaults, derivedSubject),
+    ));
     setOverallMemo('');
     setMaterialDrafts({});
     setCustomItemDraft({ title: '', description: '' });
     setShowCustomInput(false);
     setShowMetaEditor(false);
-  }, [activeRelayTarget, editRecord, classGroups, classSessions]);
+  }, [
+    activeRelayTarget,
+    editRecord,
+    classGroups,
+    classSessions,
+    academyStudents,
+    academyProfile?.clinicDefaultItems,
+  ]);
 
   const currentMembership = useMemo(
     () => memberships.find((m) => m.academy_id === currentAcademyId) || null,
@@ -319,7 +346,18 @@ export default function ClinicRecordFormModal({
     || null;
   const autoSubject = selectedGroup?.subject || '';
   const effectiveSubject = subject || autoSubject;
-  const clinicOptions = effectiveSubject ? getClinicOptions(effectiveSubject) : [];
+  const configuredCustomOptions = effectiveSubject
+    ? (normalizeClinicDefaultItems(templateItems)[subjectToKey(effectiveSubject)] || [])
+      .filter((item) => item.custom)
+      .map((item) => ({
+        key: item.categoryKey,
+        title: item.title,
+        description: item.description,
+      }))
+    : [];
+  const clinicOptions = effectiveSubject
+    ? [...getClinicOptions(effectiveSubject), ...configuredCustomOptions]
+    : [];
   const suggestedOptionKeys = getSuggestedOptionKeys(currentSourceSupportTags, clinicOptions);
   const hasTeacherRequest = currentSourceSupportTags.length > 0 || !!currentSourceSupportMemo?.trim();
   const isRelayMode = !editRecord && normalizedRelayTargets.length > 1;
@@ -327,21 +365,9 @@ export default function ClinicRecordFormModal({
   const nextRelayStudent = hasNextRelayTarget
     ? academyStudents.find((s) => s.id === normalizedRelayTargets[relayIndex + 1]?.studentId)
     : null;
-  const configuredFields = useMemo(
-    () => new Set(
-      Array.isArray(templateFields) && templateFields.length > 0
-        ? templateFields
-        : DEFAULT_ACADEMY_SETTINGS.clinicRecordFields,
-    ),
-    [templateFields],
-  );
-  const itemFieldCount = ['materials', 'description', 'result']
-    .filter((field) => configuredFields.has(field)).length;
-  const detailGridClass = itemFieldCount >= 3
-    ? 'md:grid-cols-[96px_minmax(160px,0.75fr)_minmax(260px,1.5fr)_minmax(170px,0.7fr)_32px]'
-    : itemFieldCount === 2
-      ? 'md:grid-cols-[110px_minmax(220px,1fr)_minmax(220px,1fr)_32px]'
-      : 'md:grid-cols-[120px_minmax(260px,1fr)_32px]';
+  const configuredFields = new Set(['materials', 'description', 'result', 'overall_memo']);
+  const detailGridClass =
+    'md:grid-cols-[96px_minmax(160px,0.75fr)_minmax(260px,1.5fr)_minmax(170px,0.7fr)_32px]';
 
   useEffect(() => {
     if (selectedSession?.classGroupId && !classGroupId) {
@@ -350,25 +376,21 @@ export default function ClinicRecordFormModal({
   }, [selectedSession?.classGroupId, classGroupId]);
 
   useEffect(() => {
-    const academyFields = Array.isArray(academyProfile?.clinicRecordFields)
-      ? academyProfile.clinicRecordFields
-      : DEFAULT_ACADEMY_SETTINGS.clinicRecordFields;
-    const nextFields = Array.isArray(selectedStudent?.clinicRecordFields)
-      ? selectedStudent.clinicRecordFields
-      : academyFields;
-    const nextActivityType =
-      selectedStudent?.clinicDefaultActivityType
-      || academyProfile?.clinicDefaultActivityType
-      || DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType;
-    setTemplateFields(nextFields);
-    setTemplateActivityType(nextActivityType);
-    if (!editRecord) setActivityType(nextActivityType);
+    const nextItems = normalizeClinicDefaultItems(
+      selectedStudent?.clinicDefaultItems
+      || academyProfile?.clinicDefaultItems
+      || DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems,
+    );
+    setTemplateItems(nextItems);
+    if (!editRecord && effectiveSubject && currentSourceSupportTags.length === 0) {
+      setSelectedItems(buildDefaultItems(nextItems, effectiveSubject));
+    }
   }, [
     selectedStudent?.id,
-    selectedStudent?.clinicRecordFields,
-    selectedStudent?.clinicDefaultActivityType,
-    academyProfile?.clinicRecordFields,
-    academyProfile?.clinicDefaultActivityType,
+    selectedStudent?.clinicDefaultItems,
+    academyProfile?.clinicDefaultItems,
+    effectiveSubject,
+    currentSourceSupportTags.length,
     editRecord,
   ]);
 
@@ -378,9 +400,13 @@ export default function ClinicRecordFormModal({
     setSelectedItems((prev) =>
       prev.length > 0
         ? prev
-        : normalizeClinicItems(buildSuggestedItems(autoSubject, currentSourceSupportTags))
+        : normalizeClinicItems(
+          buildSuggestedItems(autoSubject, currentSourceSupportTags).length > 0
+            ? buildSuggestedItems(autoSubject, currentSourceSupportTags)
+            : buildDefaultItems(templateItems, autoSubject),
+        )
     );
-  }, [autoSubject, subject, currentSourceSupportTags]);
+  }, [autoSubject, subject, currentSourceSupportTags, templateItems]);
 
   const isItemSelected = (key) => selectedItems.some((i) => i.categoryKey === key);
 
@@ -472,7 +498,10 @@ export default function ClinicRecordFormModal({
 
   const handleSubjectChange = (nextSubject) => {
     setSubject(nextSubject);
-    setSelectedItems(normalizeClinicItems(buildSuggestedItems(nextSubject, currentSourceSupportTags)));
+    const suggested = buildSuggestedItems(nextSubject, currentSourceSupportTags);
+    setSelectedItems(normalizeClinicItems(
+      suggested.length > 0 ? suggested : buildDefaultItems(templateItems, nextSubject),
+    ));
   };
 
   const handleSave = async (mode = 'close') => {
@@ -602,32 +631,26 @@ export default function ClinicRecordFormModal({
 
   const saveStudentTemplate = async ({ useAcademyDefault = false } = {}) => {
     if (!selectedStudent || savingTemplate) return;
-    if (!useAcademyDefault && templateFields.length === 0) {
-      showToast('기록 항목을 하나 이상 골라주세요.', 'error');
-      return;
-    }
     const localPatch = {
-      clinicRecordFields: useAcademyDefault ? null : templateFields,
-      clinicDefaultActivityType: useAcademyDefault ? null : templateActivityType,
+      clinicDefaultItems: useAcademyDefault ? null : normalizeClinicDefaultItems(templateItems),
     };
     setSavingTemplate(true);
     try {
       updateAcademyStudent(selectedStudent.id, localPatch);
       if (selectedStudent.serverId && isAuthenticated && currentAcademyId) {
         await updateServerStudent(selectedStudent.serverId, {
-          clinic_record_fields: localPatch.clinicRecordFields,
-          clinic_default_activity_type: localPatch.clinicDefaultActivityType,
+          clinic_default_items: localPatch.clinicDefaultItems,
         });
       }
       if (useAcademyDefault) {
-        const academyFields = academyProfile?.clinicRecordFields
-          || DEFAULT_ACADEMY_SETTINGS.clinicRecordFields;
-        const academyActivity =
-          academyProfile?.clinicDefaultActivityType
-          || DEFAULT_ACADEMY_SETTINGS.clinicDefaultActivityType;
-        setTemplateFields(academyFields);
-        setTemplateActivityType(academyActivity);
-        if (!editRecord) setActivityType(academyActivity);
+        const academyItems = normalizeClinicDefaultItems(
+          academyProfile?.clinicDefaultItems
+          || DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems,
+        );
+        setTemplateItems(academyItems);
+        if (!editRecord && effectiveSubject && currentSourceSupportTags.length === 0) {
+          setSelectedItems(buildDefaultItems(academyItems, effectiveSubject));
+        }
       }
       setShowTemplateEditor(false);
     } catch (error) {
@@ -722,55 +745,16 @@ export default function ClinicRecordFormModal({
                 <p className="text-sm font-bold text-[#191F28]">{selectedStudent.name} 기본 구성</p>
                 <p className="mt-0.5 text-[11px] text-[#8B95A1]">이 학생의 다음 기록부터 기본으로 열려요.</p>
               </div>
-              <p className="mb-2 text-[11px] font-bold text-[#6B7684]">기본 활동</p>
-              <div className="mb-4 flex flex-wrap gap-2">
-                {CLINIC_ACTIVITY_TYPES.filter((option) => option.id !== 'other').map((option) => {
-                  const selected = templateActivityType === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setTemplateActivityType(option.id)}
-                      className={`rounded-xl border px-3 py-2 text-xs font-bold ${
-                        selected
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 bg-white text-gray-600'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="mb-2 text-[11px] font-bold text-[#6B7684]">기록 항목</p>
-              <div className="grid grid-cols-2 gap-2">
-                {CLINIC_RECORD_FIELD_OPTIONS.map((option) => {
-                  const selected = templateFields.includes(option.id);
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setTemplateFields((current) => (
-                        selected
-                          ? current.filter((id) => id !== option.id)
-                          : [...current, option.id]
-                      ))}
-                      className={`flex items-center justify-between rounded-xl border px-3 py-2.5 text-xs font-bold ${
-                        selected
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 bg-white text-gray-600'
-                      }`}
-                    >
-                      {option.label}
-                      {selected && <Check size={13} />}
-                    </button>
-                  );
-                })}
-              </div>
+              <ClinicDefaultItemsEditor
+                subjects={academyProfile?.academySubjects}
+                value={templateItems}
+                onChange={setTemplateItems}
+                compact
+              />
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
-                  disabled={savingTemplate || templateFields.length === 0}
+                  disabled={savingTemplate}
                   onClick={() => saveStudentTemplate()}
                   className="flex-1 rounded-xl bg-blue-600 py-2.5 text-xs font-bold text-white disabled:opacity-50"
                 >

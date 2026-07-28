@@ -19,7 +19,6 @@ import {
 import { OWNER_TEACHER_ID } from '../../../utils/format';
 import BulkShiftSuggestionSheet from '../work/BulkShiftSuggestionSheet';
 import { hhmmToMin } from '../../../utils/shiftCoverage';
-import { getRoomTagClassName } from '../../../utils/roomTags';
 import {
   ACADEMY_SUBJECT_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
@@ -1358,10 +1357,10 @@ function SelectRow({ value, placeholder, onClick }) {
 }
 
 function RoomTagPicker({ value, options = [], onChange }) {
-  const [adding, setAdding] = useState(!value);
+  const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState('');
   const trimmedDraft = draft.trim();
-  const otherOptions = options.filter((room) => room !== value);
+  const roomOptions = [...new Set(options.map((room) => String(room || '').trim()).filter(Boolean))];
 
   const commit = () => {
     if (!trimmedDraft) return;
@@ -1371,56 +1370,33 @@ function RoomTagPicker({ value, options = [], onChange }) {
   };
 
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-2.5">
-      {value && (
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <span className={`inline-flex max-w-full items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-bold ${getRoomTagClassName(value)}`}>
-            <span className="truncate">{value}</span>
-            <button
-              type="button"
-              onClick={() => {
-                onChange?.('');
-                setAdding(true);
-              }}
-              aria-label={`${value} 강의실 선택 해제`}
-              className="rounded-full p-0.5 opacity-60 active:bg-white/60"
-            >
-              <X size={11} />
-            </button>
-          </span>
-          {!adding && (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              className="flex-shrink-0 text-[11px] font-bold text-blue-600"
-            >
-              변경
-            </button>
-          )}
-        </div>
-      )}
-
-      {otherOptions.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {otherOptions.map((room) => (
-            <button
-              key={room}
-              type="button"
-              onClick={() => {
-                onChange?.(room);
-                setDraft('');
-                setAdding(false);
-              }}
-              className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-transform active:scale-[0.97] ${getRoomTagClassName(room)}`}
-            >
-              {room}
-            </button>
+    <div>
+      <div className="relative">
+        <select
+          value={value || ''}
+          onChange={(event) => {
+            if (event.target.value === '__new_room__') {
+              setAdding(true);
+              return;
+            }
+            onChange?.(event.target.value);
+            setAdding(false);
+          }}
+          className="input appearance-none pr-9"
+        >
+          <option value="">강의실 선택 안 함</option>
+          {roomOptions.map((room) => (
+            <option key={room} value={room}>{room}</option>
           ))}
-        </div>
-      )}
-
+          <option value="__new_room__">+ 새 강의실 추가</option>
+        </select>
+        <ChevronDown
+          size={15}
+          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+        />
+      </div>
       {adding ? (
-        <div className={`${otherOptions.length > 0 ? 'mt-2' : ''} flex items-center gap-2`}>
+        <div className="mt-2 flex items-center gap-2 rounded-2xl bg-gray-50 p-2">
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -1430,9 +1406,9 @@ function RoomTagPicker({ value, options = [], onChange }) {
                 commit();
               }
             }}
-            autoFocus={!value}
+            autoFocus
             placeholder="예: A강의실"
-            className="h-10 min-w-0 flex-1 rounded-xl bg-gray-50 px-3 text-sm font-semibold text-gray-900 outline-none focus:bg-white focus:ring-2 focus:ring-blue-100"
+            className="h-10 min-w-0 flex-1 rounded-xl bg-white px-3 text-sm font-semibold text-gray-900 outline-none ring-1 ring-gray-100 focus:ring-2 focus:ring-blue-100"
           />
           <button
             type="button"
@@ -1442,19 +1418,18 @@ function RoomTagPicker({ value, options = [], onChange }) {
           >
             추가
           </button>
-        </div>
-      ) : (
-        !value && otherOptions.length === 0 && (
           <button
             type="button"
-            onClick={() => setAdding(true)}
-            className="flex h-10 w-full items-center justify-center gap-1 rounded-xl bg-gray-50 text-xs font-bold text-gray-500"
+            onClick={() => {
+              setAdding(false);
+              setDraft('');
+            }}
+            className="h-10 rounded-xl bg-white px-3 text-xs font-bold text-gray-500"
           >
-            <Plus size={13} />
-            강의실 추가
+            취소
           </button>
-        )
-      )}
+        </div>
+      ) : null}
     </div>
   );
 }
