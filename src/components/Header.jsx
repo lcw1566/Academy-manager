@@ -3,7 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 export default function Header({ title, onBack, right }) {
   return (
     <header className="fixed md:static top-0 md:top-auto left-0 md:left-auto right-0 md:right-auto z-30 md:z-auto bg-white md:bg-transparent border-b border-gray-100 md:border-0">
-      <div className="max-w-md mx-auto md:mx-0 md:max-w-none flex items-center h-14 md:h-auto px-4 md:pb-5">
+      <div className="max-w-md mx-auto md:mx-0 md:max-w-none flex items-center h-14 md:h-auto px-4 md:pt-6 md:pb-5">
         {onBack ? (
           <button
             onClick={onBack}
