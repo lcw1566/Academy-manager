@@ -1395,7 +1395,7 @@ const useAcademyStore = create(
   },
 
   // ─── Clinic Records (기록형 클리닉) ────────────────
-  addClinicRecord: (record) => {
+  addClinicRecord: (record, { silent = false } = {}) => {
     const newRecord = {
       ...record,
       id: `cr${Date.now()}`,
@@ -1403,16 +1403,16 @@ const useAcademyStore = create(
       updatedAt: new Date().toISOString(),
     };
     set((s) => ({ clinicRecords: [...(s.clinicRecords || []), newRecord] }));
-    get().showToast('클리닉 기록이 저장되었어요.');
+    if (!silent) get().showToast('클리닉 기록이 저장되었어요.');
     return newRecord;
   },
-  updateClinicRecord: (recordId, updates) => {
+  updateClinicRecord: (recordId, updates, { silent = false } = {}) => {
     set((s) => ({
       clinicRecords: (s.clinicRecords || []).map((r) =>
         r.id === recordId ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r
       ),
     }));
-    get().showToast('클리닉 기록이 수정되었어요.');
+    if (!silent) get().showToast('클리닉 기록이 수정되었어요.');
   },
   deleteClinicRecord: (recordId) => {
     set((s) => ({ clinicRecords: (s.clinicRecords || []).filter((r) => r.id !== recordId) }));

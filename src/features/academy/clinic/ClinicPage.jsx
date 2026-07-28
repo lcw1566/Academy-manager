@@ -11,6 +11,7 @@ import { deleteClinicRecord as deleteServerClinicRecord } from '../../../service
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import ClinicRecordFormModal from './ClinicRecordFormModal';
+import ClinicInlineWorksheet from './ClinicInlineWorksheet';
 import { today, formatDateShort } from '../../../utils/date';
 import { CLINIC_SUBJECT_FILTERS, DATE_FILTER_OPTIONS } from '../../../constants/labels';
 import { currentUserCan } from '../../../utils/staffPermissions';
@@ -91,7 +92,6 @@ export default function ClinicPage() {
   const [showForm, setShowForm] = useState(false);
   const [editRecord, setEditRecord] = useState(null);
   const [quickTarget, setQuickTarget] = useState(null);
-  const [batchExpectedTargets, setBatchExpectedTargets] = useState(null);
   const [expandedExpectedIds, setExpandedExpectedIds] = useState(() => new Set());
   const [expandedId, setExpandedId] = useState(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
@@ -311,41 +311,13 @@ export default function ClinicPage() {
                   >
                     <div className="overflow-hidden">
                       <div className="divide-y divide-gray-50 border-t border-gray-50">
-                        {canEditClinic && students.some((student) => !student.clinicRecord) && (
-                          <div className="bg-blue-50/60 px-4 py-2.5">
-                            <button
-                              type="button"
-                              onClick={() => setBatchExpectedTargets(
-                                students
-                                  .filter((student) => !student.clinicRecord)
-                                  .map((student) => ({
-                                    studentId: student.id,
-                                    date: todayStr,
-                                    subject: group?.subject || '',
-                                    classGroupId: group?.id || '',
-                                    classSessionId: session.id,
-                                  })),
-                              )}
-                              className="flex w-full items-center justify-between rounded-xl bg-white px-3 py-2.5 text-left shadow-sm"
-                            >
-                              <span>
-                                <span className="block text-xs font-bold text-blue-700">미작성 학생 이어서 기록</span>
-                                <span className="mt-0.5 block text-[11px] text-gray-400">
-                                  저장하면 다음 학생으로 바로 넘어가요.
-                                </span>
-                              </span>
-                              <span className="flex-shrink-0 text-xs font-bold text-blue-600">
-                                {students.filter((student) => !student.clinicRecord).length}명
-                              </span>
-                            </button>
-                          </div>
-                        )}
-                        {students.map((student) => (
-                          <button
-                            key={student.id}
-                            type="button"
-                            disabled={!canEditClinic}
-                            onClick={() => {
+                        {canEditClinic ? (
+                          <ClinicInlineWorksheet
+                            session={session}
+                            group={group}
+                            students={students}
+                            academyProfile={academyProfile}
+                            onOpenRecord={(student) => {
                               if (student.clinicRecord) {
                                 setEditRecord(student.clinicRecord);
                                 return;
@@ -358,27 +330,33 @@ export default function ClinicPage() {
                                 classSessionId: session.id,
                               });
                             }}
-                            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-gray-50 disabled:cursor-default"
-                          >
-                            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-50 text-xs font-bold text-gray-500">
-                              {student.name?.slice(0, 1) || '학'}
-                            </span>
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-bold text-gray-900">{student.name}</span>
-                              {student.grade && (
-                                <span className="mt-0.5 block text-[11px] text-gray-400">{student.grade}</span>
-                              )}
-                            </span>
-                            {student.clinicRecord ? (
-                              <span className="flex items-center gap-1 text-xs font-bold text-emerald-600">
-                                <CheckCircle2 size={14} />
-                                완료
+                          />
+                        ) : (
+                          students.map((student) => (
+                            <button
+                              key={student.id}
+                              type="button"
+                              disabled
+                              className="flex w-full items-center gap-3 px-4 py-3 text-left"
+                            >
+                              <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-50 text-xs font-bold text-gray-500">
+                                {student.name?.slice(0, 1) || '학'}
                               </span>
-                            ) : (
-                              <span className="text-xs font-bold text-blue-600">기록</span>
-                            )}
-                          </button>
-                        ))}
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-bold text-gray-900">{student.name}</span>
+                                {student.grade && (
+                                  <span className="mt-0.5 block text-[11px] text-gray-400">{student.grade}</span>
+                                )}
+                              </span>
+                              {student.clinicRecord && (
+                                <span className="flex items-center gap-1 text-xs font-bold text-emerald-600">
+                                  <CheckCircle2 size={14} />
+                                  완료
+                                </span>
+                              )}
+                            </button>
+                          ))
+                        )}
                       </div>
                     </div>
                   </div>
@@ -527,13 +505,6 @@ export default function ClinicPage() {
           relayTargets={showClinicFromSupport.targets}
           initialRelayIndex={showClinicFromSupport.initialRelayIndex}
           onClose={() => setShowClinicFromSupport(null)}
-        />
-      )}
-
-      {batchExpectedTargets?.length > 0 && (
-        <ClinicRecordFormModal
-          relayTargets={batchExpectedTargets}
-          onClose={() => setBatchExpectedTargets(null)}
         />
       )}
 

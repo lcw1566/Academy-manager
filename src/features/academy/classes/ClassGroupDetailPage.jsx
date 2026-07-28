@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -120,7 +120,8 @@ export default function ClassGroupDetailPage() {
   const [generatingMonth, setGeneratingMonth] = useState(false);
   const [showRecordTemplate, setShowRecordTemplate] = useState(false);
   const [savingRecordTemplate, setSavingRecordTemplate] = useState(false);
-  const [showMakeupForm, setShowMakeupForm] = useState(false);
+  const [showSessionTypePicker, setShowSessionTypePicker] = useState(false);
+  const [sessionCreateKind, setSessionCreateKind] = useState(null);
   const todayStr = today();
 
   const group = classGroups.find((g) => g.id === selectedClassGroupId) ?? null;
@@ -341,20 +342,13 @@ export default function ClassGroupDetailPage() {
               {group.monthlyFee > 0 && <InfoRow label="월 수강료" value={`${group.monthlyFee.toLocaleString()}원`} />}
             </div>
             {canManageClasses && (
-              <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3">
+              <div className="mt-4 border-t border-gray-100 pt-3">
                 <button
                   type="button"
                   onClick={() => setShowRecordTemplate(true)}
-                  className="rounded-xl bg-blue-50 py-2.5 text-xs font-bold text-blue-700 active:bg-blue-100"
+                  className="w-full rounded-xl bg-blue-50 py-2.5 text-xs font-bold text-blue-700 active:bg-blue-100"
                 >
                   기록 구성
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowMakeupForm(true)}
-                  className="rounded-xl bg-violet-50 py-2.5 text-xs font-bold text-violet-700 active:bg-violet-100"
-                >
-                  + 보강 만들기
                 </button>
               </div>
             )}
@@ -413,6 +407,7 @@ export default function ClassGroupDetailPage() {
             calendarMode === 'month' ? `${nextMonth(d.slice(0, 7))}-01` : addDaysYMD(d, 7)
           )}
           onCalendarModeChange={setCalendarMode}
+          onAddSession={canManageClasses ? () => setShowSessionTypePicker(true) : null}
           onSessionClick={(session) => {
             if (session.isPlanned) {
               showToast('아직 실제 회차로 저장되지 않은 예정 수업이에요. 기록을 시작할 때 회차를 생성하도록 바꾸는 게 좋아요.', 'info');
@@ -484,12 +479,55 @@ export default function ClassGroupDetailPage() {
         />
       )}
 
-      {showMakeupForm && (
+      {showSessionTypePicker && (
+        <Modal
+          isOpen
+          onClose={() => setShowSessionTypePicker(false)}
+          title="수업 추가"
+          size="small"
+        >
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[
+              {
+                id: 'regular',
+                title: '정규 수업 추가',
+                description: '이 반 전체가 참여하는 회차예요.',
+                tone: 'border-blue-100 bg-blue-50 text-blue-700',
+              },
+              {
+                id: 'makeup',
+                title: '보강 추가',
+                description: '결석한 학생만 골라 진행해요.',
+                tone: 'border-violet-100 bg-violet-50 text-violet-700',
+              },
+            ].map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => {
+                  setShowSessionTypePicker(false);
+                  setSessionCreateKind(option.id);
+                }}
+                className={`rounded-2xl border p-4 text-left active:scale-[0.99] ${option.tone}`}
+              >
+                <span className="block text-sm font-extrabold">{option.title}</span>
+                <span className="mt-1 block text-[11px] font-medium leading-relaxed opacity-70">
+                  {option.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {sessionCreateKind && (
         <MakeupSessionModal
           group={group}
           students={students}
           sessions={sessions}
-          onClose={() => setShowMakeupForm(false)}
+          sessionKind={sessionCreateKind}
+          initialDate={calendarAnchor}
+          onClose={() => setSessionCreateKind(null)}
         />
       )}
 
@@ -517,7 +555,7 @@ export default function ClassGroupDetailPage() {
 function ClassGroupScheduleCalendar({
   sessions, students, attendanceRecords, calendarAnchor, calendarMode, todayYMD,
   monthNeedsGeneration, generatingMonth, onGenerateMonth,
-  onPrevPeriod, onNextPeriod, onCalendarModeChange, onSessionClick,
+  onPrevPeriod, onNextPeriod, onCalendarModeChange, onSessionClick, onAddSession,
 }) {
   const selectedMonth = calendarAnchor.slice(0, 7);
   const weekDates = useMemo(() => getWeekDates(calendarAnchor), [calendarAnchor]);
@@ -580,6 +618,17 @@ function ClassGroupScheduleCalendar({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {onAddSession && (
+              <button
+                type="button"
+                onClick={onAddSession}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#3182F6] text-white shadow-sm active:bg-[#1B64DA]"
+                aria-label="수업 추가"
+                title="수업 추가"
+              >
+                <Plus size={17} strokeWidth={2.5} />
+              </button>
+            )}
             <button type="button" onClick={onPrevPeriod} className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] active:bg-[#E5E8EB] flex items-center justify-center" aria-label={calendarMode === 'month' ? '이전 달' : '이전 주'}>
               <ChevronLeft size={16} />
             </button>

@@ -12,8 +12,11 @@ export default function MakeupSessionModal({
   group,
   students,
   sessions,
+  sessionKind = 'makeup',
+  initialDate,
   onClose,
 }) {
+  const isMakeup = sessionKind === 'makeup';
   const addClassSession = useAcademyStore((state) => state.addClassSession);
   const setClassSessionServerId = useAcademyStore((state) => state.setClassSessionServerId);
   const showToast = useAcademyStore((state) => state.showToast);
@@ -35,8 +38,8 @@ export default function MakeupSessionModal({
   );
   const [form, setForm] = useState({
     originSessionId: '',
-    studentIds: [],
-    date: today(),
+    studentIds: isMakeup ? [] : students.map((student) => student.id),
+    date: initialDate || today(),
     startTime: group.startTime || '16:00',
     endTime: group.endTime || '18:00',
     room: group.room || '',
@@ -69,7 +72,7 @@ export default function MakeupSessionModal({
   const handleSave = async () => {
     if (saving) return;
     if (form.studentIds.length === 0) {
-      showToast('보강할 학생을 선택해주세요.', 'error');
+      showToast(isMakeup ? '보강할 학생을 선택해주세요.' : '참여할 학생을 선택해주세요.', 'error');
       return;
     }
     if (!form.date || !form.startTime || !form.endTime) {
@@ -92,13 +95,15 @@ export default function MakeupSessionModal({
       assistantIds: [],
       studentIds: form.studentIds,
       status: 'scheduled',
-      memo: origin ? `${origin.date} 수업 보강` : '보강',
+      memo: isMakeup
+        ? (origin ? `${origin.date} 수업 보강` : '보강')
+        : '추가 수업',
       recordSchema: normalizeRecordSchema(group.recordSchema || group.recordBlocks),
-      activityType: 'makeup',
-      activityName: '보강',
-      sessionKind: 'makeup',
-      originSessionId: origin?.id || null,
-      originSessionServerId: origin?.serverId || null,
+      activityType: isMakeup ? 'makeup' : (group.activityType || 'regular_class'),
+      activityName: isMakeup ? '보강' : (group.activityName || ''),
+      sessionKind: isMakeup ? 'makeup' : 'regular',
+      originSessionId: isMakeup ? origin?.id || null : null,
+      originSessionServerId: isMakeup ? origin?.serverId || null : null,
     };
 
     setSaving(true);
@@ -122,8 +127,8 @@ export default function MakeupSessionModal({
         } catch (error) {
           showToast(
             error?.message
-              ? `보강은 만들었지만 서버 동기화에 실패했어요: ${error.message}`
-              : '보강은 만들었지만 서버 동기화에 실패했어요.',
+              ? `수업은 만들었지만 서버 동기화에 실패했어요: ${error.message}`
+              : '수업은 만들었지만 서버 동기화에 실패했어요.',
             'error',
           );
         }
@@ -138,7 +143,7 @@ export default function MakeupSessionModal({
     <Modal
       isOpen
       onClose={onClose}
-      title="보강 만들기"
+      title={isMakeup ? '보강 추가' : '정규 수업 추가'}
       size="wide"
       footer={(
         <button
@@ -147,12 +152,12 @@ export default function MakeupSessionModal({
           disabled={saving}
           className="w-full rounded-xl bg-[#3182F6] py-3.5 text-sm font-extrabold text-white disabled:opacity-50"
         >
-          {saving ? '만드는 중...' : '보강 만들기'}
+          {saving ? '추가하는 중...' : (isMakeup ? '보강 추가' : '수업 추가')}
         </button>
       )}
     >
       <div className="flex flex-col gap-5">
-        <div>
+        {isMakeup && <div>
           <p className="mb-1.5 text-xs font-bold text-[#6B7684]">연결할 원래 수업</p>
           <select
             value={form.originSessionId}
@@ -167,10 +172,12 @@ export default function MakeupSessionModal({
             ))}
           </select>
           <p className="mt-1.5 text-[11px] text-[#8B95A1]">결석 학생이 기록돼 있으면 자동으로 선택해요.</p>
-        </div>
+        </div>}
 
         <div>
-          <p className="mb-2 text-xs font-bold text-[#6B7684]">보강 학생</p>
+          <p className="mb-2 text-xs font-bold text-[#6B7684]">
+            {isMakeup ? '보강 학생' : '참여 학생'}
+          </p>
           <div className="flex flex-wrap gap-2">
             {students.map((student) => {
               const selected = form.studentIds.includes(student.id);

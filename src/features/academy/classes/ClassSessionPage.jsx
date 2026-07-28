@@ -49,9 +49,9 @@ const HOMEWORK_OPTIONS = [
   { value: '일부 완료', color: 'border-yellow-400 bg-yellow-50 text-yellow-700' },
   { value: '미완료',    color: 'border-red-300 bg-red-50 text-red-700' },
 ];
-const ATT_OPTIONS = ['present', 'late', 'absent', 'excused', 'makeup'];
+const ATT_OPTIONS = ['present', 'late', 'absent', 'excused'];
 const SESSION_STATE_LABELS = {
-  present: '정상',
+  present: '출석',
   late: '지각',
   absent: '결석',
   makeup: '보강',
@@ -132,7 +132,8 @@ const StudentCard = memo(function StudentCard({
   student, sessionId, canEdit, canEditAttendance = canEdit,
   attendance, initialRecord, onRecordChange, saveCount,
   recordBlocks, recordSchema,
-  qrHint, // Phase 42 — { statusHint, checkInTime, checkOutTime } or null
+  attendanceHint,
+  studentCheckMethod,
 }) {
   const updateAcademyAttendance = useAcademyStore((s) => s.updateAcademyAttendance);
   const handleAttendanceClick = useCallback((status) => {
@@ -143,8 +144,13 @@ const StudentCard = memo(function StudentCard({
   // Phase 42 — source 라벨 + QR 시간 표시용.
   const sourceBadge = (() => {
     if (!attendance?.source) return null;
-    if (attendance.source === 'qr') return { label: 'QR 등원', tone: 'bg-indigo-50 text-indigo-700' };
-    if (attendance.source === 'teacher_manual') return { label: '선생님 수정', tone: 'bg-amber-50 text-amber-700' };
+    if (studentCheckMethod === 'qr' && attendance.source === 'qr') {
+      return { label: 'QR 체크', tone: 'bg-indigo-50 text-indigo-700' };
+    }
+    if (studentCheckMethod === 'teacher_manual') {
+      return { label: '직접 체크', tone: 'bg-blue-50 text-blue-700' };
+    }
+    if (attendance.source === 'teacher_manual') return { label: '직접 수정', tone: 'bg-amber-50 text-amber-700' };
     if (attendance.source === 'manual') return { label: '직접 체크', tone: 'bg-gray-100 text-gray-600' };
     return null;
   })();
@@ -203,10 +209,15 @@ const StudentCard = memo(function StudentCard({
               보완 {supportCount}
             </span>
           )}
-          {qrHint?.checkInTime && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 inline-flex items-center gap-0.5">
-              <QrCode size={9} /> {qrHint.checkInTime}
-              {qrHint.checkOutTime ? ` ~ ${qrHint.checkOutTime}` : ''}
+          {attendanceHint?.checkInTime && studentCheckMethod !== 'disabled' && (
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5 ${
+              studentCheckMethod === 'qr'
+                ? 'bg-indigo-50 text-indigo-700'
+                : 'bg-blue-50 text-blue-700'
+            }`}>
+              {studentCheckMethod === 'qr' ? <QrCode size={9} /> : <UserCheck size={9} />}
+              {attendanceHint.checkInTime}
+              {attendanceHint.checkOutTime ? ` ~ ${attendanceHint.checkOutTime}` : ''}
             </span>
           )}
           {sourceBadge && (
@@ -240,10 +251,10 @@ const StudentCard = memo(function StudentCard({
       >
         <div style={{ overflow: 'hidden', opacity: expanded ? 1 : 0, transition: 'opacity 0.18s ease' }}>
             <div className="px-4 pb-4 border-t border-gray-50 flex flex-col gap-4 pt-3">
-              {/* 등하원으로 자동 계산된 수업 상태의 예외 수정 */}
+              {/* 수업 출석 */}
               {canEditAttendance && (
                 <div>
-                  <p className="text-xs font-semibold text-gray-500 mb-2">수업 상태 수정</p>
+                  <p className="text-xs font-semibold text-gray-500 mb-2">출석</p>
                   <div className="flex gap-2">
                     {ATT_OPTIONS.map((status) => {
                       const meta = attendanceStatusMap[status];
@@ -523,10 +534,10 @@ export default function ClassSessionPage() {
     return map;
   }, [academyLessonRecords, selectedClassSessionId]);
 
-  // Phase 42 — QR 이벤트 → 학생별 hint. local studentId 키로 저장.
-  const qrHintByStudentId = useMemo(() => {
+  // 등하원 이벤트 → 학생별 수업 출석 제안. 학원의 기록 방식을 함께 반영한다.
+  const attendanceHintByStudentId = useMemo(() => {
     const map = new Map();
-    if (!session) return map;
+    if (!session || attendanceSettings.studentCheckMethod === 'disabled') return map;
     for (const stu of students) {
       const serverStudentId = stu.serverId;
       if (!serverStudentId) continue;
@@ -536,7 +547,7 @@ export default function ClassSessionPage() {
       }
     }
     return map;
-  }, [session, students, studentCheckEvents]);
+  }, [session, students, studentCheckEvents, attendanceSettings.studentCheckMethod]);
 
   // 공통 기록: 저장된 값 로드
   const savedCommonLr = useMemo(
@@ -578,26 +589,41 @@ export default function ClassSessionPage() {
   // 한국 시간 기준 session.date 하루만). loadStudentCheckEvents 는 store 가
   // 데이터를 즉시 반영하므로 의존성에 session.date 만 두면 충분.
   useEffect(() => {
-    if (!session?.date || !currentAcademyId) return;
+    if (
+      !session?.date
+      || !currentAcademyId
+      || attendanceSettings.studentCheckMethod === 'disabled'
+    ) return;
     loadStudentCheckEvents({ sinceDateYMD: session.date });
-  }, [session?.date, currentAcademyId, loadStudentCheckEvents]);
+  }, [
+    session?.date,
+    currentAcademyId,
+    loadStudentCheckEvents,
+    attendanceSettings.studentCheckMethod,
+  ]);
 
-  // Phase 42 — QR 이벤트 → 출결 자동 채움. 규칙:
-  //  1) 기존 attendance 가 없으면: QR hint(present/late) 를 적용 (source='qr').
+  // 등하원 이벤트 → 수업 출석 자동 채움. 규칙:
+  //  1) 학원 설정에 맞춰 QR 또는 직접 체크 출처로 저장한다.
   //  2) 기존 attendance 의 source==='teacher_manual' 이면 절대 덮어쓰지 않음.
-  //  3) source 가 'qr' 또는 비어있는데 status 가 QR hint 와 다르면 hint 로 갱신.
+  //  3) 사용하지 않음이면 등하원 이벤트로 수업 출석을 만들지 않는다.
   // silent=true 로 토스트 생략.
   useEffect(() => {
     if (!session) return;
-    if (qrHintByStudentId.size === 0) return;
-    for (const [studentId, hint] of qrHintByStudentId.entries()) {
+    if (attendanceSettings.studentCheckMethod === 'disabled') return;
+    if (attendanceHintByStudentId.size === 0) return;
+    const inferredSource = attendanceSettings.studentCheckMethod === 'qr'
+      ? 'qr'
+      : 'teacher_manual';
+    for (const [studentId, hint] of attendanceHintByStudentId.entries()) {
       if (!hint?.statusHint) continue;
       const existing = attendanceByStudentId.get(studentId);
       if (existing?.source === 'teacher_manual') continue;
-      const wouldChange = !existing || existing.status !== hint.statusHint || existing.source !== 'qr';
+      const wouldChange = !existing
+        || existing.status !== hint.statusHint
+        || existing.source !== inferredSource;
       if (!wouldChange) continue;
       updateAcademyAttendance(session.id, studentId, hint.statusHint, {
-        source: 'qr',
+        source: inferredSource,
         checkedAt: hint.checkInISO || undefined,
         silent: true,
       });
@@ -606,7 +632,7 @@ export default function ClassSessionPage() {
     // effect 를 트리거해 무한 루프가 되는 걸 막는다 (status/source 가 hint 와
     // 일치하면 wouldChange=false 라 어쨌든 idempotent).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, qrHintByStudentId]);
+  }, [session?.id, attendanceHintByStudentId, attendanceSettings.studentCheckMethod]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [substituteModalOpen, setSubstituteModalOpen] = useState(false);
@@ -827,14 +853,14 @@ export default function ClassSessionPage() {
 
   const checkedInCount = useMemo(() => {
     const confirmed = new Set();
-    for (const [studentId, hint] of qrHintByStudentId.entries()) {
+    for (const [studentId, hint] of attendanceHintByStudentId.entries()) {
       if (hint.checkInTime) confirmed.add(studentId);
     }
     for (const [studentId, record] of attendanceByStudentId.entries()) {
       if (record.status === 'present' || record.status === 'late') confirmed.add(studentId);
     }
     return confirmed.size;
-  }, [attendanceByStudentId, qrHintByStudentId]);
+  }, [attendanceByStudentId, attendanceHintByStudentId]);
 
   if (!session || !group) {
     return (
@@ -874,7 +900,7 @@ export default function ClassSessionPage() {
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <div className="grid grid-cols-3 gap-3 mb-3">
               <SummaryCell label="수강생" value={students.length} />
-              <SummaryCell label="등원 확인" value={checkedInCount} color="text-green-600" />
+              <SummaryCell label="출석 확인" value={checkedInCount} color="text-green-600" />
               <SummaryCell label="보완 항목" value={supportCount} color="text-orange-500" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
@@ -1021,13 +1047,13 @@ export default function ClassSessionPage() {
           </div>
         )}
 
-        {/* ── 학생별 등하원·수업 기록 ─────────────────────── */}
+        {/* ── 학생별 출석·수업 기록 ───────────────────────── */}
         <div className="px-4 mb-4">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-bold text-gray-700">학생 등하원</p>
-            {attendanceSettings.studentCheckMethod === 'qr' && qrHintByStudentId.size > 0 && (
+            <p className="text-sm font-bold text-gray-700">학생별 기록</p>
+            {attendanceSettings.studentCheckMethod === 'qr' && attendanceHintByStudentId.size > 0 && (
               <span className="text-[11px] font-semibold text-indigo-700 flex items-center gap-1">
-                <QrCode size={11} /> QR 등원 {qrHintByStudentId.size}명
+                <QrCode size={11} /> QR 체크 {attendanceHintByStudentId.size}명
               </span>
             )}
           </div>
@@ -1048,7 +1074,7 @@ export default function ClassSessionPage() {
               students.map((student) => {
                 const att = attendanceByStudentId.get(student.id);
                 const existingLr = lessonRecordByStudentId.get(student.id);
-                const qrHint = qrHintByStudentId.get(student.id) || null;
+                const attendanceHint = attendanceHintByStudentId.get(student.id) || null;
                 return (
                   <StudentCard
                     key={student.id}
@@ -1062,7 +1088,8 @@ export default function ClassSessionPage() {
                     saveCount={saveCount}
                     recordBlocks={recordBlocks}
                     recordSchema={recordSchema}
-                    qrHint={qrHint}
+                    attendanceHint={attendanceHint}
+                    studentCheckMethod={attendanceSettings.studentCheckMethod}
                   />
                 );
               })

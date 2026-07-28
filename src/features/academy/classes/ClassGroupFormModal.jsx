@@ -1244,7 +1244,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
                 onChange={(recordSchema) => set('recordSchema', recordSchema)}
               />
               <p className="mt-2 text-[11px] font-medium text-[#8B95A1]">
-                학생 등하원과 수업 상태는 기록 항목과 별개로 항상 사용할 수 있어요.
+                출석은 기록 항목과 별개로 학생별 기록에서 관리해요.
               </p>
             </div>
           </div>

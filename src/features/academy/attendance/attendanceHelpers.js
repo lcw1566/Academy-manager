@@ -287,7 +287,14 @@ function buildVisitIntervals(dayEvents) {
 //   - 겹치는 체류의 check_in > session start + graceMin → 'late'
 //   - 하원 미기록은 열린 체류로 간주하되 결석은 자동 생성하지 않는다.
 export function getQrAttendanceHint(studentServerId, session, events = [], { graceMin = 10 } = {}) {
-  const empty = { statusHint: null, checkInTime: null, checkOutTime: null, checkInISO: null, checkOutISO: null };
+  const empty = {
+    statusHint: null,
+    checkInTime: null,
+    checkOutTime: null,
+    checkInISO: null,
+    checkOutISO: null,
+    source: null,
+  };
   if (!studentServerId || !session?.date) return empty;
   const sStart = hhmmToMin(session.startTime);
   const sEnd = hhmmToMin(session.endTime);
@@ -331,6 +338,7 @@ export function getQrAttendanceHint(studentServerId, session, events = [], { gra
     checkOutTime: bestVisit.checkOut ? evtTimeToHHmm(bestVisit.checkOut.event_time) : null,
     checkInISO: bestVisit.checkIn.event_time,
     checkOutISO: bestVisit.checkOut?.event_time || null,
+    source: bestVisit.checkIn.source || null,
   };
 }
 
