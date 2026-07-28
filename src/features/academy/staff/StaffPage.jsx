@@ -14,12 +14,12 @@
 //   - academy_member_profiles (서버 — 이메일/이름/연락처)
 //   - academyStaffShifts     (로컬 근무표)
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Plus, ChevronLeft, ChevronRight, Pencil,
   Clock, Search, Users as UsersIcon, GraduationCap, Mail, X as XIcon,
   Loader2, Check, BookOpen, Coffee,
-  LogIn, LogOut as LogOutIcon, ShieldCheck, RefreshCw,
+  LogIn, LogOut as LogOutIcon, ShieldCheck,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
@@ -45,12 +45,11 @@ import {
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
 import {
-  assignAcademyMemberRole,
-  listAcademyRoleAssignmentCandidates,
   updateAcademyMemberRole,
 } from '../../../services/supabase/workspaceApi';
 import {
   buildRecurringStaffWorkPreview,
+  saveAlternatingStaffWorkSchedule,
   saveRecurringStaffWorkSchedule,
 } from '../../../services/staffWorkScheduleService';
 import {
@@ -233,47 +232,14 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
 
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
-  const isAcademyInvitationsLoading = useWorkspaceStore((s) => s.isAcademyInvitationsLoading);
-  const academyInvitationsError = useWorkspaceStore((s) => s.academyInvitationsError);
   const loadAcademyInvitations = useWorkspaceStore((s) => s.loadAcademyInvitations);
-  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
-  const refreshWorkspaceCollaborationState = useWorkspaceStore(
-    (s) => s.refreshWorkspaceCollaborationState,
-  );
 
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all'); // all | teacher | manager | pending
+  const [filter, setFilter] = useState('all'); // all | teacher | manager
   const [selectedKey, setSelectedKey] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [invitationStatusOpen, setInvitationStatusOpen] = useState(false);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
-  const [roleCandidates, setRoleCandidates] = useState([]);
-  const [isRoleCandidatesLoading, setIsRoleCandidatesLoading] = useState(false);
-
-  const loadRoleCandidates = useCallback(async () => {
-    if (!currentAcademyId) {
-      setRoleCandidates([]);
-      return [];
-    }
-    setIsRoleCandidatesLoading(true);
-    try {
-      const list = await listAcademyRoleAssignmentCandidates(currentAcademyId);
-      setRoleCandidates(list);
-      return list;
-    } catch (err) {
-      // SQL 026 미적용 같은 서버 상태는 기존 초대 기능을 막지 않도록 콘솔에만 남긴다.
-      console.warn('[staff] role-assignment candidates failed', err);
-      setRoleCandidates([]);
-      return [];
-    } finally {
-      setIsRoleCandidatesLoading(false);
-    }
-  }, [currentAcademyId]);
-
-  // 초대 수락 시 invitation/membership 실시간 갱신이 일어나면 후보도 다시 읽는다.
-  useEffect(() => {
-    loadRoleCandidates();
-  }, [loadRoleCandidates, academyInvitations]);
 
   const todayStr = todayDate();
   const weekDates = useMemo(() => getWeekDates(todayStr), [todayStr]);
@@ -353,46 +319,15 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
   const visibleItems = useMemo(() => {
     const q = search.trim().toLowerCase();
     const items = [];
-    if (filter === 'pending') {
-      for (const candidate of roleCandidates) {
-        const matches = [candidate.display_name, candidate.email, candidate.phone]
-          .some((value) => (value || '').toLowerCase().includes(q));
-        if (q && !matches) continue;
-        items.push({
-          kind: 'candidate', id: candidate.member_id,
-          key: `candidate_${candidate.member_id}`, candidate,
-        });
-      }
-      for (const inv of pendingInvitations) {
-        if (q && !(inv.email || '').toLowerCase().includes(q)) continue;
-        items.push({ kind: 'pending', id: inv.id, key: `inv_${inv.id}`, inv });
-      }
-    } else {
-      for (const s of allStaff) {
-        if (filter === 'teacher' && s._role !== 'teacher') continue;
-        if (filter === 'manager' && s._role !== 'manager') continue;
-        if (q && !(s.name || '').toLowerCase().includes(q)
-              && !(s.email || '').toLowerCase().includes(q)) continue;
-        items.push({ kind: 'staff', id: s.id, key: `staff_${s.id}`, staff: s });
-      }
-      if (filter === 'all') {
-        for (const candidate of roleCandidates) {
-          const matches = [candidate.display_name, candidate.email, candidate.phone]
-            .some((value) => (value || '').toLowerCase().includes(q));
-          if (q && !matches) continue;
-          items.push({
-            kind: 'candidate', id: candidate.member_id,
-            key: `candidate_${candidate.member_id}`, candidate,
-          });
-        }
-        for (const inv of pendingInvitations) {
-          if (q && !(inv.email || '').toLowerCase().includes(q)) continue;
-          items.push({ kind: 'pending', id: inv.id, key: `inv_${inv.id}`, inv });
-        }
-      }
+    for (const s of allStaff) {
+      if (filter === 'teacher' && s._role !== 'teacher') continue;
+      if (filter === 'manager' && s._role !== 'manager') continue;
+      if (q && !(s.name || '').toLowerCase().includes(q)
+            && !(s.email || '').toLowerCase().includes(q)) continue;
+      items.push({ kind: 'staff', id: s.id, key: `staff_${s.id}`, staff: s });
     }
     return items;
-  }, [allStaff, pendingInvitations, roleCandidates, filter, search]);
+  }, [allStaff, filter, search]);
 
   const selectedItem = useMemo(() => {
     if (!selectedKey) return visibleItems[0] || null;
@@ -411,7 +346,7 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
   };
 
   return (
-    <div className="md:bg-[#F2F4F6] md:min-h-screen">
+    <div className="w-full">
       <Header
         title="직원"
         right={
@@ -424,7 +359,7 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
           </button>
         }
       />
-      <div className="pt-14 md:pt-0 pb-12 md:pb-8">
+      <div className="pt-14 pb-6 md:pt-0">
         <div className="px-4 pt-4 md:grid md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] md:gap-6">
           {/* 좌측: 직원 리스트 */}
           <aside
@@ -433,26 +368,24 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
             }`}
           >
             <div className="md:bg-white md:rounded-2xl md:p-3 md:shadow-sm">
-              {latestInvitations.length > 0 && (
-                <button
-                  type="button"
-                  onClick={openInvitationStatus}
-                  className="mb-3 flex w-full items-center justify-between rounded-2xl bg-[#F8FAFC] px-3 py-3 text-left active:bg-[#F2F4F6]"
-                >
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                      <Mail size={15} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-xs font-extrabold text-[#191F28]">보낸 초대 현황</span>
-                      <span className="mt-0.5 block text-[11px] font-semibold text-[#8B95A1]">
-                        대기 {pendingInvitations.length}명 · 완료 {acceptedInvitationCount}명
-                      </span>
+              <button
+                type="button"
+                onClick={openInvitationStatus}
+                className="mb-3 flex w-full items-center justify-between rounded-2xl bg-[#F8FAFC] px-3 py-3 text-left active:bg-[#F2F4F6]"
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                    <Mail size={15} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-extrabold text-[#191F28]">보낸 초대 현황</span>
+                    <span className="mt-0.5 block text-[11px] font-semibold text-[#8B95A1]">
+                      대기 {pendingInvitations.length}명 · 완료 {acceptedInvitationCount}명
                     </span>
                   </span>
-                  <ChevronRight size={15} className="flex-shrink-0 text-[#B0B8C1]" />
-                </button>
-              )}
+                </span>
+                <ChevronRight size={15} className="flex-shrink-0 text-[#B0B8C1]" />
+              </button>
 
               <div className="mb-3 flex items-center gap-2 rounded-2xl border border-[#E5E8EB] bg-white px-3.5 py-3 shadow-sm">
                 <Search size={15} className="flex-shrink-0 text-[#8B95A1]" />
@@ -472,7 +405,6 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
                   { id: 'all', label: '전체' },
                   { id: 'teacher', label: '선생님' },
                   ...(canInviteManagers ? [{ id: 'manager', label: '운영' }] : []),
-                  { id: 'pending', label: '대기' },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -497,12 +429,6 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
               >
                 <Plus size={14} /> 직원 초대
               </button>
-
-              {isRoleCandidatesLoading && (filter === 'all' || filter === 'pending') && (
-                <div className="mb-2 px-1 text-[11px] text-[#8B95A1] flex items-center gap-1">
-                  <Loader2 size={11} className="animate-spin" /> 역할 배정 대기자를 확인하고 있어요.
-                </div>
-              )}
 
               {visibleItems.length === 0 ? (
                 <div className="py-8 text-center">
@@ -532,31 +458,13 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
             }`}
           >
             {selectedItem ? (
-              selectedItem.kind === 'pending' ? (
-                <PendingInvitationDetail
-                  inv={selectedItem.inv}
-                  onBack={handleBackToList}
-                />
-              ) : selectedItem.kind === 'candidate' ? (
-                <RoleAssignmentDetail
-                  candidate={selectedItem.candidate}
-                  canAssignManager={canInviteManagers}
-                  onBack={handleBackToList}
-                  onAssigned={async () => {
-                    await refreshWorkspaceCollaborationState?.({ reason: 'staff-role-assigned' });
-                    await loadRoleCandidates();
-                    setSelectedKey(null);
-                  }}
-                />
-              ) : (
-                <StaffDetailPanel
-                  staff={selectedItem.staff}
-                  summary={staffSummaries.get(selectedItem.staff.id)}
-                  onBack={handleBackToList}
-                  canManageManager={canInviteManagers}
-                  canManageStaffPermissions={canManageStaffPermissions}
-                />
-              )
+              <StaffDetailPanel
+                staff={selectedItem.staff}
+                summary={staffSummaries.get(selectedItem.staff.id)}
+                onBack={handleBackToList}
+                canManageManager={canInviteManagers}
+                canManageStaffPermissions={canManageStaffPermissions}
+              />
             ) : (
               <EmptyDetailPanel onAdd={() => setInviteOpen(true)} />
             )}
@@ -588,24 +496,6 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
               </p>
             </div>
             <StaffInviteWidget canInviteManagers={canInviteManagers} />
-            {latestInvitations.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setInviteOpen(false);
-                  openInvitationStatus();
-                }}
-                className="flex w-full items-center justify-between rounded-2xl bg-[#F2F4F6] px-4 py-3 text-left"
-              >
-                <span>
-                  <span className="block text-xs font-bold text-[#333D4B]">보낸 초대 현황</span>
-                  <span className="mt-0.5 block text-[11px] text-[#8B95A1]">
-                    대기 {pendingInvitations.length}명 · 완료 {acceptedInvitationCount}명
-                  </span>
-                </span>
-                <ChevronRight size={15} className="text-[#8B95A1]" />
-              </button>
-            )}
           </div>
         </Modal>
       )}
@@ -613,9 +503,6 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
       {invitationStatusOpen && (
         <InvitationStatusModal
           invitations={latestInvitations}
-          loading={isAcademyInvitationsLoading}
-          error={academyInvitationsError}
-          onRefresh={loadAcademyInvitations}
           onClose={() => setInvitationStatusOpen(false)}
         />
       )}
@@ -625,13 +512,25 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
 
 function InvitationStatusModal({
   invitations,
-  loading,
-  error,
-  onRefresh,
   onClose,
 }) {
+  const cancelAcademyInvitationById = useWorkspaceStore((s) => s.cancelAcademyInvitationById);
+  const showToast = useAcademyStore((s) => s.showToast);
+  const [cancellingId, setCancellingId] = useState(null);
   const pendingCount = invitations.filter((invitation) => invitation.status === 'pending').length;
   const acceptedCount = invitations.filter((invitation) => invitation.status === 'accepted').length;
+  const handleCancel = async (invitation) => {
+    if (!invitation?.id || cancellingId) return;
+    setCancellingId(invitation.id);
+    try {
+      await cancelAcademyInvitationById(invitation.id);
+      showToast('초대를 취소했어요.');
+    } catch (err) {
+      showToast(err?.message ?? '초대 취소에 실패했어요.', 'error');
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   return (
     <Modal
@@ -660,24 +559,9 @@ function InvitationStatusModal({
           </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-4 flex items-center">
           <p className="text-xs font-bold text-[#6B7684]">최근 초대</p>
-          <button
-            type="button"
-            onClick={() => onRefresh?.()}
-            disabled={loading}
-            className="flex h-8 items-center gap-1 rounded-xl bg-[#F2F4F6] px-2.5 text-[11px] font-bold text-[#6B7684] disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-            새로고침
-          </button>
         </div>
-
-        {error && (
-          <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-600">
-            {error}
-          </p>
-        )}
 
         {invitations.length === 0 ? (
           <div className="mt-3 rounded-2xl bg-[#F8FAFC] px-4 py-8 text-center">
@@ -715,6 +599,16 @@ function InvitationStatusModal({
                   <p className="mt-2 text-[11px] leading-relaxed text-[#6B7684]">
                     {meta.description}
                   </p>
+                  {invitation.status === 'pending' && (
+                    <button
+                      type="button"
+                      onClick={() => handleCancel(invitation)}
+                      disabled={Boolean(cancellingId)}
+                      className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600 disabled:opacity-50"
+                    >
+                      {cancellingId === invitation.id ? '취소 중…' : '초대 취소'}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -722,80 +616,15 @@ function InvitationStatusModal({
         )}
 
         <p className="mt-3 text-[10px] leading-relaxed text-[#8B95A1]">
-          상대방이 앱에서 수락하면 실시간으로 완료 상태로 바뀌어요.
+          상대방이 앱에서 수락하면 완료 상태가 자동으로 반영돼요.
         </p>
       </div>
     </Modal>
   );
 }
 
-// ─── 직원/초대 카드 ────────────────────────────────────────────────
+// ─── 직원 카드 ────────────────────────────────────────────────────
 function StaffRosterCard({ item, active, summary, onClick }) {
-  if (item.kind === 'candidate') {
-    const candidate = item.candidate;
-    const name = candidate.display_name || candidate.email || '(이름 없음)';
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        className={`relative w-full text-left rounded-2xl px-3 py-3 bg-white transition-colors ${
-          active ? 'text-[#3182F6]' : 'text-[#191F28] active:bg-[#F8F9FA]'
-        }`}
-      >
-        {active && (
-          <span className="hidden md:block absolute left-0 top-3 bottom-3 w-[3px] rounded-full bg-[#3182F6]" />
-        )}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center flex-shrink-0 text-sm font-bold text-orange-600">
-            {name.charAt(0).toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className={`text-sm font-bold truncate ${active ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
-              {name}
-            </p>
-            <p className="text-[11px] text-[#8B95A1] mt-0.5 truncate">
-              {candidate.email || '이메일 없음'} · 역할 배정 대기
-            </p>
-          </div>
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700">
-            배정 필요
-          </span>
-        </div>
-      </button>
-    );
-  }
-  if (item.kind === 'pending') {
-    const inv = item.inv;
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        className={`relative w-full text-left rounded-2xl px-3 py-3 bg-white transition-colors ${
-          active ? 'text-[#3182F6]' : 'text-[#191F28] active:bg-[#F8F9FA]'
-        }`}
-      >
-        {active && (
-          <span className="hidden md:block absolute left-0 top-3 bottom-3 w-[3px] rounded-full bg-[#3182F6]" />
-        )}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0">
-            <Mail size={15} className="text-amber-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className={`text-sm font-bold truncate ${active ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
-              {inv.email}
-            </p>
-            <p className="text-[11px] text-[#8B95A1] mt-0.5">
-              {inv.role === 'pending' ? '직원 · 역할 미지정' : `${STAFF_ROLE_LABELS[inv.role] || '직원'} · 초대 대기`}
-            </p>
-          </div>
-          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700">
-            대기
-          </span>
-        </div>
-      </button>
-    );
-  }
   const staff = item.staff;
   const weekHours = formatShiftHoursFromMinutes(summary?.weekGrossMin ?? summary?.weekMin ?? 0);
   const netWeekHours = formatShiftHoursFromMinutes(summary?.weekMin || 0);
@@ -849,196 +678,6 @@ function EmptyDetailPanel({ onAdd }) {
       >
         + 직원 초대
       </button>
-    </div>
-  );
-}
-
-function RoleChoice({ value, onChange, allowManager = false }) {
-  return (
-    <div>
-      <p className="text-xs font-semibold text-gray-600 mb-2">역할</p>
-      <div className={`grid ${allowManager ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-        {[
-          { id: 'teacher', label: '선생님', desc: '배정된 수업과 학생 기록을 관리해요.' },
-          ...(allowManager ? [{ id: 'manager', label: '운영 매니저', desc: '데스크 운영을 관리해요.' }] : []),
-        ].map((item) => {
-          const active = value === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onChange(item.id)}
-              className={`rounded-2xl border px-3 py-3 text-left active:opacity-80 ${
-                active ? 'border-[#3182F6] bg-blue-50' : 'border-gray-200 bg-white'
-              }`}
-            >
-              <p className={`text-sm font-bold ${active ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
-                {item.label}
-              </p>
-              <p className="text-[11px] text-[#8B95A1] mt-0.5">{item.desc}</p>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── 수락 후 역할 배정 대기 직원 ─────────────────────────────────
-function RoleAssignmentDetail({ candidate, canAssignManager = false, onBack, onAssigned }) {
-  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
-  const saveAcademyStaffProfile = useWorkspaceStore((s) => s.saveAcademyStaffProfile);
-  const showToast = useAcademyStore((s) => s.showToast);
-  const [role, setRole] = useState('teacher');
-  const [saving, setSaving] = useState(false);
-  const name = candidate?.display_name || candidate?.email || '(이름 없음)';
-
-  const handleAssign = async () => {
-    if (!currentAcademyId || !candidate?.user_id || !candidate?.member_id || saving) return;
-    setSaving(true);
-    try {
-      // 프로필을 먼저 준비해 역할 활성화 직후에도 근무/권한 설정이 일관되게 보이게 한다.
-      await saveAcademyStaffProfile({
-        academyId: currentAcademyId,
-        userId: candidate.user_id,
-        memberId: candidate.member_id,
-        role,
-        subjects: [],
-        wageType: 'hourly',
-        hourlyWage: 0,
-        monthlySalary: 0,
-        memo: null,
-        status: 'active',
-        permissions: {},
-        scope: {},
-      });
-      await assignAcademyMemberRole({
-        academyId: currentAcademyId,
-        userId: candidate.user_id,
-        role,
-      });
-      try {
-        await onAssigned?.();
-      } catch (err) {
-        console.warn('[staff] post-assignment refresh failed', err);
-      }
-      showToast(`${name}님에게 ${STAFF_ROLE_LABELS[role]} 역할을 배정했어요.`);
-    } catch (err) {
-      showToast(err?.message ?? '역할 배정에 실패했어요.', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={onBack}
-        className="md:hidden flex items-center gap-1 text-sm font-semibold text-[#4E5968] mb-3"
-      >
-        <ChevronLeft size={16} /> 목록으로
-      </button>
-      <div className="bg-white rounded-2xl p-5 md:p-6 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-orange-50 flex items-center justify-center text-base font-bold text-orange-600 flex-shrink-0">
-            {name.charAt(0).toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-lg font-bold text-[#191F28] truncate">{name}</p>
-            <p className="text-xs text-[#8B95A1] mt-0.5 truncate">
-              {candidate.email || '이메일 정보 없음'}
-              {candidate.phone ? ` · ${candidate.phone}` : ''}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-5 rounded-2xl bg-orange-50 px-4 py-3 flex items-start gap-2">
-          <Clock size={14} className="text-orange-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-orange-700 leading-relaxed">
-            초대 수락은 완료됐어요. 아래 역할을 배정하면 이 직원이 바로 학원 기능을 사용할 수 있어요.
-          </p>
-        </div>
-
-        <div className="mt-5">
-          <RoleChoice value={role} onChange={setRole} allowManager={canAssignManager} />
-        </div>
-
-        <button
-          type="button"
-          onClick={handleAssign}
-          disabled={saving}
-          className="mt-5 w-full py-3 rounded-xl bg-[#0064FF] text-white text-sm font-bold flex items-center justify-center gap-1.5 disabled:opacity-60"
-        >
-          {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-          {saving ? '역할 배정 중…' : `${STAFF_ROLE_LABELS[role]}로 역할 배정`}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── 대기 중인 초대 상세 ───────────────────────────────────────────
-function PendingInvitationDetail({ inv, onBack }) {
-  const [cancelling, setCancelling] = useState(false);
-  const cancelAcademyInvitationById = useWorkspaceStore((s) => s.cancelAcademyInvitationById);
-  const showToast = useAcademyStore((s) => s.showToast);
-
-  const handleCancel = async () => {
-    if (cancelling) return;
-    setCancelling(true);
-    try {
-      await cancelAcademyInvitationById(inv.id);
-      showToast('초대를 취소했어요.');
-    } catch (err) {
-      showToast(err?.message ?? '초대 취소에 실패했어요.', 'error');
-    } finally {
-      setCancelling(false);
-    }
-  };
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={onBack}
-        className="md:hidden flex items-center gap-1 text-sm font-semibold text-[#4E5968] mb-3"
-      >
-        <ChevronLeft size={16} /> 목록으로
-      </button>
-      <div className="bg-white rounded-2xl p-5 md:p-6 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center flex-shrink-0">
-            <Mail size={18} className="text-amber-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-lg font-bold text-[#191F28] truncate">{inv.email}</p>
-            <p className="text-xs text-[#8B95A1] mt-0.5">
-              {inv.role === 'pending'
-                ? '직원 · 초대 대기 중'
-                : `${STAFF_ROLE_LABELS[inv.role] || '직원'} · 초대 대기 중`}
-            </p>
-          </div>
-        </div>
-        <div className="mt-5 bg-amber-50 rounded-2xl px-4 py-3 flex items-start gap-2">
-          <Clock size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-700 leading-relaxed">
-            상대가 같은 이메일로 로그인하면 앱 안에서 초대를 수락할 수 있어요.
-            {inv.role === 'pending'
-              ? ' 이전 방식의 초대라 수락 뒤 역할을 한 번 정해야 해요.'
-              : ` 수락하면 바로 ${STAFF_ROLE_LABELS[inv.role] || '직원'}로 참여해요.`}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleCancel}
-          disabled={cancelling}
-          className="mt-4 w-full py-3 rounded-xl bg-red-50 text-red-600 text-sm font-bold flex items-center justify-center gap-1.5 disabled:opacity-60"
-        >
-          {cancelling ? <Loader2 size={13} className="animate-spin" /> : <XIcon size={13} />}
-          초대 취소
-        </button>
-      </div>
     </div>
   );
 }
@@ -1425,6 +1064,56 @@ function StaffShiftSection({ staff }) {
     const sourceRule = sourceRuleId
       ? staffRules.find((rule) => rule.id === sourceRuleId)
       : null;
+    const presetFromRules = (rules = []) => {
+      if (rules.length === 0) return null;
+      const first = rules[0];
+      return {
+        weekdays: rules
+          .map((rule) => DOW_TO_KO[rule.day_of_week])
+          .filter(Boolean)
+          .sort((a, b) => KOREAN_WEEKDAYS.indexOf(a) - KOREAN_WEEKDAYS.indexOf(b)),
+        scheduledStartTime: (first.start_time || '').slice(0, 5),
+        scheduledEndTime: (first.end_time || '').slice(0, 5),
+        breakMinutes: first.break_minutes ? String(first.break_minutes) : '',
+      };
+    };
+    const alternatingRules = staffRules.filter(
+      (rule) => Number(rule.repeat_interval_weeks) === 2,
+    );
+    if (
+      alternatingRules.length > 0
+      && (!sourceRule || Number(sourceRule.repeat_interval_weeks) === 2)
+    ) {
+      const weekARules = alternatingRules.filter(
+        (rule) => Number(rule.rotation_week_index || 0) === 0,
+      );
+      const weekBRules = alternatingRules.filter(
+        (rule) => Number(rule.rotation_week_index || 0) === 1,
+      );
+      const anchorRule = weekARules[0] || weekBRules[0];
+      const commonStartDate = weekARules[0]?.effective_start_date
+        || (weekBRules[0]?.effective_start_date
+          ? addDaysYMD(weekBRules[0].effective_start_date, -7)
+          : todayStr);
+      return {
+        ...(presetFromRules(weekARules) || {
+          weekdays: [],
+          scheduledStartTime: '',
+          scheduledEndTime: '',
+          breakMinutes: '',
+        }),
+        startDate: commonStartDate,
+        endDate: anchorRule?.effective_end_date || '',
+        repeatIntervalWeeks: 2,
+        alternateWeek: presetFromRules(weekBRules) || {
+          weekdays: [],
+          scheduledStartTime: '',
+          scheduledEndTime: '',
+          breakMinutes: '',
+        },
+        memo: anchorRule?.memo || '',
+      };
+    }
     const keyOfRule = (rule) => [
       (rule.start_time || '').slice(0, 5),
       (rule.end_time || '').slice(0, 5),
@@ -1459,6 +1148,12 @@ function StaffShiftSection({ staff }) {
         scheduledStartTime: (first.start_time || '').slice(0, 5),
         scheduledEndTime: (first.end_time || '').slice(0, 5),
         breakMinutes: first.break_minutes ? String(first.break_minutes) : '',
+        alternateWeek: {
+          weekdays: [],
+          scheduledStartTime: '',
+          scheduledEndTime: '',
+          breakMinutes: '',
+        },
         memo: first.memo || '',
       };
     }
@@ -1472,6 +1167,12 @@ function StaffShiftSection({ staff }) {
         scheduledStartTime: sourceShift.scheduledStartTime || '',
         scheduledEndTime: sourceShift.scheduledEndTime || '',
         breakMinutes: sourceShift.breakMinutes ? String(sourceShift.breakMinutes) : '',
+        alternateWeek: {
+          weekdays: [],
+          scheduledStartTime: '',
+          scheduledEndTime: '',
+          breakMinutes: '',
+        },
         memo: sourceShift.memo || '',
       };
     }
@@ -1494,19 +1195,32 @@ function StaffShiftSection({ staff }) {
   };
 
   const handleSaveRecurring = async (data) => {
-    const timeError = validateShiftTime({
+    const isAlternating = Number(data.repeatIntervalWeeks) === 2;
+    const weekATimeError = validateShiftTime({
       startTime: data.scheduledStartTime,
       endTime: data.scheduledEndTime,
       breakMinutes: data.breakMinutes,
     });
-    if (timeError) { showToast(timeError, 'error'); return; }
+    if (weekATimeError) { showToast(`A주: ${weekATimeError}`, 'error'); return; }
+    const weekBHasDays = isAlternating && (data.alternateWeek?.weekdays || []).length > 0;
+    const weekBTimeError = weekBHasDays
+      ? validateShiftTime({
+        startTime: data.alternateWeek?.scheduledStartTime,
+        endTime: data.alternateWeek?.scheduledEndTime,
+        breakMinutes: data.alternateWeek?.breakMinutes,
+      })
+      : '';
+    if (weekBTimeError) { showToast(`B주: ${weekBTimeError}`, 'error'); return; }
     const daysOfWeek = (data.weekdays || []).map((d) => KO_TO_DOW[d]).filter((d) => d !== undefined);
+    const alternateDaysOfWeek = (data.alternateWeek?.weekdays || [])
+      .map((d) => KO_TO_DOW[d])
+      .filter((d) => d !== undefined);
     if (daysOfWeek.length === 0) return;
-    const selectedDowSet = new Set(daysOfWeek);
+    const selectedDowSet = new Set([...daysOfWeek, ...alternateDaysOfWeek]);
     const overlappingRules = (staffWorkRules || []).filter((rule) =>
       rule.is_active
       && rule.staff_user_id === staff.serverUserId
-      && selectedDowSet.has(rule.day_of_week)
+      && (isAlternating || selectedDowSet.has(rule.day_of_week))
     );
     const shouldReplaceShift = (shift) => {
       if (!shift || shift.status !== 'scheduled') return false;
@@ -1515,7 +1229,7 @@ function StaffShiftSection({ staff }) {
       if (!shift.date || shift.date < data.startDate) return false;
       if (data.endDate && shift.date > data.endDate) return false;
       const dow = KO_TO_DOW[getKoreanWeekdayFromYMD(shift.date)];
-      if (!selectedDowSet.has(dow)) return false;
+      if (!isAlternating && !selectedDowSet.has(dow)) return false;
       return overlappingRules.some((rule) =>
         rule.day_of_week === dow
         && (rule.start_time || '').slice(0, 5) === (shift.scheduledStartTime || '').slice(0, 5)
@@ -1534,23 +1248,42 @@ function StaffShiftSection({ staff }) {
         catch (err) { console.warn('[supabase] delete replaced recurring shift failed', err); }
       }
     }
-    const result = await saveRecurringStaffWorkSchedule({
+    const commonSaveOptions = {
       academyId: isAuthenticated ? currentAcademyId : null,
       staff,
-      weekdays: daysOfWeek,
-      startTime: data.scheduledStartTime,
-      endTime: data.scheduledEndTime,
-      breakMinutes: data.breakMinutes,
       effectiveStartDate: data.startDate,
       effectiveEndDate: data.endDate || null,
-      repeatIntervalWeeks: data.repeatIntervalWeeks,
       memo: data.memo,
       todayYMD: todayStr,
       existingRules: staffWorkRules,
       existingShifts: academyStaffShifts.filter((shift) => !replaceIds.has(shift.id)),
       addLocalShift: addAcademyStaffShift,
       setLocalShiftServerId: setStaffShiftServerId,
-    });
+    };
+    const result = isAlternating
+      ? await saveAlternatingStaffWorkSchedule({
+        ...commonSaveOptions,
+        weekA: {
+          weekdays: daysOfWeek,
+          startTime: data.scheduledStartTime,
+          endTime: data.scheduledEndTime,
+          breakMinutes: data.breakMinutes,
+        },
+        weekB: {
+          weekdays: alternateDaysOfWeek,
+          startTime: data.alternateWeek?.scheduledStartTime,
+          endTime: data.alternateWeek?.scheduledEndTime,
+          breakMinutes: data.alternateWeek?.breakMinutes,
+        },
+      })
+      : await saveRecurringStaffWorkSchedule({
+        ...commonSaveOptions,
+        weekdays: daysOfWeek,
+        startTime: data.scheduledStartTime,
+        endTime: data.scheduledEndTime,
+        breakMinutes: data.breakMinutes,
+        repeatIntervalWeeks: 1,
+      });
     if (staff.serverUserId && isAuthenticated && currentAcademyId) {
       loadServerStaffShifts();
       loadStaffWorkRules?.();
@@ -2168,6 +1901,25 @@ function ChoiceCard({ active, title, subtitle, onClick }) {
   );
 }
 
+function summarizeRecurringPattern({
+  weekdays = [],
+  scheduledStartTime,
+  scheduledEndTime,
+  breakMinutes,
+} = {}) {
+  const start = hhmmToMin(scheduledStartTime);
+  const end = hhmmToMin(scheduledEndTime);
+  if (start == null || end == null || end <= start || weekdays.length === 0) return null;
+  const breakMin = Number(breakMinutes) || 0;
+  const dailyGrossMin = end - start;
+  const dailyNetMin = Math.max(0, dailyGrossMin - breakMin);
+  return {
+    weeklyGrossMin: dailyGrossMin * weekdays.length,
+    weeklyNetMin: dailyNetMin * weekdays.length,
+    weeklyBreakMin: breakMin * weekdays.length,
+  };
+}
+
 function ShiftFormModal({
   initial, defaultDate, defaultMode = 'recurring', initialRecurring,
   onClose, onSaveSingle, onSaveRecurring,
@@ -2196,6 +1948,12 @@ function ShiftFormModal({
     breakMinutes: initialRecurring?.breakMinutes || '',
     memo: initialRecurring?.memo || '',
   });
+  const [alternateWeek, setAlternateWeek] = useState({
+    weekdays: initialRecurring?.alternateWeek?.weekdays || [],
+    scheduledStartTime: initialRecurring?.alternateWeek?.scheduledStartTime || '',
+    scheduledEndTime: initialRecurring?.alternateWeek?.scheduledEndTime || '',
+    breakMinutes: initialRecurring?.alternateWeek?.breakMinutes || '',
+  });
 
   const recurringPreview = useMemo(() => {
     if (mode !== 'recurring') return null;
@@ -2210,7 +1968,24 @@ function ShiftFormModal({
         repeatIntervalWeeks: recurring.repeatIntervalWeeks,
         todayYMD: todayDate(),
       });
-      return { ...preview, dates: preview.dates.slice(0, 3) };
+      if (recurring.repeatIntervalWeeks !== 2 || alternateWeek.weekdays.length === 0) {
+        return { ...preview, dates: preview.dates.slice(0, 4) };
+      }
+      const alternateDaysOfWeek = alternateWeek.weekdays
+        .map((d) => KO_TO_DOW[d])
+        .filter((d) => d !== undefined);
+      const alternatePreview = buildRecurringStaffWorkPreview({
+        weekdays: alternateDaysOfWeek,
+        effectiveStartDate: addDaysYMD(recurring.startDate, 7),
+        effectiveEndDate: recurring.endDate || null,
+        repeatIntervalWeeks: 2,
+        todayYMD: todayDate(),
+      });
+      return {
+        ...preview,
+        dates: [...preview.dates, ...alternatePreview.dates].sort().slice(0, 4),
+        alternateDates: alternatePreview.dates,
+      };
     } catch { return null; }
   }, [
     mode,
@@ -2218,32 +1993,27 @@ function ShiftFormModal({
     recurring.endDate,
     recurring.weekdays,
     recurring.repeatIntervalWeeks,
+    alternateWeek.weekdays,
   ]);
 
-  const recurringSummary = useMemo(() => {
-    const start = hhmmToMin(recurring.scheduledStartTime);
-    const end = hhmmToMin(recurring.scheduledEndTime);
-    if (start == null || end == null || end <= start || recurring.weekdays.length === 0) {
-      return null;
-    }
-    const breakMin = Number(recurring.breakMinutes) || 0;
-    const dailyGrossMin = end - start;
-    const dailyNetMin = Math.max(0, dailyGrossMin - breakMin);
-    const count = recurring.weekdays.length;
-    return {
-      count,
-      dailyGrossMin,
-      dailyNetMin,
-      weeklyGrossMin: dailyGrossMin * count,
-      weeklyNetMin: dailyNetMin * count,
-      weeklyBreakMin: breakMin * count,
-    };
-  }, [
-    recurring.scheduledStartTime,
-    recurring.scheduledEndTime,
-    recurring.breakMinutes,
-    recurring.weekdays,
-  ]);
+  const recurringSummary = useMemo(
+    () => summarizeRecurringPattern(recurring),
+    [
+      recurring.scheduledStartTime,
+      recurring.scheduledEndTime,
+      recurring.breakMinutes,
+      recurring.weekdays,
+    ],
+  );
+  const alternateSummary = useMemo(
+    () => summarizeRecurringPattern(alternateWeek),
+    [
+      alternateWeek.scheduledStartTime,
+      alternateWeek.scheduledEndTime,
+      alternateWeek.breakMinutes,
+      alternateWeek.weekdays,
+    ],
+  );
 
   const singleTimeError = useMemo(
     () => validateShiftTime({
@@ -2261,10 +2031,26 @@ function ShiftFormModal({
     }),
     [recurring.scheduledStartTime, recurring.scheduledEndTime, recurring.breakMinutes],
   );
+  const alternateTimeError = useMemo(
+    () => alternateWeek.weekdays.length > 0
+      ? validateShiftTime({
+        startTime: alternateWeek.scheduledStartTime,
+        endTime: alternateWeek.scheduledEndTime,
+        breakMinutes: alternateWeek.breakMinutes,
+      })
+      : '',
+    [
+      alternateWeek.weekdays.length,
+      alternateWeek.scheduledStartTime,
+      alternateWeek.scheduledEndTime,
+      alternateWeek.breakMinutes,
+    ],
+  );
 
   const canSaveSingle = !!form.date && !singleTimeError;
   const canSaveRecurring = recurring.weekdays.length > 0 && !!recurring.startDate
     && !recurringTimeError
+    && (recurring.repeatIntervalWeeks !== 2 || !alternateTimeError)
     && (recurringEndMode !== 'until' || !!recurring.endDate)
     && !(recurringEndMode === 'until' && recurring.endDate && recurring.endDate < recurring.startDate);
   const canSave = mode === 'single' ? canSaveSingle : canSaveRecurring;
@@ -2273,6 +2059,17 @@ function ShiftFormModal({
     setRecurring((f) => {
       const has = f.weekdays.includes(d);
       return { ...f, weekdays: has ? f.weekdays.filter((x) => x !== d) : [...f.weekdays, d] };
+    });
+  };
+  const toggleAlternateWeekday = (d) => {
+    setAlternateWeek((current) => {
+      const has = current.weekdays.includes(d);
+      return {
+        ...current,
+        weekdays: has
+          ? current.weekdays.filter((weekday) => weekday !== d)
+          : [...current.weekdays, d],
+      };
     });
   };
 
@@ -2288,6 +2085,7 @@ function ShiftFormModal({
         scheduledEndTime: recurring.scheduledEndTime,
         breakMinutes: recurring.breakMinutes,
         memo: recurring.memo,
+        alternateWeek,
       });
     } else {
       onSaveSingle?.(form);
@@ -2390,20 +2188,22 @@ function ShiftFormModal({
               <div className="grid grid-cols-2 gap-2">
                 <ChoiceCard
                   active={recurring.repeatIntervalWeeks === 1}
-                  title="매주"
-                  subtitle="선택한 요일마다"
+                  title="매주 같아요"
+                  subtitle="같은 일정 반복"
                   onClick={() => setRecurring((f) => ({ ...f, repeatIntervalWeeks: 1 }))}
                 />
                 <ChoiceCard
                   active={recurring.repeatIntervalWeeks === 2}
-                  title="격주"
-                  subtitle="한 주 근무, 한 주 휴무"
+                  title="한 주마다 달라요"
+                  subtitle="A주·B주 교대"
                   onClick={() => setRecurring((f) => ({ ...f, repeatIntervalWeeks: 2 }))}
                 />
               </div>
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">반복 요일 *</label>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">
+                {recurring.repeatIntervalWeeks === 2 ? 'A주 요일 *' : '반복 요일 *'}
+              </label>
               <div className="grid grid-cols-7 gap-1.5">
                 {KOREAN_WEEKDAYS.map((d) => {
                   const active = recurring.weekdays.includes(d);
@@ -2437,7 +2237,89 @@ function ShiftFormModal({
             )}
             <div>
               <label className="text-xs font-semibold text-gray-600 mb-1.5 block">
-                {recurring.repeatIntervalWeeks === 2 ? '첫 근무 주는 언제인가요?' : '언제부터 적용할까요?'}
+                {recurring.repeatIntervalWeeks === 2 ? 'A주 휴게(분)' : '휴게(분)'}
+              </label>
+              <input type="number" value={recurring.breakMinutes} onChange={(e) => setRecurring((f) => ({ ...f, breakMinutes: e.target.value }))} placeholder="0" className="input" />
+            </div>
+
+            {recurring.repeatIntervalWeeks === 2 && (
+              <div className="rounded-2xl bg-[#F8FAFC] p-3.5">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-sm font-extrabold text-[#191F28]">B주 일정</p>
+                  <p className="text-[10px] font-semibold text-[#8B95A1]">
+                    요일을 고르지 않으면 휴무
+                  </p>
+                </div>
+                <div className="grid grid-cols-7 gap-1.5">
+                  {KOREAN_WEEKDAYS.map((d) => {
+                    const active = alternateWeek.weekdays.includes(d);
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => toggleAlternateWeekday(d)}
+                        className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-colors ${
+                          active
+                            ? 'border-[#3182F6] bg-[#3182F6] text-white'
+                            : 'border-gray-200 bg-white text-gray-500'
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+                {alternateWeek.weekdays.length > 0 && (
+                  <>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 mb-1.5 block">시작 *</label>
+                        <input
+                          type="time"
+                          value={alternateWeek.scheduledStartTime}
+                          onChange={(event) => setAlternateWeek((current) => ({
+                            ...current,
+                            scheduledStartTime: event.target.value,
+                          }))}
+                          className="input"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 mb-1.5 block">종료 *</label>
+                        <input
+                          type="time"
+                          value={alternateWeek.scheduledEndTime}
+                          onChange={(event) => setAlternateWeek((current) => ({
+                            ...current,
+                            scheduledEndTime: event.target.value,
+                          }))}
+                          className="input"
+                        />
+                      </div>
+                    </div>
+                    {alternateTimeError && (
+                      <p className="mt-1.5 text-[11px] text-red-500">{alternateTimeError}</p>
+                    )}
+                    <div className="mt-3">
+                      <label className="text-xs font-semibold text-gray-600 mb-1.5 block">휴게(분)</label>
+                      <input
+                        type="number"
+                        value={alternateWeek.breakMinutes}
+                        onChange={(event) => setAlternateWeek((current) => ({
+                          ...current,
+                          breakMinutes: event.target.value,
+                        }))}
+                        placeholder="0"
+                        className="input"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">
+                {recurring.repeatIntervalWeeks === 2 ? 'A주는 언제 시작하나요?' : '언제부터 적용할까요?'}
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <ChoiceCard
@@ -2460,7 +2342,7 @@ function ShiftFormModal({
                 <input type="date" value={recurring.startDate} onChange={(e) => setRecurring((f) => ({ ...f, startDate: e.target.value }))} className="input" />
                 {recurring.repeatIntervalWeeks === 2 && (
                   <p className="mt-1.5 text-[11px] leading-relaxed text-[#8B95A1]">
-                    선택한 날짜가 포함된 주를 첫 근무 주로 계산해요.
+                    선택한 날짜가 포함된 주를 A주로 계산하고 다음 주부터 B주와 번갈아 반복해요.
                   </p>
                 )}
               </div>
@@ -2492,10 +2374,6 @@ function ShiftFormModal({
               </div>
             )}
             <div>
-              <label className="text-xs font-semibold text-gray-600 mb-1.5 block">휴게(분)</label>
-              <input type="number" value={recurring.breakMinutes} onChange={(e) => setRecurring((f) => ({ ...f, breakMinutes: e.target.value }))} placeholder="0" className="input" />
-            </div>
-            <div>
               <label className="text-xs font-semibold text-gray-600 mb-1.5 block">메모</label>
               <textarea value={recurring.memo} onChange={(e) => setRecurring((f) => ({ ...f, memo: e.target.value }))} rows={2} placeholder="특이사항 등" className="input resize-none" />
             </div>
@@ -2506,14 +2384,21 @@ function ShiftFormModal({
                   <p className="text-sm font-bold text-[#3182F6]">이 패턴으로 근무표에 표시돼요</p>
                 </div>
                 <p className="text-[11px] text-[#4E5968] leading-relaxed">
-                  {recurring.repeatIntervalWeeks === 2 ? '격주 ' : '매주 '}
+                  {recurring.repeatIntervalWeeks === 2 ? 'A주 · ' : '매주 '}
                   {recurring.weekdays.join(', ')} {formatShiftTimeRange(recurring.scheduledStartTime, recurring.scheduledEndTime)}
                 </p>
-                {recurringSummary && (
+                {recurring.repeatIntervalWeeks === 2 && (
+                  <p className="mt-1 text-[11px] text-[#4E5968] leading-relaxed">
+                    B주 · {alternateWeek.weekdays.length > 0
+                      ? `${alternateWeek.weekdays.join(', ')} ${formatShiftTimeRange(alternateWeek.scheduledStartTime, alternateWeek.scheduledEndTime)}`
+                      : '휴무'}
+                  </p>
+                )}
+                {recurringSummary && recurring.repeatIntervalWeeks === 1 && (
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     <div className="rounded-xl bg-white/70 px-3 py-2">
                       <p className="text-[10px] font-semibold text-[#8B95A1]">
-                        {recurring.repeatIntervalWeeks === 2 ? '근무하는 주' : '주 근무'}
+                        주 근무
                       </p>
                       <p className="text-sm font-extrabold text-[#191F28]">
                         {formatShiftHoursFromMinutes(recurringSummary.weeklyGrossMin)}h
@@ -2521,12 +2406,28 @@ function ShiftFormModal({
                     </div>
                     <div className="rounded-xl bg-white/70 px-3 py-2">
                       <p className="text-[10px] font-semibold text-[#8B95A1]">
-                        {recurring.repeatIntervalWeeks === 2 ? '주 평균' : '휴게 제외'}
+                        휴게 제외
                       </p>
                       <p className="text-sm font-extrabold text-[#191F28]">
                         {formatShiftHoursFromMinutes(
-                          recurringSummary.weeklyNetMin / recurring.repeatIntervalWeeks,
+                          recurringSummary.weeklyNetMin,
                         )}h
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {recurring.repeatIntervalWeeks === 2 && (
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-white/70 px-3 py-2">
+                      <p className="text-[10px] font-semibold text-[#8B95A1]">A주 근무</p>
+                      <p className="text-sm font-extrabold text-[#191F28]">
+                        {formatShiftHoursFromMinutes(recurringSummary?.weeklyNetMin || 0)}h
+                      </p>
+                    </div>
+                    <div className="rounded-xl bg-white/70 px-3 py-2">
+                      <p className="text-[10px] font-semibold text-[#8B95A1]">B주 근무</p>
+                      <p className="text-sm font-extrabold text-[#191F28]">
+                        {formatShiftHoursFromMinutes(alternateSummary?.weeklyNetMin || 0)}h
                       </p>
                     </div>
                   </div>
@@ -2540,7 +2441,7 @@ function ShiftFormModal({
                   {recurringEndMode === 'until' && recurring.endDate
                     ? `${recurring.startDate}부터 ${recurring.endDate}까지 반복돼요.`
                     : `${recurring.startDate}부터 계속 반복돼요.`}
-                  {recurring.repeatIntervalWeeks === 2 ? ' 시작일이 포함된 주부터 한 주 걸러 근무해요.' : ''}
+                  {recurring.repeatIntervalWeeks === 2 ? ' A주와 B주가 한 주마다 번갈아 적용돼요.' : ''}
                   {recurringPreview.dates.length > 0 ? ` 다음 일정: ${recurringPreview.dates.map((d) => formatDateShort(d)).join(', ')}` : ''}
                 </p>
                 <p className="text-[11px] text-[#8B95A1] mt-1 leading-relaxed">

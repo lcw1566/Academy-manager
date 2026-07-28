@@ -41,7 +41,7 @@ const STAFF_WORK_RULE_FIELDS = new Set([
   'academy_id', 'staff_user_id', 'staff_role',
   'day_of_week', 'start_time', 'end_time', 'break_minutes',
   'effective_start_date', 'effective_end_date',
-  'repeat_interval_weeks',
+  'repeat_interval_weeks', 'rotation_week_index',
   'is_active', 'memo',
 ]);
 

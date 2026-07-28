@@ -317,7 +317,7 @@ export default function StudentAttendancePage() {
         ) : null}
       />
 
-      <div className="px-4 pt-[72px] pb-8 md:px-0 md:pt-0">
+      <div className="px-4 pt-[72px] pb-6 md:pt-0">
         <div className="mb-4 flex items-center justify-between rounded-2xl border border-[#E5E8EB] bg-white px-3 py-2">
           <button type="button" onClick={() => goDate(-1)} className="h-10 w-10 rounded-xl text-gray-500 active:bg-gray-100">
             <ChevronLeft size={20} className="mx-auto" />

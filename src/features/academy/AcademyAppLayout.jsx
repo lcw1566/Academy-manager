@@ -509,10 +509,13 @@ export default function AcademyAppLayout() {
         activeTabIds={desktopChatOpen ? ['chat'] : []}
       />
 
-      <main className="flex-1 min-w-0">
-        <div className="main-content max-w-md mx-auto md:mx-0 md:max-w-none md:px-8 md:py-6 pb-24 md:pb-8">
+      <main className="min-w-0 flex-1">
+        <div className="main-content mx-auto w-full max-w-md pb-24 md:max-w-none md:px-8 md:py-6 md:pb-8">
           <Suspense fallback={<div className="h-[60vh]" />}>
-            <div key={pageKey}>
+            <div
+              key={pageKey}
+              className="min-h-[calc(100dvh-9rem)] w-full md:min-h-[calc(100vh-6rem)]"
+            >
               {renderContent()}
             </div>
           </Suspense>
