@@ -1341,11 +1341,10 @@ const useWorkspaceStore = create(
             memo: staff?.memo,
             status: staff?.status || 'active',
           };
-          if (role === 'teacher') {
+          if (role === 'teacher' || role === 'assistant') {
+            // assistant는 이전 버전 호환 값이다. 화면과 로컬 배정 모델은
+            // 신규 teacher(선생님) 컬렉션으로 즉시 정규화한다.
             upsertTeacher(payload);
-            mirrored += 1;
-          } else if (role === 'assistant') {
-            upsertAssistant(payload);
             mirrored += 1;
           } else if (role === 'manager') {
             upsertManager(payload);

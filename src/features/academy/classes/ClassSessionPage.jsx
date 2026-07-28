@@ -418,6 +418,8 @@ export default function ClassSessionPage() {
   const classGroups = useAcademyStore((s) => s.classGroups);
   const academyStudents = useAcademyStore((s) => s.academyStudents);
   const academyTeachers = useAcademyStore((s) => s.academyTeachers);
+  const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
+  const academyManagers = useAcademyStore((s) => s.academyManagers) ?? [];
   const academyProfile = useAcademyStore((s) => s.academyProfile);
   const academyAttendanceRecords = useAcademyStore((s) => s.academyAttendanceRecords);
   const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords);
@@ -430,6 +432,10 @@ export default function ClassSessionPage() {
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const loadServerLessonRecords = useWorkspaceStore((s) => s.loadServerLessonRecords);
   const loadServerAttendanceRecords = useWorkspaceStore((s) => s.loadServerAttendanceRecords);
+  const instructors = useMemo(
+    () => [...academyTeachers, ...academyManagers, ...academyAssistants],
+    [academyTeachers, academyManagers, academyAssistants],
+  );
   // Phase 42 — 학생 체크인 이벤트 + 학원 설정 (출결 방식).
   const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
   const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
@@ -503,8 +509,8 @@ export default function ClassSessionPage() {
     const tid = session?.teacherId || group?.teacherId || '';
     const tuid = session?.teacherUserId || group?.teacherUserId || '';
     if (!tid && !tuid) return null;
-    return getTeacherDisplayName(tid, academyTeachers, academyProfile, tuid);
-  }, [academyTeachers, academyProfile, group, session]);
+    return getTeacherDisplayName(tid, instructors, academyProfile, tuid);
+  }, [instructors, academyProfile, group, session]);
   const sessionStudentIdSet = useMemo(
     () => new Set(session?.studentIds || []),
     [session?.studentIds],
@@ -906,7 +912,7 @@ export default function ClassSessionPage() {
             <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
               <InfoChip label="유형" value={activityLabel} />
               {session.room && <InfoChip label="강의실" value={session.room} tag />}
-              {teacherName && <InfoChip label="강사" value={teacherName} />}
+              {teacherName && <InfoChip label="담당 선생님" value={teacherName} />}
               <InfoChip label="시간" value={`${session.startTime}–${session.endTime}`} />
               <InfoChip label="상태" value={session.status === 'completed' ? '완료' : session.status === 'canceled' ? '취소' : '예정'} />
             </div>
@@ -1112,12 +1118,12 @@ export default function ClassSessionPage() {
         <SubstituteTeacherModal
           session={session}
           mainTeacherId={session.teacherId || group.teacherId}
-          academyTeachers={academyTeachers}
+          academyTeachers={instructors}
           onClose={() => setSubstituteModalOpen(false)}
           onSave={async ({ substituteTeacherId, substituteReason }) => {
             // Phase 34 — 대체 강사로 배정될 때 근무 cover 확인 (취소는 substituteTeacherId=null 이므로 스킵).
             if (substituteTeacherId) {
-              const subStaff = academyTeachers.find((t) => t.id === substituteTeacherId);
+              const subStaff = instructors.find((t) => t.id === substituteTeacherId);
               if (subStaff && session.date && session.startTime && session.endTime) {
                 const ok = await ensureCoverage({
                   staff: subStaff,
@@ -1140,7 +1146,7 @@ export default function ClassSessionPage() {
             if (session.serverId && isAuthenticated && currentAcademyId) {
               try {
                 const subStaff = substituteTeacherId
-                  ? academyTeachers.find((t) => t.id === substituteTeacherId)
+                  ? instructors.find((t) => t.id === substituteTeacherId)
                   : null;
                 await updateServerClassSession(session.serverId, {
                   substitute_teacher_user_id: subStaff?.serverUserId || null,

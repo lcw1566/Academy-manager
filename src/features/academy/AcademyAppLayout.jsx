@@ -12,7 +12,6 @@ import Sidebar from '../../components/Sidebar';
 
 const loadOwnerDashboard = () => import('./dashboard/OwnerDashboard');
 const loadTeacherDashboard = () => import('./dashboard/TeacherDashboard');
-const loadAssistantDashboard = () => import('./dashboard/AssistantDashboard');
 const loadClassGroupsPage = () => import('./classes/ClassGroupsPage');
 const loadClassGroupDetailPage = () => import('./classes/ClassGroupDetailPage');
 const loadClassSessionPage = () => import('./classes/ClassSessionPage');
@@ -26,7 +25,6 @@ const loadChatPage = () => import('./chat/ChatPage');
 
 const OwnerDashboard = lazy(loadOwnerDashboard);
 const TeacherDashboard = lazy(loadTeacherDashboard);
-const AssistantDashboard = lazy(loadAssistantDashboard);
 const ClassGroupsPage = lazy(loadClassGroupsPage);
 const ClassGroupDetailPage = lazy(loadClassGroupDetailPage);
 const ClassSessionPage = lazy(loadClassSessionPage);
@@ -416,7 +414,8 @@ export default function AcademyAppLayout() {
   const renderDashboard = () => {
     if (role === 'owner')     return <OwnerDashboard />;
     if (role === 'teacher')   return <TeacherDashboard />;
-    if (role === 'assistant') return <AssistantDashboard />;
+    // 이전 DB의 assistant 역할도 선생님 화면으로 통합한다.
+    if (role === 'assistant') return <TeacherDashboard />;
     if (role === 'manager')   return <OwnerDashboard operationsOnly />;
     return <OwnerDashboard />;
   };

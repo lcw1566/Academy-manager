@@ -16,8 +16,8 @@ import useWorkspaceStore from '../store/useWorkspaceStore';
 const ROLE_LABEL = {
   tutor: '과외 선생님',
   owner: '원장',
-  teacher: '강사',
-  assistant: '보조강사',
+  teacher: '선생님',
+  assistant: '선생님',
   manager: '운영 매니저',
 };
 

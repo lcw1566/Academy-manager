@@ -11,7 +11,7 @@ import EmptyState from '../../../components/EmptyState';
 import { checkNotificationPermission, requestNotificationPermission } from '../../../services/pushNotifications';
 import { tossSpring } from '../../../utils/motion';
 
-const ROLE_LABELS = { owner: '원장', teacher: '강사', assistant: '보조강사', manager: '운영 매니저' };
+const ROLE_LABELS = { owner: '원장', teacher: '선생님', assistant: '선생님', manager: '운영 매니저' };
 
 function formatTime(iso) {
   if (!iso) return '';

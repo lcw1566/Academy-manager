@@ -73,8 +73,9 @@ export const roleMap = {
   tutor: '과외 선생님',
   director: '원장',
   owner: '학원 원장',
-  teacher: '학원 강사',
-  assistant: '보조강사',
+  teacher: '선생님',
+  // 이전 버전 데이터 호환용 별칭. 신규 역할은 teacher로만 저장한다.
+  assistant: '선생님',
   manager: '운영 매니저',
   pending: '역할 배정 대기',
 };
@@ -142,18 +143,20 @@ export const OWNER_TEACHER_ID = 'owner';
 //     local academyTeachers 가 동일 user 를 다른 id 로 가질 수 있으므로
 //     serverUserId 우선 매칭이 안정적.
 export function getTeacherDisplayName(teacherId, teachers, academyProfile, teacherUserId = null) {
-  if (teacherId === OWNER_TEACHER_ID) {
-    return academyProfile?.ownerName?.trim() || '원장';
-  }
+  // 과거 버그로 teacher_id='owner'인데 teacher_user_id에는 운영 매니저가 저장된
+  // 행도 있다. 서버 user id로 실제 직원을 먼저 찾으면 기존 데이터도 올바르게 보인다.
   if (teacherUserId && Array.isArray(teachers)) {
     const t = teachers.find((x) => x?.serverUserId === teacherUserId);
     if (t?.name) return t.name;
+  }
+  if (teacherId === OWNER_TEACHER_ID) {
+    return academyProfile?.ownerName?.trim() || '원장';
   }
   if (teacherId && Array.isArray(teachers)) {
     const t = teachers.find((x) => x?.id === teacherId);
     if (t?.name) return t.name;
   }
-  return '담당 강사 없음';
+  return '담당 선생님 없음';
 }
 
 // ─── Membership ↔ App role mapping ──────────────────────────────
@@ -163,7 +166,8 @@ export function getTeacherDisplayName(teacherId, teachers, academyProfile, teach
 export function membershipRoleToAppRole(role) {
   if (role === 'owner') return 'owner';
   if (role === 'teacher') return 'teacher';
-  if (role === 'assistant') return 'assistant';
+  // DB 마이그레이션 전 접속하는 기존 보조강사도 즉시 선생님 화면을 사용한다.
+  if (role === 'assistant') return 'teacher';
   if (role === 'manager') return 'manager';
   return null;
 }
@@ -172,8 +176,7 @@ export function membershipRoleToAppRole(role) {
 // roleMap 과 분리: roleMap 은 직책 라벨, appRoleToLabel 은 메시지 내 짧은 라벨.
 export function appRoleToLabel(role) {
   if (role === 'owner') return '원장';
-  if (role === 'teacher') return '강사';
-  if (role === 'assistant') return '보조강사';
+  if (role === 'teacher' || role === 'assistant') return '선생님';
   if (role === 'manager') return '운영 매니저';
   if (role === 'tutor') return '과외 선생님';
   return '';

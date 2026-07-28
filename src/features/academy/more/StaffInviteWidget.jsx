@@ -31,8 +31,7 @@ function normalizeEmail(value) {
 }
 
 const ROLE_OPTIONS = [
-  { id: 'teacher', label: '강사', description: '수업·학생 기록 담당' },
-  { id: 'assistant', label: '보조강사', description: '클리닉·보완 학습 담당' },
+  { id: 'teacher', label: '선생님', description: '배정된 수업·학생 기록 담당' },
   { id: 'manager', label: '운영 매니저', description: '데스크 운영·직원 관리' },
 ];
 
@@ -215,7 +214,7 @@ export default function StaffInviteWidget({
       <label className="text-xs font-semibold text-gray-600">
         초대할 역할
       </label>
-      <div className={`grid ${canInviteManagers ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+      <div className={`grid ${canInviteManagers ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
         {ROLE_OPTIONS
           .filter((option) => option.id !== 'manager' || canInviteManagers)
           .map((option) => {

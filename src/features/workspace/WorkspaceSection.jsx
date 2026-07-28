@@ -41,7 +41,7 @@ const ACCOUNT_TYPE_HINT = {
 };
 
 const INVITE_ROLE_LABEL = {
-  teacher: '강사', assistant: '보조강사', manager: '운영 매니저', pending: '직원',
+  teacher: '선생님', assistant: '선생님', manager: '운영 매니저', pending: '직원',
 };
 
 export default function WorkspaceSection() {

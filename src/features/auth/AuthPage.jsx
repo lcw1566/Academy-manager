@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  X, Building2, Users, GraduationCap, CheckCircle2, ShieldCheck, Sparkles,
+  X, Building2, Users, GraduationCap, CheckCircle2, ShieldCheck, Sparkles, Eye, EyeOff,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useAcademyStore from '../../store/useAcademyStore';
@@ -64,6 +64,7 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
   const [mode, setMode] = useState(initialMode); // 'signIn' | 'signUp'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [accountType, setAccountType] = useState(null); // 'owner' | 'staff' | null
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');
@@ -192,6 +193,7 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
 
   const switchMode = (next) => {
     setMode(next);
+    setShowPassword(false);
     setLocalMessage(null);
     setVerificationEmail('');
     clearAuthError();
@@ -320,15 +322,26 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
             </AuthField>
 
             <AuthField label="비밀번호">
-              <input
-                type="password"
-                autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3.5 text-sm font-semibold outline-none transition-colors focus:border-blue-500"
-                placeholder="6자 이상"
-                disabled={isAuthLoading}
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="h-[52px] w-full rounded-2xl border border-gray-200 bg-white py-3.5 pl-4 pr-12 text-sm font-semibold outline-none transition-colors focus:border-blue-500"
+                  placeholder="6자 이상"
+                  disabled={isAuthLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+                  aria-pressed={showPassword}
+                  className="absolute inset-y-0 right-1 flex w-11 items-center justify-center rounded-xl text-[#8B95A1] transition-colors hover:text-[#4E5968] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </AuthField>
 
             {mode === 'signUp' && (

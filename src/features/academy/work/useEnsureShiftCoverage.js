@@ -31,7 +31,7 @@ import {
 } from '../../../utils/shiftCoverage';
 import { buildEffectiveStaffShifts } from '../../../utils/staffShiftCoverage';
 
-const ROLE_LABEL = { teacher: '강사', assistant: '보조강사' };
+const ROLE_LABEL = { teacher: '선생님', assistant: '선생님', manager: '운영 매니저' };
 
 export default function useEnsureShiftCoverage() {
   const [sheetState, setSheetState] = useState({

@@ -65,7 +65,7 @@ export default function ShiftCoverageSheet({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-gray-900">
-              {staffRoleLabel ? `${staffRoleLabel} · ` : ''}{staffName || '강사'}
+              {staffRoleLabel ? `${staffRoleLabel} · ` : ''}{staffName || '선생님'}
             </p>
             <p className="text-xs text-gray-600 mt-0.5">{lessonLabel}</p>
             {existingShiftSummary && (

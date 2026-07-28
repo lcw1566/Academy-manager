@@ -199,8 +199,8 @@ function normalizeEmail(email) {
 }
 
 function assertStaffRole(role) {
-  if (!['teacher', 'assistant', 'manager'].includes(role)) {
-    throw new Error('직원 역할은 강사, 보조강사 또는 운영 매니저여야 해요.');
+  if (!['teacher', 'manager'].includes(role)) {
+    throw new Error('직원 역할은 선생님 또는 운영 매니저여야 해요.');
   }
 }
 
@@ -763,8 +763,8 @@ export async function upsertAcademyStaffProfile({ academyId, userId, ...rest }) 
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
   if (!userId) throw new Error('userId가 필요해요.');
-  if (rest.role && !['teacher', 'assistant', 'manager'].includes(rest.role)) {
-    throw new Error('role 은 teacher, assistant 또는 manager 여야 해요.');
+  if (rest.role && !['teacher', 'manager'].includes(rest.role)) {
+    throw new Error('role 은 teacher 또는 manager 여야 해요.');
   }
   const payload = {
     academy_id: academyId,

@@ -93,7 +93,8 @@ export function getSessionPreviewGroups({ sessions, todayYMD, limit = 3 }) {
 export default function ClassGroupDetailPage() {
   const {
     role, selectedClassGroupId, classGroups, classSessions,
-    academyStudents, academyTeachers, academyAssistants = [], academyProfile, academyAttendanceRecords,
+    academyStudents, academyTeachers, academyAssistants = [], academyManagers = [],
+    academyProfile, academyAttendanceRecords,
     clinicRecords = [], navigateToClassSession, goBackFromClassGroup, setActiveTab,
     deleteClassGroup, showToast, ensureClassSessionsForMonth, setClassSessionServerIds,
     updateClassGroup, applyRecordSchemaToFutureSessions,
@@ -191,6 +192,10 @@ export default function ClassGroupDetailPage() {
     () => group ? academyStudents.filter((s) => (group.studentIds || []).includes(s.id)) : [],
     [academyStudents, group]
   );
+  const instructors = useMemo(
+    () => [...academyTeachers, ...academyManagers, ...academyAssistants],
+    [academyTeachers, academyManagers, academyAssistants],
+  );
 
   const groupClinicRecords = useMemo(
     () => (clinicRecords || []).filter((r) => r.classGroupId === selectedClassGroupId),
@@ -218,7 +223,7 @@ export default function ClassGroupDetailPage() {
   }
 
   const teacherName = (group.teacherId || group.teacherUserId)
-    ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile, group.teacherUserId)
+    ? getTeacherDisplayName(group.teacherId, instructors, academyProfile, group.teacherUserId)
     : null;
 
   const handleDeleteClassGroup = async () => {
@@ -337,7 +342,7 @@ export default function ClassGroupDetailPage() {
                 }
               />
               {group.room && <InfoRow label="강의실" value={<RoomTag room={group.room} />} />}
-              {teacherName && <InfoRow label="담당강사" value={teacherName} />}
+              {teacherName && <InfoRow label="담당 선생님" value={teacherName} />}
               <InfoRow label="학생" value={`${students.length}명`} />
               {group.monthlyFee > 0 && <InfoRow label="월 수강료" value={`${group.monthlyFee.toLocaleString()}원`} />}
             </div>

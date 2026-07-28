@@ -254,7 +254,7 @@ function SessionRecordCard({ record, onClinicClick }) {
               <div className="mt-3 mb-3">
                 <p className="text-xs font-semibold text-gray-400 mb-2">수업 정보</p>
                 <div className="bg-gray-50 rounded-xl px-3 py-2.5 flex flex-col gap-1">
-                  {teacherName && <InfoRow label="담당 강사" value={teacherName} />}
+                  {teacherName && <InfoRow label="담당 선생님" value={teacherName} />}
                   {record.room && <InfoRow label="강의실" value={record.room} />}
                 </div>
               </div>

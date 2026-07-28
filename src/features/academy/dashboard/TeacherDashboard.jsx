@@ -93,6 +93,9 @@ export default function TeacherDashboard() {
         .filter((g) => {
           if (g.teacherUserId && authUserId && g.teacherUserId === authUserId) return true;
           if (myTeacher && g.teacherId === myTeacher.id) return true;
+          // 이전 보조강사 배정도 역할 통합 뒤에는 선생님 담당 수업으로 이어간다.
+          if (authUserId && (g.assistantUserIds || []).includes(authUserId)) return true;
+          if (myTeacher && (g.assistantIds || []).includes(myTeacher.id)) return true;
           return false;
         })
         .map((g) => g.id),
@@ -137,6 +140,8 @@ export default function TeacherDashboard() {
       }
       if (s.teacherUserId && authUserId && s.teacherUserId === authUserId) return true;
       if (myTeacher && s.teacherId === myTeacher.id) return true;
+      if (authUserId && (s.assistantUserIds || []).includes(authUserId)) return true;
+      if (myTeacher && (s.assistantIds || []).includes(myTeacher.id)) return true;
       return myGroupIds.has(s.classGroupId);
     });
   }, [mergedClassSessions, myTeacher, myGroupIds, authUserId]);

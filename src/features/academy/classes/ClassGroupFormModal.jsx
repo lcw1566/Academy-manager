@@ -82,17 +82,17 @@ function buildSuggestedClassName({ subject, level, students = [] }) {
 // 로컬 반 폼 → Supabase class_groups snake_case payload.
 // student_ids / student_billings 는 academyStudents 에서 serverId 가 있는 학생만
 // 서버 uuid 로 매핑. serverId 없는 학생은 서버 row 에서 제외 (로컬은 그대로 유지).
-// 보조강사는 수업 회차가 아니라 클리닉/근무 쪽에서 관리한다.
+// 이전 보조강사 역할은 선생님으로 통합한다.
 // 기존 DB 컬럼은 호환을 위해 남겨두지만 새 저장 payload 에는 빈 배열만 보낸다.
 // id / academy_id / user_id / mode 는 createAcademyClassGroup 에서 자동 주입.
 // Phase 44 — teacher_user_id (auth.users.id) 를 함께 기록해 cross-device 매칭 가능.
-//   - form.teacherId === OWNER_TEACHER_ID ('owner') 이면 ownerUserId (현재 로그인 user.id)
-//   - 그 외에는 academyTeachers[i].serverUserId 로 매핑
+//   - form.teacherId === OWNER_TEACHER_ID ('owner') 이면 실제 학원장의 user id
+//   - 그 외에는 배정 가능한 선생님/운영 매니저의 serverUserId 로 매핑
 //   - 매핑 실패 시 null (legacy fallback)
-function resolveTeacherUserId(localTeacherId, academyTeachers, ownerUserId) {
+function resolveTeacherUserId(localTeacherId, instructors, ownerUserId) {
   if (!localTeacherId) return null;
   if (localTeacherId === OWNER_TEACHER_ID) return ownerUserId || null;
-  const t = academyTeachers.find((x) => x.id === localTeacherId);
+  const t = instructors.find((x) => x.id === localTeacherId);
   return t?.serverUserId || null;
 }
 
@@ -310,7 +310,8 @@ function classifyTeacherAvailability({
 export default function ClassGroupFormModal({ editGroup, onClose }) {
   const {
     addClassGroup, updateClassGroup, setClassGroupServerId, setClassSessionServerIds,
-    academyStudents, academyTeachers, academyAssistants = [], academyProfile, classGroups,
+    academyStudents, academyTeachers, academyAssistants = [], academyManagers = [],
+    academyProfile, classGroups,
     showToast,
     setActiveTab,
   } = useAcademyStore();
@@ -318,7 +319,8 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authUserId = useAuthStore((s) => s.user?.id);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
-  const ownerDisplayName = useWorkspaceStore((s) => s.profile?.display_name);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
+  const academyMemberProfiles = useWorkspaceStore((s) => s.academyMemberProfiles) ?? [];
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const staffWorkRules = useWorkspaceStore((s) => s.staffWorkRules) ?? [];
@@ -332,7 +334,24 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const [studentSearch, setStudentSearch] = useState('');
   const [studentSchoolFilter, setStudentSchoolFilter] = useState('');
   const [studentGradeFilter, setStudentGradeFilter] = useState('');
-  const ownerLabel = ownerDisplayName?.trim() || academyProfile?.ownerName?.trim() || '원장';
+  const currentMembership = memberships.find((m) => m.academy_id === currentAcademyId) || null;
+  const ownerMember = academyMemberProfiles.find((member) => member.membership_role === 'owner') || null;
+  const ownerUserId = ownerMember?.user_id
+    || currentMembership?.academy?.owner_id
+    || (currentMembership?.role === 'owner' ? authUserId : null);
+  const ownerLabel = ownerMember?.display_name?.trim()
+    || academyProfile?.ownerName?.trim()
+    || '원장';
+  const instructors = useMemo(() => {
+    const seen = new Set();
+    return [...academyTeachers, ...academyManagers, ...academyAssistants]
+      .filter((staff) => {
+        const key = staff.serverUserId || staff.id;
+        if (!key || seen.has(key) || staff.status === 'inactive') return false;
+        seen.add(key);
+        return true;
+      });
+  }, [academyTeachers, academyManagers, academyAssistants]);
   const tuitionPolicy = academyProfile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
   const subjectOptions = useMemo(() => {
     const configuredSubjectIds = Array.isArray(academyProfile?.academySubjects)
@@ -349,6 +368,15 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   // Phase 38 — 요일별 시간 토글. weekdayTimes 가 명시적으로 들어있으면 OFF 로 시작.
   const initialUseSameTime = !editGroup?.weekdayTimes
     || Object.keys(editGroup.weekdayTimes || {}).length === 0;
+  const initialTeacherId = (() => {
+    if (!editGroup) return '';
+    if (editGroup.teacherUserId) {
+      if (ownerUserId && editGroup.teacherUserId === ownerUserId) return OWNER_TEACHER_ID;
+      const matched = instructors.find((staff) => staff.serverUserId === editGroup.teacherUserId);
+      if (matched) return matched.id;
+    }
+    return editGroup.teacherId || '';
+  })();
   const [form, setForm] = useState({
     name: editGroup?.name || '',
     subject: editGroup?.subject || '',
@@ -358,7 +386,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     recordSchema: normalizeRecordSchema(editGroup?.recordSchema || editGroup?.recordBlocks),
     initialHomework: editGroup?.initialHomework || '',
     initialNextPlan: editGroup?.initialNextPlan || '',
-    teacherId: editGroup?.teacherId || '',
+    teacherId: initialTeacherId,
     studentIds: editGroup?.studentIds || [],
     weekdays: editGroup?.weekdays || [],
     startTime: editGroup?.startTime || '16:00',
@@ -434,6 +462,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     toDate: coverageRange.toDate,
     academyTeachers,
     academyAssistants,
+    academyManagers,
   }), [
     academyStaffShifts,
     staffWorkRules,
@@ -441,6 +470,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     coverageRange,
     academyTeachers,
     academyAssistants,
+    academyManagers,
   ]);
 
   const toggleWeekday = (day) =>
@@ -594,7 +624,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     const { useSameTime: _useSameTime, assistantId: _assistantId, ...formRest } = form;
     // Phase 44 — server-stable user id 를 로컬에도 함께 저장하여, 학원장 본인 단말의
     // 즉시 매칭(다른 단말 hydrate 전)도 정상 동작하도록 한다.
-    const teacherUserIdForData = resolveTeacherUserId(form.teacherId, academyTeachers, authUserId);
+    const teacherUserIdForData = resolveTeacherUserId(form.teacherId, instructors, ownerUserId);
     const data = {
       ...formRest,
       startTime: savedStartTime,
@@ -621,7 +651,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           try {
             await updateServerClassGroup(
               editGroup.serverId,
-              mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants, academyTeachers, authUserId),
+              mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants, instructors, ownerUserId),
             );
             await loadServerClassGroups();
           } catch (err) {
@@ -646,7 +676,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
               try { await updateClassScheduleRule(r.id, { is_active: false }); }
               catch (err) { console.warn('[supabase] deactivate rule failed', err); }
             }
-            const rulePayloads = buildClassScheduleRulePayloads(data, academyTeachers, academyAssistants, authUserId);
+            const rulePayloads = buildClassScheduleRulePayloads(data, instructors, academyAssistants, ownerUserId);
             for (const rp of rulePayloads) {
               try {
                 await createClassScheduleRule({
@@ -678,7 +708,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         const upcoming = localSessions.filter((s) => s.date >= todayStr && s.date <= oneWeekLater);
         const lessonsByStaff = new Map();
         const teacher = data.teacherId && data.teacherId !== OWNER_TEACHER_ID
-          ? academyTeachers.find((t) => t.id === data.teacherId)
+          ? instructors.find((t) => t.id === data.teacherId)
           : null;
         if (teacher) {
           const teacherSessions = getUncoveredStaffSessions({
@@ -688,7 +718,9 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           });
           lessonsByStaff.set(`teacher_${teacher.id}`, {
             staff: teacher,
-            staffRole: 'teacher',
+            staffRole: academyManagers.some((manager) => manager.id === teacher.id)
+              ? 'manager'
+              : 'teacher',
             sessions: teacherSessions,
           });
         }
@@ -699,7 +731,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             try {
               serverGroup = await createAcademyClassGroup({
                 academyId: currentAcademyId,
-                ...mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants, academyTeachers, authUserId),
+                ...mapClassGroupFormToServerPayload(data, academyStudents, academyAssistants, instructors, ownerUserId),
               });
               if (serverGroup?.id && localGroup?.id) {
                 setClassGroupServerId(localGroup.id, serverGroup.id);
@@ -720,7 +752,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             if (serverGroup?.id && localSessions.length > 0) {
               try {
                 const sessionPayloads = localSessions.map((ls) =>
-                  mapClassSessionToServerPayload(ls, serverGroup.id, academyStudents, academyAssistants, academyTeachers, authUserId)
+                  mapClassSessionToServerPayload(ls, serverGroup.id, academyStudents, academyAssistants, instructors, ownerUserId)
                 );
                 const serverSessions = await createAcademyClassSessionsBulk({
                   academyId: currentAcademyId,
@@ -744,7 +776,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             // Phase 44.6 / Phase B — class_schedule_rules INSERT (best-effort).
             // 룰 저장이 실패해도 사용자 흐름은 막지 않음 (legacy class_sessions 가 fallback).
             if (serverGroup?.id) {
-              const rulePayloads = buildClassScheduleRulePayloads(data, academyTeachers, academyAssistants, authUserId);
+              const rulePayloads = buildClassScheduleRulePayloads(data, instructors, academyAssistants, ownerUserId);
               for (const rp of rulePayloads) {
                 try {
                   await createClassScheduleRule({
@@ -990,16 +1022,18 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
           </Field>
 
           <div className="grid grid-cols-1 gap-3">
-            <Field label="담당 강사">
+            <Field label="담당 선생님">
               <select
                 value={form.teacherId}
                 onChange={(e) => set('teacherId', e.target.value)}
                 className="input"
               >
-                <option value="">강사 선택</option>
-                <option value={OWNER_TEACHER_ID}>{ownerLabel} (원장 본인)</option>
-                {academyTeachers.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
+                <option value="">선생님 선택</option>
+                <option value={OWNER_TEACHER_ID}>{ownerLabel} (원장)</option>
+                {instructors.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    {staff.name}{academyManagers.some((manager) => manager.id === staff.id) ? ' (운영 매니저)' : ''}
+                  </option>
                 ))}
               </select>
               <AvailabilityBanner status={teacherAvailability} onGoToStaff={goToStaffSchedule} />

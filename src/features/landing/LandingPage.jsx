@@ -66,7 +66,7 @@ const workflowItems = [
   {
     Icon: Smartphone,
     title: '모바일에서는 현장에서 바로 처리',
-    desc: '강사와 보조강사는 출결, 수업 기록, 클리닉 입력을 휴대폰으로 처리합니다.',
+    desc: '선생님은 출결, 수업 기록, 클리닉 입력을 휴대폰으로 처리합니다.',
   },
   {
     Icon: PhoneCall,
@@ -81,7 +81,7 @@ const workflowItems = [
 ];
 
 const sellingPoints = [
-  '학원장, 강사, 보조강사가 같은 워크스페이스에서 일해요.',
+  '원장, 운영 매니저, 선생님이 같은 워크스페이스에서 일해요.',
   '학생별 수업 기록과 클리닉 기록이 누적돼 상담 준비가 쉬워져요.',
   '출결과 수납 상태를 따로 엑셀에 옮겨 적는 시간을 줄여요.',
   'PC와 모바일 역할이 분명해서 현장 업무가 자연스럽게 이어져요.',
@@ -519,7 +519,7 @@ function FeatureGraphic({ type }) {
         <span className="text-xs font-black text-gray-500">같은 워크스페이스</span>
       </div>
       <div className="flex items-center gap-2">
-        {['원장', '강사', '보조'].map((label, index) => (
+        {['원장', '매니저', '선생님'].map((label, index) => (
           <div key={label} className="flex-1 rounded-2xl bg-[#F7F8FA] px-2 py-3 text-center">
             <div className={`mx-auto mb-1 h-6 w-6 rounded-full ${index === 0 ? 'bg-blue-600' : index === 1 ? 'bg-sky-400' : 'bg-emerald-400'}`} />
             <p className="text-[11px] font-black text-gray-700">{label}</p>

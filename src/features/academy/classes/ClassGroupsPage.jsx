@@ -31,7 +31,8 @@ const STATUS_MAP = {
 
 export default function ClassGroupsPage() {
   const {
-    role, classGroups, classSessions, academyStudents, academyTeachers, academyProfile,
+    role, classGroups, classSessions, academyStudents, academyTeachers,
+    academyAssistants = [], academyManagers = [], academyProfile,
     navigateToClassGroup,
   } = useAcademyStore();
 
@@ -49,6 +50,18 @@ export default function ClassGroupsPage() {
     [academyStaffProfiles, authUserId],
   );
   const canManage = currentUserCan({ role, staffProfile: myStaffProfile }, 'canManageClasses');
+  const instructors = useMemo(
+    () => [...academyTeachers, ...academyManagers, ...academyAssistants],
+    [academyTeachers, academyManagers, academyAssistants],
+  );
+  const myInstructorIds = useMemo(
+    () => new Set(
+      instructors
+        .filter((staff) => staff.serverUserId && staff.serverUserId === authUserId)
+        .map((staff) => staff.id),
+    ),
+    [instructors, authUserId],
+  );
 
   // Phase 44.6 / Phase B — 룰 기반 planned + 기존 classSessions 머지로 nextSession 산출.
   const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
@@ -71,13 +84,21 @@ export default function ClassGroupsPage() {
   }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr]);
 
   const enriched = useMemo(() =>
-    classGroups.map((group) => {
+    classGroups
+    .filter((group) => {
+      if (canManage || role === 'owner' || role === 'manager') return true;
+      if (group.teacherUserId && authUserId && group.teacherUserId === authUserId) return true;
+      if (authUserId && (group.assistantUserIds || []).includes(authUserId)) return true;
+      if ((group.assistantIds || []).some((id) => myInstructorIds.has(id))) return true;
+      return myInstructorIds.has(group.teacherId);
+    })
+    .map((group) => {
       const sessions = mergedClassSessions.filter((s) => s.classGroupId === group.id);
       const nextSession = sessions.filter((s) => s.date >= todayStr && s.status !== 'canceled')
         .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0];
       const studentCount = (group.studentIds || []).length;
       const teacherName = (group.teacherId || group.teacherUserId)
-        ? getTeacherDisplayName(group.teacherId, academyTeachers, academyProfile, group.teacherUserId)
+        ? getTeacherDisplayName(group.teacherId, instructors, academyProfile, group.teacherUserId)
         : null;
       return { ...group, sessions, nextSession, studentCount, teacherName };
     }).sort((a, b) => {
@@ -85,7 +106,7 @@ export default function ClassGroupsPage() {
       const bd = b.nextSession?.date || '9999';
       return ad.localeCompare(bd);
     }),
-    [classGroups, mergedClassSessions, academyTeachers, academyProfile, todayStr]
+    [classGroups, mergedClassSessions, instructors, academyProfile, todayStr, canManage, role, authUserId, myInstructorIds]
   );
 
   return (
