@@ -19,7 +19,7 @@ import {
   Plus, ChevronLeft, ChevronRight, Pencil,
   Clock, Search, Users as UsersIcon, GraduationCap, Mail, X as XIcon,
   Loader2, Check, BookOpen, Coffee,
-  LogIn, LogOut as LogOutIcon, ShieldCheck,
+  LogIn, LogOut as LogOutIcon, ShieldCheck, RefreshCw,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
@@ -80,6 +80,26 @@ const STATUS_TONES = {
   canceled: 'text-gray-500 bg-gray-100',
 };
 const STAFF_ROLE_LABELS = { teacher: '강사', assistant: '보조강사', manager: '운영 매니저' };
+const INVITATION_STATUS_META = {
+  pending: {
+    label: '수락 대기',
+    description: '아직 상대방이 초대를 수락하지 않았어요.',
+    tone: 'bg-amber-50 text-amber-700',
+    dot: 'bg-amber-500',
+  },
+  accepted: {
+    label: '수락 완료',
+    description: '상대방이 초대를 수락했어요.',
+    tone: 'bg-emerald-50 text-emerald-700',
+    dot: 'bg-emerald-500',
+  },
+  canceled: {
+    label: '취소됨',
+    description: '취소한 초대예요.',
+    tone: 'bg-gray-100 text-gray-500',
+    dot: 'bg-gray-400',
+  },
+};
 
 const SUB_TABS = [
   { id: 'shift',      label: '근무' },
@@ -126,6 +146,17 @@ function shiftMinutes(sh) {
 function formatShiftHoursFromMinutes(minutes) {
   const hours = (Number(minutes) || 0) / 60;
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+}
+function formatInvitationDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
 function monthStart(month) {
   return `${month}-01`;
@@ -202,6 +233,9 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
 
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
+  const isAcademyInvitationsLoading = useWorkspaceStore((s) => s.isAcademyInvitationsLoading);
+  const academyInvitationsError = useWorkspaceStore((s) => s.academyInvitationsError);
+  const loadAcademyInvitations = useWorkspaceStore((s) => s.loadAcademyInvitations);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const refreshWorkspaceCollaborationState = useWorkspaceStore(
     (s) => s.refreshWorkspaceCollaborationState,
@@ -211,6 +245,7 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
   const [filter, setFilter] = useState('all'); // all | teacher | assistant | manager | pending
   const [selectedKey, setSelectedKey] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [invitationStatusOpen, setInvitationStatusOpen] = useState(false);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [roleCandidates, setRoleCandidates] = useState([]);
   const [isRoleCandidatesLoading, setIsRoleCandidatesLoading] = useState(false);
@@ -254,6 +289,22 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
     () => (academyInvitations || []).filter((inv) => inv.status === 'pending'),
     [academyInvitations],
   );
+  const latestInvitations = useMemo(() => {
+    const seen = new Set();
+    return (academyInvitations || [])
+      .slice()
+      .sort((a, b) => (
+        (b.created_at || '').localeCompare(a.created_at || '')
+        || (b.updated_at || '').localeCompare(a.updated_at || '')
+      ))
+      .filter((invitation) => {
+        const key = String(invitation.email || invitation.id || '').trim().toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }, [academyInvitations]);
+  const acceptedInvitationCount = latestInvitations.filter((inv) => inv.status === 'accepted').length;
 
   // 직원별 요약 (이번 주 근무 시간, 오늘 근무 수)
   const staffSummaries = useMemo(() => {
@@ -342,6 +393,10 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
   };
 
   const handleBackToList = () => setMobileDetailOpen(false);
+  const openInvitationStatus = () => {
+    setInvitationStatusOpen(true);
+    loadAcademyInvitations?.();
+  };
 
   return (
     <div className="md:bg-[#F2F4F6] md:min-h-screen">
@@ -366,6 +421,27 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
             }`}
           >
             <div className="md:bg-white md:rounded-2xl md:p-3 md:shadow-sm">
+              {latestInvitations.length > 0 && (
+                <button
+                  type="button"
+                  onClick={openInvitationStatus}
+                  className="mb-3 flex w-full items-center justify-between rounded-2xl bg-[#F8FAFC] px-3 py-3 text-left active:bg-[#F2F4F6]"
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                      <Mail size={15} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-extrabold text-[#191F28]">보낸 초대 현황</span>
+                      <span className="mt-0.5 block text-[11px] font-semibold text-[#8B95A1]">
+                        대기 {pendingInvitations.length}명 · 완료 {acceptedInvitationCount}명
+                      </span>
+                    </span>
+                  </span>
+                  <ChevronRight size={15} className="flex-shrink-0 text-[#B0B8C1]" />
+                </button>
+              )}
+
               <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#F2F4F6] mb-3">
                 <Search size={14} className="text-[#8B95A1]" />
                 <input
@@ -494,10 +570,144 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
               </p>
             </div>
             <StaffInviteWidget canInviteManagers={canInviteManagers} />
+            {latestInvitations.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setInviteOpen(false);
+                  openInvitationStatus();
+                }}
+                className="flex w-full items-center justify-between rounded-2xl bg-[#F2F4F6] px-4 py-3 text-left"
+              >
+                <span>
+                  <span className="block text-xs font-bold text-[#333D4B]">보낸 초대 현황</span>
+                  <span className="mt-0.5 block text-[11px] text-[#8B95A1]">
+                    대기 {pendingInvitations.length}명 · 완료 {acceptedInvitationCount}명
+                  </span>
+                </span>
+                <ChevronRight size={15} className="text-[#8B95A1]" />
+              </button>
+            )}
           </div>
         </Modal>
       )}
+
+      {invitationStatusOpen && (
+        <InvitationStatusModal
+          invitations={latestInvitations}
+          loading={isAcademyInvitationsLoading}
+          error={academyInvitationsError}
+          onRefresh={loadAcademyInvitations}
+          onClose={() => setInvitationStatusOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+function InvitationStatusModal({
+  invitations,
+  loading,
+  error,
+  onRefresh,
+  onClose,
+}) {
+  const pendingCount = invitations.filter((invitation) => invitation.status === 'pending').length;
+  const acceptedCount = invitations.filter((invitation) => invitation.status === 'accepted').length;
+
+  return (
+    <Modal
+      isOpen
+      onClose={onClose}
+      title="보낸 초대 현황"
+      footer={(
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full rounded-xl bg-[#F2F4F6] py-3.5 text-sm font-bold text-[#333D4B]"
+        >
+          확인
+        </button>
+      )}
+    >
+      <div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-2xl bg-amber-50 px-4 py-3">
+            <p className="text-[11px] font-bold text-amber-700">수락 대기</p>
+            <p className="mt-1 text-xl font-extrabold text-amber-700">{pendingCount}명</p>
+          </div>
+          <div className="rounded-2xl bg-emerald-50 px-4 py-3">
+            <p className="text-[11px] font-bold text-emerald-700">수락 완료</p>
+            <p className="mt-1 text-xl font-extrabold text-emerald-700">{acceptedCount}명</p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-xs font-bold text-[#6B7684]">최근 초대</p>
+          <button
+            type="button"
+            onClick={() => onRefresh?.()}
+            disabled={loading}
+            className="flex h-8 items-center gap-1 rounded-xl bg-[#F2F4F6] px-2.5 text-[11px] font-bold text-[#6B7684] disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+            새로고침
+          </button>
+        </div>
+
+        {error && (
+          <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-600">
+            {error}
+          </p>
+        )}
+
+        {invitations.length === 0 ? (
+          <div className="mt-3 rounded-2xl bg-[#F8FAFC] px-4 py-8 text-center">
+            <Mail size={18} className="mx-auto text-[#B0B8C1]" />
+            <p className="mt-2 text-sm font-bold text-[#6B7684]">보낸 초대가 없어요.</p>
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-col gap-2">
+            {invitations.map((invitation) => {
+              const meta = INVITATION_STATUS_META[invitation.status]
+                || INVITATION_STATUS_META.canceled;
+              const statusTime = invitation.status === 'pending'
+                ? invitation.created_at
+                : invitation.updated_at;
+              return (
+                <div
+                  key={invitation.id}
+                  className="rounded-2xl border border-[#E5E8EB] bg-white px-3.5 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-extrabold text-[#191F28]">
+                        {invitation.email}
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-medium text-[#8B95A1]">
+                        {STAFF_ROLE_LABELS[invitation.role] || '직원'}
+                        {statusTime ? ` · ${formatInvitationDate(statusTime)}` : ''}
+                      </p>
+                    </div>
+                    <span className={`flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${meta.tone}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                      {meta.label}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-relaxed text-[#6B7684]">
+                    {meta.description}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <p className="mt-3 text-[10px] leading-relaxed text-[#8B95A1]">
+          상대방이 앱에서 수락하면 실시간으로 완료 상태로 바뀌어요.
+        </p>
+      </div>
+    </Modal>
   );
 }
 
