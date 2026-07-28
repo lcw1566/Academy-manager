@@ -11,6 +11,8 @@
 //
 // 이 매퍼는 호출처에서 충돌/머지 정책을 적용하기 전 단계의 순수 변환만 담당한다.
 
+import { normalizeClassRecordBlocks } from '../../constants/learningActivitySettings';
+
 // ─── students ────────────────────────────────────────────────
 export function mapServerStudentToLocal(s) {
   if (!s) return null;
@@ -46,6 +48,9 @@ export function mapServerClassGroupToLocal(g) {
     name: g.name ?? '',
     subject: g.subject ?? '',
     level: g.level ?? '',
+    activityType: g.activity_type ?? 'regular_class',
+    activityName: g.activity_name ?? '',
+    recordBlocks: normalizeClassRecordBlocks(g.record_blocks),
     teacherId: g.teacher_id ?? '',
     // Phase 44 — 서버측 auth.users.id. cross-device 매칭 1순위.
     teacherUserId: g.teacher_user_id ?? '',
@@ -138,6 +143,9 @@ export function expandServerLessonRecordToLocal(lr) {
       focus: rec?.focus ?? null,
       understanding: rec?.understanding ?? null,
       homeworkStatus: rec?.homeworkStatus ?? null,
+      score: rec?.score ?? '',
+      scoreTotal: rec?.scoreTotal ?? '',
+      scoreNote: rec?.scoreNote ?? '',
       memo: rec?.memo ?? '',
       supportTags: Array.isArray(rec?.supportTags) ? rec.supportTags : [],
       supportMemo: rec?.supportMemo ?? '',
@@ -177,6 +185,8 @@ export function mapServerClinicRecordToLocal(c) {
     classSessionId: c.class_session_id ?? '',
     date: c.date,
     subject: c.subject ?? '',
+    activityType: c.activity_type ?? 'clinic',
+    activityName: c.activity_name ?? '',
     sourceLessonRecordId: c.source_lesson_record_id ?? null,
     sourceSupportTags: Array.isArray(c.source_support_tags) ? c.source_support_tags : [],
     sourceSupportMemo: c.source_support_memo ?? '',

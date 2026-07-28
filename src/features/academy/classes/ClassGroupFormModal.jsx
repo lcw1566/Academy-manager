@@ -31,6 +31,12 @@ import {
   buildEffectiveStaffShifts,
   getUncoveredStaffSessions,
 } from '../../../utils/staffShiftCoverage';
+import {
+  CLASS_ACTIVITY_TYPES,
+  CLASS_RECORD_BLOCKS,
+  getClassRecordPreset,
+  normalizeClassRecordBlocks,
+} from '../../../constants/learningActivitySettings';
 
 function emptyToNull(v) {
   if (v === undefined) return null;
@@ -84,6 +90,9 @@ function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistan
     name: form.name?.trim() ?? '',
     subject: emptyToNull(form.subject),
     level: emptyToNull(form.level),
+    activity_type: form.activityType || 'regular_class',
+    activity_name: emptyToNull(form.activityName),
+    record_blocks: normalizeClassRecordBlocks(form.recordBlocks),
     teacher_id: emptyToNull(form.teacherId),
     teacher_type: form.teacherId === OWNER_TEACHER_ID ? 'owner' : 'teacher',
     teacher_user_id: resolveTeacherUserId(form.teacherId, academyTeachers, ownerUserId),
@@ -306,6 +315,9 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     name: editGroup?.name || '',
     subject: editGroup?.subject || '',
     level: editGroup?.level || '',
+    activityType: editGroup?.activityType || 'regular_class',
+    activityName: editGroup?.activityName || '',
+    recordBlocks: normalizeClassRecordBlocks(editGroup?.recordBlocks),
     teacherId: editGroup?.teacherId || '',
     studentIds: editGroup?.studentIds || [],
     weekdays: editGroup?.weekdays || [],
@@ -334,6 +346,30 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   );
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const selectActivityType = (activityType) => {
+    setForm((current) => {
+      if (current.activityType === activityType) return current;
+      return {
+        ...current,
+        activityType,
+        activityName: activityType === 'other' ? current.activityName : '',
+        recordBlocks: getClassRecordPreset(activityType),
+      };
+    });
+  };
+
+  const toggleRecordBlock = (blockId) => {
+    setForm((current) => {
+      const selected = normalizeClassRecordBlocks(current.recordBlocks);
+      return {
+        ...current,
+        recordBlocks: selected.includes(blockId)
+          ? selected.filter((id) => id !== blockId)
+          : [...selected, blockId],
+      };
+    });
+  };
 
   const coverageRange = useMemo(() => {
     const fromDate = form.startDate || new Date().toISOString().slice(0, 10);
@@ -469,6 +505,9 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
   const handleSave = async () => {
     if (submitting) return;
     if (!form.name.trim()) return alert('반 이름을 입력해주세요.');
+    if (form.activityType === 'other' && !form.activityName.trim()) {
+      return alert('수업 유형 이름을 입력해주세요.');
+    }
     if (form.weekdays.length === 0) return alert('수업 요일을 선택해주세요.');
     if (!form.startDate) return alert('수업을 언제 시작할지 선택해주세요.');
     if (periodEndMode === 'until' && !form.endDate) return alert('수업을 언제까지 진행할지 선택해주세요.');
@@ -1006,6 +1045,69 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
 
         {/* ── 하단 · 학생/수강료/메모 (full-width) ─────────────────── */}
         <div className="md:col-span-2 flex flex-col gap-4">
+          <div className="rounded-[22px] border border-[#E5E8EB] bg-white p-4">
+            <div className="mb-4">
+              <p className="text-sm font-extrabold text-[#191F28]">수업 기록 방식</p>
+              <p className="mt-1 text-xs text-[#6B7684]">이 반에서 필요한 기록만 골라요. 나중에 수정할 수 있어요.</p>
+            </div>
+
+            <Field label="수업 유형">
+              <div className="flex flex-wrap gap-2">
+                {CLASS_ACTIVITY_TYPES.map((option) => {
+                  const selected = form.activityType === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => selectActivityType(option.id)}
+                      className={`rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+                        selected
+                          ? 'border-[#3182F6] bg-[#E8F3FF] text-[#1B64DA]'
+                          : 'border-[#E5E8EB] bg-white text-[#4E5968]'
+                      }`}
+                    >
+                      {selected && '✓ '}{option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {form.activityType === 'other' && (
+                <input
+                  value={form.activityName}
+                  onChange={(event) => set('activityName', event.target.value)}
+                  placeholder="학원에서 사용하는 이름"
+                  className="input mt-2"
+                />
+              )}
+            </Field>
+
+            <div className="mt-4 border-t border-[#F2F4F6] pt-4">
+              <p className="mb-2 text-xs font-semibold text-gray-600">기록 항목</p>
+              <div className="flex flex-wrap gap-2">
+                {CLASS_RECORD_BLOCKS.map((block) => {
+                  const selected = form.recordBlocks.includes(block.id);
+                  return (
+                    <button
+                      key={block.id}
+                      type="button"
+                      onClick={() => toggleRecordBlock(block.id)}
+                      className={`rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+                        selected
+                          ? 'border-[#3182F6] bg-[#E8F3FF] text-[#1B64DA]'
+                          : 'border-[#E5E8EB] bg-[#F9FAFB] text-[#8B95A1]'
+                      }`}
+                    >
+                      {selected && '✓ '}{block.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-[11px] font-medium text-[#8B95A1]">
+                학생 등하원과 수업 상태는 기록 항목과 별개로 항상 사용할 수 있어요.
+              </p>
+            </div>
+          </div>
+
           {academyStudents.length > 0 && (
             <Field label={`학생 배정 (${form.studentIds.length}/${academyStudents.length})`}>
               <div className="mb-2 grid grid-cols-2 gap-2 md:grid-cols-[minmax(0,1fr)_150px_130px]">

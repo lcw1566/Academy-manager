@@ -25,6 +25,10 @@ import { hhmmToMin } from '../../../utils/shiftCoverage';
 import { getTeacherDisplayName } from '../../../utils/format';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getRoomTagClassName } from '../../../utils/roomTags';
+import {
+  CLASS_ACTIVITY_TYPES,
+  getActivityLabel,
+} from '../../../constants/learningActivitySettings';
 import ClassGroupFormModal, {
   mapClassSessionToServerPayload,
   matchSessionPairs,
@@ -110,6 +114,11 @@ export default function ClassGroupDetailPage() {
   const todayStr = today();
 
   const group = classGroups.find((g) => g.id === selectedClassGroupId) ?? null;
+  const activityLabel = getActivityLabel(
+    CLASS_ACTIVITY_TYPES,
+    group?.activityType || 'regular_class',
+    group?.activityName,
+  );
   const activeMonth = calendarAnchor.slice(0, 7);
 
   // Phase 44.6 / Phase B — 룰 기반 planned 세션 + 기존 classSessions 머지.
@@ -307,6 +316,7 @@ export default function ClassGroupDetailPage() {
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <div className="grid grid-cols-2 gap-3 text-xs">
               <InfoRow label="요일" value={`${group.weekdays?.join('·')}요일`} />
+              <InfoRow label="유형" value={activityLabel} />
               <InfoRow
                 label="시간"
                 value={

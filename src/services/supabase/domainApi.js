@@ -960,6 +960,7 @@ function sanitizeStudentPayload(input, { strip = [] } = {}) {
 const CLASS_GROUP_ALLOWED_FIELDS = new Set([
   'id', 'academy_id', 'user_id', 'mode',
   'name', 'subject', 'level',
+  'activity_type', 'activity_name', 'record_blocks',
   'teacher_id', 'teacher_type',
   // Phase 44 — server-stable auth.users.id 매칭용 (SQL 013)
   'teacher_user_id',
@@ -1051,6 +1052,7 @@ const CLINIC_RECORD_ALLOWED_FIELDS = new Set([
   'id', 'academy_id', 'user_id', 'mode',
   'student_id', 'class_group_id', 'class_session_id',
   'date', 'subject', 'teacher_id', 'assistant_id',
+  'activity_type', 'activity_name',
   'source_lesson_record_id', 'source_support_tags', 'source_support_memo',
   'items', 'overall_memo',
   'created_by_role', 'created_by_id',

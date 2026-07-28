@@ -866,7 +866,11 @@ function currentAcademyYmd() {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-export async function listStudentCheckEvents(academyId, { sinceDateYMD, limit = 1000 } = {}) {
+export async function listStudentCheckEvents(academyId, {
+  sinceDateYMD,
+  studentId,
+  limit = 1000,
+} = {}) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
   let query = supabase
@@ -874,6 +878,9 @@ export async function listStudentCheckEvents(academyId, { sinceDateYMD, limit = 
     .select('*')
     .eq('academy_id', academyId)
     .order('event_time', { ascending: false });
+  if (studentId) {
+    query = query.eq('student_id', studentId);
+  }
   if (sinceDateYMD) {
     const untilDateYMD = nextYmd(sinceDateYMD);
     query = query.gte('event_time', `${sinceDateYMD}T00:00:00+09:00`);

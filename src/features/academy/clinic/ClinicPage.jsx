@@ -12,6 +12,10 @@ import ClinicRecordFormModal from './ClinicRecordFormModal';
 import { today, formatDateShort } from '../../../utils/date';
 import { CLINIC_SUBJECT_FILTERS, DATE_FILTER_OPTIONS } from '../../../constants/labels';
 import { currentUserCan } from '../../../utils/staffPermissions';
+import {
+  CLINIC_ACTIVITY_TYPES,
+  getActivityLabel,
+} from '../../../constants/learningActivitySettings';
 
 function groupByDate(records) {
   const map = {};
@@ -186,7 +190,7 @@ export default function ClinicPage() {
               className="h-9 w-9 md:w-auto md:px-4 flex items-center justify-center gap-1.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold shadow-sm active:bg-[#0050CC]"
             >
               <Plus size={14} />
-              <span className="hidden md:inline">클리닉 추가</span>
+              <span className="hidden md:inline">기록 추가</span>
             </motion.button>
           ) : null
         }
@@ -196,11 +200,11 @@ export default function ClinicPage() {
         {/* 요약 */}
         <div className="px-4 pt-4 grid grid-cols-2 gap-3 mb-4">
           <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <p className="text-xs text-gray-500 mb-1">오늘 클리닉 기록</p>
+            <p className="text-xs text-gray-500 mb-1">오늘 활동 기록</p>
             <p className={`text-2xl font-bold ${todayCount > 0 ? 'text-blue-600' : 'text-gray-900'}`}>{todayCount}건</p>
           </div>
           <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <p className="text-xs text-gray-500 mb-1">이번 주 클리닉</p>
+            <p className="text-xs text-gray-500 mb-1">이번 주 활동</p>
             <p className="text-2xl font-bold text-gray-900">{weekCount}건</p>
           </div>
         </div>
@@ -234,7 +238,7 @@ export default function ClinicPage() {
                       })}
                       className="flex-shrink-0 text-xs font-semibold text-white bg-orange-500 px-3 py-1.5 rounded-xl"
                     >
-                      클리닉 기록
+                      활동 기록
                     </motion.button>
                   </div>
                   {item.supportTags?.length > 0 && (
@@ -295,8 +299,8 @@ export default function ClinicPage() {
         {grouped.length === 0 ? (
           <EmptyState
             icon="📋"
-            title="클리닉 기록이 없어요"
-            description="+ 버튼을 눌러 학생별 클리닉 기록을 추가해보세요."
+            title="활동 기록이 없어요"
+            description="+ 버튼을 눌러 학생별 활동 기록을 추가해보세요."
           />
         ) : (
           <div className="px-4 flex flex-col gap-5">
@@ -412,6 +416,11 @@ function ClinicRecordCard({
     record.sourceSupportMemo ||
     record.sourceSupportTags?.length
   );
+  const activityLabel = getActivityLabel(
+    CLINIC_ACTIVITY_TYPES,
+    record.activityType || 'clinic',
+    record.activityName,
+  );
 
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -420,6 +429,9 @@ function ClinicRecordCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-sm font-bold text-gray-900">{student?.name || '학생'}</span>
+              <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-600">
+                {activityLabel}
+              </span>
               <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">{record.subject || '기타'}</span>
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                 isLinkedRecord

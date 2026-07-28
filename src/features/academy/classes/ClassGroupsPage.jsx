@@ -12,6 +12,10 @@ import { getTeacherDisplayName, OWNER_TEACHER_ID } from '../../../utils/format';
 import { useState } from 'react';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getRoomTagClassName } from '../../../utils/roomTags';
+import {
+  CLASS_ACTIVITY_TYPES,
+  getActivityLabel,
+} from '../../../constants/learningActivitySettings';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
 import {
   buildPlannedClassSessions,
@@ -127,6 +131,11 @@ export default function ClassGroupsPage() {
           <div className="px-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
             {enriched.map((group) => {
               const statusInfo = STATUS_MAP[group.status] || STATUS_MAP.active;
+              const activityLabel = getActivityLabel(
+                CLASS_ACTIVITY_TYPES,
+                group.activityType || 'regular_class',
+                group.activityName,
+              );
               return (
                 <motion.div
                   key={group.id}
@@ -134,13 +143,18 @@ export default function ClassGroupsPage() {
                   onClick={() => navigateToClassGroup(group.id)}
                   className="bg-white rounded-2xl p-3.5 md:p-4 shadow-sm cursor-pointer select-none min-h-[190px] flex flex-col"
                 >
-                  <div className="flex items-center gap-1.5 mb-3 min-w-0">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 mb-3">
                     <span className={`text-[10px] md:text-xs px-2 py-1 rounded-full font-semibold whitespace-nowrap ${statusInfo.color}`}>
                       {statusInfo.label}
                     </span>
                     <span className="text-[10px] md:text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-semibold truncate min-w-0">
                       {group.subject || '과목'}
                     </span>
+                    {group.activityType && group.activityType !== 'regular_class' && (
+                      <span className="truncate rounded-full bg-violet-50 px-2 py-1 text-[10px] font-semibold text-violet-600 md:text-xs">
+                        {activityLabel}
+                      </span>
+                    )}
                   </div>
 
                   <p className="font-extrabold text-gray-900 text-base md:text-lg leading-snug line-clamp-2 min-h-[42px]">

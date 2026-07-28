@@ -18,6 +18,12 @@ import { getRoomTagClassName } from '../../../utils/roomTags';
 import ShiftCoverageSheet from '../work/ShiftCoverageSheet';
 import useEnsureShiftCoverage from '../work/useEnsureShiftCoverage';
 import { getQrAttendanceHint, readAttendanceSettings } from '../attendance/attendanceHelpers';
+import {
+  CLASS_ACTIVITY_TYPES,
+  getActivityLabel,
+  getClassCompletionLabel,
+  normalizeClassRecordBlocks,
+} from '../../../constants/learningActivitySettings';
 // Phase 44.7 / Phase C — 회차 변경 sheet.
 import SessionExceptionSheet from './SessionExceptionSheet';
 
@@ -82,6 +88,9 @@ function buildStudentRecord(lr) {
     focus:          lr?.focus           ?? null,
     understanding:  lr?.understanding  ?? null,
     homeworkStatus: lr?.homeworkStatus  ?? null,
+    score:          lr?.score           ?? '',
+    scoreTotal:     lr?.scoreTotal      ?? '',
+    scoreNote:      lr?.scoreNote       ?? '',
     memo:           lr?.memo            ?? '',
     supportTags:    Array.isArray(lr?.supportTags) ? lr.supportTags : [],
     supportMemo:    lr?.supportMemo     ?? '',
@@ -119,6 +128,7 @@ function EvalRow({ label, options, value, onChange }) {
 const StudentCard = memo(function StudentCard({
   student, sessionId, canEdit, canEditAttendance = canEdit,
   attendance, initialRecord, onRecordChange, saveCount,
+  recordBlocks,
   qrHint, // Phase 42 — { statusHint, checkInTime, checkOutTime } or null
 }) {
   const updateAcademyAttendance = useAcademyStore((s) => s.updateAcademyAttendance);
@@ -161,8 +171,13 @@ const StudentCard = memo(function StudentCard({
     });
   };
 
-  const supportCount = (rec.supportTags?.length || 0) + (rec.supportMemo?.trim() ? 1 : 0);
-  const hasEval = rec.attitude || rec.focus || rec.understanding || rec.homeworkStatus;
+  const hasBlock = (blockId) => recordBlocks.has(blockId);
+  const supportCount = hasBlock('support')
+    ? (rec.supportTags?.length || 0) + (rec.supportMemo?.trim() ? 1 : 0)
+    : 0;
+  const hasEval = hasBlock('student_evaluation')
+    && (rec.attitude || rec.focus || rec.understanding || rec.homeworkStatus);
+  const hasScore = hasBlock('score') && (rec.score !== '' || rec.scoreTotal !== '' || rec.scoreNote);
 
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -203,6 +218,11 @@ const StudentCard = memo(function StudentCard({
             <span className="text-xs text-gray-300 font-medium">미체크</span>
           )}
           {hasEval && <Check size={13} className="text-green-500 flex-shrink-0" />}
+          {hasScore && (
+            <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-600">
+              {rec.score || '-'}{rec.scoreTotal ? `/${rec.scoreTotal}` : '점'}
+            </span>
+          )}
           {expanded ? <ChevronUp size={15} className="text-gray-300" /> : <ChevronDown size={15} className="text-gray-300" />}
         </div>
       </button>
@@ -244,7 +264,7 @@ const StudentCard = memo(function StudentCard({
               )}
 
               {/* 평가 항목 */}
-              {canEdit && (
+              {canEdit && hasBlock('student_evaluation') && (
                 <div className="flex flex-col gap-3">
                   <p className="text-xs font-semibold text-gray-500">평가</p>
                   <EvalRow label="태도" options={ATTITUDE_OPTIONS} value={rec.attitude} onChange={(v) => setField('attitude', v)} />
@@ -254,8 +274,39 @@ const StudentCard = memo(function StudentCard({
                 </div>
               )}
 
+              {canEdit && hasBlock('score') && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold text-gray-500">점수</p>
+                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      value={rec.score}
+                      onChange={(event) => setField('score', event.target.value)}
+                      placeholder="점수"
+                      className="input text-center"
+                    />
+                    <span className="text-sm font-bold text-gray-300">/</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={rec.scoreTotal}
+                      onChange={(event) => setField('scoreTotal', event.target.value)}
+                      placeholder="총점"
+                      className="input text-center"
+                    />
+                  </div>
+                  <input
+                    value={rec.scoreNote}
+                    onChange={(event) => setField('scoreNote', event.target.value)}
+                    placeholder="점수 메모 (선택)"
+                    className="input mt-2"
+                  />
+                </div>
+              )}
+
               {/* 학생 메모 */}
-              {canEdit && (
+              {canEdit && hasBlock('student_memo') && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 mb-1.5">학생 메모</p>
                   <textarea
@@ -269,7 +320,7 @@ const StudentCard = memo(function StudentCard({
               )}
 
               {/* 학습 보완 항목 */}
-              {canEdit && (
+              {canEdit && hasBlock('support') && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 mb-2">학습 보완 항목</p>
                   <div className="flex flex-wrap gap-1.5 mb-2">
@@ -310,7 +361,13 @@ const StudentCard = memo(function StudentCard({
                   {rec.homeworkStatus && <Chip label={`숙제: ${rec.homeworkStatus}`} />}
                 </div>
               )}
-              {!canEdit && rec.memo && (
+              {!canEdit && hasScore && (
+                <p className="rounded-xl bg-violet-50 px-3 py-2 text-sm font-bold text-violet-700">
+                  점수 {rec.score || '-'}{rec.scoreTotal ? ` / ${rec.scoreTotal}` : ''}
+                  {rec.scoreNote ? ` · ${rec.scoreNote}` : ''}
+                </p>
+              )}
+              {!canEdit && hasBlock('student_memo') && rec.memo && (
                 <p className="text-sm text-gray-700 bg-gray-50 rounded-xl px-3 py-2">{rec.memo}</p>
               )}
             </div>
@@ -366,6 +423,18 @@ export default function ClassSessionPage() {
     () => (session ? classGroups.find((g) => g.id === session.classGroupId) : null) ?? null,
     [classGroups, session]
   );
+  const recordBlocks = useMemo(
+    () => new Set(normalizeClassRecordBlocks(group?.recordBlocks)),
+    [group?.recordBlocks],
+  );
+  const activityLabel = getActivityLabel(
+    CLASS_ACTIVITY_TYPES,
+    group?.activityType || 'regular_class',
+    group?.activityName,
+  );
+  const completionLabel = getClassCompletionLabel(group?.activityType || 'regular_class');
+  const hasCommonRecordBlocks = ['progress', 'content', 'homework', 'next_plan', 'teacher_memo']
+    .some((blockId) => recordBlocks.has(blockId));
   // Phase 44 — session 의 teacherUserId 가 더 신뢰 가능. group 으로 fallback.
   const teacherName = useMemo(() => {
     if (!session && !group) return null;
@@ -561,6 +630,7 @@ export default function ClassSessionPage() {
   // 이번 수업의 보완 항목 수
   const supportCount = useMemo(() => {
     let count = 0;
+    if (!recordBlocks.has('support')) return 0;
     for (const record of lessonRecordByStudentId.values()) {
       if (
         record.studentId !== '_common_' &&
@@ -570,7 +640,7 @@ export default function ClassSessionPage() {
       }
     }
     return count;
-  }, [lessonRecordByStudentId]);
+  }, [lessonRecordByStudentId, recordBlocks]);
 
   const handleSave = useCallback(async () => {
     if (!session || isSaving) return;
@@ -754,6 +824,7 @@ export default function ClassSessionPage() {
               <SummaryCell label="보완 항목" value={supportCount} color="text-orange-500" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
+              <InfoChip label="유형" value={activityLabel} />
               {session.room && <InfoChip label="강의실" value={session.room} tag />}
               {teacherName && <InfoChip label="강사" value={teacherName} />}
               <InfoChip label="시간" value={`${session.startTime}–${session.endTime}`} />
@@ -815,24 +886,34 @@ export default function ClassSessionPage() {
         </div>
 
         {/* ── 공통 수업 기록 ─────────────────────────────── */}
-        {canEdit && (
+        {canEdit && hasCommonRecordBlocks && (
           <div className="px-4 mb-4">
             <div className="bg-blue-50 rounded-2xl p-4">
               <div className="flex items-center gap-2 mb-3">
-                <p className="text-sm font-bold text-blue-900">공통 수업 기록</p>
-                <p className="text-xs text-blue-500">오늘 반 전체가 함께한 내용이에요</p>
+                <p className="text-sm font-bold text-blue-900">{activityLabel} 기록</p>
+                <p className="text-xs text-blue-500">참여 학생에게 공통으로 적용돼요</p>
               </div>
               <div className="flex flex-col gap-3">
-                <CommonField label="오늘 진도" placeholder="예: Lesson 3 본문 대화문"
-                  value={commonRec.commonProgress} onChange={(v) => setCommonField('commonProgress', v)} single />
-                <CommonField label="수업 내용" placeholder="오늘 수업에서 다룬 내용을 기록해요"
-                  value={commonRec.commonContent} onChange={(v) => setCommonField('commonContent', v)} />
-                <CommonField label="공통 숙제" placeholder="예: 본문 2회 읽기, 단어 20개 암기"
-                  value={commonRec.commonHomework} onChange={(v) => setCommonField('commonHomework', v)} single />
-                <CommonField label="다음 수업 계획" placeholder="예: Lesson 3 문법 정리"
-                  value={commonRec.nextLessonPlan} onChange={(v) => setCommonField('nextLessonPlan', v)} single />
-                <CommonField label="강사 메모" placeholder="내부 메모 (학부모에게 공개 안 됨)"
-                  value={commonRec.teacherMemo} onChange={(v) => setCommonField('teacherMemo', v)} />
+                {recordBlocks.has('progress') && (
+                  <CommonField label="오늘 진도" placeholder="예: Lesson 3 본문 대화문"
+                    value={commonRec.commonProgress} onChange={(v) => setCommonField('commonProgress', v)} single />
+                )}
+                {recordBlocks.has('content') && (
+                  <CommonField label="활동 내용" placeholder="오늘 진행한 내용을 기록해요"
+                    value={commonRec.commonContent} onChange={(v) => setCommonField('commonContent', v)} />
+                )}
+                {recordBlocks.has('homework') && (
+                  <CommonField label="공통 숙제" placeholder="예: 본문 2회 읽기, 단어 20개 암기"
+                    value={commonRec.commonHomework} onChange={(v) => setCommonField('commonHomework', v)} single />
+                )}
+                {recordBlocks.has('next_plan') && (
+                  <CommonField label="다음 계획" placeholder="다음 회차에 진행할 내용"
+                    value={commonRec.nextLessonPlan} onChange={(v) => setCommonField('nextLessonPlan', v)} single />
+                )}
+                {recordBlocks.has('teacher_memo') && (
+                  <CommonField label="강사 메모" placeholder="내부 메모 (학부모에게 공개 안 됨)"
+                    value={commonRec.teacherMemo} onChange={(v) => setCommonField('teacherMemo', v)} />
+                )}
               </div>
             </div>
           </div>
@@ -877,6 +958,7 @@ export default function ClassSessionPage() {
                     initialRecord={existingLr}
                     onRecordChange={handleRecordChange}
                     saveCount={saveCount}
+                    recordBlocks={recordBlocks}
                     qrHint={qrHint}
                   />
                 );
@@ -946,7 +1028,7 @@ export default function ClassSessionPage() {
 
       {/* ── 저장 / 완료 버튼 (fixed) ──────────────────── */}
       {canEdit && (
-        <div className="fixed bottom-0 left-0 right-0 z-20 bg-white/95 border-t border-gray-100 px-4 py-3 pb-safe max-w-md mx-auto">
+        <div className="fixed bottom-0 left-0 right-0 z-20 mx-auto max-w-md border-t border-gray-100 bg-white/95 px-4 py-3 pb-safe backdrop-blur-xl md:bottom-6 md:min-h-0 md:max-w-[560px] md:rounded-[24px] md:border md:border-[#E5E8EB] md:p-3 md:shadow-[0_12px_40px_rgba(0,0,0,0.12)]">
           <div className="flex gap-2">
             <button
               type="button"
@@ -984,11 +1066,11 @@ export default function ClassSessionPage() {
                 }}
                 className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-green-600 text-white shadow-lg shadow-green-200 active:scale-[0.98] transition-transform"
               >
-                수업 완료
+                {completionLabel}
               </button>
             ) : (
               <div className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-green-50 text-green-600 flex items-center justify-center">
-                ✓ 수업 완료됨
+                ✓ {completionLabel}됨
               </div>
             )}
           </div>

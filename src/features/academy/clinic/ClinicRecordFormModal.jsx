@@ -12,6 +12,10 @@ import {
 import { today } from '../../../utils/date';
 import { getClinicOptions } from '../../../constants/clinicOptions';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
+import {
+  CLINIC_ACTIVITY_TYPES,
+  getActivityLabel,
+} from '../../../constants/learningActivitySettings';
 
 const SUBJECTS = ['국어', '수학', '영어', '과학', '사회', '기타'];
 
@@ -205,6 +209,8 @@ export default function ClinicRecordFormModal({
   const [studentId, setStudentId] = useState(initialStudentId);
   const [date, setDate] = useState(initialDate);
   const [subject, setSubject] = useState(initialSubject);
+  const [activityType, setActivityType] = useState(editRecord?.activityType || 'clinic');
+  const [activityName, setActivityName] = useState(editRecord?.activityName || '');
   const [classGroupId, setClassGroupId] = useState(initialClassGroupId);
   const [classSessionId, setClassSessionId] = useState(initialClassSessionId);
   const [selectedItems, setSelectedItems] = useState(
@@ -412,9 +418,12 @@ export default function ClinicRecordFormModal({
     if (isSaving) return;
     if (!studentId) return alert('학생을 선택해주세요.');
     if (!date) return alert('날짜를 선택해주세요.');
+    if (activityType === 'other' && !activityName.trim()) {
+      return alert('활동 유형 이름을 입력해주세요.');
+    }
     const finalSubject = subject || autoSubject;
     if (!finalSubject) return alert('과목을 선택해주세요.');
-    if (selectedItems.length === 0) return alert('클리닉 활동을 최소 1개 선택해주세요.');
+    if (selectedItems.length === 0) return alert('진행한 활동을 최소 1개 선택해주세요.');
 
     setIsSaving(true);
     try {
@@ -433,6 +442,8 @@ export default function ClinicRecordFormModal({
         studentId,
         date,
         subject: finalSubject,
+        activityType,
+        activityName: activityType === 'other' ? activityName.trim() : '',
         classGroupId: classGroupId || '',
         classSessionId: classSessionId || '',
         sourceLessonRecordId,
@@ -461,6 +472,8 @@ export default function ClinicRecordFormModal({
         class_session_id: sessionForServer?.serverId || null,
         date,
         subject: finalSubject || null,
+        activity_type: activityType,
+        activity_name: activityType === 'other' ? activityName.trim() : null,
         teacher_id: writerId && writerRole === 'teacher' ? writerId : null,
         assistant_id: writerId && writerRole === 'assistant' ? writerId : null,
         source_lesson_record_id: sourceLr?.serverId || (looksLikeUuid(sourceLessonRecordId) ? sourceLessonRecordId : null),
@@ -527,6 +540,7 @@ export default function ClinicRecordFormModal({
   };
 
   if (typeof document === 'undefined') return null;
+  const activityLabel = getActivityLabel(CLINIC_ACTIVITY_TYPES, activityType, activityName);
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-white">
       <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
@@ -535,10 +549,10 @@ export default function ClinicRecordFormModal({
         </button>
         <p className="text-base font-bold text-gray-900">
           {editRecord
-            ? '클리닉 기록 수정'
+            ? `${activityLabel} 기록 수정`
             : isRelayMode
-              ? `클리닉 기록 작성 (${relayIndex + 1} / ${normalizedRelayTargets.length})`
-              : '클리닉 기록 추가'}
+              ? `${activityLabel} 기록 (${relayIndex + 1} / ${normalizedRelayTargets.length})`
+              : `${activityLabel} 기록 추가`}
         </p>
         <div className="w-8" />
       </div>
@@ -589,6 +603,39 @@ export default function ClinicRecordFormModal({
         </div>
 
         <div className="px-4 py-5 flex flex-col gap-5">
+          <FormSection label="활동 유형">
+            <div className="flex flex-wrap gap-2">
+              {CLINIC_ACTIVITY_TYPES.map((option) => {
+                const selected = activityType === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => {
+                      setActivityType(option.id);
+                      if (option.id !== 'other') setActivityName('');
+                    }}
+                    className={`rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+                      selected
+                        ? 'border-[#3182F6] bg-[#E8F3FF] text-[#1B64DA]'
+                        : 'border-[#E5E8EB] bg-white text-[#4E5968]'
+                    }`}
+                  >
+                    {selected && '✓ '}{option.label}
+                  </button>
+                );
+              })}
+            </div>
+            {activityType === 'other' && (
+              <input
+                value={activityName}
+                onChange={(event) => setActivityName(event.target.value)}
+                placeholder="학원에서 사용하는 활동 이름"
+                className="input mt-2"
+              />
+            )}
+          </FormSection>
+
           {showMetaEditor && (
             <div className="rounded-2xl bg-gray-50 px-4 py-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -864,7 +911,7 @@ export default function ClinicRecordFormModal({
             onClick={() => handleSave('close')}
             className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl text-base disabled:opacity-60"
           >
-            {editRecord ? '수정 저장' : '클리닉 기록 저장'}
+            {editRecord ? '수정 저장' : `${activityLabel} 기록 저장`}
           </button>
         )}
       </div>

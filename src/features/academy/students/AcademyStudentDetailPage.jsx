@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X, Paperclip, PhoneCall, ChevronLeft, ChevronRight, LogIn, LogOut, Clock3 } from 'lucide-react';
+import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Check, X, Paperclip, PhoneCall, LogIn, LogOut, Clock3 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -10,7 +10,7 @@ import {
   updatePayment as updateServerPayment,
   deletePayment as deleteServerPayment,
 } from '../../../services/supabase/domainApi';
-import { addDaysYMD, formatDateShort, getKoreanWeekdayFromYMD, today } from '../../../utils/date';
+import { getKoreanWeekdayFromYMD, today } from '../../../utils/date';
 import { attendanceStatusMap, toTelHref } from '../../../utils/format';
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
@@ -19,7 +19,12 @@ import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getSchoolTagClassName } from '../../../utils/schoolTags';
 import { getStudentStatusMeta } from '../../../utils/studentStatus';
-import { getAcademyYmd, getStudentDayCheckState, readAttendanceSettings } from '../attendance/attendanceHelpers';
+import { getAcademyYmd, readAttendanceSettings } from '../attendance/attendanceHelpers';
+import {
+  CLASS_ACTIVITY_TYPES,
+  CLINIC_ACTIVITY_TYPES,
+  getActivityLabel,
+} from '../../../constants/learningActivitySettings';
 
 
 // 역할별 탭 정의
@@ -43,6 +48,15 @@ function formatAttendanceTime(value) {
     minute: '2-digit',
     hour12: false,
   });
+}
+
+function formatAttendanceDate(value) {
+  if (!value) return '';
+  const currentYmd = getAcademyYmd() || today();
+  if (value === currentYmd) return '오늘';
+  const [year, month, day] = value.split('-');
+  const showYear = year !== currentYmd.slice(0, 4);
+  return `${showYear ? `${year}년 ` : ''}${Number(month)}월 ${Number(day)}일 · ${getKoreanWeekdayFromYMD(value)}요일`;
 }
 
 function isSessionFuture(session, todayYMD = today(), currentHHMM = nowHHMM()) {
@@ -80,6 +94,11 @@ function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, a
         classGroupId: session.classGroupId,
         classGroupName: group.name || '',
         subject: group.subject || '',
+        activityLabel: getActivityLabel(
+          CLASS_ACTIVITY_TYPES,
+          group.activityType || 'regular_class',
+          group.activityName,
+        ),
         teacherName: teacher?.name || '',
         room: session.room || group.room || '',
         attendanceStatus: attendance?.status || null,
@@ -156,14 +175,23 @@ function LinkedClinicMiniBadge({ count, onClick }) {
 // ── 수업 기록 카드 ─────────────────────────────────────────────────
 function SessionRecordCard({ record, onClinicClick }) {
   const [expanded, setExpanded] = useState(false);
-  const { date, startTime, endTime, classGroupName, subject, teacherName, attendanceStatus, lessonRecord, commonRecord, clinics, clinicSummary, isFuture } = record;
+  const {
+    date, startTime, endTime, classGroupName, subject, activityLabel,
+    teacherName, attendanceStatus, lessonRecord, commonRecord,
+    clinics, clinicSummary, isFuture,
+  } = record;
 
   const weekday = date ? getKoreanWeekdayFromYMD(date) : '';
 
   const hasEval = lessonRecord && (lessonRecord.attitude || lessonRecord.focus || lessonRecord.understanding || lessonRecord.homeworkStatus);
+  const hasScore = lessonRecord && (
+    lessonRecord.score !== ''
+    || lessonRecord.scoreTotal !== ''
+    || lessonRecord.scoreNote
+  );
   const hasSupport = lessonRecord && ((lessonRecord.supportTags?.length > 0) || lessonRecord.supportMemo?.trim());
   const hasCommon = commonRecord && (commonRecord.commonContent || commonRecord.commonProgress || commonRecord.commonHomework);
-  const hasAnyRecord = hasEval || hasSupport || hasCommon || clinicSummary.total > 0;
+  const hasAnyRecord = hasEval || hasScore || hasSupport || hasCommon || clinicSummary.total > 0;
 
   return (
     <div className={`rounded-2xl shadow-sm overflow-hidden ${
@@ -193,7 +221,9 @@ function SessionRecordCard({ record, onClinicClick }) {
               </p>
               <StatusBadge type={isFuture ? 'upcoming' : (attendanceStatus || 'unrecorded')} />
             </div>
-            <p className="text-xs text-gray-500">{classGroupName} {subject && `· ${subject}`} · {startTime}–{endTime}</p>
+            <p className="text-xs text-gray-500">
+              {[classGroupName, subject, activityLabel].filter(Boolean).join(' · ')} · {startTime}–{endTime}
+            </p>
             {!isFuture && commonRecord?.commonProgress && (
               <p className="text-xs text-gray-400 mt-1.5 line-clamp-1">진도: {commonRecord.commonProgress}</p>
             )}
@@ -257,6 +287,16 @@ function SessionRecordCard({ record, onClinicClick }) {
                       ) : null
                     )}
                   </div>
+                </div>
+              )}
+
+              {hasScore && (
+                <div className="mb-3">
+                  <p className="mb-1 text-xs font-semibold text-gray-400">점수</p>
+                  <p className="rounded-xl bg-violet-50 px-3 py-2 text-sm font-bold text-violet-700">
+                    {lessonRecord.score || '-'}{lessonRecord.scoreTotal ? ` / ${lessonRecord.scoreTotal}` : ''}
+                    {lessonRecord.scoreNote ? ` · ${lessonRecord.scoreNote}` : ''}
+                  </p>
                 </div>
               )}
 
@@ -351,7 +391,6 @@ export default function AcademyStudentDetailPage() {
   const [showClinicForm, setShowClinicForm] = useState(false);
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ classGroupId: '', amount: '', month: today().slice(0, 7) });
-  const [attendanceDate, setAttendanceDate] = useState(() => getAcademyYmd() || today());
 
   // May be null during back-navigation exit animation — compute before all hooks
   const student = academyStudents.find((s) => s.id === selectedAcademyStudentId) ?? null;
@@ -386,20 +425,35 @@ export default function AcademyStudentDetailPage() {
     [studentClinicRecords, student]
   );
 
-  const attendanceTimeline = useMemo(() => {
+  const attendanceDays = useMemo(() => {
     if (!student) return [];
-    const state = getStudentDayCheckState(student.serverId, attendanceDate, studentCheckEvents);
-    const eventEntries = state.events.map((event) => ({
-      id: `event-${event.id}`,
-      type: event.event_type,
-      time: formatAttendanceTime(event.event_time),
-      sortTime: formatAttendanceTime(event.event_time),
-      title: event.event_type === 'check_out' ? '하원' : '등원',
-      detail: event.source === 'qr' ? 'QR 기록' : '선생님 기록',
-    }));
+    const todayYmd = getAcademyYmd() || today();
+    const entriesByDate = new Map();
+    const pushEntry = (date, entry) => {
+      if (!date) return;
+      const entries = entriesByDate.get(date) || [];
+      entries.push(entry);
+      entriesByDate.set(date, entries);
+    };
+
+    studentCheckEvents
+      .filter((event) => event.student_id === student.serverId)
+      .forEach((event) => {
+        const date = getAcademyYmd(event.event_time);
+        pushEntry(date, {
+          id: `event-${event.id}`,
+          type: event.event_type,
+          time: formatAttendanceTime(event.event_time),
+          sortTime: formatAttendanceTime(event.event_time),
+          title: event.event_type === 'check_out' ? '하원' : '등원',
+          detail: event.source === 'qr' ? 'QR 기록' : '선생님 기록',
+        });
+      });
+
     const sessionEntries = classSessions
       .filter((session) => (
-        session.date === attendanceDate
+        session.date
+        && session.date <= todayYmd
         && session.status !== 'canceled'
         && (session.studentIds || []).includes(student.id)
       ))
@@ -419,6 +473,7 @@ export default function AcademyStudentDetailPage() {
           ? sessionStateLabels[attendance.status] || '상태 기록'
           : '미확인';
         return {
+          date: session.date,
           id: `session-${session.id}`,
           type: 'session',
           time: session.startTime || '',
@@ -427,11 +482,16 @@ export default function AcademyStudentDetailPage() {
           detail: `${session.startTime || ''}${session.endTime ? `–${session.endTime}` : ''} · ${statusLabel}`,
         };
       });
-    return [...eventEntries, ...sessionEntries]
-      .sort((a, b) => a.sortTime.localeCompare(b.sortTime));
+    sessionEntries.forEach(({ date, ...entry }) => pushEntry(date, entry));
+
+    return [...entriesByDate.entries()]
+      .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
+      .map(([date, entries]) => ({
+        date,
+        entries: entries.sort((a, b) => a.sortTime.localeCompare(b.sortTime)),
+      }));
   }, [
     student,
-    attendanceDate,
     studentCheckEvents,
     classSessions,
     classGroups,
@@ -447,9 +507,9 @@ export default function AcademyStudentDetailPage() {
   }, [tabs, activeTab]);
 
   useEffect(() => {
-    if (activeTab !== '등하원' || !currentAcademyId || !attendanceDate) return;
-    loadStudentCheckEvents({ sinceDateYMD: attendanceDate, limit: 1000 });
-  }, [activeTab, currentAcademyId, attendanceDate, loadStudentCheckEvents]);
+    if (activeTab !== '등하원' || !currentAcademyId || !student?.serverId) return;
+    loadStudentCheckEvents({ studentId: student.serverId, limit: 1000 });
+  }, [activeTab, currentAcademyId, student?.serverId, loadStudentCheckEvents]);
 
   if (!student) {
     return (
@@ -587,77 +647,64 @@ export default function AcademyStudentDetailPage() {
   );
 
   const renderAttendance = () => {
-    const isToday = attendanceDate === (getAcademyYmd() || today());
     return (
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between rounded-2xl bg-white px-3 py-2 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setAttendanceDate((date) => addDaysYMD(date, -1))}
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 active:bg-gray-100"
-          >
-            <ChevronLeft size={18} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setAttendanceDate(getAcademyYmd() || today())}
-            className="px-3 text-center"
-          >
-            <p className="text-sm font-extrabold text-gray-900">
-              {isToday ? '오늘' : formatDateShort(attendanceDate)}
-            </p>
-            <p className="mt-0.5 text-[11px] text-gray-400">{attendanceDate}</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setAttendanceDate((date) => addDaysYMD(date, 1))}
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-gray-500 active:bg-gray-100"
-          >
-            <ChevronRight size={18} />
-          </button>
-        </div>
-
-        {isStudentCheckEventsLoading && attendanceTimeline.length === 0 ? (
+      <div>
+        {isStudentCheckEventsLoading && attendanceDays.length === 0 ? (
           <div className="rounded-2xl bg-white px-5 py-8 text-center text-sm text-gray-400 shadow-sm">
             불러오는 중...
           </div>
-        ) : attendanceTimeline.length === 0 ? (
+        ) : attendanceDays.length === 0 ? (
           <div className="rounded-2xl bg-white px-5 py-8 text-center shadow-sm">
             <Clock3 size={22} className="mx-auto mb-2 text-gray-300" />
             <p className="text-sm font-bold text-gray-700">등하원 기록이 없어요</p>
-            <p className="mt-1 text-xs text-gray-400">수업과 등하원 기록이 생기면 시간순으로 보여요.</p>
+            <p className="mt-1 text-xs text-gray-400">수업과 등하원 기록이 생기면 날짜별로 보여요.</p>
           </div>
         ) : (
-          <div className="rounded-2xl bg-white px-4 py-2 shadow-sm">
-            {attendanceTimeline.map((entry, index) => {
-              const Icon = entry.type === 'check_in'
-                ? LogIn
-                : entry.type === 'check_out'
-                  ? LogOut
-                  : Clock3;
-              const iconTone = entry.type === 'check_in'
-                ? 'bg-emerald-50 text-emerald-600'
-                : entry.type === 'check_out'
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'bg-gray-100 text-gray-500';
-              return (
-                <div key={entry.id} className="relative flex gap-3 py-3">
-                  {index < attendanceTimeline.length - 1 && (
-                    <div className="absolute bottom-0 left-[15px] top-9 w-px bg-gray-100" />
-                  )}
-                  <div className={`relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${iconTone}`}>
-                    <Icon size={14} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-gray-900">{entry.title}</p>
-                      <span className="text-xs font-semibold text-gray-400">{entry.time}</span>
-                    </div>
-                    <p className="mt-0.5 truncate text-xs text-gray-500">{entry.detail}</p>
-                  </div>
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            {attendanceDays.map((day, dayIndex) => (
+              <section
+                key={day.date}
+                className={dayIndex > 0 ? 'border-t border-gray-100' : ''}
+              >
+                <div className="flex items-center justify-between bg-gray-50/70 px-4 py-3">
+                  <p className="text-sm font-extrabold text-gray-900">{formatAttendanceDate(day.date)}</p>
+                  <p className="text-[11px] font-medium text-gray-400">{day.date}</p>
                 </div>
-              );
-            })}
+                <div className="px-4">
+                  {day.entries.map((entry, entryIndex) => {
+                    const Icon = entry.type === 'check_in'
+                      ? LogIn
+                      : entry.type === 'check_out'
+                        ? LogOut
+                        : Clock3;
+                    const iconTone = entry.type === 'check_in'
+                      ? 'bg-emerald-50 text-emerald-600'
+                      : entry.type === 'check_out'
+                        ? 'bg-blue-50 text-blue-600'
+                        : 'bg-gray-100 text-gray-500';
+                    return (
+                      <div
+                        key={entry.id}
+                        className={`flex items-center gap-3 py-3.5 ${
+                          entryIndex > 0 ? 'border-t border-gray-100' : ''
+                        }`}
+                      >
+                        <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl ${iconTone}`}>
+                          <Icon size={15} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate text-sm font-bold text-gray-900">{entry.title}</p>
+                            <span className="flex-shrink-0 text-xs font-semibold text-gray-400">{entry.time}</span>
+                          </div>
+                          <p className="mt-0.5 truncate text-xs text-gray-500">{entry.detail}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
         )}
       </div>
@@ -728,33 +775,41 @@ export default function AcademyStudentDetailPage() {
           <p className="text-sm text-gray-400">클리닉 기록이 없어요</p>
         </div>
       ) : (
-        studentClinicRecords.map((record) => (
-          <div key={record.id} className="bg-white rounded-2xl p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <p className="text-xs font-bold text-gray-500">{record.date?.slice(5).replace('-', '/')}</p>
-              <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">{record.subject}</span>
-            </div>
-            {record.items?.map((item, i) => (
-              <div key={item.id || i} className="mb-2 bg-gray-50 rounded-xl px-3 py-2.5">
-                <p className="text-sm font-semibold text-gray-800">{item.title}</p>
-                {item.materialTags?.length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {item.materialTags.map((tag) => (
-                      <span key={tag} className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-gray-500">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {item.description && <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>}
-                {item.result && <p className="text-xs text-blue-600 font-medium mt-0.5">결과: {item.result}</p>}
+        studentClinicRecords.map((record) => {
+          const activityLabel = getActivityLabel(
+            CLINIC_ACTIVITY_TYPES,
+            record.activityType || 'clinic',
+            record.activityName,
+          );
+          return (
+            <div key={record.id} className="bg-white rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <p className="text-xs font-bold text-gray-500">{record.date?.slice(5).replace('-', '/')}</p>
+                <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-600">{activityLabel}</span>
+                <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-medium">{record.subject}</span>
               </div>
-            ))}
-            {record.overallMemo && (
-              <p className="text-xs text-gray-500 mt-1 bg-blue-50 rounded-lg px-3 py-2">{record.overallMemo}</p>
-            )}
-          </div>
-        ))
+              {record.items?.map((item, i) => (
+                <div key={item.id || i} className="mb-2 bg-gray-50 rounded-xl px-3 py-2.5">
+                  <p className="text-sm font-semibold text-gray-800">{item.title}</p>
+                  {item.materialTags?.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {item.materialTags.map((tag) => (
+                        <span key={tag} className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-gray-500">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {item.description && <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>}
+                  {item.result && <p className="text-xs text-blue-600 font-medium mt-0.5">결과: {item.result}</p>}
+                </div>
+              ))}
+              {record.overallMemo && (
+                <p className="text-xs text-gray-500 mt-1 bg-blue-50 rounded-lg px-3 py-2">{record.overallMemo}</p>
+              )}
+            </div>
+          );
+        })
       )}
     </div>
   );

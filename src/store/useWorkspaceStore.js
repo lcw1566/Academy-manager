@@ -1593,8 +1593,8 @@ const useWorkspaceStore = create(
       },
 
       // 학생 등·하원 이벤트 목록. 날짜가 있으면 한국 시간 기준 해당 하루,
-      // 최대 1000건을 불러온다.
-      loadStudentCheckEvents: async ({ sinceDateYMD, limit } = {}) => {
+      // studentId가 있으면 해당 학생의 기록만 최대 1000건 불러온다.
+      loadStudentCheckEvents: async ({ sinceDateYMD, studentId, limit } = {}) => {
         if (!isSupabaseConfigured) {
           set({ studentCheckEvents: [] });
           return [];
@@ -1606,12 +1606,18 @@ const useWorkspaceStore = create(
         }
         set({ isStudentCheckEventsLoading: true, studentCheckEventsError: null });
         try {
-          const list = await listStudentCheckEvents(academyId, { sinceDateYMD, limit });
+          const list = await listStudentCheckEvents(academyId, { sinceDateYMD, studentId, limit });
           if (!isCurrentAcademy(get, academyId)) return list;
-          set({
-            studentCheckEvents: list,
+          set((state) => ({
+            // 학생 상세에서 과거 기록을 불러올 때 다른 학생의 당일 캐시를 지우지 않는다.
+            studentCheckEvents: studentId
+              ? [
+                  ...list,
+                  ...(state.studentCheckEvents || []).filter((event) => event.student_id !== studentId),
+                ]
+              : list,
             studentCheckEventsLoadedAt: new Date().toISOString(),
-          });
+          }));
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
