@@ -407,7 +407,12 @@ export default function ClinicPage() {
               </p>
             </div>
             <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-              <div className="flex items-center gap-2 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => toggleExpectedGroup(temporaryClinicSession.id)}
+                className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors active:bg-gray-50"
+                aria-expanded={expandedExpectedIds.has(temporaryClinicSession.id)}
+              >
                 <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                   <Clock3 size={15} />
                 </span>
@@ -417,53 +422,70 @@ export default function ClinicPage() {
                     {temporaryClinicSubject || '과목 미지정'} · {temporaryClinicStudents.length}명
                   </p>
                 </div>
-                <span className="text-[11px] font-semibold text-gray-400">
-                  {temporaryClinicStudents.filter((student) => student.clinicRecord).length}/{temporaryClinicStudents.length}
+                <span className="flex flex-shrink-0 items-center gap-2">
+                  <span className="text-[11px] font-semibold text-gray-400">
+                    {temporaryClinicStudents.filter((student) => student.clinicRecord).length}/{temporaryClinicStudents.length}
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className={`text-gray-400 transition-transform duration-200 ${
+                      expandedExpectedIds.has(temporaryClinicSession.id) ? 'rotate-180' : ''
+                    }`}
+                  />
                 </span>
-              </div>
-              {canEditClinic ? (
-                <ClinicInlineWorksheet
-                  session={temporaryClinicSession}
-                  group={temporaryClinicGroup}
-                  students={temporaryClinicStudents}
-                  academyProfile={academyProfile}
-                  onOpenRecord={(student) => {
-                    if (student.clinicRecord) {
-                      setEditRecord(student.clinicRecord);
-                      return;
-                    }
-                    setQuickTarget({
-                      studentId: student.id,
-                      date: todayStr,
-                      subject: temporaryClinicSubject,
-                      classGroupId: '',
-                      classSessionId: '',
-                    });
-                  }}
-                />
-              ) : (
-                <div className="divide-y divide-gray-50 border-t border-gray-50">
-                  {temporaryClinicStudents.map((student) => (
-                    <div key={student.id} className="flex items-center gap-3 px-4 py-3">
-                      <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-50 text-xs font-bold text-gray-500">
-                        {student.name?.slice(0, 1) || '학'}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-bold text-gray-900">{student.name}</span>
-                        {student.grade && (
-                          <span className="mt-0.5 block text-[11px] text-gray-400">{student.grade}</span>
-                        )}
-                      </span>
-                      {student.clinicRecord && (
-                        <span className="flex items-center gap-1 text-xs font-bold text-emerald-600">
-                          <CheckCircle2 size={14} />
-                          완료
-                        </span>
-                      )}
+              </button>
+              <div
+                className="grid transition-[grid-template-rows] duration-200 ease-out"
+                style={{
+                  gridTemplateRows: expandedExpectedIds.has(temporaryClinicSession.id) ? '1fr' : '0fr',
+                }}
+              >
+                <div className="overflow-hidden">
+                  {canEditClinic ? (
+                    <ClinicInlineWorksheet
+                      session={temporaryClinicSession}
+                      group={temporaryClinicGroup}
+                      students={temporaryClinicStudents}
+                      academyProfile={academyProfile}
+                      onOpenRecord={(student) => {
+                        if (student.clinicRecord) {
+                          setEditRecord(student.clinicRecord);
+                          return;
+                        }
+                        setQuickTarget({
+                          studentId: student.id,
+                          date: todayStr,
+                          subject: temporaryClinicSubject,
+                          classGroupId: '',
+                          classSessionId: '',
+                        });
+                      }}
+                    />
+                  ) : (
+                    <div className="divide-y divide-gray-50 border-t border-gray-50">
+                      {temporaryClinicStudents.map((student) => (
+                        <div key={student.id} className="flex items-center gap-3 px-4 py-3">
+                          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gray-50 text-xs font-bold text-gray-500">
+                            {student.name?.slice(0, 1) || '학'}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-bold text-gray-900">{student.name}</span>
+                            {student.grade && (
+                              <span className="mt-0.5 block text-[11px] text-gray-400">{student.grade}</span>
+                            )}
+                          </span>
+                          {student.clinicRecord && (
+                            <span className="flex items-center gap-1 text-xs font-bold text-emerald-600">
+                              <CheckCircle2 size={14} />
+                              완료
+                            </span>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </section>
         )}
