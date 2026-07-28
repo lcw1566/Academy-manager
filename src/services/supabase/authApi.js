@@ -71,6 +71,22 @@ export async function resendSignUpConfirmation(email) {
   return data;
 }
 
+export async function updateCurrentUserPassword({ currentPassword, newPassword } = {}) {
+  assertSupabaseConfigured();
+  const current = String(currentPassword || '');
+  const next = String(newPassword || '');
+  if (!current) throw new Error('현재 비밀번호를 입력해주세요.');
+  if (next.length < 8) throw new Error('새 비밀번호는 8자 이상 입력해주세요.');
+  if (current === next) throw new Error('새 비밀번호는 현재 비밀번호와 다르게 입력해주세요.');
+
+  const { data, error } = await supabase.auth.updateUser({
+    password: next,
+    current_password: current,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function signOut() {
   assertSupabaseConfigured();
   // 일반 로그아웃은 현재 기기의 세션만 종료한다. 기본 global scope는 사용자의

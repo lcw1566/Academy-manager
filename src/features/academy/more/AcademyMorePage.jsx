@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronRight, RefreshCw, LogOut, Loader2, Inbox, UserCog, Building2, Mail, Phone,
-  Check, CheckSquare, QrCode, Settings,
+  Check, CheckSquare, QrCode, Settings, KeyRound, Eye, EyeOff,
 } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
@@ -45,6 +45,7 @@ export default function AcademyMorePage() {
   const [showProfileEdit, setShowProfileEdit]         = useState(false);
   const [showUserProfileEdit, setShowUserProfileEdit] = useState(false);
   const [showAttendanceSettings, setShowAttendanceSettings] = useState(false);
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
 
   const authUserEmail = useAuthStore((s) => s.user?.email);
   const userProfile = useWorkspaceStore((s) => s.profile);
@@ -206,6 +207,7 @@ export default function AcademyMorePage() {
             <OwnerEmptyState
               displayName={userProfile?.display_name || authUserEmail}
               onEditMyProfile={() => setShowUserProfileEdit(true)}
+              onChangePassword={() => setShowPasswordChange(true)}
             />
           ) : (
             <OwnerMoreSections
@@ -219,6 +221,7 @@ export default function AcademyMorePage() {
               lastSyncedLabel={lastSyncedLabel}
               onEditAcademy={() => setShowProfileEdit(true)}
               onEditMyProfile={() => setShowUserProfileEdit(true)}
+              onChangePassword={() => setShowPasswordChange(true)}
               onSwitchAcademy={handleSwitchAcademy}
             />
           )
@@ -232,6 +235,7 @@ export default function AcademyMorePage() {
             memberships={memberships}
             showSwitchAcademy={showSwitchAcademy}
             onEditMyProfile={() => setShowUserProfileEdit(true)}
+            onChangePassword={() => setShowPasswordChange(true)}
             onSwitchAcademy={handleSwitchAcademy}
           />
         )}
@@ -260,6 +264,10 @@ export default function AcademyMorePage() {
         isOpen={showUserProfileEdit}
         onClose={() => setShowUserProfileEdit(false)}
       />
+
+      {showPasswordChange && (
+        <PasswordChangeModal onClose={() => setShowPasswordChange(false)} />
+      )}
 
       {/* 직원 출퇴근·학생 등하원 설정 (owner 만) */}
       {showAttendanceSettings && (
@@ -389,7 +397,7 @@ function AcademyOwnerInfoCard({
 }
 
 // ─── Owner: 학원 없는 신규 가입 상태 ──────────────────────────────
-function OwnerEmptyState({ displayName, onEditMyProfile }) {
+function OwnerEmptyState({ displayName, onEditMyProfile, onChangePassword }) {
   return (
     <>
       <div className="mx-4 mt-4 bg-white rounded-2xl p-5 shadow-sm">
@@ -407,6 +415,13 @@ function OwnerEmptyState({ displayName, onEditMyProfile }) {
           subtitle="이름·연락처 수정"
           onClick={onEditMyProfile}
         />
+        <SettingsRow
+          icon={KeyRound}
+          tone="blue"
+          title="비밀번호 변경"
+          subtitle="현재 비밀번호 확인 후 변경"
+          onClick={onChangePassword}
+        />
         <InlineLogoutButton />
       </div>
     </>
@@ -417,7 +432,7 @@ function OwnerEmptyState({ displayName, onEditMyProfile }) {
 function OwnerMoreSections({
   academyProfile, academyName, displayName, email, phone, memberships = [], showSwitchAcademy,
   lastSyncedLabel,
-  onEditAcademy, onEditMyProfile, onSwitchAcademy,
+  onEditAcademy, onEditMyProfile, onChangePassword, onSwitchAcademy,
 }) {
   const showToast = useAcademyStore((s) => s.showToast);
   const [refreshing, setRefreshing] = useState(false);
@@ -492,7 +507,14 @@ function OwnerMoreSections({
       </div>
 
       <SectionTitle>계정</SectionTitle>
-      <div className="mx-4">
+      <div className="mx-4 flex flex-col gap-2">
+        <SettingsRow
+          icon={KeyRound}
+          tone="blue"
+          title="비밀번호 변경"
+          subtitle="현재 비밀번호 확인 후 변경"
+          onClick={onChangePassword}
+        />
         <InlineLogoutButton />
       </div>
 
@@ -506,7 +528,7 @@ function OwnerMoreSections({
 // ─── Staff (teacher / assistant) 메인 layout ────────────────────
 function StaffMoreSections({
   role, academyProfile, displayName, email, phone, memberships = [], showSwitchAcademy,
-  onEditMyProfile, onSwitchAcademy,
+  onEditMyProfile, onChangePassword, onSwitchAcademy,
 }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
@@ -607,10 +629,125 @@ function StaffMoreSections({
       </div>
 
       <SectionTitle>계정</SectionTitle>
-      <div className="mx-4">
+      <div className="mx-4 flex flex-col gap-2">
+        <SettingsRow
+          icon={KeyRound}
+          tone="blue"
+          title="비밀번호 변경"
+          subtitle="현재 비밀번호 확인 후 변경"
+          onClick={onChangePassword}
+        />
         <InlineLogoutButton />
       </div>
     </>
+  );
+}
+
+function PasswordChangeModal({ onClose }) {
+  const changePassword = useAuthStore((s) => s.changePassword);
+  const showToast = useAcademyStore((s) => s.showToast);
+  const [form, setForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const canSubmit = form.currentPassword
+    && form.newPassword.length >= 8
+    && form.confirmPassword.length >= 8;
+
+  const updateField = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleSave = async () => {
+    if (saving) return;
+    if (form.newPassword !== form.confirmPassword) {
+      showToast('새 비밀번호가 서로 일치하지 않아요.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      await changePassword({
+        currentPassword: form.currentPassword,
+        newPassword: form.newPassword,
+      });
+      showToast('비밀번호를 변경했어요.');
+      onClose();
+    } catch (err) {
+      showToast(err?.message || '비밀번호를 변경하지 못했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputType = showPassword ? 'text' : 'password';
+
+  return (
+    <Modal
+      isOpen
+      onClose={saving ? undefined : onClose}
+      title="비밀번호 변경"
+      footer={
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!canSubmit || saving}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0064FF] py-3.5 text-sm font-bold text-white disabled:bg-blue-300"
+        >
+          {saving && <Loader2 size={15} className="animate-spin" />}
+          {saving ? '변경 중…' : '비밀번호 변경'}
+        </button>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <p className="text-sm leading-6 text-[#6B7684]">
+          안전한 변경을 위해 현재 비밀번호를 확인해요.
+        </p>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#4E5968]">현재 비밀번호</label>
+          <input
+            type={inputType}
+            value={form.currentPassword}
+            onChange={(event) => updateField('currentPassword', event.target.value)}
+            autoComplete="current-password"
+            placeholder="현재 비밀번호"
+            className="input"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#4E5968]">새 비밀번호</label>
+          <input
+            type={inputType}
+            value={form.newPassword}
+            onChange={(event) => updateField('newPassword', event.target.value)}
+            autoComplete="new-password"
+            placeholder="8자 이상 입력"
+            className="input"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#4E5968]">새 비밀번호 확인</label>
+          <input
+            type={inputType}
+            value={form.confirmPassword}
+            onChange={(event) => updateField('confirmPassword', event.target.value)}
+            autoComplete="new-password"
+            placeholder="한 번 더 입력"
+            className="input"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowPassword((visible) => !visible)}
+          className="flex items-center gap-1.5 self-start text-xs font-bold text-[#4E5968]"
+        >
+          {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+          {showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+        </button>
+      </div>
+    </Modal>
   );
 }
 

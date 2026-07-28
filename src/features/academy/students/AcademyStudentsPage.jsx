@@ -9,7 +9,7 @@ import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
 import { getSchoolTagClassName } from '../../../utils/schoolTags';
-import { getStudentStatusMeta } from '../../../utils/studentStatus';
+import { getStudentStatusMeta, STUDENT_STATUS_OPTIONS } from '../../../utils/studentStatus';
 import { toTelHref } from '../../../utils/format';
 
 export default function AcademyStudentsPage() {
@@ -17,6 +17,9 @@ export default function AcademyStudentsPage() {
   const authUserId = useAuthStore((s) => s.user?.id);
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [schoolFilter, setSchoolFilter] = useState('all');
+  const [gradeFilter, setGradeFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
 
   const myStaffProfile = academyStaffProfiles.find((profile) => profile.user_id === authUserId) || null;
@@ -25,10 +28,35 @@ export default function AcademyStudentsPage() {
     'canManageStudents',
   );
 
-  const filtered = useMemo(() =>
-    academyStudents.filter((s) => !search || s.name.includes(search) || s.school?.includes(search)),
-    [academyStudents, search]
+  const schoolOptions = useMemo(
+    () => [...new Set(academyStudents.map((student) => student.school).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'ko')),
+    [academyStudents],
   );
+  const gradeOptions = useMemo(
+    () => [...new Set(academyStudents.map((student) => student.grade).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true })),
+    [academyStudents],
+  );
+  const hasActiveFilter = !!search.trim()
+    || statusFilter !== 'all'
+    || schoolFilter !== 'all'
+    || gradeFilter !== 'all';
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return academyStudents.filter((student) => {
+      if (
+        query
+        && !String(student.name || '').toLowerCase().includes(query)
+        && !String(student.school || '').toLowerCase().includes(query)
+      ) return false;
+      if (statusFilter !== 'all' && (student.status || 'active') !== statusFilter) return false;
+      if (schoolFilter !== 'all' && student.school !== schoolFilter) return false;
+      if (gradeFilter !== 'all' && student.grade !== gradeFilter) return false;
+      return true;
+    });
+  }, [academyStudents, search, statusFilter, schoolFilter, gradeFilter]);
 
   const getStudentGroups = (studentId) =>
     classGroups.filter((g) => g.studentIds?.includes(studentId));
@@ -53,7 +81,7 @@ export default function AcademyStudentsPage() {
 
       <div className="pt-14 md:pt-0 pb-6">
         {/* 검색 */}
-        <div className="px-4 pt-4 mb-4">
+        <div className="px-4 pt-4 mb-3">
           <div className="flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm">
             <Search size={16} className="text-gray-400 flex-shrink-0" />
             <input
@@ -65,17 +93,72 @@ export default function AcademyStudentsPage() {
           </div>
         </div>
 
+        {academyStudents.length > 0 && (
+          <div className="mb-4 px-4">
+            <div
+              className="flex gap-2 overflow-x-auto pb-2"
+              style={{ scrollbarWidth: 'none' }}
+              aria-label="재원 상태 필터"
+            >
+              {[{ value: 'all', label: '전체' }, ...STUDENT_STATUS_OPTIONS].map((option) => (
+                <motion.button
+                  key={option.value}
+                  type="button"
+                  whileTap={{ scale: 0.97 }}
+                  aria-pressed={statusFilter === option.value}
+                  onClick={() => setStatusFilter(option.value)}
+                  className={`flex-shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold ${
+                    statusFilter === option.value
+                      ? 'border-[#0064FF] bg-[#0064FF] text-white'
+                      : 'border-[#E5E8EB] bg-white text-[#6B7684]'
+                  }`}
+                >
+                  {option.label}
+                </motion.button>
+              ))}
+            </div>
+            {(schoolOptions.length > 0 || gradeOptions.length > 0) && (
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={schoolFilter}
+                  onChange={(event) => setSchoolFilter(event.target.value)}
+                  aria-label="학교 필터"
+                  className="h-10 min-w-0 rounded-xl border border-[#E5E8EB] bg-white px-3 text-xs font-bold text-[#4E5968] outline-none"
+                >
+                  <option value="all">학교 전체</option>
+                  {schoolOptions.map((school) => (
+                    <option key={school} value={school}>{school}</option>
+                  ))}
+                </select>
+                <select
+                  value={gradeFilter}
+                  onChange={(event) => setGradeFilter(event.target.value)}
+                  aria-label="학년 필터"
+                  className="h-10 min-w-0 rounded-xl border border-[#E5E8EB] bg-white px-3 text-xs font-bold text-[#4E5968] outline-none"
+                >
+                  <option value="all">학년 전체</option>
+                  {gradeOptions.map((grade) => (
+                    <option key={grade} value={grade}>{grade}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 학생 수 */}
         {academyStudents.length > 0 && (
           <div className="px-4 mb-3">
-            <p className="text-xs text-gray-400">총 {academyStudents.length}명</p>
+            <p className="text-xs text-gray-400">
+              {hasActiveFilter ? `${filtered.length}명 · 전체 ${academyStudents.length}명` : `총 ${academyStudents.length}명`}
+            </p>
           </div>
         )}
 
         {filtered.length === 0 ? (
           <EmptyState
             icon="👤"
-            title={academyStudents.length === 0 ? '학생이 없어요' : '검색 결과가 없어요'}
+            title={academyStudents.length === 0 ? '학생이 없어요' : '조건에 맞는 학생이 없어요'}
             description={academyStudents.length === 0 && canManageStudents ? '학생을 등록하고 반에 배정해요.' : ''}
             action={
               academyStudents.length === 0 && canManageStudents ? (

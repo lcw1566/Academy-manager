@@ -442,16 +442,20 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
                 </button>
               )}
 
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#F2F4F6] mb-3">
-                <Search size={14} className="text-[#8B95A1]" />
+              <div className="mb-3 flex items-center gap-2 rounded-2xl border border-[#E5E8EB] bg-white px-3.5 py-3 shadow-sm">
+                <Search size={15} className="flex-shrink-0 text-[#8B95A1]" />
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="이름 또는 이메일 검색"
-                  className="flex-1 bg-transparent text-sm focus:outline-none"
+                  className="min-w-0 flex-1 bg-transparent text-sm text-[#333D4B] placeholder:text-[#B0B8C1] focus:outline-none"
                 />
               </div>
-              <div className={`grid ${canInviteManagers ? 'grid-cols-5' : 'grid-cols-4'} gap-1 bg-[#F2F4F6] rounded-2xl p-1 mb-3`}>
+              <div
+                className="mb-3 flex gap-2 overflow-x-auto pb-1"
+                style={{ scrollbarWidth: 'none' }}
+                aria-label="직원 역할 필터"
+              >
                 {[
                   { id: 'all', label: '전체' },
                   { id: 'teacher', label: '강사' },
@@ -463,8 +467,11 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
                     key={item.id}
                     type="button"
                     onClick={() => setFilter(item.id)}
-                    className={`py-2 rounded-xl text-xs font-bold transition-colors ${
-                      filter === item.id ? 'bg-white text-[#3182F6] shadow-sm' : 'text-[#8B95A1]'
+                    aria-pressed={filter === item.id}
+                    className={`flex-shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-colors active:scale-[0.97] ${
+                      filter === item.id
+                        ? 'border-[#0064FF] bg-[#0064FF] text-white'
+                        : 'border-[#E5E8EB] bg-white text-[#6B7684]'
                     }`}
                   >
                     {item.label}

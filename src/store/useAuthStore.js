@@ -5,6 +5,7 @@ import {
   signUpWithEmail,
   signInWithEmail,
   resendSignUpConfirmation,
+  updateCurrentUserPassword,
   signOut,
   subscribeAuthStateChange,
 } from '../services/supabase/authApi';
@@ -122,6 +123,21 @@ const useAuthStore = create((set, get) => ({
     } catch (err) {
       set({ authError: localizeError(err, '인증 메일을 다시 보내지 못했어요.') });
       throw err;
+    } finally {
+      set({ isAuthLoading: false });
+    }
+  },
+
+  changePassword: async ({ currentPassword, newPassword } = {}) => {
+    set({ isAuthLoading: true, authError: null });
+    try {
+      return await updateCurrentUserPassword({ currentPassword, newPassword });
+    } catch (err) {
+      const message = localizeError(err, '비밀번호를 변경하지 못했어요.');
+      set({ authError: message });
+      const localizedError = new Error(message);
+      localizedError.cause = err;
+      throw localizedError;
     } finally {
       set({ isAuthLoading: false });
     }
