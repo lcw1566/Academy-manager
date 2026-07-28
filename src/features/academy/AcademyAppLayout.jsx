@@ -21,7 +21,6 @@ const loadAcademyStudentsPage = () => import('./students/AcademyStudentsPage');
 const loadAcademyStudentDetailPage = () => import('./students/AcademyStudentDetailPage');
 const loadStudentAttendancePage = () => import('./attendance/StudentAttendancePage');
 const loadAcademyMorePage = () => import('./more/AcademyMorePage');
-const loadPayrollPage = () => import('./payroll/PayrollPage');
 const loadStaffPage = () => import('./staff/StaffPage');
 const loadChatPage = () => import('./chat/ChatPage');
 
@@ -36,7 +35,6 @@ const AcademyStudentsPage = lazy(loadAcademyStudentsPage);
 const AcademyStudentDetailPage = lazy(loadAcademyStudentDetailPage);
 const StudentAttendancePage = lazy(loadStudentAttendancePage);
 const AcademyMorePage = lazy(loadAcademyMorePage);
-const PayrollPage = lazy(loadPayrollPage);
 const StaffPage = lazy(loadStaffPage);
 const ChatPage = lazy(loadChatPage);
 
@@ -73,7 +71,7 @@ const TAB_CONFIG = {
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
-    { id: 'payroll',  label: '급여', Icon: CreditCard },
+    { id: 'payroll',  label: '급여', Icon: CreditCard, pilotLocked: true },
     { id: 'drive',    label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
@@ -86,7 +84,7 @@ const TAB_CONFIG = {
     { id: 'classes',  label: '수업', Icon: BookOpen },
     { id: 'students', label: '학생', Icon: Users },
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
-    { id: 'payroll',  label: '급여', Icon: CreditCard },
+    { id: 'payroll',  label: '급여', Icon: CreditCard, pilotLocked: true },
     { id: 'drive',    label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
@@ -99,7 +97,7 @@ const TAB_CONFIG = {
     { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
     { id: 'staff',      label: '직원',  Icon: UserCog },
     { id: 'payments',   label: '수납',  Icon: CreditCard, pilotLocked: true },
-    { id: 'payroll',    label: '급여',  Icon: BarChart2 },
+    { id: 'payroll',    label: '급여',  Icon: BarChart2, pilotLocked: true },
     { id: 'drive',      label: '드라이브', Icon: FolderOpen, pilotLocked: true },
     { id: 'chat',       label: '채팅', Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
@@ -132,6 +130,10 @@ const PILOT_LOCKED_FEATURES = {
   'owner-payroll': {
     title: '급여',
     description: '직원별 급여 계산과 지급 관리를 충분히 검증한 뒤 정식으로 제공할 예정이에요.',
+  },
+  payroll: {
+    title: '급여',
+    description: '근무 기록과 급여 계산을 충분히 검증한 뒤 정식으로 제공할 예정이에요.',
   },
   drive: {
     title: '드라이브',
@@ -270,10 +272,12 @@ export default function AcademyAppLayout() {
     const roleLoaders = role === 'owner'
       ? [loadClinicPage, loadStaffPage]
       : role === 'teacher'
-      ? [loadClinicPage, loadPayrollPage]
+      ? [loadClinicPage]
       : role === 'manager'
-      ? [loadClinicPage, loadStaffPage, loadPayrollPage]
-      : [loadPayrollPage];
+      ? [loadClinicPage, loadStaffPage]
+      : role === 'assistant'
+      ? [loadClinicPage]
+      : [];
     const preload = () => [...COMMON_ACADEMY_TAB_LOADERS, ...roleLoaders]
       .forEach((load) => load().catch(() => {}));
     if (typeof window.requestIdleCallback === 'function') {
@@ -430,10 +434,9 @@ export default function AcademyAppLayout() {
       if (activeTab === 'payments' || activeTab === 'settlement') {
         return <PilotLockedFeature featureId="payments" onReturn={() => setActiveTab('classes')} />;
       }
-      if (activeTab === 'owner-payroll') {
-        return <PilotLockedFeature featureId="owner-payroll" onReturn={() => setActiveTab('classes')} />;
+      if (activeTab === 'owner-payroll' || activeTab === 'payroll') {
+        return <PilotLockedFeature featureId={activeTab} onReturn={() => setActiveTab('classes')} />;
       }
-      if (activeTab === 'payroll')    return <PayrollPage />;
       if (activeTab === 'staff')      return <StaffPage />;
       if (activeTab === 'chat')       return <ChatPage />;
       if (activeTab === 'drive') {

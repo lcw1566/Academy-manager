@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, PencilLine, Save } from 'lucide-react';
+import { CheckCircle2, ChevronDown, PencilLine, Save, Search } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -144,15 +144,36 @@ export default function ClinicInlineWorksheet({
 
   const [drafts, setDrafts] = useState(buildDrafts);
   const [dirtyStudentIds, setDirtyStudentIds] = useState(() => new Set());
+  const [expandedStudentIds, setExpandedStudentIds] = useState(() => new Set());
+  const [studentSearch, setStudentSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const studentKey = students.map((student) => student.id).join('|');
+  const visibleStudents = useMemo(() => {
+    const query = studentSearch.trim().toLowerCase();
+    if (!query) return students;
+    return students.filter((student) => (
+      String(student.name || '').toLowerCase().includes(query)
+      || String(student.school || '').toLowerCase().includes(query)
+      || String(student.grade || '').toLowerCase().includes(query)
+    ));
+  }, [students, studentSearch]);
 
   useEffect(() => {
     setDrafts(buildDrafts());
     setDirtyStudentIds(new Set());
+    setExpandedStudentIds(new Set());
     // 회차나 명단이 바뀔 때만 초기화한다. 서버 목록 갱신으로 초안이 지워지면 안 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, studentKey, subject]);
+
+  const toggleStudent = (studentId) => {
+    setExpandedStudentIds((current) => {
+      const next = new Set(current);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  };
 
   const updateItem = (studentId, itemId, field, value) => {
     setDrafts((current) => ({
@@ -292,15 +313,36 @@ export default function ClinicInlineWorksheet({
         </button>
       </div>
 
+      <div className="mb-3 flex h-10 items-center gap-2 rounded-xl border border-[#E5E8EB] bg-white px-3">
+        <Search size={14} className="flex-shrink-0 text-[#8B95A1]" />
+        <input
+          value={studentSearch}
+          onChange={(event) => setStudentSearch(event.target.value)}
+          placeholder="학생 이름 또는 학교 검색"
+          className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[#333D4B] outline-none placeholder:text-[#B0B8C1]"
+        />
+        {studentSearch && (
+          <span className="flex-shrink-0 text-[10px] font-bold text-[#8B95A1]">
+            {visibleStudents.length}명
+          </span>
+        )}
+      </div>
+
       <div className="flex flex-col gap-2">
-        {students.map((student) => {
+        {visibleStudents.map((student) => {
           const draft = drafts[student.id];
           if (!draft) return null;
           const isDirty = dirtyStudentIds.has(student.id);
+          const isExpanded = expandedStudentIds.has(student.id);
           return (
-            <div key={student.id} className="rounded-2xl border border-[#E5E8EB] bg-white p-3">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
+            <div key={student.id} className="overflow-hidden rounded-2xl border border-[#E5E8EB] bg-white">
+              <div className="flex items-center gap-2 p-3">
+                <button
+                  type="button"
+                  onClick={() => toggleStudent(student.id)}
+                  aria-expanded={isExpanded}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
                   <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-600">
                     {student.name?.slice(0, 1) || '학'}
                   </span>
@@ -317,7 +359,13 @@ export default function ClinicInlineWorksheet({
                       {isDirty ? '저장 전' : student.clinicRecord ? '오늘 기록됨' : '작성 전'}
                     </span>
                   </span>
-                </div>
+                  <ChevronDown
+                    size={16}
+                    className={`ml-auto flex-shrink-0 text-[#8B95A1] transition-transform duration-200 ${
+                      isExpanded ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
                 <button
                   type="button"
                   onClick={() => onOpenRecord?.(student)}
@@ -328,51 +376,63 @@ export default function ClinicInlineWorksheet({
                 </button>
               </div>
 
-              <div className="grid gap-2 lg:grid-cols-2">
-                {draft.items.map((item) => (
-                  <div key={item.id} className="rounded-xl bg-[#F8FAFC] p-2.5">
-                    <p className="mb-2 text-xs font-extrabold text-[#333D4B]">{item.title}</p>
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      {configuredFields.has('materials') && (
-                        <label className="min-w-0">
-                          <span className="mb-1 block text-[10px] font-bold text-[#8B95A1]">교재</span>
-                          <input
-                            value={item.materialsText}
-                            onChange={(event) => updateItem(student.id, item.id, 'materialsText', event.target.value)}
-                            placeholder="교재·자료"
-                            className="h-9 w-full rounded-lg border border-[#E5E8EB] bg-white px-2.5 text-xs font-semibold text-[#333D4B] outline-none focus:border-[#3182F6]"
-                          />
-                        </label>
-                      )}
-                      {configuredFields.has('description') && (
-                        <label className="min-w-0">
-                          <span className="mb-1 block text-[10px] font-bold text-[#8B95A1]">내용</span>
-                          <input
-                            value={item.description}
-                            onChange={(event) => updateItem(student.id, item.id, 'description', event.target.value)}
-                            placeholder={item.previousDescription || '오늘 진행한 내용'}
-                            className="h-9 w-full rounded-lg border border-[#E5E8EB] bg-white px-2.5 text-xs font-semibold text-[#333D4B] outline-none placeholder:text-[#B0B8C1] focus:border-[#3182F6]"
-                          />
-                        </label>
-                      )}
-                      {configuredFields.has('result') && (
-                        <label className="min-w-0">
-                          <span className="mb-1 block text-[10px] font-bold text-[#8B95A1]">결과</span>
-                          <input
-                            value={item.result}
-                            onChange={(event) => updateItem(student.id, item.id, 'result', event.target.value)}
-                            placeholder={item.previousResult || '예: 24/30'}
-                            className="h-9 w-full rounded-lg border border-[#E5E8EB] bg-white px-2.5 text-xs font-semibold text-[#333D4B] outline-none placeholder:text-[#B0B8C1] focus:border-[#3182F6]"
-                          />
-                        </label>
-                      )}
-                    </div>
+              <div
+                className="grid transition-[grid-template-rows] duration-200 ease-out"
+                style={{ gridTemplateRows: isExpanded ? '1fr' : '0fr' }}
+              >
+                <div className="overflow-hidden">
+                  <div className="grid gap-2 border-t border-[#F2F4F6] px-3 pb-3 pt-3 lg:grid-cols-2">
+                    {draft.items.map((item) => (
+                      <div key={item.id} className="rounded-xl bg-[#F8FAFC] p-2.5">
+                        <p className="mb-2 text-xs font-extrabold text-[#333D4B]">{item.title}</p>
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          {configuredFields.has('materials') && (
+                            <label className="min-w-0">
+                              <span className="mb-1 block text-[10px] font-bold text-[#8B95A1]">교재</span>
+                              <input
+                                value={item.materialsText}
+                                onChange={(event) => updateItem(student.id, item.id, 'materialsText', event.target.value)}
+                                placeholder="교재·자료"
+                                className="h-9 w-full rounded-lg border border-[#E5E8EB] bg-white px-2.5 text-xs font-semibold text-[#333D4B] outline-none focus:border-[#3182F6]"
+                              />
+                            </label>
+                          )}
+                          {configuredFields.has('description') && (
+                            <label className="min-w-0">
+                              <span className="mb-1 block text-[10px] font-bold text-[#8B95A1]">내용</span>
+                              <input
+                                value={item.description}
+                                onChange={(event) => updateItem(student.id, item.id, 'description', event.target.value)}
+                                placeholder={item.previousDescription || '오늘 진행한 내용'}
+                                className="h-9 w-full rounded-lg border border-[#E5E8EB] bg-white px-2.5 text-xs font-semibold text-[#333D4B] outline-none placeholder:text-[#B0B8C1] focus:border-[#3182F6]"
+                              />
+                            </label>
+                          )}
+                          {configuredFields.has('result') && (
+                            <label className="min-w-0">
+                              <span className="mb-1 block text-[10px] font-bold text-[#8B95A1]">결과</span>
+                              <input
+                                value={item.result}
+                                onChange={(event) => updateItem(student.id, item.id, 'result', event.target.value)}
+                                placeholder={item.previousResult || '예: 24/30'}
+                                className="h-9 w-full rounded-lg border border-[#E5E8EB] bg-white px-2.5 text-xs font-semibold text-[#333D4B] outline-none placeholder:text-[#B0B8C1] focus:border-[#3182F6]"
+                              />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
               </div>
             </div>
           );
         })}
+        {visibleStudents.length === 0 && (
+          <div className="rounded-2xl bg-white px-4 py-8 text-center text-xs font-semibold text-[#8B95A1]">
+            검색 결과가 없어요.
+          </div>
+        )}
       </div>
     </div>
   );
