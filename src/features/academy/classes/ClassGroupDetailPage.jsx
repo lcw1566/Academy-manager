@@ -344,7 +344,18 @@ export default function ClassGroupDetailPage() {
               {group.room && <InfoRow label="강의실" value={<RoomTag room={group.room} />} />}
               {teacherName && <InfoRow label="담당 선생님" value={teacherName} />}
               <InfoRow label="학생" value={`${students.length}명`} />
-              {group.monthlyFee > 0 && <InfoRow label="월 수강료" value={`${group.monthlyFee.toLocaleString()}원`} />}
+              <InfoRow
+                label="비용"
+                value={group.feePolicy === 'additional'
+                  ? `${Number(group.additionalFeeAmount || group.monthlyFee || 0).toLocaleString()}원 · ${
+                    group.additionalFeeType === 'one_time'
+                      ? '한 번'
+                      : group.additionalFeeType === 'per_session'
+                        ? '회당'
+                        : '매월'
+                  }`
+                  : '기본 수강료에 포함'}
+              />
             </div>
             {canManageClasses && (
               <div className="mt-4 border-t border-gray-100 pt-3">

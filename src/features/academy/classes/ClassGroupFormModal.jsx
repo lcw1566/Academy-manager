@@ -16,15 +16,12 @@ import {
   listClassScheduleRules,
   updateClassScheduleRule,
 } from '../../../services/supabase/scheduleRulesApi';
-import { OWNER_TEACHER_ID } from '../../../utils/format';
+import { formatKoreanCurrency, OWNER_TEACHER_ID } from '../../../utils/format';
 import BulkShiftSuggestionSheet from '../work/BulkShiftSuggestionSheet';
 import { hhmmToMin } from '../../../utils/shiftCoverage';
 import {
   ACADEMY_SUBJECT_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
-  getSchoolLevelKey,
-  getTuitionRateForLevel,
-  getTuitionPolicyLabel,
 } from '../../../constants/academySettings';
 import {
   buildEffectiveStaffShifts,
@@ -111,7 +108,9 @@ function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistan
     }
   }
 
-  const monthlyFee = Number(form.monthlyFee) || 0;
+  const monthlyFee = form.feePolicy === 'additional'
+    ? Math.max(0, Number(form.additionalFeeAmount) || 0)
+    : 0;
   const defaultBilling = monthlyFee > 0 ? { monthlyFee } : {};
 
   return {
@@ -138,6 +137,9 @@ function mapClassGroupFormToServerPayload(form, academyStudents, academyAssistan
     billing_mode: form.billingMode || 'same',
     default_billing: defaultBilling,
     student_billings: serverStudentBillings,
+    fee_policy: form.feePolicy || 'included',
+    additional_fee_type: form.additionalFeeType || 'monthly',
+    additional_fee_amount: monthlyFee,
     memo: emptyToNull(form.memo),
     status: form.status || 'active',
   };
@@ -352,7 +354,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
         return true;
       });
   }, [academyTeachers, academyManagers, academyAssistants]);
-  const tuitionPolicy = academyProfile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
   const subjectOptions = useMemo(() => {
     const configuredSubjectIds = Array.isArray(academyProfile?.academySubjects)
       && academyProfile.academySubjects.length > 0
@@ -397,7 +398,16 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
     startDate: editGroup?.startDate || new Date().toISOString().slice(0, 10),
     endDate: editGroup?.endDate || '',
     billingMode: editGroup?.billingMode || 'same',
-    monthlyFee: editGroup?.monthlyFee ? String(editGroup.monthlyFee) : '',
+    monthlyFee: editGroup?.feePolicy === 'additional' && editGroup?.monthlyFee
+      ? String(editGroup.monthlyFee)
+      : '',
+    feePolicy: editGroup?.feePolicy || 'included',
+    additionalFeeType: editGroup?.additionalFeeType || 'monthly',
+    additionalFeeAmount: editGroup?.additionalFeeAmount
+      ? String(editGroup.additionalFeeAmount)
+      : editGroup?.feePolicy === 'additional' && editGroup?.monthlyFee
+        ? String(editGroup.monthlyFee)
+        : '',
     studentBillings: editGroup?.studentBillings || {},
     memo: editGroup?.memo || '',
     status: editGroup?.status || 'active',
@@ -535,56 +545,20 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
       return { ...f, studentBillings };
     });
 
-  const findRecentTuition = (level, subject = form.subject) => {
-    if (!level || tuitionPolicy === 'class') return '';
-    const configuredTuition = getTuitionRateForLevel(
-      academyProfile?.tuitionRates,
-      tuitionPolicy,
-      level,
-      subject,
-    );
-    if (configuredTuition > 0) return String(configuredTuition);
-
-    const basis = tuitionPolicy === 'school_level' ? getSchoolLevelKey(level) : level;
-    const matched = [...(classGroups || [])].reverse().find((group) => {
-      if (group.id === editGroup?.id || Number(group.monthlyFee) <= 0) return false;
-      if (subject && group.subject !== subject) return false;
-      const groupBasis = tuitionPolicy === 'school_level'
-        ? getSchoolLevelKey(group.level)
-        : group.level;
-      return groupBasis === basis;
-    });
-    return matched ? String(matched.monthlyFee) : '';
-  };
-
   const handleLevelSelect = (level) => {
-    setForm((current) => ({
-      ...current,
-      level,
-      monthlyFee: !editGroup && !current.monthlyFee
-        ? findRecentTuition(level, current.subject)
-        : current.monthlyFee,
-    }));
+    setForm((current) => ({ ...current, level }));
   };
 
   const handleSubjectSelect = (subject) => {
-    setForm((current) => {
-      if (editGroup || !current.level) return { ...current, subject };
-      const previousAutoFee = findRecentTuition(current.level, current.subject);
-      const nextAutoFee = findRecentTuition(current.level, subject);
-      const canReplaceFee = !current.monthlyFee
-        || Number(current.monthlyFee) === Number(previousAutoFee);
-      return {
-        ...current,
-        subject,
-        monthlyFee: canReplaceFee ? nextAutoFee : current.monthlyFee,
-      };
-    });
+    setForm((current) => ({ ...current, subject }));
   };
 
   const handleSave = async () => {
     if (submitting) return;
     if (!form.name.trim()) return alert('반 이름을 입력해주세요.');
+    if (form.feePolicy === 'additional' && Number(form.additionalFeeAmount) <= 0) {
+      return alert('별도 비용 금액을 입력해주세요.');
+    }
     if (form.activityType === 'other' && !form.activityName.trim()) {
       return alert('수업 유형 이름을 입력해주세요.');
     }
@@ -633,7 +607,12 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
       teacherUserId: teacherUserIdForData || '',
       assistantId: '',
       assistantIds: [],
-      monthlyFee: Number(form.monthlyFee) || 0,
+      monthlyFee: form.feePolicy === 'additional'
+        ? Math.max(0, Number(form.additionalFeeAmount) || 0)
+        : 0,
+      additionalFeeAmount: form.feePolicy === 'additional'
+        ? Math.max(0, Number(form.additionalFeeAmount) || 0)
+        : 0,
       studentBillings: Object.fromEntries(
         Object.entries(form.studentBillings).map(([k, v]) => [k, Number(v) || 0])
       ),
@@ -833,12 +812,6 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
       return matchesSearch && matchesSchool && matchesGrade;
     });
   }, [academyStudents, studentSearch, studentSchoolFilter, studentGradeFilter]);
-  const tuitionBasisLabel = tuitionPolicy === 'school_level'
-    ? (getSchoolLevelKey(form.level) || '학교')
-    : tuitionPolicy === 'grade'
-      ? (form.level || '학년')
-      : '반';
-
   // Phase 37 — 시간/날짜 inline validation. 종료가 시작보다 빠르면 에러 메시지만 표시
   // (저장은 막지 않음 — 사용자가 잠시 잘못 입력한 중간 상태를 막으면 UX 가 답답해짐).
   const timeError = useMemo(() => {
@@ -1283,49 +1256,104 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             </div>
           </div>
 
-          <Field label={`월 수강료 · ${getTuitionPolicyLabel(tuitionPolicy)}`}>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                value={form.monthlyFee}
-                onChange={(e) => set('monthlyFee', e.target.value)}
-                placeholder={`${tuitionBasisLabel} 기준 금액`}
-                className="input min-w-0 flex-1"
-              />
-              {selectedStudents.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => set('billingMode', form.billingMode === 'perStudent' ? 'same' : 'perStudent')}
-                  className={`flex-shrink-0 rounded-xl border px-3 text-xs font-bold ${
-                    form.billingMode === 'perStudent'
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 bg-white text-gray-500'
-                  }`}
-                >
-                  학생별 예외
-                </button>
-              )}
-            </div>
+          <div className="rounded-[22px] border border-[#E5E8EB] bg-white p-4">
+            <button
+              type="button"
+              onClick={() => setForm((current) => ({
+                ...current,
+                feePolicy: current.feePolicy === 'additional' ? 'included' : 'additional',
+                billingMode: current.feePolicy === 'additional' ? 'same' : current.billingMode,
+              }))}
+              className="flex w-full items-center gap-3 text-left"
+            >
+              <span className={`flex h-6 w-10 flex-shrink-0 items-center rounded-full p-0.5 transition-colors ${
+                form.feePolicy === 'additional' ? 'justify-end bg-blue-600' : 'justify-start bg-gray-300'
+              }`}>
+                <span className="h-5 w-5 rounded-full bg-white shadow-sm" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-extrabold text-[#191F28]">별도 비용이 있는 수업</span>
+                <span className="mt-0.5 block text-xs text-[#8B95A1]">
+                  끄면 학생 기본 수강료에 포함돼요.
+                </span>
+              </span>
+            </button>
 
-            {form.billingMode === 'perStudent' && selectedStudents.length > 0 && (
-              <div className="mt-2 flex flex-col gap-1.5">
-                {selectedStudents.map((s) => (
-                  <div key={s.id} className="flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-2.5">
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{s.name}</span>
-                    <input
-                      type="number"
-                      value={form.studentBillings[s.id] ?? ''}
-                      onChange={(e) => setStudentBilling(s.id, e.target.value)}
-                      placeholder={form.monthlyFee || '기본 금액'}
-                      aria-label={`${s.name} 예외 수강료`}
-                      className="w-32 rounded-lg border border-gray-200 px-2 py-1.5 text-right text-sm focus:border-blue-400 focus:outline-none"
-                    />
-                    <span className="text-xs text-gray-400">원</span>
+            {form.feePolicy === 'additional' && (
+              <div className="mt-4 border-t border-[#F2F4F6] pt-4">
+                <div className="mb-3 grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'monthly', label: '매월' },
+                    { id: 'one_time', label: '한 번' },
+                    { id: 'per_session', label: '회당' },
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => set('additionalFeeType', option.id)}
+                      className={`rounded-xl border py-2.5 text-xs font-bold ${
+                        form.additionalFeeType === option.id
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 bg-white text-gray-600'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    inputMode="numeric"
+                    value={form.additionalFeeAmount}
+                    onChange={(event) => set('additionalFeeAmount', event.target.value.replace(/\D/g, ''))}
+                    placeholder={form.additionalFeeType === 'per_session' ? '1회 금액' : '추가 금액'}
+                    className="input min-w-0 flex-1"
+                  />
+                  {selectedStudents.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => set('billingMode', form.billingMode === 'perStudent' ? 'same' : 'perStudent')}
+                      className={`flex-shrink-0 rounded-xl border px-3 text-xs font-bold ${
+                        form.billingMode === 'perStudent'
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 bg-white text-gray-500'
+                      }`}
+                    >
+                      학생별 조정
+                    </button>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs font-semibold text-[#4E5968]">
+                  {formatKoreanCurrency(Number(form.additionalFeeAmount) || 0)}
+                  {form.additionalFeeType === 'monthly'
+                    ? ' · 수업이 있는 달마다'
+                    : form.additionalFeeType === 'one_time'
+                      ? ' · 첫 수업이 있는 달에 한 번'
+                      : ' · 실제 예정 회차 수만큼'}
+                </p>
+
+                {form.billingMode === 'perStudent' && selectedStudents.length > 0 && (
+                  <div className="mt-3 flex flex-col gap-1.5">
+                    {selectedStudents.map((student) => (
+                      <div key={student.id} className="flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-2.5">
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800">{student.name}</span>
+                        <input
+                          inputMode="numeric"
+                          value={form.studentBillings[student.id] ?? ''}
+                          onChange={(event) => setStudentBilling(student.id, event.target.value.replace(/\D/g, ''))}
+                          placeholder={form.additionalFeeAmount || '기본 금액'}
+                          aria-label={`${student.name} 추가 비용`}
+                          className="w-32 rounded-lg border border-gray-200 px-2 py-1.5 text-right text-sm focus:border-blue-400 focus:outline-none"
+                        />
+                        <span className="text-xs text-gray-400">원</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             )}
-          </Field>
+          </div>
 
           <Field label="메모">
             <textarea

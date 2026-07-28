@@ -38,6 +38,11 @@ export function mapServerStudentToLocal(s) {
         ? s.clinic_default_items
         : null,
     enrollmentDate: s.enrollment_date ?? '',
+    baseTuition: Math.max(0, Number(s.base_tuition) || 0),
+    tuitionSubjects: Array.isArray(s.tuition_subjects) ? s.tuition_subjects : [],
+    tuitionSource: s.tuition_source ?? 'academy_rate',
+    tuitionEffectiveFrom: s.tuition_effective_from ?? s.enrollment_date ?? '',
+    tuitionEffectiveTo: s.tuition_effective_to ?? '',
     status: s.status ?? 'active',
     memo: s.memo ?? '',
     classGroupIds: Array.isArray(s.class_group_ids) ? s.class_group_ids : [],
@@ -81,6 +86,9 @@ export function mapServerClassGroupToLocal(g) {
     monthlyFee,
     studentBillings:
       g.student_billings && typeof g.student_billings === 'object' ? g.student_billings : {},
+    feePolicy: g.fee_policy ?? 'included',
+    additionalFeeType: g.additional_fee_type ?? 'monthly',
+    additionalFeeAmount: Math.max(0, Number(g.additional_fee_amount) || 0),
     memo: g.memo ?? '',
     status: g.status ?? 'active',
     createdAt: g.created_at,
@@ -236,6 +244,11 @@ export function mapServerPaymentToLocal(p) {
     status: p.status ?? 'unpaid',
     payerName: p.payer_name ?? '',
     memo: p.memo ?? '',
+    paymentKind: p.payment_kind ?? 'legacy_class',
+    billingSnapshot:
+      p.billing_snapshot && typeof p.billing_snapshot === 'object'
+        ? p.billing_snapshot
+        : {},
     createdAt: p.created_at,
     updatedAt: p.updated_at,
   };

@@ -966,6 +966,8 @@ const STUDENT_ALLOWED_FIELDS = new Set([
   'phone', 'parent_phone', 'parent_title', 'parent_name',
   'enrollment_date', 'status', 'memo', 'class_group_ids',
   'checkin_pin',
+  'base_tuition', 'tuition_subjects', 'tuition_source',
+  'tuition_effective_from', 'tuition_effective_to',
   'clinic_record_fields', 'clinic_default_activity_type', 'clinic_default_items',
 ]);
 
@@ -992,6 +994,7 @@ const CLASS_GROUP_ALLOWED_FIELDS = new Set([
   'start_time', 'end_time', 'room',
   'start_date', 'end_date',
   'billing_mode', 'default_billing', 'student_billings',
+  'fee_policy', 'additional_fee_type', 'additional_fee_amount',
   'memo', 'status',
   // Phase 35 — 보조강사 배정 영속화 (SQL 008)
   'assistant_ids',
@@ -1100,6 +1103,7 @@ const PAYMENT_ALLOWED_FIELDS = new Set([
   'student_id', 'class_group_id', 'month',
   'amount', 'due_date', 'paid_date', 'status',
   'payer_name', 'memo',
+  'payment_kind', 'billing_snapshot',
 ]);
 
 function sanitizePaymentPayload(input, { strip = [] } = {}) {

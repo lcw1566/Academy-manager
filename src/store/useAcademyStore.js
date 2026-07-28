@@ -8,6 +8,11 @@ import {
   plannedToStaffShiftShape,
 } from '../utils/schedule';
 import { generatePaymentForMonth, groupHasPayment, resolveStudentBilling } from '../utils/billing';
+import {
+  calculateStudentMonthlyCharge,
+  calculateSuggestedStudentTuition,
+} from '../utils/studentBilling';
+import { ACADEMY_SUBJECT_OPTIONS } from '../constants/academySettings';
 import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../constants/aiPrompts';
 import {
   mapServerStudentToLocal,
@@ -1788,37 +1793,93 @@ const useAcademyStore = create(
     }));
   },
   generateAcademyPaymentsForMonth: (month) => {
-    const { classGroups, classSessions, academyPayments } = get();
+    const {
+      academyStudents, classGroups, classSessions, academyPayments, academyProfile,
+    } = get();
     const newPayments = [];
-    for (const group of classGroups) {
-      const baseAmount = Number(group.monthlyFee) || 0;
-      const hasPositiveOverride = group.billingMode === 'perStudent'
-        && Object.values(group.studentBillings || {}).some((amount) => Number(amount) > 0);
-      if (baseAmount <= 0 && !hasPositiveOverride) continue;
-      const monthSessions = classSessions.filter(
-        (s) => s.classGroupId === group.id && s.date?.startsWith(month) && s.status !== 'canceled'
+    const [year, monthNumber] = String(month || '').split('-').map(Number);
+    if (!year || !monthNumber) return [];
+    const dueDay = Math.max(1, Number(academyProfile?.tuitionDueDay) || 1);
+    const lastDay = new Date(year, monthNumber, 0).getDate();
+    const dueDate = `${month}-${String(Math.min(dueDay, lastDay)).padStart(2, '0')}`;
+    // 아직 화면에서 해당 월을 열지 않아 회차가 materialize 되지 않았더라도
+    // 별도 비용 계산은 빠지지 않아야 한다. 저장된 취소/변경 회차를 우선하고,
+    // 없는 날짜만 반 규칙으로 메모리에서 보완한다.
+    const billingSessions = [...classSessions];
+    for (const group of classGroups.filter((item) => item.feePolicy === 'additional')) {
+      const existingKeys = new Set(
+        classSessions
+          .filter((session) => session.classGroupId === group.id)
+          .map((session) => `${session.date}__${(session.startTime || '').slice(0, 5)}`),
       );
-      if (monthSessions.length === 0) continue;
-      const studentIds = group.studentIds || [];
-      for (const studentId of studentIds) {
-        const exists = academyPayments.some(
-          (p) => p.classGroupId === group.id && p.studentId === studentId && p.month === month
-        );
-        if (exists) continue;
-        const hasOverride = group.billingMode === 'perStudent'
-          && Object.prototype.hasOwnProperty.call(group.studentBillings || {}, studentId);
-        const amount = hasOverride ? Number(group.studentBillings[studentId]) || 0 : baseAmount;
-        if (amount <= 0) continue;
-        newPayments.push({
-          id: `ap${Date.now()}_${group.id}_${studentId}`,
-          studentId,
-          classGroupId: group.id,
-          month,
-          amount,
-          status: 'unpaid',
-          createdAt: new Date().toISOString(),
-        });
+      const projected = get().generateClassSessions(group, { month });
+      for (const session of projected) {
+        const key = `${session.date}__${(session.startTime || '').slice(0, 5)}`;
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+        billingSessions.push(session);
       }
+    }
+
+    for (const student of academyStudents) {
+      const aliases = new Set([student.id, student.serverId].filter(Boolean));
+      // 전환 전에 만든 반별 수납이 하나라도 있으면 같은 달 통합 청구를 추가하지 않는다.
+      const exists = academyPayments.some(
+        (payment) => (
+          payment.month === month
+          && aliases.has(payment.studentId)
+        ),
+      );
+      if (exists) continue;
+
+      const inferredSubjectIds = [...new Set(
+        classGroups
+          .filter((group) => (group.studentIds || []).some((id) => aliases.has(id)))
+          .map((group) => ACADEMY_SUBJECT_OPTIONS.find(
+            (option) => option.id === group.subject || option.label === group.subject,
+          )?.id)
+          .filter(Boolean),
+      )];
+      const effectiveSubjectIds = student.tuitionSubjects?.length
+        ? student.tuitionSubjects
+        : inferredSubjectIds;
+      const automaticBaseTuition = student.tuitionSource !== 'custom'
+        ? calculateSuggestedStudentTuition({
+          tuitionRates: academyProfile?.tuitionRates,
+          tuitionPolicy: academyProfile?.tuitionPolicy,
+          schoolType: student.schoolType,
+          grade: student.grade,
+          subjectIds: effectiveSubjectIds,
+        })
+        : 0;
+      const charge = calculateStudentMonthlyCharge({
+        student: {
+          ...student,
+          baseTuition: student.tuitionSource === 'custom'
+            ? student.baseTuition
+            : (student.baseTuition || automaticBaseTuition),
+        },
+        groups: classGroups,
+        sessions: billingSessions,
+        month,
+      });
+      if (charge.amount <= 0) continue;
+      const additionsLabel = charge.additions.map((item) => item.name).join(', ');
+      newPayments.push({
+        id: `ap${Date.now()}_${student.id}`,
+        studentId: student.id,
+        classGroupId: '',
+        month,
+        amount: charge.amount,
+        dueDate,
+        status: 'unpaid',
+        paymentKind: 'student_monthly',
+        billingSnapshot: charge,
+        memo: additionsLabel
+          ? `기본 수강료 + ${additionsLabel}`
+          : '기본 수강료',
+        createdAt: new Date().toISOString(),
+      });
     }
     if (newPayments.length > 0) {
       set((s) => ({ academyPayments: [...s.academyPayments, ...newPayments] }));

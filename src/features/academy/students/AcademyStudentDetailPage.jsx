@@ -11,7 +11,7 @@ import {
   deletePayment as deleteServerPayment,
 } from '../../../services/supabase/domainApi';
 import { getKoreanWeekdayFromYMD, today } from '../../../utils/date';
-import { attendanceStatusMap, toTelHref } from '../../../utils/format';
+import { attendanceStatusMap, formatCurrency, toTelHref } from '../../../utils/format';
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
@@ -578,6 +578,7 @@ export default function AcademyStudentDetailPage() {
           {student.phone && <InfoRowFull label="연락처" value={student.phone} phone={student.phone} />}
           {student.parentName && <InfoRowFull label="학부모" value={student.parentName} />}
           {student.parentPhone && <InfoRowFull label="학부모 연락처" value={student.parentPhone} phone={student.parentPhone} />}
+          <InfoRowFull label="기본 수강료" value={formatCurrency(student.baseTuition || 0)} />
           {canManageStudents && showCheckinPin && student.checkinPin && (
             <InfoRowFull label="등하원 PIN" value={student.checkinPin} />
           )}
@@ -832,6 +833,8 @@ export default function AcademyStudentDetailPage() {
         month: paymentForm.month,
         amount: Number(paymentForm.amount) || 0,
         status: 'unpaid',
+        paymentKind: 'manual',
+        billingSnapshot: {},
         createdAt: new Date().toISOString(),
       });
       setShowAddPayment(false);
@@ -846,6 +849,8 @@ export default function AcademyStudentDetailPage() {
             month: paymentForm.month,
             amount: Number(paymentForm.amount) || 0,
             status: 'unpaid',
+            payment_kind: 'manual',
+            billing_snapshot: {},
           });
           if (created?.id) setPaymentServerId(localPayment.id, created.id);
           await loadServerPayments();
@@ -928,7 +933,14 @@ export default function AcademyStudentDetailPage() {
                 <select value={paymentForm.classGroupId}
                   onChange={(e) => {
                     const g = classGroups.find((g) => g.id === e.target.value);
-                    setPaymentForm((f) => ({ ...f, classGroupId: e.target.value, amount: g?.monthlyFee ? String(g.monthlyFee) : f.amount }));
+                    const additionalAmount = g?.feePolicy === 'additional'
+                      ? Number(g.additionalFeeAmount || g.monthlyFee || 0)
+                      : 0;
+                    setPaymentForm((f) => ({
+                      ...f,
+                      classGroupId: e.target.value,
+                      amount: additionalAmount > 0 ? String(additionalAmount) : f.amount,
+                    }));
                   }}
                   className="border border-gray-200 rounded-xl px-3 py-2 text-sm">
                   <option value="">반 선택 (선택사항)</option>
@@ -956,7 +968,9 @@ export default function AcademyStudentDetailPage() {
             <div key={p.id} className="bg-white rounded-2xl p-4 shadow-sm flex items-center justify-between">
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900">{p.month}</p>
-                <p className="text-xs text-gray-400">{classGroups.find((g) => g.id === p.classGroupId)?.name || '수강료'}</p>
+                <p className="text-xs text-gray-400">
+                  {p.memo || classGroups.find((g) => g.id === p.classGroupId)?.name || '수강료'}
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <div className="text-right">

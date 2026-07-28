@@ -31,6 +31,8 @@ function mapLocalPaymentToServerPayload({ payment, student, group }) {
     status: payment.status || 'unpaid',
     payer_name: payment.payerName || null,
     memo: payment.memo || null,
+    payment_kind: payment.paymentKind || (group ? 'legacy_class' : 'manual'),
+    billing_snapshot: payment.billingSnapshot || {},
   };
 }
 
@@ -313,6 +315,8 @@ export default function SettlementPage({ operationsOnly = false }) {
       month: selectedMonth,
       amount: Number(addForm.amount) || 0,
       status: 'unpaid',
+      paymentKind: 'manual',
+      billingSnapshot: {},
       memo: group ? `${group.name} 수강료` : '',
       createdAt: new Date().toISOString(),
     });
@@ -596,7 +600,14 @@ export default function SettlementPage({ operationsOnly = false }) {
                   </select>
                   <select value={addForm.classGroupId} onChange={(e) => {
                     const g = classGroups.find((g) => g.id === e.target.value);
-                    setAddForm((f) => ({ ...f, classGroupId: e.target.value, amount: g?.monthlyFee ? String(g.monthlyFee) : f.amount }));
+                    const additionalAmount = g?.feePolicy === 'additional'
+                      ? Number(g.additionalFeeAmount || g.monthlyFee || 0)
+                      : 0;
+                    setAddForm((f) => ({
+                      ...f,
+                      classGroupId: e.target.value,
+                      amount: additionalAmount > 0 ? String(additionalAmount) : f.amount,
+                    }));
                   }} className="border border-gray-200 rounded-xl px-3 py-2 text-sm">
                     <option value="">반 선택 (선택사항)</option>
                     {classGroups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}

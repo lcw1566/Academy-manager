@@ -10,11 +10,16 @@ import {
   updateClassGroup as updateServerClassGroup,
   updateClassSession as updateServerClassSession,
 } from '../../../services/supabase/domainApi';
-import { formatPhoneNumber } from '../../../utils/format';
+import { formatKoreanCurrency, formatPhoneNumber } from '../../../utils/format';
 import { getTodayYMD } from '../../../utils/date';
 import { getSchoolTagClassName } from '../../../utils/schoolTags';
 import { STUDENT_STATUS_OPTIONS } from '../../../utils/studentStatus';
 import { readAttendanceSettings } from '../attendance/attendanceHelpers';
+import {
+  ACADEMY_SUBJECT_OPTIONS,
+  DEFAULT_ACADEMY_SETTINGS,
+} from '../../../constants/academySettings';
+import { calculateSuggestedStudentTuition } from '../../../utils/studentBilling';
 
 const SCHOOL_TYPES = [
   { id: 'elementary', label: '초등' },
@@ -114,6 +119,11 @@ function mapAcademyStudentFormToServerPayload(form) {
     parent_name: emptyToNull(form.parentName),
     checkin_pin: emptyToNull(normalizePinOrEmpty(form.checkinPin)),
     enrollment_date: emptyToNull(form.enrollmentDate),
+    base_tuition: Math.max(0, Number(form.baseTuition) || 0),
+    tuition_subjects: Array.isArray(form.tuitionSubjects) ? form.tuitionSubjects : [],
+    tuition_source: form.tuitionSource === 'custom' ? 'custom' : 'academy_rate',
+    tuition_effective_from: emptyToNull(form.tuitionEffectiveFrom || form.enrollmentDate),
+    tuition_effective_to: emptyToNull(form.tuitionEffectiveTo),
     status: form.status || 'active',
     memo: emptyToNull(form.memo),
   };
@@ -127,7 +137,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const {
     addAcademyStudent, updateAcademyStudent, setAcademyStudentServerId,
     assignAcademyStudentToClassGroups,
-    classGroups, classSessions, academyStudents,
+    classGroups, classSessions, academyStudents, academyProfile,
     showToast,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -139,6 +149,13 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const isEdit = !!editStudent;
   const currentAcademy = memberships.find((membership) => membership.academy_id === currentAcademyId)?.academy || null;
   const showCheckinPin = readAttendanceSettings(currentAcademy).studentCheckMethod === 'qr';
+  const configuredSubjectsValue = currentAcademy?.academy_subjects
+    || academyProfile?.academySubjects
+    || DEFAULT_ACADEMY_SETTINGS.academySubjects;
+  const configuredSubjectIds = (Array.isArray(configuredSubjectsValue) ? configuredSubjectsValue : [])
+    .filter((subjectId) => ACADEMY_SUBJECT_OPTIONS.some((option) => option.id === subjectId));
+  const initialTuitionSubjects = editStudent?.tuitionSubjects
+    || (configuredSubjectIds.length === 1 ? configuredSubjectIds : []);
 
   const [form, setForm] = useState({
     name: editStudent?.name || '',
@@ -150,6 +167,13 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     parentPhone: editStudent?.parentPhone || '',
     checkinPin: editStudent?.checkinPin || '',
     enrollmentDate: editStudent?.enrollmentDate || (isEdit ? '' : getTodayYMD()),
+    baseTuition: editStudent?.baseTuition ? String(editStudent.baseTuition) : '',
+    tuitionSubjects: initialTuitionSubjects,
+    tuitionSource: editStudent?.tuitionSource || 'academy_rate',
+    tuitionEffectiveFrom: editStudent?.tuitionEffectiveFrom
+      || editStudent?.enrollmentDate
+      || (isEdit ? '' : getTodayYMD()),
+    tuitionEffectiveTo: editStudent?.tuitionEffectiveTo || '',
     status: editStudent?.status || 'active',
     memo: editStudent?.memo || '',
   });
@@ -174,6 +198,40 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   );
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const tuitionRates = currentAcademy?.tuition_rates
+    || academyProfile?.tuitionRates
+    || DEFAULT_ACADEMY_SETTINGS.tuitionRates;
+  const tuitionPolicy = currentAcademy?.tuition_policy
+    || academyProfile?.tuitionPolicy
+    || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
+  const suggestedBaseTuition = useMemo(() => calculateSuggestedStudentTuition({
+    tuitionRates,
+    tuitionPolicy,
+    schoolType: form.schoolType,
+    grade: form.grade,
+    subjectIds: form.tuitionSubjects,
+  }), [
+    tuitionRates,
+    tuitionPolicy,
+    form.schoolType,
+    form.grade,
+    form.tuitionSubjects,
+  ]);
+
+  useEffect(() => {
+    if (form.tuitionSource !== 'academy_rate') return;
+    const next = suggestedBaseTuition > 0 ? String(suggestedBaseTuition) : '';
+    setForm((current) => current.baseTuition === next ? current : { ...current, baseTuition: next });
+  }, [form.tuitionSource, suggestedBaseTuition]);
+
+  const toggleTuitionSubject = (subjectId) => {
+    setForm((current) => ({
+      ...current,
+      tuitionSubjects: current.tuitionSubjects.includes(subjectId)
+        ? current.tuitionSubjects.filter((id) => id !== subjectId)
+        : [...current.tuitionSubjects, subjectId],
+    }));
+  };
 
   const handleSchoolTypeChange = (type) => {
     if (form.schoolType !== type) setIsEditingSchool(true);
@@ -214,6 +272,13 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     if (form.schoolType !== 'adult' && !form.parentTitle) {
       return alert('상담 시 사용할 학부모 호칭을 선택해주세요.');
     }
+    if (
+      form.tuitionEffectiveFrom
+      && form.tuitionEffectiveTo
+      && form.tuitionEffectiveTo < form.tuitionEffectiveFrom
+    ) {
+      return alert('수강료 적용 종료일은 시작일보다 뒤여야 해요.');
+    }
     const trimmedName = form.name.trim();
     const parentDisplayName = form.parentTitle
       ? buildParentDisplayName(trimmedName, form.parentTitle)
@@ -227,6 +292,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
       // 기존 호환: parentName 필드를 자동 생성된 표시명으로 저장
       parentName: parentDisplayName,
       parentDisplayName,
+      tuitionEffectiveFrom: form.tuitionEffectiveFrom || form.enrollmentDate,
     };
     setSubmitting(true);
     try {
@@ -311,11 +377,37 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     if (assigning || !createdStudent || selectedClassGroupIds.length === 0) return;
     const selectedGroups = classGroups.filter((group) => selectedClassGroupIds.includes(group.id));
     const effectiveFromDate = createdStudent.enrollmentDate || getTodayYMD();
+    const assignedSubjectIds = selectedGroups
+      .map((group) => ACADEMY_SUBJECT_OPTIONS.find(
+        (option) => option.id === group.subject || option.label === group.subject,
+      )?.id)
+      .filter(Boolean);
+    const nextTuitionSubjects = [...new Set([
+      ...(createdStudent.tuitionSubjects || []),
+      ...assignedSubjectIds,
+    ])];
+    const nextBaseTuition = createdStudent.tuitionSource === 'custom'
+      ? Number(createdStudent.baseTuition) || 0
+      : calculateSuggestedStudentTuition({
+        tuitionRates,
+        tuitionPolicy,
+        schoolType: createdStudent.schoolType,
+        grade: createdStudent.grade,
+        subjectIds: nextTuitionSubjects,
+      });
 
     assignAcademyStudentToClassGroups({
       studentId: createdStudent.id,
       classGroupIds: selectedClassGroupIds,
       fromDate: effectiveFromDate,
+    });
+    const localStudent = academyStudents.find((student) => (
+      student.id === createdStudent.id
+      || (createdStudent.serverId && student.serverId === createdStudent.serverId)
+    ));
+    updateAcademyStudent(localStudent?.id || createdStudent.id, {
+      tuitionSubjects: nextTuitionSubjects,
+      baseTuition: nextBaseTuition,
     });
 
     if (!isAuthenticated || !currentAcademyId || !createdStudent.serverId) {
@@ -326,7 +418,11 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     setAssigning(true);
     try {
       const serverGroupIds = selectedGroups.map((group) => group.serverId).filter(Boolean);
-      await updateStudent(createdStudent.serverId, { class_group_ids: serverGroupIds });
+      await updateStudent(createdStudent.serverId, {
+        class_group_ids: serverGroupIds,
+        tuition_subjects: nextTuitionSubjects,
+        base_tuition: nextBaseTuition,
+      });
 
       const resolveServerStudentIds = (studentIds = []) => {
         const resolved = studentIds.map((studentId) => {
@@ -591,6 +687,91 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
             </div>
           </Field>
         )}
+
+        <div className="rounded-2xl border border-[#E5E8EB] bg-[#F8FAFC] p-4">
+          <div className="mb-3">
+            <p className="text-sm font-bold text-[#191F28]">기본 수강료</p>
+            <p className="mt-1 text-xs text-[#8B95A1]">학원 가격표를 기준으로 자동 계산해요.</p>
+          </div>
+
+          {configuredSubjectIds.length > 0 && (
+            <Field label="수강 과목">
+              <div className="mb-3 flex flex-wrap gap-2">
+                {configuredSubjectIds.map((subjectId) => {
+                  const option = ACADEMY_SUBJECT_OPTIONS.find((item) => item.id === subjectId);
+                  const selected = form.tuitionSubjects.includes(subjectId);
+                  return (
+                    <button
+                      key={subjectId}
+                      type="button"
+                      onClick={() => toggleTuitionSubject(subjectId)}
+                      className={`rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+                        selected
+                          ? 'border-blue-500 bg-blue-50 text-blue-700'
+                          : 'border-gray-200 bg-white text-gray-600'
+                      }`}
+                    >
+                      {selected ? '✓ ' : ''}{option?.label || subjectId}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+          )}
+
+          <Field label="월 기본 금액">
+            <div className="flex gap-2">
+              <input
+                inputMode="numeric"
+                value={form.baseTuition}
+                onChange={(event) => setForm((current) => ({
+                  ...current,
+                  baseTuition: event.target.value.replace(/\D/g, ''),
+                  tuitionSource: 'custom',
+                }))}
+                placeholder="0"
+                className="input min-w-0 flex-1"
+              />
+              {form.tuitionSource === 'custom' && (
+                <button
+                  type="button"
+                  onClick={() => setForm((current) => ({
+                    ...current,
+                    tuitionSource: 'academy_rate',
+                    baseTuition: suggestedBaseTuition > 0 ? String(suggestedBaseTuition) : '',
+                  }))}
+                  className="flex-shrink-0 rounded-xl bg-white px-3 text-xs font-bold text-blue-600 ring-1 ring-gray-200"
+                >
+                  가격표 적용
+                </button>
+              )}
+            </div>
+            <p className="mt-1.5 text-xs font-semibold text-[#4E5968]">
+              {formatKoreanCurrency(Number(form.baseTuition) || 0)}
+              {form.tuitionSource === 'academy_rate' ? ' · 가격표 자동 적용' : ' · 학생별 조정'}
+            </p>
+          </Field>
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Field label="적용 시작">
+              <input
+                type="date"
+                value={form.tuitionEffectiveFrom}
+                onChange={(event) => set('tuitionEffectiveFrom', event.target.value)}
+                className="input"
+              />
+            </Field>
+            <Field label="적용 종료 (선택)">
+              <input
+                type="date"
+                value={form.tuitionEffectiveTo}
+                onChange={(event) => set('tuitionEffectiveTo', event.target.value)}
+                className="input"
+              />
+            </Field>
+          </div>
+          <p className="mt-2 text-[11px] text-[#8B95A1]">나중에 학생별로 조정할 수 있어요.</p>
+        </div>
 
         <Field label="학생 연락처">
           <input inputMode="tel" value={form.phone} onChange={(e) => set('phone', formatPhoneNumber(e.target.value))} placeholder="010-0000-0000" className="input" />
