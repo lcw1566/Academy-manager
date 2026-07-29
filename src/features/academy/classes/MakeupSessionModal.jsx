@@ -7,7 +7,7 @@ import { createAcademyClassSession } from '../../../services/supabase/domainApi'
 import { today, formatDateShort } from '../../../utils/date';
 import { normalizeRecordSchema } from '../../../constants/learningActivitySettings';
 import { mapClassSessionToServerPayload } from './ClassGroupFormModal';
-import { isConfirmedAttendance } from '../../../utils/attendanceRecords';
+import { isEffectiveAttendance } from '../../../utils/attendanceRecords';
 
 export default function MakeupSessionModal({
   group,
@@ -19,7 +19,6 @@ export default function MakeupSessionModal({
 }) {
   const isMakeup = sessionKind === 'makeup';
   const addClassSession = useAcademyStore((state) => state.addClassSession);
-  const setClassSessionServerId = useAcademyStore((state) => state.setClassSessionServerId);
   const showToast = useAcademyStore((state) => state.showToast);
   const attendanceRecords = useAcademyStore((state) => state.academyAttendanceRecords) ?? [];
   const academyStudents = useAcademyStore((state) => state.academyStudents) ?? [];
@@ -59,7 +58,7 @@ export default function MakeupSessionModal({
     const absentIds = attendanceRecords
       .filter((record) => (
         record.sessionId === originSessionId
-        && isConfirmedAttendance(record)
+        && isEffectiveAttendance(record)
         && ['absent', 'makeup'].includes(record.status)
       ))
       .map((record) => record.studentId)
@@ -110,32 +109,31 @@ export default function MakeupSessionModal({
 
     setSaving(true);
     try {
-      const localSession = addClassSession(localPayload);
-      if (isAuthenticated && currentAcademyId && group.serverId) {
-        try {
-          const created = await createAcademyClassSession({
-            academyId: currentAcademyId,
-            ...mapClassSessionToServerPayload(
-              localPayload,
-              group.serverId,
-              academyStudents,
-              academyAssistants,
-              academyTeachers,
-              authUserId,
-            ),
-          });
-          if (created?.id) setClassSessionServerId(localSession.id, created.id);
-          await loadServerClassSessions();
-        } catch (error) {
-          showToast(
-            error?.message
-              ? `수업은 만들었지만 서버 동기화에 실패했어요: ${error.message}`
-              : '수업은 만들었지만 서버 동기화에 실패했어요.',
-            'error',
-          );
+      if (isAuthenticated && currentAcademyId) {
+        if (!group.serverId) {
+          throw new Error('반 서버 정보를 확인하지 못했어요. 수업 목록을 새로고침해주세요.');
         }
+        const created = await createAcademyClassSession({
+          academyId: currentAcademyId,
+          ...mapClassSessionToServerPayload(
+            localPayload,
+            group.serverId,
+            academyStudents,
+            academyAssistants,
+            academyTeachers,
+            authUserId,
+          ),
+        });
+        addClassSession({ ...localPayload, serverId: created?.id || null });
+        await loadServerClassSessions();
+      } else {
+        // Supabase가 없는 로컬 개발 환경만 로컬 회차를 바로 만든다.
+        addClassSession(localPayload);
       }
       onClose?.();
+    } catch (error) {
+      console.error('[class-session] extra session create failed', error);
+      showToast(error?.message || '수업을 추가하지 못했어요. 다시 시도해주세요.', 'error');
     } finally {
       setSaving(false);
     }

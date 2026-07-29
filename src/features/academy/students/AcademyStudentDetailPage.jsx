@@ -12,7 +12,7 @@ import {
 } from '../../../services/supabase/domainApi';
 import { getKoreaHHMM, getKoreanWeekdayFromYMD, today } from '../../../utils/date';
 import { attendanceStatusMap, formatCurrency, toTelHref } from '../../../utils/format';
-import { isConfirmedAttendance } from '../../../utils/attendanceRecords';
+import { isEffectiveAttendance } from '../../../utils/attendanceRecords';
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
@@ -77,7 +77,7 @@ function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, a
       const attendance = academyAttendanceRecords.find((a) => (
         a.sessionId === session.id
         && a.studentId === studentId
-        && isConfirmedAttendance(a)
+        && isEffectiveAttendance(a)
       ));
       const lessonRecord = academyLessonRecords.find((lr) => lr.sessionId === session.id && lr.studentId === studentId);
       const commonRecord = academyLessonRecords.find((lr) => lr.sessionId === session.id && lr.studentId === '_common_');
@@ -471,10 +471,10 @@ export default function AcademyStudentDetailPage() {
         const attendance = academyAttendanceRecords.find((record) => (
           record.sessionId === session.id
           && record.studentId === student.id
-          && isConfirmedAttendance(record)
+          && isEffectiveAttendance(record)
         ));
         const sessionStateLabels = {
-          present: '정상',
+          present: '출석',
           late: '지각',
           absent: '결석',
           makeup: '보강',

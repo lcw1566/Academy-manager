@@ -1,5 +1,5 @@
 import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { ChevronDown, ChevronUp, Check, UserCheck, X as XIcon, QrCode, Info, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronUp, Check, UserCheck, X as XIcon, QrCode, SlidersHorizontal } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -143,7 +143,10 @@ const StudentCard = memo(function StudentCard({
 }) {
   const updateAcademyAttendance = useAcademyStore((s) => s.updateAcademyAttendance);
   const confirmedBy = useAuthStore((s) => s.user?.id);
+  const automaticStatus = attendanceHint?.statusHint || 'absent';
+  const effectiveStatus = attendance?.status || automaticStatus;
   const handleAttendanceClick = useCallback((status) => {
+    if (!attendance && automaticStatus === status) return;
     if (
       attendance?.status === status
       && attendance?.confirmationState === ATTENDANCE_CONFIRMATION.TEACHER_CONFIRMED
@@ -158,6 +161,7 @@ const StudentCard = memo(function StudentCard({
   }, [
     attendance?.status,
     attendance?.confirmationState,
+    automaticStatus,
     sessionId,
     student.id,
     updateAcademyAttendance,
@@ -170,9 +174,8 @@ const StudentCard = memo(function StudentCard({
     if (attendance.confirmationState === ATTENDANCE_CONFIRMATION.LEGACY_CONFIRMED) {
       return { label: '기존 확정', tone: 'bg-gray-100 text-gray-600' };
     }
-    return { label: '선생님 확정', tone: 'bg-blue-50 text-blue-700' };
+    return { label: '선생님 수정', tone: 'bg-blue-50 text-blue-700' };
   })();
-  const inferredStatus = !attendance ? attendanceHint?.statusHint : null;
   const [expanded, setExpanded] = useState(false);
   const [rec, setRec] = useState(() => buildStudentRecord(initialRecord));
   const savedRef = useRef(buildStudentRecord(initialRecord));
@@ -244,18 +247,12 @@ const StudentCard = memo(function StudentCard({
               {sourceBadge.label}
             </span>
           )}
-          {attendance ? (
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${attendanceStatusMap[attendance.status]?.bg} ${attendanceStatusMap[attendance.status]?.color}`}>
-              {SESSION_STATE_LABELS[attendance.status] || attendanceStatusMap[attendance.status]?.label}
+          {studentCheckMethod !== 'disabled' && effectiveStatus && (
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+              attendanceStatusMap[effectiveStatus]?.bg
+            } ${attendanceStatusMap[effectiveStatus]?.color}`}>
+              {SESSION_STATE_LABELS[effectiveStatus] || attendanceStatusMap[effectiveStatus]?.label}
             </span>
-          ) : inferredStatus ? (
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border border-dashed ${
-              attendanceStatusMap[inferredStatus]?.bg
-            } ${attendanceStatusMap[inferredStatus]?.color}`}>
-              {SESSION_STATE_LABELS[inferredStatus] || attendanceStatusMap[inferredStatus]?.label} 예상
-            </span>
-          ) : (
-            <span className="text-xs text-gray-300 font-medium">미확정</span>
           )}
           {hasEval && <Check size={13} className="text-green-500 flex-shrink-0" />}
           {hasScore && (
@@ -280,17 +277,17 @@ const StudentCard = memo(function StudentCard({
               {canEditAttendance && (
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-gray-500">수업 출석 확정</p>
-                    {!attendance && inferredStatus && (
-                      <span className="text-[10px] font-semibold text-indigo-600">
-                        등원 기준 {SESSION_STATE_LABELS[inferredStatus] || attendanceStatusMap[inferredStatus]?.label} 예상
+                    <p className="text-xs font-semibold text-gray-500">출석 상태</p>
+                    {!attendance && (
+                      <span className="text-[10px] font-semibold text-blue-600">
+                        등하원 기록 자동 반영
                       </span>
                     )}
                   </div>
                   <div className="flex gap-2">
                     {ATT_OPTIONS.map((status) => {
                       const meta = attendanceStatusMap[status];
-                      const isActive = attendance?.status === status;
+                      const isActive = effectiveStatus === status;
                       return (
                         <button
                           key={status}
@@ -557,8 +554,8 @@ export default function ClassSessionPage() {
     [academyAttendanceRecords, selectedClassSessionId],
   );
 
-  // 확정 출석만 수업의 최종 상태로 사용한다. SQL 049 이전에 자동 생성된 QR
-  // 행은 아래 attendanceHint의 fallback으로만 사용한다.
+  // 선생님이 수정한 값은 등하원 자동 상태보다 우선한다. 자동 반영 행은 아래
+  // attendanceHint의 서버 fallback으로 사용한다.
   const attendanceByStudentId = useMemo(() => {
     const map = new Map();
     for (const record of sessionAttendanceRecords) {
@@ -585,7 +582,7 @@ export default function ClassSessionPage() {
     return map;
   }, [academyLessonRecords, selectedClassSessionId]);
 
-  // 등하원 이벤트 → 학생별 수업 출석 제안. 학원의 기록 방식을 함께 반영한다.
+  // 등하원 이벤트 → 학생별 수업 출석 기본값. 등원하면 출석, 없으면 결석이다.
   const attendanceHintByStudentId = useMemo(() => {
     const map = new Map();
     if (!session || attendanceSettings.studentCheckMethod === 'disabled') return map;
@@ -593,21 +590,23 @@ export default function ClassSessionPage() {
       const serverStudentId = stu.serverId;
       if (!serverStudentId) continue;
       const hint = getQrAttendanceHint(serverStudentId, session, studentCheckEvents);
-      if (hint.statusHint || hint.checkInTime || hint.checkOutTime) {
+      if (hint.checkInTime) {
         map.set(stu.id, hint);
         continue;
       }
       const legacyHint = legacyInferredAttendanceByStudentId.get(stu.id);
       if (legacyHint?.status) {
         map.set(stu.id, {
-          statusHint: legacyHint.status,
+          statusHint: legacyHint.status === 'absent' ? 'absent' : 'present',
           checkInTime: null,
           checkOutTime: null,
           checkInISO: legacyHint.checkedAt || null,
           checkOutISO: null,
           source: 'legacy_auto_inferred',
         });
+        continue;
       }
+      map.set(stu.id, hint);
     }
     return map;
   }, [
@@ -718,14 +717,15 @@ export default function ClassSessionPage() {
       : role === 'teacher'
         && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
         && isMyAssignedSession;
-  const canEditAttendance =
+  const canEditAttendance = attendanceSettings.studentCheckMethod !== 'disabled' && (
     role === 'owner'
       ? true
       : role === 'manager'
         ? currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance')
       : role === 'teacher'
         && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance')
-        && isMyAssignedSession;
+        && isMyAssignedSession
+  );
   // 기존 canEdit (lesson record 입력/저장) → 권한 기반.
   const canEdit = canEditLessonRecords;
   const isOwnerRole = role === 'owner';
@@ -761,135 +761,142 @@ export default function ClassSessionPage() {
   }, [lessonRecordByStudentId, recordBlocks]);
 
   const handleSave = useCallback(async () => {
-    if (!session || isSaving) return;
+    if (!session || isSaving) return false;
     setIsSaving(true);
-    let attendanceSaveFailed = false;
-    // 1) localStorage 저장 (source of truth, 항상 성공)
-    batchSaveSessionRecords({
-      sessionId: session.id,
-      date: session.date,
-      commonRecord: commonRec,
-      studentRecords: studentRecDraftRef.current,
-    });
+    const draftStudentRecords = { ...(studentRecDraftRef.current || {}) };
     const sessionStudentIds = (session.studentIds || []).filter(Boolean);
-    setSavedCommon({ ...commonRec });
-    studentDirtyRef.current = {};
-    setDirtyRevision((v) => v + 1);
-    setSaveCount((c) => c + 1);
 
-    // 2) Supabase write-through — session.serverId / group.serverId 모두 있고 로그인 + 학원 선택 시
-    if (
-      session.serverId &&
-      group?.serverId &&
-      isAuthenticated &&
-      currentAcademyId
-    ) {
-      // 2-a) lesson_records upsert (unique class_session_id)
-      try {
+    try {
+      // 로그인된 학원에서는 서버가 source of truth다. 수업 기록과 출석이 모두
+      // 성공한 뒤에만 로컬 저장 상태를 갱신한다.
+      if (isAuthenticated && currentAcademyId) {
+        if (!session.serverId || !group?.serverId) {
+          throw new Error('수업 서버 정보를 확인하지 못했어요. 일정을 새로고침해주세요.');
+        }
         // local studentId → server studentId 매핑된 student_records jsonb 생성
         const studentByLocalId = new Map(academyStudents.map((s) => [s.id, s]));
-        const draftStudentRecs = studentRecDraftRef.current || {};
-        const serverStudentRecords = {};
-        for (const [localStudentId, rec] of Object.entries(draftStudentRecs)) {
-          const stu = studentByLocalId.get(localStudentId);
-          if (stu?.serverId) {
-            serverStudentRecords[stu.serverId] = rec;
-          }
-        }
-        await upsertAcademyLessonRecord({
-          academyId: currentAcademyId,
-          class_group_id: group.serverId,
-          class_session_id: session.serverId,
-          date: session.date,
-          teacher_id: session.teacherId || group.teacherId || null,
-          common_progress: commonRec.commonProgress || null,
-          common_lesson_content: commonRec.commonContent || null,
-          common_homework: commonRec.commonHomework || null,
-          next_lesson_plan: commonRec.nextLessonPlan || null,
-          teacher_memo: commonRec.teacherMemo || null,
-          common_custom_values: commonRec.customValues || {},
-          student_records: serverStudentRecords,
-        });
-        await loadServerLessonRecords();
-      } catch (err) {
-        console.error('[supabase] upsertAcademyLessonRecord failed', err);
-        showToast(
-          err?.message
-            ? `수업 기록 서버 저장 실패: ${err.message}`
-            : '수업 기록은 저장됐지만 서버 동기화는 실패했어요.',
-          'error',
+        const unresolvedStudentIds = sessionStudentIds.filter(
+          (studentId) => !studentByLocalId.has(studentId),
         );
-      }
-
-      // 2-b) attendance_records bulk upsert (unique class_session_id + student_id)
-      //   - sessionStudents 전체 기준으로 payload 생성
-      //   - 선생님이 확정한 학생만 저장 (등원 기반 예상값은 저장하지 않음)
-      //   - 미체크 학생을 기본 출석으로 만들지 않음
-      //   - student.serverId 있는 학생만 서버 전송 대상
-      try {
-        const studentByLocalId = new Map(academyStudents.map((s) => [s.id, s]));
-        const existingForSession = attendanceByStudentId;
+        if (unresolvedStudentIds.length > 0) {
+          throw new Error('일부 수강생 정보를 찾지 못했어요. 학생 목록을 새로고침해주세요.');
+        }
         const sessionStudents = sessionStudentIds
-          .map((sid) => studentByLocalId.get(sid))
+          .map((studentId) => studentByLocalId.get(studentId))
           .filter(Boolean);
-        const studentsWithServerId = sessionStudents.filter((s) => s.serverId);
-        const skippedStudents = sessionStudents.filter((s) => !s.serverId);
+        const missingServerStudents = sessionStudents.filter((student) => !student.serverId);
+        if (missingServerStudents.length > 0) {
+          throw new Error(
+            `${missingServerStudents.map((student) => student.name).join(', ')} 학생의 서버 정보를 확인하지 못했어요.`,
+          );
+        }
 
-        const records = studentsWithServerId.flatMap((stu) => {
-          const local = existingForSession.get(stu.id);
-          if (!local) return [];
-          return [{
+        if (canEdit) {
+          const serverStudentRecords = {};
+          for (const [localStudentId, rec] of Object.entries(draftStudentRecords)) {
+            const student = studentByLocalId.get(localStudentId);
+            if (student?.serverId) {
+              serverStudentRecords[student.serverId] = rec;
+            }
+          }
+          await upsertAcademyLessonRecord({
+            academyId: currentAcademyId,
             class_group_id: group.serverId,
             class_session_id: session.serverId,
-            student_id: stu.serverId,
-            date: local.date || session.date,
-            status: local.status,
-            memo: local.memo || null,
-            source: local.source === 'manual' ? 'teacher_manual' : (local.source || 'teacher_manual'),
-            checked_at: local.checkedAt || null,
-            confirmation_state: local.confirmationState
-              || ATTENDANCE_CONFIRMATION.TEACHER_CONFIRMED,
-            confirmed_at: local.confirmedAt || new Date().toISOString(),
-            confirmed_by: local.confirmedBy || authUserId || null,
-          }];
-        });
-
-        if (import.meta.env?.DEV) {
-          console.debug('[attendance sync]', {
-            sessionId: session.id,
-            sessionServerId: session.serverId,
-            sessionStudentsCount: sessionStudents.length,
-            studentsWithServerIdCount: studentsWithServerId.length,
-            existingLocalRecordsCount: existingForSession.size,
-            payloadCount: records.length,
-            skippedNoServerId: skippedStudents.map((s) => ({ id: s.id, name: s.name })),
+            date: session.date,
+            teacher_id: session.teacherId || group.teacherId || null,
+            common_progress: commonRec.commonProgress || null,
+            common_lesson_content: commonRec.commonContent || null,
+            common_homework: commonRec.commonHomework || null,
+            next_lesson_plan: commonRec.nextLessonPlan || null,
+            teacher_memo: commonRec.teacherMemo || null,
+            common_custom_values: commonRec.customValues || {},
+            student_records: serverStudentRecords,
           });
         }
 
-        if (records.length > 0) {
-          await upsertAcademyAttendanceRecordsBulk({
-            academyId: currentAcademyId,
-            records,
+        if (canEditAttendance && attendanceSettings.studentCheckMethod !== 'disabled') {
+          const records = sessionStudents.map((student) => {
+            const override = attendanceByStudentId.get(student.id);
+            const automatic = attendanceHintByStudentId.get(student.id);
+            const isTeacherOverride = Boolean(override);
+            const automaticSource = automatic?.checkInISO
+              ? (automatic.source === 'qr' ? 'qr' : 'teacher_manual')
+              : null;
+            const status = override?.status || automatic?.statusHint || 'absent';
+            const source = isTeacherOverride
+              ? (override.source === 'manual' ? 'teacher_manual' : (override.source || 'teacher_manual'))
+              : automaticSource;
+
+            return {
+              class_group_id: group.serverId,
+              class_session_id: session.serverId,
+              student_id: student.serverId,
+              date: session.date,
+              status,
+              memo: override?.memo || null,
+              source,
+              checked_at: override?.checkedAt || automatic?.checkInISO || null,
+              confirmation_state: isTeacherOverride
+                ? (override.confirmationState || ATTENDANCE_CONFIRMATION.TEACHER_CONFIRMED)
+                : ATTENDANCE_CONFIRMATION.AUTO_INFERRED,
+              confirmed_at: isTeacherOverride
+                ? (override.confirmedAt || new Date().toISOString())
+                : null,
+              confirmed_by: isTeacherOverride
+                ? (override.confirmedBy || authUserId || null)
+                : null,
+            };
           });
-          await loadServerAttendanceRecords();
+
+          if (records.length > 0) {
+            await upsertAcademyAttendanceRecordsBulk({
+              academyId: currentAcademyId,
+              records,
+            });
+          }
         }
-      } catch (err) {
-        attendanceSaveFailed = true;
-        console.error('[supabase] upsertAcademyAttendanceRecordsBulk failed', err);
-        showToast(
-          err?.message
-            ? `출석 상태 서버 저장 실패: ${err.message}`
-            : '출석 상태는 저장됐지만 서버 동기화는 실패했어요.',
-          'error',
-        );
+
+        await Promise.all([
+          canEdit ? loadServerLessonRecords() : Promise.resolve(),
+          canEditAttendance && attendanceSettings.studentCheckMethod !== 'disabled'
+            ? loadServerAttendanceRecords()
+            : Promise.resolve(),
+        ]);
       }
-    }
 
-    setAttendanceDirty(attendanceSaveFailed);
-    setIsSaving(false);
+      // 서버가 없는 로컬 개발 모드이거나 서버 저장이 성공한 뒤에만 로컬 상태를
+      // 저장 완료로 바꾼다.
+      if (canEdit) {
+        batchSaveSessionRecords({
+          sessionId: session.id,
+          date: session.date,
+          commonRecord: commonRec,
+          studentRecords: draftStudentRecords,
+        });
+        setSavedCommon({ ...commonRec });
+        studentDirtyRef.current = {};
+        setDirtyRevision((value) => value + 1);
+        setSaveCount((count) => count + 1);
+      }
+      setAttendanceDirty(false);
+      return true;
+    } catch (error) {
+      console.error('[class-session] save failed', error);
+      showToast(
+        error?.message
+          ? `저장하지 못했어요: ${error.message}`
+          : '수업 기록을 저장하지 못했어요. 다시 시도해주세요.',
+        'error',
+      );
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
   }, [
     session, group, isSaving, commonRec, academyStudents, attendanceByStudentId,
-    batchSaveSessionRecords,
+    attendanceHintByStudentId, attendanceSettings.studentCheckMethod,
+    batchSaveSessionRecords, canEdit, canEditAttendance,
     isAuthenticated, currentAcademyId,
     loadServerLessonRecords, loadServerAttendanceRecords, showToast, authUserId,
   ]);
@@ -897,15 +904,15 @@ export default function ClassSessionPage() {
   const setCommonField = (k, v) => setCommonRec((r) => ({ ...r, [k]: v }));
 
   const checkedInCount = useMemo(() => {
-    const confirmed = new Set();
-    for (const [studentId, hint] of attendanceHintByStudentId.entries()) {
-      if (hint.checkInTime) confirmed.add(studentId);
+    let count = 0;
+    for (const student of students) {
+      const status = attendanceByStudentId.get(student.id)?.status
+        || attendanceHintByStudentId.get(student.id)?.statusHint
+        || 'absent';
+      if (status === 'present' || status === 'late') count += 1;
     }
-    for (const [studentId, record] of attendanceByStudentId.entries()) {
-      if (record.status === 'present' || record.status === 'late') confirmed.add(studentId);
-    }
-    return confirmed.size;
-  }, [attendanceByStudentId, attendanceHintByStudentId]);
+    return count;
+  }, [students, attendanceByStudentId, attendanceHintByStudentId]);
 
   if (!session || !group) {
     return (
@@ -945,7 +952,7 @@ export default function ClassSessionPage() {
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <div className="grid grid-cols-3 gap-3 mb-3">
               <SummaryCell label="수강생" value={students.length} />
-              <SummaryCell label="출석 확인" value={checkedInCount} color="text-green-600" />
+              <SummaryCell label="출석" value={checkedInCount} color="text-green-600" />
               <SummaryCell label="보완 항목" value={supportCount} color="text-orange-500" />
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
@@ -1098,18 +1105,10 @@ export default function ClassSessionPage() {
             <p className="text-sm font-bold text-gray-700">학생별 기록</p>
             {attendanceSettings.studentCheckMethod !== 'disabled' && attendanceHintByStudentId.size > 0 && (
               <span className="text-[11px] font-semibold text-indigo-700 flex items-center gap-1">
-                <UserCheck size={11} /> 등원 확인 {attendanceHintByStudentId.size}명
+                <UserCheck size={11} /> 등원 {Array.from(attendanceHintByStudentId.values()).filter((hint) => hint.checkInTime).length}명
               </span>
             )}
           </div>
-          {attendanceSettings.studentCheckMethod !== 'disabled' && (
-            <div className="mb-3 rounded-2xl bg-indigo-50 px-3 py-2.5 flex items-start gap-2">
-              <Info size={13} className="text-indigo-600 mt-0.5 flex-shrink-0" />
-              <p className="text-[11px] text-indigo-700 leading-relaxed">
-                등하원 기록은 참고용 예상값이에요. 출석 버튼을 눌러야 수업 출석으로 확정돼요.
-              </p>
-            </div>
-          )}
           <div className="flex flex-col gap-3">
             {students.length === 0 ? (
               <div className="bg-white rounded-2xl p-6 text-center shadow-sm">
@@ -1247,24 +1246,29 @@ export default function ClassSessionPage() {
               <button
                 type="button"
                 onClick={async () => {
-                  if (isDirty) await handleSave();
-                  updateClassSession(session.id, { status: 'completed' });
-                  // Supabase write-through — serverId 가 있고 로그인 + 학원 선택 시
+                  const saved = await handleSave();
+                  if (!saved) return;
+
+                  // 서버 완료가 성공한 뒤에만 로컬 상태를 바꾼다.
                   if (session.serverId && isAuthenticated && currentAcademyId) {
                     try {
                       await updateServerClassSession(session.serverId, { status: 'completed' });
+                      updateClassSession(session.id, { status: 'completed' });
                       await loadServerClassSessions();
                     } catch (err) {
                       console.error('[supabase] updateClassSession failed', err);
                       showToast(
                         err?.message
-                          ? `서버 동기화 실패: ${err.message}`
-                          : '수업 완료는 저장됐지만 서버 동기화는 실패했어요.',
+                          ? `수업을 완료하지 못했어요: ${err.message}`
+                          : '수업을 완료하지 못했어요. 다시 시도해주세요.',
                         'error',
                       );
                     }
+                  } else {
+                    updateClassSession(session.id, { status: 'completed' });
                   }
                 }}
+                disabled={isSaving}
                 className="flex-1 py-3.5 rounded-2xl font-bold text-sm bg-green-600 text-white shadow-lg shadow-green-200 active:scale-[0.98] transition-transform"
               >
                 {completionLabel}

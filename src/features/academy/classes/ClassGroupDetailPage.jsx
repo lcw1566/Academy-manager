@@ -5,7 +5,6 @@ import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import {
-  createAcademyClassSessionsBulk,
   deleteClassGroup as deleteServerClassGroup,
   updateClassGroup as updateServerClassGroup,
   updateFutureClassSessionRecordSchema,
@@ -27,17 +26,14 @@ import { hhmmToMin } from '../../../utils/shiftCoverage';
 import { getTeacherDisplayName } from '../../../utils/format';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getRoomTagClassName } from '../../../utils/roomTags';
-import { isConfirmedAttendance } from '../../../utils/attendanceRecords';
+import { isEffectiveAttendance } from '../../../utils/attendanceRecords';
 import {
   CLASS_ACTIVITY_TYPES,
   getActivityLabel,
   normalizeRecordSchema,
   recordSchemaToBlockIds,
 } from '../../../constants/learningActivitySettings';
-import ClassGroupFormModal, {
-  mapClassSessionToServerPayload,
-  matchSessionPairs,
-} from './ClassGroupFormModal';
+import ClassGroupFormModal from './ClassGroupFormModal';
 import RecordTemplateModal from './RecordTemplateModal';
 import MakeupSessionModal from './MakeupSessionModal';
 
@@ -97,7 +93,7 @@ export default function ClassGroupDetailPage() {
     academyStudents, academyTeachers, academyAssistants = [], academyManagers = [],
     academyProfile, academyAttendanceRecords,
     clinicRecords = [], navigateToClassSession, goBackFromClassGroup, setActiveTab,
-    deleteClassGroup, showToast, ensureClassSessionsForMonth, setClassSessionServerIds,
+    deleteClassGroup, showToast, ensureClassSessionsForMonth,
     updateClassGroup, applyRecordSchemaToFutureSessions,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -131,8 +127,8 @@ export default function ClassGroupDetailPage() {
   const [showSessionTypePicker, setShowSessionTypePicker] = useState(false);
   const [sessionCreateKind, setSessionCreateKind] = useState(null);
   const todayStr = today();
-  const confirmedAttendanceRecords = useMemo(
-    () => academyAttendanceRecords.filter(isConfirmedAttendance),
+  const effectiveAttendanceRecords = useMemo(
+    () => academyAttendanceRecords.filter(isEffectiveAttendance),
     [academyAttendanceRecords],
   );
 
@@ -294,40 +290,31 @@ export default function ClassGroupDetailPage() {
     if (!group || !activeMonth || generatingMonth) return;
     setGeneratingMonth(true);
     try {
+      if (group.serverId && isAuthenticated && currentAcademyId) {
+        const prepared = await ensureClassSessionsForRangeLocal({
+          fromDate: `${activeMonth}-01`,
+          toDate: monthEndYMD(activeMonth),
+          classGroupId: group.serverId,
+        });
+        await loadServerClassSessions?.();
+        if (prepared.length === 0) {
+          showToast(`${activeMonth}에 만들 수업 일정이 없어요.`, 'info');
+          return;
+        }
+        showToast(`${activeMonth} 수업 ${prepared.length}회차를 준비했어요.`);
+        return;
+      }
+
+      // Supabase가 없는 로컬 개발 환경만 기존 생성기를 사용한다.
       const created = ensureClassSessionsForMonth?.(group.id, activeMonth) || [];
       if (created.length === 0) {
         showToast(`${activeMonth}에 만들 수업 일정이 없어요.`, 'info');
         return;
       }
       showToast(`${activeMonth} 수업 ${created.length}회차를 만들었어요.`);
-
-      if (!group.serverId || !isAuthenticated || !currentAcademyId) return;
-      try {
-        const sessionPayloads = created.map((session) =>
-          mapClassSessionToServerPayload(
-            session,
-            group.serverId,
-            academyStudents,
-            academyAssistants,
-            academyTeachers,
-            authUserId,
-          )
-        );
-        const serverSessions = await createAcademyClassSessionsBulk({
-          academyId: currentAcademyId,
-          sessions: sessionPayloads,
-        });
-        setClassSessionServerIds?.(matchSessionPairs(created, serverSessions));
-        await loadServerClassSessions?.();
-      } catch (err) {
-        console.error('[supabase] monthly class session sync failed', err);
-        showToast(
-          err?.message
-            ? `월별 수업은 만들어졌지만 서버 동기화에 실패했어요: ${err.message}`
-            : '월별 수업은 만들어졌지만 서버 동기화에 실패했어요.',
-          'error',
-        );
-      }
+    } catch (error) {
+      console.error('[class-group] monthly class session materialization failed', error);
+      showToast(error?.message || '수업 일정을 준비하지 못했어요. 다시 시도해주세요.', 'error');
     } finally {
       setGeneratingMonth(false);
     }
@@ -445,7 +432,7 @@ export default function ClassGroupDetailPage() {
         <ClassGroupScheduleCalendar
           sessions={calendarSessions}
           students={students}
-          attendanceRecords={confirmedAttendanceRecords}
+          attendanceRecords={effectiveAttendanceRecords}
           calendarAnchor={calendarAnchor}
           calendarMode={calendarMode}
           todayYMD={todayStr}
@@ -583,7 +570,7 @@ export default function ClassGroupDetailPage() {
         <AllSessionsModal
           sessions={sessions}
           students={students}
-          attendanceRecords={confirmedAttendanceRecords}
+          attendanceRecords={effectiveAttendanceRecords}
           todayYMD={todayStr}
           onSessionClick={(session) => void openSession(session, { closeAll: true })}
           onClose={() => setShowAllSessions(false)}

@@ -2,11 +2,9 @@
 //
 // 출결·등하원 설정 / QR 토큰 / 페이로드 유틸. 어디서나 import 해서 사용.
 
-import { hhmmToMin } from '../../../utils/shiftCoverage';
 import {
   formatDateToYMD,
   getKoreaHHMM,
-  getKoreaMinutes,
 } from '../../../utils/date';
 
 // memberships[i].academy 로부터 출결 설정을 읽어 일관된 default 값을 반환.
@@ -226,49 +224,21 @@ export function getStudentDayCheckState(studentServerId, ymd, events = []) {
   };
 }
 
-function buildVisitIntervals(dayEvents) {
-  const intervals = [];
-  let openCheckIn = null;
-
-  for (const event of dayEvents) {
-    if (event.event_type === 'check_in') {
-      // 연속 등원은 첫 기록을 유지한다. 중복 스캔이 체류 시작을 늦추면 안 된다.
-      if (!openCheckIn) openCheckIn = event;
-      continue;
-    }
-    if (event.event_type === 'check_out' && openCheckIn) {
-      if (new Date(event.event_time).getTime() >= new Date(openCheckIn.event_time).getTime()) {
-        intervals.push({ checkIn: openCheckIn, checkOut: event });
-      }
-      openCheckIn = null;
-    }
-  }
-
-  if (openCheckIn) intervals.push({ checkIn: openCheckIn, checkOut: null });
-  return intervals;
-}
-
-// 학생 등·하원 구간과 특정 수업 시간이 실제로 겹치는지 확인해 수업 상태의
-// 자동 제안값을 만든다. 원본 등·하원과 수업별 예외 기록은 계속 분리한다.
+// 학생의 당일 등원 여부를 수업 출석 기본값으로 사용한다.
+// 등원 기록이 하나라도 있으면 출석, 없으면 결석이다. 지각·인정결석 같은
+// 예외만 수업 화면에서 선생님이 직접 수정한다.
 //
 // 입력:
 //   - studentServerId: public.students.id (uuid)
 //   - session        : { date 'YYYY-MM-DD', startTime 'HH:mm', endTime 'HH:mm' }
 //   - events         : useWorkspaceStore.studentCheckEvents (DB row 형식)
-//   - graceMin       : 시작 시각 + 이 분 이내면 'present' (default 10)
 //
 // 출력:
-//   { statusHint: 'present'|'late'|null, checkInTime: 'HH:mm'|null,
+//   { statusHint: 'present'|'absent', checkInTime: 'HH:mm'|null,
 //     checkOutTime: 'HH:mm'|null, checkInISO, checkOutISO }
-//
-// 규칙 (사양 명세 2번 그대로):
-//   - 체류 구간이 수업 시간과 겹치지 않으면 자동 판정하지 않는다.
-//   - 겹치는 체류의 check_in <= session start + graceMin → 'present'
-//   - 겹치는 체류의 check_in > session start + graceMin → 'late'
-//   - 하원 미기록은 열린 체류로 간주하되 결석은 자동 생성하지 않는다.
-export function getQrAttendanceHint(studentServerId, session, events = [], { graceMin = 10 } = {}) {
+export function getQrAttendanceHint(studentServerId, session, events = []) {
   const empty = {
-    statusHint: null,
+    statusHint: 'absent',
     checkInTime: null,
     checkOutTime: null,
     checkInISO: null,
@@ -276,8 +246,6 @@ export function getQrAttendanceHint(studentServerId, session, events = [], { gra
     source: null,
   };
   if (!studentServerId || !session?.date) return empty;
-  const sStart = hhmmToMin(session.startTime);
-  const sEnd = hhmmToMin(session.endTime);
 
   const { events: dayEvents } = getStudentDayCheckState(
     studentServerId,
@@ -286,46 +254,26 @@ export function getQrAttendanceHint(studentServerId, session, events = [], { gra
   );
   if (dayEvents.length === 0) return empty;
 
-  const visits = buildVisitIntervals(dayEvents);
-  const sessionEnd = sEnd ?? sStart;
-  if (sStart == null || sessionEnd == null) return empty;
+  const firstCheckIn = dayEvents.find((event) => event.event_type === 'check_in') || null;
+  if (!firstCheckIn) return empty;
+  const lastCheckOut = dayEvents
+    .slice()
+    .reverse()
+    .find((event) => (
+      event.event_type === 'check_out'
+      && new Date(event.event_time).getTime() >= new Date(firstCheckIn.event_time).getTime()
+    )) || null;
 
-  const overlappingVisits = visits
-    .map((visit) => {
-      const inMin = evtTimeToMin(visit.checkIn.event_time);
-      const outMin = visit.checkOut ? evtTimeToMin(visit.checkOut.event_time) : null;
-      const overlaps = inMin != null
-        && inMin <= sessionEnd
-        && (outMin == null || outMin >= sStart);
-      const overlapMinutes = overlaps
-        ? Math.max(0, Math.min(outMin ?? sessionEnd, sessionEnd) - Math.max(inMin, sStart))
-        : -1;
-      return { ...visit, inMin, outMin, overlapMinutes };
-    })
-    .filter((visit) => visit.overlapMinutes > 0)
-    .sort((a, b) => b.overlapMinutes - a.overlapMinutes);
-
-  const bestVisit = overlappingVisits[0] || null;
-  if (!bestVisit) return empty;
-
-  let statusHint = null;
-  if (bestVisit.inMin != null) {
-    statusHint = bestVisit.inMin <= sStart + graceMin ? 'present' : 'late';
-  }
   return {
-    statusHint,
-    checkInTime: evtTimeToHHmm(bestVisit.checkIn.event_time),
-    checkOutTime: bestVisit.checkOut ? evtTimeToHHmm(bestVisit.checkOut.event_time) : null,
-    checkInISO: bestVisit.checkIn.event_time,
-    checkOutISO: bestVisit.checkOut?.event_time || null,
-    source: bestVisit.checkIn.source || null,
+    statusHint: 'present',
+    checkInTime: evtTimeToHHmm(firstCheckIn.event_time),
+    checkOutTime: lastCheckOut ? evtTimeToHHmm(lastCheckOut.event_time) : null,
+    checkInISO: firstCheckIn.event_time,
+    checkOutISO: lastCheckOut?.event_time || null,
+    source: firstCheckIn.source || null,
   };
 }
 
-function evtTimeToMin(ts) {
-  if (!ts || Number.isNaN(new Date(ts).getTime())) return null;
-  return getKoreaMinutes(ts);
-}
 function evtTimeToHHmm(ts) {
   if (!ts || Number.isNaN(new Date(ts).getTime())) return null;
   return getKoreaHHMM(ts);

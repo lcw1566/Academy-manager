@@ -18,7 +18,7 @@ import MyPayrollCard from './MyPayrollCard';
 import StaffHomeQrButton from './StaffHomeQrButton';
 import HomeActionList from './HomeActionList';
 import { summarizeStudentPresence } from './homeDashboardUtils';
-import { isConfirmedAttendance } from '../../../utils/attendanceRecords';
+import { isEffectiveAttendance } from '../../../utils/attendanceRecords';
 import { readAttendanceSettings } from '../attendance/attendanceHelpers';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
 import {
@@ -205,7 +205,7 @@ export default function TeacherDashboard() {
     () => new Set(
       academyAttendanceRecords
         .filter((a) => (
-          isConfirmedAttendance(a)
+          isEffectiveAttendance(a)
           && todaySessions.some((s) => s.id === a.sessionId)
         ))
         .map((a) => a.studentId),
@@ -352,7 +352,7 @@ export default function TeacherDashboard() {
             {daySessions.map((session) => {
               const group = classGroups.find((g) => g.id === session.classGroupId);
               const sessionAttended = academyAttendanceRecords.filter((a) => (
-                a.sessionId === session.id && isConfirmedAttendance(a)
+                a.sessionId === session.id && isEffectiveAttendance(a)
               )).length;
               return (
                 <motion.button
