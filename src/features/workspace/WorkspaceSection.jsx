@@ -259,7 +259,7 @@ export default function WorkspaceSection() {
       {/* 현재 학원 + 동기화 상태 — currentAcademy 가 있을 때만 표시 */}
       {currentMembership && (
         <CurrentAcademyCard
-          academyName={currentMembership.academy?.name ?? '(이름 없음)'}
+          academyName={currentMembership.academy?.name?.trim() || '학원 정보 확인 중…'}
           membershipRole={membershipRole}
           lastSyncedLabel={lastSyncedLabel}
           onRefresh={handleHydrate}
@@ -296,14 +296,16 @@ export default function WorkspaceSection() {
           <p className="text-xs font-bold text-gray-500 mt-2">학원 전환</p>
           {memberships.map((m) => {
             const isCurrent = m.academy_id === currentAcademyId;
-            const academyName = m.academy?.name ?? '(이름 없음)';
+            const academyName = m.academy?.name?.trim() || '학원 정보 확인 중…';
+            const academyDetailsReady = !!m.academy?.name?.trim();
             const roleLabel = roleMap[m.role] ?? m.role;
             return (
               <button
                 key={m.id}
                 type="button"
+                disabled={!academyDetailsReady}
                 onClick={() => setCurrentAcademyId(m.academy_id)}
-                className={`w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 text-left transition-colors ${
+                className={`w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 text-left transition-colors disabled:opacity-60 ${
                   isCurrent
                     ? 'bg-blue-50 border border-blue-200'
                     : 'bg-white shadow-sm border border-transparent active:bg-gray-50'

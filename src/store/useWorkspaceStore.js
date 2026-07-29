@@ -130,6 +130,13 @@ function syncAcademyProfileFromServer(academy) {
   });
 }
 
+function hasAcademyDetails(membership) {
+  return !!(
+    membership?.academy
+    && String(membership.academy.name || '').trim()
+  );
+}
+
 function isCurrentAcademy(get, academyId) {
   return get().currentAcademyId === academyId;
 }
@@ -815,11 +822,15 @@ const useWorkspaceStore = create(
         if (!isSupabaseConfigured) return [];
         try {
           const memberships = await getMyAcademyMemberships({ includeAcademy });
-          const ids = new Set(memberships.map((m) => m.academy_id));
+          // 실제 화면에 진입할 수 있는 학원은 active 멤버십뿐이다. 역할 배정 대기
+          // 멤버십(invited)을 이전 currentAcademyId로 유지하면 권한 없는 학원의
+          // 도메인 조회가 먼저 실행되며 오류 화면으로 이어질 수 있다.
+          const activeMemberships = memberships.filter((membership) => membership.status === 'active');
+          const ids = new Set(activeMemberships.map((membership) => membership.academy_id));
 
           let currentAcademyId = get().currentAcademyId;
           if (!currentAcademyId || !ids.has(currentAcademyId)) {
-            currentAcademyId = memberships[0]?.academy_id ?? null;
+            currentAcademyId = activeMemberships[0]?.academy_id ?? null;
           }
 
           ensureCurrentAcademyDataScope(currentAcademyId);
@@ -967,7 +978,7 @@ const useWorkspaceStore = create(
         if (!membership) throw new Error('선택한 학원에 접근할 수 없어요.');
 
         let preparedMembership = membership;
-        if (!preparedMembership.academy) {
+        if (!hasAcademyDetails(preparedMembership)) {
           preparedMembership = await retryAsync(
             async () => {
               const refreshedMemberships = await get().loadMemberships({
@@ -978,7 +989,7 @@ const useWorkspaceStore = create(
               const selectedMembership = refreshedMemberships.find(
                 (item) => item.academy_id === academyId,
               );
-              if (!selectedMembership?.academy) {
+              if (!hasAcademyDetails(selectedMembership)) {
                 const notReadyError = new Error('학원 상세 정보가 아직 준비되지 않았어요.');
                 notReadyError.code = 'WORKSPACE_DETAILS_NOT_READY';
                 throw notReadyError;
@@ -999,7 +1010,7 @@ const useWorkspaceStore = create(
           );
         }
 
-        if (!preparedMembership?.academy) {
+        if (!hasAcademyDetails(preparedMembership)) {
           throw new Error('선택한 학원 정보를 확인하지 못했어요. 잠시 후 다시 시도해주세요.');
         }
 
@@ -2011,14 +2022,30 @@ const useWorkspaceStore = create(
                     throwOnError: true,
                     reportError: false,
                   }),
-                  // 로그인에 필요한 소속/역할만 먼저 읽는다. academies 설정 전체는
-                  // 아래 백그라운드 재조회에서 합친다.
+                  // 학원 선택 화면과 첫 화면은 이름·운영 설정을 즉시 사용한다.
+                  // academy_members만 먼저 읽고 academies 조인을 나중에 채우면
+                  // `(이름 없음)` 또는 기본 설정이 한 프레임 노출될 수 있으므로
+                  // 상세까지 로그인 필수 데이터로 함께 기다린다.
                   get().loadMemberships({
                     throwOnError: true,
-                    includeAcademy: false,
+                    includeAcademy: true,
                     reportError: false,
                   }),
                 ]);
+
+                const membershipWithoutDetails = loadedMemberships.find(
+                  (membership) => (
+                    membership.status === 'active'
+                    && !hasAcademyDetails(membership)
+                  ),
+                );
+                if (membershipWithoutDetails) {
+                  const detailsNotReadyError = new Error(
+                    '학원 상세 정보가 아직 준비되지 않았어요.',
+                  );
+                  detailsNotReadyError.code = 'WORKSPACE_DETAILS_NOT_READY';
+                  throw detailsNotReadyError;
+                }
 
                 // 이 브라우저에 전에 선택한 학원이 있는데 첫 조회만 빈 목록이라면
                 // RLS가 인증 토큰을 읽기 전의 순간 응답일 수 있다. 마지막 시도 전까지만
@@ -2042,6 +2069,7 @@ const useWorkspaceStore = create(
                 delays: [300, 800, 1600],
                 shouldRetry: (error) => (
                   error?.code === 'WORKSPACE_MEMBERSHIP_NOT_READY'
+                  || error?.code === 'WORKSPACE_DETAILS_NOT_READY'
                   || isTransientRequestError(error)
                 ),
                 onRetry: (error, attempt) => {
@@ -2062,11 +2090,6 @@ const useWorkspaceStore = create(
             // 아래 데이터는 화면별 로딩 상태로 갱신한다. 실패는 각 로더가 자체
             // 에러 상태에 기록하므로 전체 로그인 성공 여부를 막지 않는다.
             void Promise.allSettled([
-              // 학원 이름·온보딩·수강료·연락처 등 academies 상세를 채운다.
-              get().loadMemberships({
-                includeAcademy: true,
-                reportError: false,
-              }),
               get().loadServerStudents(),
               get().loadServerClassGroups(),
               get().loadServerClassSessions().then(

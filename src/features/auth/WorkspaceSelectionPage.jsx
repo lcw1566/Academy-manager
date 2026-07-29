@@ -236,8 +236,9 @@ export default function WorkspaceSelectionPage() {
     }
   };
 
+  const activeMemberships = memberships.filter((membership) => membership.status === 'active');
   const hasInvitations = myPendingInvitations.length > 0;
-  const hasMemberships = memberships.length > 0;
+  const hasMemberships = activeMemberships.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center px-6 pt-12 pb-10">
@@ -296,15 +297,16 @@ export default function WorkspaceSelectionPage() {
           <>
             <p className="text-xs font-bold text-gray-700 mb-2 px-1">내 학원</p>
             <div className="flex flex-col gap-2">
-              {memberships.map((m) => {
-                const academyName = m.academy?.name ?? '(이름 없음)';
+              {activeMemberships.map((m) => {
+                const academyName = m.academy?.name?.trim() || '학원 정보 확인 중…';
+                const academyDetailsReady = !!m.academy?.name?.trim();
                 const roleLabel = roleMap[m.role] ?? m.role;
                 const isCurrent = m.academy_id === currentAcademyId;
                 return (
                   <button
                     key={m.id}
                     type="button"
-                    disabled={submitting}
+                    disabled={submitting || !academyDetailsReady}
                     onClick={() => handlePick(m.academy_id)}
                     className={`w-full flex items-center gap-3 rounded-2xl px-4 py-4 text-left transition-colors shadow-sm ${
                       isCurrent
@@ -326,7 +328,7 @@ export default function WorkspaceSelectionPage() {
                       <p className="text-base font-bold text-gray-900 truncate">{academyName}</p>
                       <p className="text-xs text-gray-500 mt-0.5">{roleLabel}</p>
                     </div>
-                    {pickingAcademyId === m.academy_id ? (
+                    {pickingAcademyId === m.academy_id || !academyDetailsReady ? (
                       <Loader2 size={16} className="animate-spin text-blue-500 flex-shrink-0" />
                     ) : (
                       <ChevronRight size={16} className="text-gray-300 flex-shrink-0" />
