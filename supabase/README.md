@@ -39,7 +39,9 @@ supabase/
     ├── 028_role_permissions_and_payroll_privacy.sql (역할별 RLS + 급여/근태 개인정보 보호)
     ├── ...                               (후속 기능 마이그레이션)
     ├── 041_assistant_attendance_default_permission.sql (보조강사 기본 등하원 권한)
-    └── 042_staff_biweekly_work_rules.sql (직원 격주 근무 규칙)
+    ├── 042_staff_biweekly_work_rules.sql (직원 격주 근무 규칙)
+    ├── 052_shared_drive_folders_and_member_access.sql (전체 직원 공유 + 폴더)
+    └── 053_drive_safety_guards.sql (휴지통 + 용량·확장자·감사 이력)
 ```
 
 ## 실행 순서 요약
@@ -76,6 +78,8 @@ supabase/
 | 28 | `028_role_permissions_and_payroll_privacy.sql` | 화면 권한을 DB RLS에서도 강제, 직원 급여 본인 조회 및 근태 승인 조작 차단 |
 | 41 | `041_assistant_attendance_default_permission.sql` | 보조강사 기본 등하원·출석 기록 권한 활성화 |
 | 42 | `042_staff_biweekly_work_rules.sql` | 직원 반복 근무의 매주/격주 주기 저장 |
+| 52 | `052_shared_drive_folders_and_member_access.sql` | 전체 활성 직원 드라이브 사용, 중첩 폴더 |
+| 53 | `053_drive_safety_guards.sql` | 7일 휴지통, 1GB 한도, 파일 형식 제한, 변경 이력 |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
@@ -136,10 +140,11 @@ supabase/
 - 격주는 시작일이 포함된 주를 첫 근무 주로 계산합니다.
 - 날짜별 휴무·시간 변경·추가 근무 예외는 기존과 동일하게 적용됩니다.
 
-### 공유 드라이브 배포 (024)
+### 공유 드라이브 배포 (024, 052, 053)
 
-1. 기존 SQL을 적용한 뒤 `supabase/sql/024_academy_drive.sql` 전체를 SQL Editor에서 실행합니다.
-2. Supabase CLI로 Edge Function을 배포합니다.
+1. SQL Editor에서 `024`가 적용되어 있는지 확인한 뒤 `052` → `053` 순서로 실행합니다.
+2. 파일 열기·다운로드·영구 삭제 서버 코드를 최신화하도록 Supabase CLI로
+   Edge Function을 다시 배포합니다.
 
    ```bash
    supabase functions deploy academy-drive-file
@@ -149,9 +154,10 @@ supabase/
    `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다. 서비스 역할 키는 브라우저 환경변수에
    절대 넣지 않습니다.
 
-이후 학원 멤버는 자료 목록을 볼 수 있고, 원장은 업로드·삭제·파일별 다운로드 허용을
-관리합니다. 직원의 파일 열람/인쇄/다운로드 URL은 `academy-drive-file` 함수가 활성
-멤버십과 `download_allowed`를 확인한 뒤 60초 동안만 발급합니다.
+이후 모든 활성 학원 멤버가 폴더 생성, 업로드, 열람, 다운로드와 삭제를 사용할 수
+있습니다. 삭제 항목은 7일 동안 휴지통에서 복구할 수 있고 영구 삭제할 때 한 번 더
+확인합니다. 파일의 열람/인쇄/다운로드 URL은 `academy-drive-file` 함수가 활성
+멤버십을 확인한 뒤 60초 동안만 발급하며, 영구 삭제도 이 함수에서 재검증합니다.
 
 앱 안 열람·인쇄 형식은 PDF, 이미지, Word `.docx`, 한글 `.hwp`/`.hwpx`,
 텍스트·CSV입니다. `.doc`, Excel, PowerPoint 등도 드라이브에 안전하게 보관·권한

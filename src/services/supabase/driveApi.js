@@ -10,6 +10,12 @@ import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
 export const ACADEMY_DRIVE_BUCKET = 'academy-drive';
 export const MAX_DRIVE_FILE_SIZE = 50 * 1024 * 1024;
+export const DEFAULT_ACADEMY_DRIVE_QUOTA = 1024 * 1024 * 1024;
+const ALLOWED_DRIVE_EXTENSIONS = new Set([
+  'pdf', 'hwp', 'hwpx', 'doc', 'docx', 'odt', 'rtf',
+  'xls', 'xlsx', 'csv', 'ppt', 'pptx', 'txt', 'md',
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp',
+]);
 
 function assertSupabaseConfigured() {
   if (!isSupabaseConfigured || !supabase) {
@@ -37,30 +43,50 @@ function createStoragePath(academyId, file) {
   return `${academyId}/${id}${extensionFrom(file?.name)}`;
 }
 
-export async function listAcademyDriveFiles(academyId) {
+export async function listAcademyDriveFiles(academyId, { includeDeleted = false } = {}) {
   assertSupabaseConfigured();
   if (!academyId) return [];
-  const { data, error } = await supabase
+  let query = supabase
     .from('academy_drive_files')
     .select('*')
     .eq('academy_id', academyId)
     .order('created_at', { ascending: false })
-    .limit(300);
+    .limit(1000);
+  if (!includeDeleted) query = query.is('deleted_at', null);
+  const { data, error } = await query;
   if (error) throw error;
   return data ?? [];
 }
 
-export async function listAcademyDriveFolders(academyId) {
+export async function listAcademyDriveFolders(academyId, { includeDeleted = false } = {}) {
   assertSupabaseConfigured();
   if (!academyId) return [];
-  const { data, error } = await supabase
+  let query = supabase
     .from('academy_drive_folders')
     .select('*')
     .eq('academy_id', academyId)
     .order('created_at', { ascending: true })
     .limit(500);
+  if (!includeDeleted) query = query.is('deleted_at', null);
+  const { data, error } = await query;
   if (error) throw error;
   return data ?? [];
+}
+
+export async function getAcademyDriveUsage(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) {
+    return { usedBytes: 0, quotaBytes: DEFAULT_ACADEMY_DRIVE_QUOTA };
+  }
+  const { data, error } = await supabase
+    .rpc('get_academy_drive_usage', { p_academy_id: academyId })
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error('드라이브 사용량을 확인할 권한이 없어요.');
+  return {
+    usedBytes: Number(data.used_bytes) || 0,
+    quotaBytes: Number(data.quota_bytes) || DEFAULT_ACADEMY_DRIVE_QUOTA,
+  };
 }
 
 export async function createAcademyDriveFolder({
@@ -101,8 +127,46 @@ export async function deleteAcademyDriveFolder(folderId) {
   if (error) throw error;
 }
 
-// 파일과 메타데이터를 모두 등록한다. 메타데이터 insert가 실패하면 막 업로드한
-// object를 바로 정리해 고아 파일이 남지 않게 한다.
+export async function trashAcademyDriveFolder(folderId) {
+  const user = await getCurrentUserOrThrow();
+  if (!folderId) throw new Error('삭제할 폴더 정보를 찾을 수 없어요.');
+  const { data, error } = await supabase
+    .from('academy_drive_folders')
+    .update({ deleted_at: new Date().toISOString(), deleted_by: user.id })
+    .eq('id', folderId)
+    .is('deleted_at', null)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function restoreAcademyDriveFolder(folderId) {
+  assertSupabaseConfigured();
+  if (!folderId) throw new Error('복구할 폴더 정보를 찾을 수 없어요.');
+  const { data, error } = await supabase
+    .from('academy_drive_folders')
+    .update({ deleted_at: null, deleted_by: null })
+    .eq('id', folderId)
+    .not('deleted_at', 'is', null)
+    .select()
+    .single();
+  if (error?.code === '23505') throw new Error('같은 위치에 같은 이름의 폴더가 있어요.');
+  if (error?.code === '23503') throw new Error('상위 폴더를 먼저 복구해주세요.');
+  if (error) throw error;
+  return data;
+}
+
+async function permanentlyDeleteAcademyDriveFileById(fileId) {
+  const { data, error } = await supabase.functions.invoke('academy-drive-file', {
+    body: { fileId, action: 'delete' },
+  });
+  if (error) throw error;
+  if (!data?.deleted) throw new Error(data?.error || '자료를 영구 삭제하지 못했어요.');
+}
+
+// metadata를 먼저 등록해야 Storage RLS가 이 경로의 업로드를 허용한다.
+// 업로드 실패 시 metadata를 휴지통으로 전환한 뒤 Edge Function으로 정리한다.
 export async function uploadAcademyDriveFile({
   academyId,
   folderId = null,
@@ -113,18 +177,14 @@ export async function uploadAcademyDriveFile({
   if (!(file instanceof File)) throw new Error('업로드할 파일을 선택해주세요.');
   if (file.size <= 0) throw new Error('빈 파일은 업로드할 수 없어요.');
   if (file.size > MAX_DRIVE_FILE_SIZE) throw new Error('파일은 50MB 이하만 업로드할 수 있어요.');
+  const extension = extensionFrom(file.name).slice(1);
+  if (!ALLOWED_DRIVE_EXTENSIONS.has(extension)) {
+    throw new Error('지원하지 않는 파일 형식이에요.');
+  }
 
   const storagePath = createStoragePath(academyId, file);
   const mimeType = file.type || 'application/octet-stream';
-  const { error: uploadError } = await supabase.storage
-    .from(ACADEMY_DRIVE_BUCKET)
-    .upload(storagePath, file, {
-      cacheControl: '3600',
-      contentType: mimeType,
-      upsert: false,
-    });
-  if (uploadError) throw uploadError;
-
+  let metadata = null;
   try {
     const { data, error } = await supabase
       .from('academy_drive_files')
@@ -141,10 +201,33 @@ export async function uploadAcademyDriveFile({
       .select()
       .single();
     if (error) throw error;
-    return data;
+    metadata = data;
+
+    const { error: uploadError } = await supabase.storage
+      .from(ACADEMY_DRIVE_BUCKET)
+      .upload(storagePath, file, {
+        cacheControl: '3600',
+        contentType: mimeType,
+        upsert: false,
+      });
+    if (uploadError) throw uploadError;
+    return metadata;
   } catch (error) {
-    // owner-only Storage 정책에 맞춰, 실패한 메타데이터에 연결된 파일은 회수한다.
-    await supabase.storage.from(ACADEMY_DRIVE_BUCKET).remove([storagePath]).catch(() => {});
+    if (metadata?.id) {
+      try {
+        await supabase
+          .from('academy_drive_files')
+          .update({
+            deleted_at: new Date().toISOString(),
+            deleted_by: user.id,
+          })
+          .eq('id', metadata.id);
+        await permanentlyDeleteAcademyDriveFileById(metadata.id);
+      } catch {
+        // 원래 업로드 오류를 사용자에게 유지한다. 고아 metadata는 휴지통에서
+        // 다시 정리할 수 있고 감사 로그에도 남는다.
+      }
+    }
     throw error;
   }
 }
@@ -162,25 +245,42 @@ export async function updateAcademyDriveDownloadAllowed(fileId, downloadAllowed)
   return data;
 }
 
-export async function deleteAcademyDriveFile(file) {
-  assertSupabaseConfigured();
-  if (!file?.id || !file?.storage_path) throw new Error('삭제할 파일 정보를 찾을 수 없어요.');
-
-  // Storage object를 먼저 제거한다. 실패 시 DB 메타데이터는 남아 있어 관리자가
-  // 다시 시도할 수 있고, 성공 뒤 DB 삭제가 실패해도 목록에서 복구/정리할 근거가 남는다.
-  const { error: storageError } = await supabase.storage
-    .from(ACADEMY_DRIVE_BUCKET)
-    .remove([file.storage_path]);
-  if (storageError) throw storageError;
-
-  const { error } = await supabase
+export async function trashAcademyDriveFile(fileId) {
+  const user = await getCurrentUserOrThrow();
+  if (!fileId) throw new Error('삭제할 파일 정보를 찾을 수 없어요.');
+  const { data, error } = await supabase
     .from('academy_drive_files')
-    .delete()
-    .eq('id', file.id);
+    .update({ deleted_at: new Date().toISOString(), deleted_by: user.id })
+    .eq('id', fileId)
+    .is('deleted_at', null)
+    .select()
+    .single();
   if (error) throw error;
+  return data;
 }
 
-// action: view | print | download
+export async function restoreAcademyDriveFile(fileId) {
+  assertSupabaseConfigured();
+  if (!fileId) throw new Error('복구할 파일 정보를 찾을 수 없어요.');
+  const { data, error } = await supabase
+    .from('academy_drive_files')
+    .update({ deleted_at: null, deleted_by: null })
+    .eq('id', fileId)
+    .not('deleted_at', 'is', null)
+    .select()
+    .single();
+  if (error?.code === '23503') throw new Error('파일이 있던 폴더를 먼저 복구해주세요.');
+  if (error?.code === '54000') throw new Error('드라이브 저장 용량을 초과해 복구할 수 없어요.');
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteAcademyDriveFile(file) {
+  if (!file?.id) throw new Error('삭제할 파일 정보를 찾을 수 없어요.');
+  await permanentlyDeleteAcademyDriveFileById(file.id);
+}
+
+// action: view | print | download. 영구 삭제는 내부 helper만 호출한다.
 // Edge Function은 active 멤버십을 확인하며, download는 관리자 또는
 // download_allowed=true인 파일에만 URL을 발급한다.
 export async function getAcademyDriveFileUrl(fileId, action = 'view') {

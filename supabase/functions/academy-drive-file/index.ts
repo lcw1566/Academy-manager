@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-type FileAction = 'view' | 'print' | 'download';
+type FileAction = 'view' | 'print' | 'download' | 'delete';
 
 function required(name: string) {
   const value = Deno.env.get(name);
@@ -41,13 +41,13 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const fileId = typeof body?.fileId === 'string' ? body.fileId : '';
     const action = body?.action as FileAction;
-    if (!fileId || !['view', 'print', 'download'].includes(action)) {
+    if (!fileId || !['view', 'print', 'download', 'delete'].includes(action)) {
       return json({ error: 'fileId and a valid action are required' }, 400);
     }
 
     const { data: file, error: fileError } = await admin
       .from('academy_drive_files')
-      .select('id, academy_id, storage_path, original_name, download_allowed')
+      .select('id, academy_id, storage_path, original_name, download_allowed, deleted_at')
       .eq('id', fileId)
       .maybeSingle();
     if (fileError) throw fileError;
@@ -62,6 +62,28 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (membershipError) throw membershipError;
     if (!membership) return json({ error: 'Forbidden' }, 403);
+
+    if (action === 'delete') {
+      if (!file.deleted_at) {
+        return json({ error: '먼저 자료를 휴지통으로 이동해주세요.' }, 409);
+      }
+
+      const { error: storageError } = await admin.storage
+        .from('academy-drive')
+        .remove([file.storage_path]);
+      if (storageError) throw storageError;
+
+      const { error: metadataError } = await admin
+        .from('academy_drive_files')
+        .delete()
+        .eq('id', file.id)
+        .not('deleted_at', 'is', null);
+      if (metadataError) throw metadataError;
+
+      return json({ deleted: true });
+    }
+
+    if (file.deleted_at) return json({ error: '휴지통에 있는 자료예요.' }, 410);
 
     const isOwner = membership.role === 'owner';
     if (action === 'download' && !isOwner && !file.download_allowed) {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Download, Eye, File, FileImage, FileText, Folder,
-  FolderPlus, Loader2, Printer, RefreshCw, Search, Trash2, Upload,
+  FolderPlus, Loader2, Printer, RefreshCw, RotateCcw, Search, Trash2, Upload,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
@@ -14,24 +14,33 @@ import {
   deleteAcademyDriveFile,
   deleteAcademyDriveFolder,
   getAcademyDriveFileUrl,
+  getAcademyDriveUsage,
   listAcademyDriveFiles,
   listAcademyDriveFolders,
+  restoreAcademyDriveFile,
+  restoreAcademyDriveFolder,
+  trashAcademyDriveFile,
+  trashAcademyDriveFolder,
   uploadAcademyDriveFile,
 } from '../../../services/supabase/driveApi';
 
 const MAX_DRIVE_FILE_LABEL = '50MB';
-// 업로드 선택창에서 자주 쓰는 학원 자료를 먼저 제안한다. 서버는 확장자를 기준으로
-// 막지 않으므로, 이 목록 밖의 파일도 필요한 경우 선택할 수 있다.
+const DRIVE_TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+// 서버 허용 목록과 동일하게 유지한다. 실행·스크립트·압축 파일은 파일럿에서 제외한다.
 const COMMON_ACADEMY_FILE_ACCEPT = [
   '.pdf', '.hwp', '.hwpx', '.doc', '.docx', '.odt', '.rtf',
   '.xls', '.xlsx', '.csv', '.ppt', '.pptx', '.txt', '.md',
-  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.zip',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp',
 ].join(',');
 
 function formatBytes(bytes) {
   const value = Number(bytes) || 0;
   if (value < 1024) return `${value}B`;
   if (value < 1024 * 1024) return `${Math.round(value / 1024)}KB`;
+  if (value >= 1024 * 1024 * 1024) {
+    const gigabytes = value / (1024 * 1024 * 1024);
+    return `${gigabytes.toFixed(gigabytes >= 10 ? 0 : 1)}GB`;
+  }
   return `${(value / (1024 * 1024)).toFixed(value >= 10 * 1024 * 1024 ? 0 : 1)}MB`;
 }
 
@@ -40,6 +49,12 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   return new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric' }).format(date);
+}
+
+function trashDaysRemaining(value) {
+  const deletedAt = new Date(value).getTime();
+  if (!Number.isFinite(deletedAt)) return '';
+  return `${Math.max(1, Math.ceil((deletedAt + DRIVE_TRASH_RETENTION_MS - Date.now()) / 86400000))}일 남음`;
 }
 
 function extensionOf(file) {
@@ -96,7 +111,10 @@ export default function DrivePage() {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const [files, setFiles] = useState([]);
   const [folders, setFolders] = useState([]);
+  const [driveUsage, setDriveUsage] = useState(0);
+  const [driveQuota, setDriveQuota] = useState(0);
   const [currentFolderId, setCurrentFolderId] = useState(null);
+  const [isTrashView, setIsTrashView] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
@@ -111,20 +129,69 @@ export default function DrivePage() {
     if (!currentAcademyId) {
       setFiles([]);
       setFolders([]);
+      setDriveUsage(0);
+      setDriveQuota(0);
       setIsLoading(false);
       return;
     }
     setIsLoading(true);
     setLoadError('');
     try {
-      const [nextFiles, nextFolders] = await Promise.all([
-        listAcademyDriveFiles(currentAcademyId),
-        listAcademyDriveFolders(currentAcademyId),
+      let [nextFiles, nextFolders, nextUsage] = await Promise.all([
+        listAcademyDriveFiles(currentAcademyId, { includeDeleted: true }),
+        listAcademyDriveFolders(currentAcademyId, { includeDeleted: true }),
+        getAcademyDriveUsage(currentAcademyId),
       ]);
+
+      // 별도 스케줄러 없이도 파일럿에서 보관기한을 지키도록 드라이브 진입 시
+      // 7일이 지난 항목을 정리한다. 파일 삭제는 Edge Function에서 멤버십과
+      // 휴지통 상태를 다시 확인한다.
+      const trashCutoff = Date.now() - DRIVE_TRASH_RETENTION_MS;
+      const expiredFiles = nextFiles.filter(
+        (file) => file.deleted_at && new Date(file.deleted_at).getTime() <= trashCutoff,
+      );
+      const expiredFolders = nextFolders.filter(
+        (folder) => folder.deleted_at && new Date(folder.deleted_at).getTime() <= trashCutoff,
+      );
+      if (expiredFiles.length || expiredFolders.length) {
+        await Promise.allSettled(expiredFiles.map((file) => deleteAcademyDriveFile(file)));
+        const folderById = new Map(nextFolders.map((folder) => [folder.id, folder]));
+        const folderDepth = (folder) => {
+          let depth = 0;
+          let cursor = folder;
+          const visited = new Set();
+          while (cursor?.parent_id && !visited.has(cursor.id)) {
+            visited.add(cursor.id);
+            depth += 1;
+            cursor = folderById.get(cursor.parent_id);
+          }
+          return depth;
+        };
+        const deepestFirst = [...expiredFolders].sort(
+          (left, right) => folderDepth(right) - folderDepth(left),
+        );
+        for (const folder of deepestFirst) {
+          try {
+            await deleteAcademyDriveFolder(folder.id);
+          } catch {
+            // 아직 보관기한이 남은 하위 항목이 있으면 다음 진입 때 다시 확인한다.
+          }
+        }
+        [nextFiles, nextFolders, nextUsage] = await Promise.all([
+          listAcademyDriveFiles(currentAcademyId, { includeDeleted: true }),
+          listAcademyDriveFolders(currentAcademyId, { includeDeleted: true }),
+          getAcademyDriveUsage(currentAcademyId),
+        ]);
+      }
+
       setFiles(nextFiles);
       setFolders(nextFolders);
+      setDriveUsage(nextUsage.usedBytes);
+      setDriveQuota(nextUsage.quotaBytes);
       setCurrentFolderId((current) => (
-        current && !nextFolders.some((folder) => folder.id === current) ? null : current
+        current && !nextFolders.some((folder) => folder.id === current && !folder.deleted_at)
+          ? null
+          : current
       ));
     } catch (error) {
       setLoadError(error?.message || '공유 자료를 불러오지 못했어요.');
@@ -136,11 +203,11 @@ export default function DrivePage() {
   useEffect(() => { loadFiles(); }, [loadFiles]);
 
   const currentFolder = useMemo(
-    () => folders.find((folder) => folder.id === currentFolderId) || null,
+    () => folders.find((folder) => folder.id === currentFolderId && !folder.deleted_at) || null,
     [folders, currentFolderId],
   );
   const breadcrumbs = useMemo(() => {
-    const byId = new Map(folders.map((folder) => [folder.id, folder]));
+    const byId = new Map(folders.filter((folder) => !folder.deleted_at).map((folder) => [folder.id, folder]));
     const result = [];
     const visited = new Set();
     let cursor = currentFolder;
@@ -153,17 +220,20 @@ export default function DrivePage() {
   }, [folders, currentFolder]);
   const visibleItems = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('ko-KR');
+    const scopedFolders = folders.filter((folder) => Boolean(folder.deleted_at) === isTrashView);
+    const scopedFiles = files.filter((file) => Boolean(file.deleted_at) === isTrashView);
     if (query) {
       return {
-        folders: folders.filter((folder) => folder.name.toLocaleLowerCase('ko-KR').includes(query)),
-        files: files.filter((file) => file.original_name.toLocaleLowerCase('ko-KR').includes(query)),
+        folders: scopedFolders.filter((folder) => folder.name.toLocaleLowerCase('ko-KR').includes(query)),
+        files: scopedFiles.filter((file) => file.original_name.toLocaleLowerCase('ko-KR').includes(query)),
       };
     }
+    if (isTrashView) return { folders: scopedFolders, files: scopedFiles };
     return {
-      folders: folders.filter((folder) => (folder.parent_id || null) === currentFolderId),
-      files: files.filter((file) => (file.folder_id || null) === currentFolderId),
+      folders: scopedFolders.filter((folder) => (folder.parent_id || null) === currentFolderId),
+      files: scopedFiles.filter((file) => (file.folder_id || null) === currentFolderId),
     };
-  }, [files, folders, search, currentFolderId]);
+  }, [files, folders, search, currentFolderId, isTrashView]);
 
   const withFileBusy = async (file, action) => {
     setBusyFileId(file.id);
@@ -198,17 +268,27 @@ export default function DrivePage() {
   const removeFile = async (file) => {
     setIsDeleting(true);
     await withFileBusy(file, async () => {
-      await deleteAcademyDriveFile(file);
-      setFiles((current) => current.filter((item) => item.id !== file.id));
+      if (file.deleted_at) {
+        await deleteAcademyDriveFile(file);
+        setFiles((current) => current.filter((item) => item.id !== file.id));
+        setDriveUsage((current) => Math.max(0, current - (Number(file.size_bytes) || 0)));
+        showToast('자료를 영구 삭제했어요.');
+      } else {
+        const trashed = await trashAcademyDriveFile(file.id);
+        setFiles((current) => current.map((item) => (item.id === file.id ? trashed : item)));
+        showToast('자료를 휴지통으로 옮겼어요.');
+      }
       setDeleteTarget(null);
-      showToast('자료를 삭제했어요.');
     });
     setIsDeleting(false);
   };
 
   const removeFolder = async (folder) => {
-    const hasChildren = folders.some((item) => item.parent_id === folder.id)
-      || files.some((item) => item.folder_id === folder.id);
+    const hasChildren = folders.some((item) => (
+      item.parent_id === folder.id && (folder.deleted_at || !item.deleted_at)
+    )) || files.some((item) => (
+      item.folder_id === folder.id && (folder.deleted_at || !item.deleted_at)
+    ));
     if (hasChildren) {
       showToast('파일이나 하위 폴더를 먼저 비워주세요.', 'error');
       setDeleteTarget(null);
@@ -216,16 +296,44 @@ export default function DrivePage() {
     }
     setIsDeleting(true);
     try {
-      await deleteAcademyDriveFolder(folder.id);
-      setFolders((current) => current.filter((item) => item.id !== folder.id));
-      if (currentFolderId === folder.id) setCurrentFolderId(folder.parent_id || null);
+      if (folder.deleted_at) {
+        await deleteAcademyDriveFolder(folder.id);
+        setFolders((current) => current.filter((item) => item.id !== folder.id));
+        showToast('폴더를 영구 삭제했어요.');
+      } else {
+        const trashed = await trashAcademyDriveFolder(folder.id);
+        setFolders((current) => current.map((item) => (item.id === folder.id ? trashed : item)));
+        if (currentFolderId === folder.id) setCurrentFolderId(folder.parent_id || null);
+        showToast('폴더를 휴지통으로 옮겼어요.');
+      }
       setDeleteTarget(null);
-      showToast('폴더를 삭제했어요.');
     } catch (error) {
       showToast(error?.message || '폴더를 삭제하지 못했어요.', 'error');
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  const restoreFile = (file) => withFileBusy(file, async () => {
+    const restored = await restoreAcademyDriveFile(file.id);
+    setFiles((current) => current.map((item) => (item.id === file.id ? restored : item)));
+    showToast('자료를 복구했어요.');
+  });
+
+  const restoreFolder = async (folder) => {
+    try {
+      const restored = await restoreAcademyDriveFolder(folder.id);
+      setFolders((current) => current.map((item) => (item.id === folder.id ? restored : item)));
+      showToast('폴더를 복구했어요.');
+    } catch (error) {
+      showToast(error?.message || '폴더를 복구하지 못했어요.', 'error');
+    }
+  };
+
+  const toggleTrash = () => {
+    setIsTrashView((current) => !current);
+    setCurrentFolderId(null);
+    setSearch('');
   };
 
   return (
@@ -236,22 +344,39 @@ export default function DrivePage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setIsFolderOpen(true)}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#F2F4F6] text-[#4E5968] active:bg-[#E5E8EB] md:w-auto md:px-3"
-              aria-label="새 폴더"
+              onClick={toggleTrash}
+              className={`flex h-9 w-9 items-center justify-center rounded-xl text-[#4E5968] active:bg-[#E5E8EB] md:w-auto md:px-3 ${
+                isTrashView ? 'bg-red-50 text-red-500' : 'bg-[#F2F4F6]'
+              }`}
+              aria-label={isTrashView ? '드라이브로 돌아가기' : '휴지통'}
             >
-              <FolderPlus size={16} />
-              <span className="ml-1.5 hidden text-sm font-bold md:inline">새 폴더</span>
+              {isTrashView ? <ChevronLeft size={16} /> : <Trash2 size={16} />}
+              <span className="ml-1.5 hidden text-sm font-bold md:inline">
+                {isTrashView ? '드라이브' : '휴지통'}
+              </span>
             </button>
-            <button
-              type="button"
-              onClick={() => setIsUploadOpen(true)}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0064FF] text-sm font-bold text-white shadow-sm active:bg-[#0050CC] md:w-auto md:px-4"
-              aria-label="자료 올리기"
-            >
-              <Upload size={16} />
-              <span className="ml-1.5 hidden md:inline">자료 올리기</span>
-            </button>
+            {!isTrashView && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsFolderOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#F2F4F6] text-[#4E5968] active:bg-[#E5E8EB] md:w-auto md:px-3"
+                  aria-label="새 폴더"
+                >
+                  <FolderPlus size={16} />
+                  <span className="ml-1.5 hidden text-sm font-bold md:inline">새 폴더</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsUploadOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0064FF] text-sm font-bold text-white shadow-sm active:bg-[#0050CC] md:w-auto md:px-4"
+                  aria-label="자료 올리기"
+                >
+                  <Upload size={16} />
+                  <span className="ml-1.5 hidden md:inline">자료 올리기</span>
+                </button>
+              </>
+            )}
           </div>
         )}
       />
@@ -262,49 +387,72 @@ export default function DrivePage() {
             <span className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shadow-sm shrink-0">
               <Folder size={17} className="text-[#0064FF]" />
             </span>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-gray-900">학원 내부 공유 자료</p>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-bold text-gray-900">
+                  {isTrashView ? '휴지통' : '학원 내부 공유 자료'}
+                </p>
+                {!isTrashView && driveQuota > 0 && (
+                  <span className="shrink-0 text-[11px] font-semibold text-[#6B7684]">
+                    {formatBytes(driveUsage)} / {formatBytes(driveQuota)}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-gray-600 mt-0.5 leading-5">
-                모든 직원이 폴더를 만들고 자료를 올리거나 내려받을 수 있어요.
+                {isTrashView
+                  ? '삭제한 항목은 7일 동안 보관되며 복구할 수 있어요.'
+                  : '모든 직원이 폴더를 만들고 자료를 올리거나 내려받을 수 있어요.'}
               </p>
+              {!isTrashView && driveQuota > 0 && (
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white">
+                  <div
+                    className={`h-full rounded-full ${
+                      driveUsage / driveQuota >= 0.9 ? 'bg-red-400' : 'bg-[#3182F6]'
+                    }`}
+                    style={{ width: `${Math.min(100, (driveUsage / driveQuota) * 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </section>
 
-        <div className="mt-4 flex min-h-10 items-center gap-1 overflow-x-auto whitespace-nowrap rounded-xl border border-gray-100 bg-white px-2 py-1 shadow-sm">
-          <button
-            type="button"
-            onClick={() => setCurrentFolderId(null)}
-            className={`rounded-lg px-2.5 py-2 text-xs font-bold ${
-              currentFolderId ? 'text-[#6B7684] active:bg-gray-50' : 'bg-blue-50 text-[#0064FF]'
-            }`}
-          >
-            드라이브
-          </button>
-          {breadcrumbs.map((folder) => (
-            <div key={folder.id} className="flex items-center gap-1">
-              <ChevronRight size={13} className="text-[#B0B8C1]" />
-              <button
-                type="button"
-                onClick={() => setCurrentFolderId(folder.id)}
-                className={`rounded-lg px-2.5 py-2 text-xs font-bold ${
-                  folder.id === currentFolderId
-                    ? 'bg-blue-50 text-[#0064FF]'
-                    : 'text-[#6B7684] active:bg-gray-50'
-                }`}
-              >
-                {folder.name}
-              </button>
-            </div>
-          ))}
-        </div>
+        {!isTrashView && (
+          <div className="mt-4 flex min-h-10 items-center gap-1 overflow-x-auto whitespace-nowrap rounded-xl border border-gray-100 bg-white px-2 py-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setCurrentFolderId(null)}
+              className={`rounded-lg px-2.5 py-2 text-xs font-bold ${
+                currentFolderId ? 'text-[#6B7684] active:bg-gray-50' : 'bg-blue-50 text-[#0064FF]'
+              }`}
+            >
+              드라이브
+            </button>
+            {breadcrumbs.map((folder) => (
+              <div key={folder.id} className="flex items-center gap-1">
+                <ChevronRight size={13} className="text-[#B0B8C1]" />
+                <button
+                  type="button"
+                  onClick={() => setCurrentFolderId(folder.id)}
+                  className={`rounded-lg px-2.5 py-2 text-xs font-bold ${
+                    folder.id === currentFolderId
+                      ? 'bg-blue-50 text-[#0064FF]'
+                      : 'text-[#6B7684] active:bg-gray-50'
+                  }`}
+                >
+                  {folder.name}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="mt-4 flex items-center gap-2 bg-white rounded-2xl px-4 py-3 shadow-sm border border-gray-100">
           <Search size={16} className="text-gray-400 shrink-0" />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="자료 이름 검색"
+            placeholder={isTrashView ? '휴지통 검색' : '자료 이름 검색'}
             className="flex-1 min-w-0 bg-transparent text-sm text-gray-800 outline-none"
           />
           <button type="button" onClick={loadFiles} className="p-1 -mr-1 text-gray-400 active:text-[#0064FF]" aria-label="새로고침">
@@ -323,8 +471,12 @@ export default function DrivePage() {
         ) : visibleItems.files.length === 0 && visibleItems.folders.length === 0 ? (
           <EmptyState
             icon={search ? '🔎' : '🗂️'}
-            title={search ? '검색 결과가 없어요' : '이 폴더가 비어 있어요'}
-            description={search ? '다른 검색어를 입력해보세요.' : '새 폴더를 만들거나 자료를 올려보세요.'}
+            title={search ? '검색 결과가 없어요' : isTrashView ? '휴지통이 비어 있어요' : '이 폴더가 비어 있어요'}
+            description={search
+              ? '다른 검색어를 입력해보세요.'
+              : isTrashView
+              ? '삭제한 자료와 폴더가 여기에 표시돼요.'
+              : '새 폴더를 만들거나 자료를 올려보세요.'}
           />
         ) : (
           <div className="mt-4 flex flex-col gap-2">
@@ -344,10 +496,12 @@ export default function DrivePage() {
               <DriveFolderCard
                 key={folder.id}
                 folder={folder}
+                isTrash={isTrashView}
                 onOpen={() => {
                   setCurrentFolderId(folder.id);
                   setSearch('');
                 }}
+                onRestore={() => restoreFolder(folder)}
                 onDelete={() => setDeleteTarget({ kind: 'folder', item: folder })}
               />
             ))}
@@ -355,9 +509,11 @@ export default function DrivePage() {
               <DriveFileCard
                 key={file.id}
                 file={file}
+                isTrash={isTrashView}
                 isBusy={busyFileId === file.id}
                 onOpen={() => openPreview(file)}
                 onDownload={() => downloadFile(file)}
+                onRestore={() => restoreFile(file)}
                 onDelete={() => setDeleteTarget({ kind: 'file', item: file })}
               />
             ))}
@@ -372,6 +528,7 @@ export default function DrivePage() {
         onClose={() => setIsUploadOpen(false)}
         onUploaded={(file) => {
           setFiles((current) => [file, ...current]);
+          setDriveUsage((current) => current + (Number(file.size_bytes) || 0));
           setIsUploadOpen(false);
           showToast('공유 자료를 올렸어요.');
         }}
@@ -394,6 +551,7 @@ export default function DrivePage() {
       {deleteTarget && (
         <DeleteDriveItemSheet
           target={deleteTarget}
+          isPermanent={Boolean(deleteTarget.item.deleted_at)}
           isBusy={isDeleting}
           onClose={() => setDeleteTarget(null)}
           onConfirm={() => (
@@ -418,53 +576,84 @@ export default function DrivePage() {
   );
 }
 
-function DriveFolderCard({ folder, onOpen, onDelete }) {
+function DriveFolderCard({
+  folder,
+  isTrash,
+  onOpen,
+  onRestore,
+  onDelete,
+}) {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3.5 shadow-sm">
-      <button
-        type="button"
-        onClick={onOpen}
+      <span
         className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#3182F6]"
-        aria-label={`${folder.name} 폴더 열기`}
       >
         <Folder size={20} />
-      </button>
-      <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+      </span>
+      <button type="button" onClick={isTrash ? undefined : onOpen} className="min-w-0 flex-1 text-left">
         <p className="truncate text-sm font-bold text-gray-900">{folder.name}</p>
-        <p className="mt-1 text-[11px] text-gray-400">폴더 · {formatDate(folder.created_at)}</p>
+        <p className="mt-1 text-[11px] text-gray-400">
+          {isTrash
+            ? `삭제됨 · ${trashDaysRemaining(folder.deleted_at)}`
+            : `폴더 · ${formatDate(folder.created_at)}`}
+        </p>
       </button>
-      <IconAction label="폴더 삭제" Icon={Trash2} onClick={onDelete} tone="red" />
-      <IconAction label="폴더 열기" Icon={ChevronRight} onClick={onOpen} />
+      {isTrash ? (
+        <>
+          <IconAction label="폴더 복구" Icon={RotateCcw} onClick={onRestore} tone="blue" />
+          <IconAction label="폴더 영구 삭제" Icon={Trash2} onClick={onDelete} tone="red" />
+        </>
+      ) : (
+        <>
+          <IconAction label="폴더 삭제" Icon={Trash2} onClick={onDelete} tone="red" />
+          <IconAction label="폴더 열기" Icon={ChevronRight} onClick={onOpen} />
+        </>
+      )}
     </div>
   );
 }
 
-function DriveFileCard({ file, isBusy, onOpen, onDownload, onDelete }) {
+function DriveFileCard({
+  file,
+  isTrash,
+  isBusy,
+  onOpen,
+  onDownload,
+  onRestore,
+  onDelete,
+}) {
   const previewable = canPreview(file);
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3.5 flex items-center gap-3">
-      <button type="button" onClick={onOpen} className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0" aria-label={`${file.original_name} 열기`}>
+      <button type="button" disabled={isTrash} onClick={onOpen} className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center shrink-0" aria-label={`${file.original_name} 열기`}>
         <FileTypeIcon file={file} />
       </button>
       <div className="min-w-0 flex-1">
-        <button type="button" onClick={onOpen} className="block max-w-full text-left">
+        <button type="button" disabled={isTrash} onClick={onOpen} className="block max-w-full text-left">
           <p className="text-sm font-bold text-gray-900 truncate">{file.original_name}</p>
         </button>
         <div className="flex items-center gap-1.5 mt-1 text-[11px] text-gray-400">
           <span>{formatBytes(file.size_bytes)}</span>
           <span>·</span>
-          <span>{formatDate(file.created_at)}</span>
+          <span>{isTrash ? trashDaysRemaining(file.deleted_at) : formatDate(file.created_at)}</span>
         </div>
       </div>
       <div className="flex items-center gap-0.5 shrink-0">
         {isBusy ? (
           <span className="w-8 h-8 flex items-center justify-center"><Loader2 size={16} className="animate-spin text-[#0064FF]" /></span>
         ) : (
-          <>
-            {previewable && <IconAction label="열기" Icon={Eye} onClick={onOpen} />}
-            <IconAction label="다운로드" Icon={Download} onClick={onDownload} />
-            <IconAction label="삭제" Icon={Trash2} onClick={onDelete} tone="red" />
-          </>
+          isTrash ? (
+            <>
+              <IconAction label="자료 복구" Icon={RotateCcw} onClick={onRestore} tone="blue" />
+              <IconAction label="자료 영구 삭제" Icon={Trash2} onClick={onDelete} tone="red" />
+            </>
+          ) : (
+            <>
+              {previewable && <IconAction label="열기" Icon={Eye} onClick={onOpen} />}
+              <IconAction label="다운로드" Icon={Download} onClick={onDownload} />
+              <IconAction label="삭제" Icon={Trash2} onClick={onDelete} tone="red" />
+            </>
+          )
         )}
       </div>
     </div>
@@ -472,7 +661,11 @@ function DriveFileCard({ file, isBusy, onOpen, onDownload, onDelete }) {
 }
 
 function IconAction({ label, Icon, onClick, tone = 'gray' }) {
-  const color = tone === 'red' ? 'text-red-400 active:bg-red-50' : 'text-gray-400 active:bg-gray-100';
+  const color = tone === 'red'
+    ? 'text-red-400 active:bg-red-50'
+    : tone === 'blue'
+    ? 'text-[#3182F6] active:bg-blue-50'
+    : 'text-gray-400 active:bg-gray-100';
   return <button type="button" onClick={onClick} className={`w-8 h-8 rounded-lg flex items-center justify-center ${color}`} aria-label={label} title={label}><Icon size={16} /></button>;
 }
 
@@ -527,7 +720,7 @@ function UploadDriveSheet({ isOpen, academyId, folderId, onClose, onUploaded, on
           <span className="max-w-full text-center"><span className="block text-sm font-bold text-gray-900 truncate">{file.name}</span><span className="block text-xs text-gray-500 mt-1">{formatBytes(file.size)}</span></span>
         ) : <span className="text-sm font-bold text-[#0064FF]">파일 선택</span>}
       </button>
-      <p className="mt-2 text-[11px] text-gray-400">파일당 최대 {MAX_DRIVE_FILE_LABEL} · HWP/HWPX, Word, Excel, PPT, PDF, 이미지, CSV, ZIP 등을 올릴 수 있어요.</p>
+      <p className="mt-2 text-[11px] text-gray-400">파일당 최대 {MAX_DRIVE_FILE_LABEL} · HWP/HWPX, Word, Excel, PPT, PDF, 이미지, CSV 등을 올릴 수 있어요.</p>
     </Modal>
   );
 }
@@ -605,14 +798,22 @@ function CreateFolderSheet({
   );
 }
 
-function DeleteDriveItemSheet({ target, isBusy, onClose, onConfirm }) {
+function DeleteDriveItemSheet({
+  target,
+  isPermanent,
+  isBusy,
+  onClose,
+  onConfirm,
+}) {
   const isFolder = target.kind === 'folder';
   const name = isFolder ? target.item.name : target.item.original_name;
   return (
     <Modal
       isOpen
       onClose={isBusy ? () => {} : onClose}
-      title={isFolder ? '폴더를 삭제할까요?' : '자료를 삭제할까요?'}
+      title={isPermanent
+        ? `${isFolder ? '폴더' : '자료'}를 영구 삭제할까요?`
+        : `${isFolder ? '폴더' : '자료'}를 삭제할까요?`}
       footer={(
         <div className="mb-3 grid grid-cols-2 gap-2">
           <button
@@ -630,7 +831,7 @@ function DeleteDriveItemSheet({ target, isBusy, onClose, onConfirm }) {
             className="flex items-center justify-center gap-1.5 rounded-2xl bg-red-500 py-3.5 text-sm font-bold text-white disabled:bg-red-300"
           >
             {isBusy ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
-            삭제
+            {isPermanent ? '영구 삭제' : '삭제'}
           </button>
         </div>
       )}
@@ -638,9 +839,11 @@ function DeleteDriveItemSheet({ target, isBusy, onClose, onConfirm }) {
       <div className="rounded-2xl bg-red-50 px-4 py-4">
         <p className="break-words text-sm font-bold text-[#191F28]">{name}</p>
         <p className="mt-1 text-xs leading-5 text-red-600">
-          {isFolder
-            ? '비어 있는 폴더만 삭제할 수 있어요.'
-            : '삭제한 자료는 복구할 수 없어요.'}
+          {isPermanent
+            ? '영구 삭제하면 복구할 수 없어요.'
+            : isFolder
+            ? '비어 있는 폴더만 삭제할 수 있으며 7일 동안 복구할 수 있어요.'
+            : '삭제한 자료는 휴지통에서 7일 동안 복구할 수 있어요.'}
         </p>
       </div>
     </Modal>
