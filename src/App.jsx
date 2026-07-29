@@ -57,25 +57,25 @@ function closeQrDisplayPage() {
   window.location.replace(`${url.pathname}${url.search}${url.hash}`);
 }
 
-// Phase 25 — sessionStorage key per academy. Used to make sure auto-hydrate
-// runs at most once per academy per browser session.
-function autoHydratedKey(academyId) {
-  return `auto-hydrated-${academyId}`;
+// 사용자·학원·역할 범위별로 한 번만 hydrate한다. 학원 ID만 사용하면 같은
+// 브라우저에서 계정을 바꾸거나 역할이 낮아졌을 때 이전 완료 표시를 재사용한다.
+function autoHydratedKey(academyId, userId, role) {
+  return `auto-hydrated-${userId}-${academyId}-${role}`;
 }
 
-function wasAutoHydratedThisSession(academyId) {
-  if (!academyId || typeof sessionStorage === 'undefined') return false;
+function wasAutoHydratedThisSession(academyId, userId, role) {
+  if (!academyId || !userId || !role || typeof sessionStorage === 'undefined') return false;
   try {
-    return sessionStorage.getItem(autoHydratedKey(academyId)) === '1';
+    return sessionStorage.getItem(autoHydratedKey(academyId, userId, role)) === '1';
   } catch {
     return false;
   }
 }
 
-function markAutoHydratedThisSession(academyId) {
-  if (!academyId || typeof sessionStorage === 'undefined') return;
+function markAutoHydratedThisSession(academyId, userId, role) {
+  if (!academyId || !userId || !role || typeof sessionStorage === 'undefined') return;
   try {
-    sessionStorage.setItem(autoHydratedKey(academyId), '1');
+    sessionStorage.setItem(autoHydratedKey(academyId, userId, role), '1');
   } catch {
     /* ignore */
   }
@@ -259,10 +259,10 @@ export default function App() {
 
   useEffect(() => {
     if (isPublicCheckin || !isAuthenticated) return;
-    if (!authUserId || !currentAcademyId) return;
-    ensureAcademyDataScope(authUserId, currentAcademyId);
+    if (!authUserId || !currentAcademyId || !ACADEMY_ROLES.includes(role)) return;
+    ensureAcademyDataScope(authUserId, currentAcademyId, role);
   }, [
-    isPublicCheckin, isAuthenticated, authUserId, currentAcademyId,
+    isPublicCheckin, isAuthenticated, authUserId, currentAcademyId, role,
     ensureAcademyDataScope,
   ]);
 
@@ -389,17 +389,27 @@ export default function App() {
   //   - 핵심 server count 3개 (학생/반/회차) 로드 완료
   //   - 같은 세션에서 자동 hydrate 한 적 없음
   //
-  // 학원 단위 sessionStorage 키 ('auto-hydrated-<academyId>') 로 중복 실행 차단.
+  // 사용자·학원·역할 단위 sessionStorage 키로 중복 실행을 차단한다.
   // 서버 snapshot 과 매칭되는 항목은 최신 값으로 교체하고, 아직 서버 저장에 실패한
   // local-only 항목은 보존한다. 조회 자체가 실패하면 세션 성공 표시도 남기지 않는다.
-  const hydratingRef = useRef(false);
+  const hydratingRef = useRef(null);
+  const [hydratedScopeKey, setHydratedScopeKey] = useState(null);
   const monthEndGenerationRef = useRef(null);
   useEffect(() => {
     if (isPublicCheckin || isQrDisplay) return;
     if (!isAuthenticated) return;
-    if (!currentAcademyId) return;
-    if (hydratingRef.current) return;
-    if (wasAutoHydratedThisSession(currentAcademyId)) return;
+    if (!isWorkspaceReady || !authUserId || !currentAcademyId) return;
+    const currentMembership = memberships.find(
+      (membership) => membership.academy_id === currentAcademyId
+        && membership.status === 'active',
+    );
+    const membershipRole = currentMembership
+      ? membershipRoleToAppRole(currentMembership.role)
+      : null;
+    if (!membershipRole || role !== membershipRole) return;
+    const scopeKey = autoHydratedKey(currentAcademyId, authUserId, role);
+    if (hydratingRef.current === scopeKey) return;
+    if (wasAutoHydratedThisSession(currentAcademyId, authUserId, role)) return;
 
     // 핵심 카운터가 백그라운드 초기 로딩을 한 번이라도 마쳤는지
     const hasInitialServerLoad = !!(
@@ -408,7 +418,7 @@ export default function App() {
     if (!hasInitialServerLoad) return;
     if (isServerStudentsLoading || isServerClassGroupsLoading || isServerClassSessionsLoading) return;
 
-    hydratingRef.current = true;
+    hydratingRef.current = scopeKey;
     (async () => {
       try {
         const snapshot = await retryAsync(
@@ -422,7 +432,11 @@ export default function App() {
           },
         );
         // fetch 도중 사용자가 다른 학원으로 전환했다면 이전 학원 snapshot을 적용하지 않는다.
-        if (useWorkspaceStore.getState().currentAcademyId !== currentAcademyId) return;
+        if (
+          useWorkspaceStore.getState().currentAcademyId !== currentAcademyId
+          || useAuthStore.getState().user?.id !== authUserId
+          || useAcademyStore.getState().role !== role
+        ) return;
         const counts = hydrateAcademyFromServerSnapshot(snapshot, {
           strategy: 'serverWins',
           // RLS로 조회 권한이 회수된 직원 기기에 예전 학생/수납 캐시가 남지 않게
@@ -437,16 +451,20 @@ export default function App() {
         if (total > 0) {
           showToast(`접속 완료!`);
         }
-        markAutoHydratedThisSession(currentAcademyId);
+        markAutoHydratedThisSession(currentAcademyId, authUserId, role);
+        setHydratedScopeKey(scopeKey);
       } catch (err) {
         console.error('[auto-hydrate] fetchAcademySnapshot failed', err);
         showToast('데이터 동기화에 실패했어요.', 'error');
       } finally {
-        hydratingRef.current = false;
+        if (hydratingRef.current === scopeKey) {
+          hydratingRef.current = null;
+        }
       }
     })();
   }, [
-    isPublicCheckin, isQrDisplay, isAuthenticated, currentAcademyId,
+    isPublicCheckin, isQrDisplay, isAuthenticated, isWorkspaceReady,
+    authUserId, currentAcademyId, memberships, role,
     serverStudentsLoadedAt, serverClassGroupsLoadedAt, serverClassSessionsLoadedAt,
     isServerStudentsLoading, isServerClassGroupsLoading, isServerClassSessionsLoading,
     hydrateAcademyFromServerSnapshot, showToast,
@@ -458,8 +476,12 @@ export default function App() {
     if (!isWorkspaceReady) return;
     if (role !== 'owner') return;
     if (!currentAcademyId) return;
-    if (!wasAutoHydratedThisSession(currentAcademyId)) return;
-    if (hydratingRef.current) return;
+    const scopeKey = autoHydratedKey(currentAcademyId, authUserId, role);
+    if (
+      hydratedScopeKey !== scopeKey
+      && !wasAutoHydratedThisSession(currentAcademyId, authUserId, role)
+    ) return;
+    if (hydratingRef.current === scopeKey) return;
 
     const runKey = `${currentAcademyId}:${getTodayYMD()}`;
     if (monthEndGenerationRef.current === runKey) return;
@@ -495,6 +517,7 @@ export default function App() {
     role,
     currentAcademyId,
     authUserId,
+    hydratedScopeKey,
     showToast,
     loadServerClassSessions,
     loadServerStaffShifts,

@@ -62,7 +62,6 @@ import {
   buildPlannedStaffSchedule, mergePlannedAndActualStaffShifts, plannedToStaffShiftShape,
 } from '../../../utils/schedule';
 import {
-  PERMISSION_DEFAULTS,
   PERMISSION_LABELS,
   PERMISSION_KEYS,
   resolvePermissions,
@@ -80,7 +79,12 @@ const STATUS_TONES = {
   completed: 'text-emerald-700 bg-emerald-50',
   canceled: 'text-gray-500 bg-gray-100',
 };
-const STAFF_ROLE_LABELS = { teacher: '선생님', assistant: '선생님', manager: '운영 매니저' };
+const STAFF_ROLE_LABELS = {
+  owner: '원장',
+  teacher: '선생님',
+  assistant: '선생님',
+  manager: '운영 매니저',
+};
 const INVITATION_STATUS_META = {
   pending: {
     label: '수락 대기',
@@ -220,14 +224,9 @@ export default function StaffPage() {
     { role, staffProfile: myStaffProfile },
     'canManageStaff',
   );
-  const canManageStaffPermissions = role === 'owner' || currentUserCan(
-    { role, staffProfile: myStaffProfile },
-    'canManageStaffPermissions',
-  );
   if (canManageStaff) {
     return <OwnerStaffView
       canInviteManagers={role === 'owner'}
-      canManageStaffPermissions={canManageStaffPermissions}
     />;
   }
   return <MyStaffView />;
@@ -236,12 +235,19 @@ export default function StaffPage() {
 // ═══════════════════════════════════════════════════════════════════
 // Owner 뷰 — 직원 리스트 + 상세
 // ═══════════════════════════════════════════════════════════════════
-function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions = false }) {
+function OwnerStaffView({ canInviteManagers = false }) {
+  const authUserId = useAuthStore((s) => s.user?.id);
+  const authUserEmail = useAuthStore((s) => s.user?.email);
   const academyTeachers = useAcademyStore((s) => s.academyTeachers) ?? [];
   const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
   const academyManagers = useAcademyStore((s) => s.academyManagers) ?? [];
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
 
+  const profile = useWorkspaceStore((s) => s.profile);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const academyMemberProfiles = useWorkspaceStore((s) => s.academyMemberProfiles) ?? [];
+  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
   const loadAcademyInvitations = useWorkspaceStore((s) => s.loadAcademyInvitations);
 
@@ -257,14 +263,86 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
   const currentMonth = getCurrentMonth();
 
   const allStaff = useMemo(() => {
+    const currentMembership = memberships.find(
+      (membership) => membership.academy_id === currentAcademyId,
+    );
+    const ownerUserId = currentMembership?.academy?.owner_id || null;
+    const directoryProfiles = academyMemberProfiles.slice();
+    if (
+      ownerUserId
+      && !directoryProfiles.some((memberProfile) => memberProfile.user_id === ownerUserId)
+    ) {
+      directoryProfiles.push({
+        user_id: ownerUserId,
+        display_name: ownerUserId === authUserId ? profile?.display_name : '학원 원장',
+        email: ownerUserId === authUserId ? (profile?.email || authUserEmail) : '',
+        phone: ownerUserId === authUserId ? profile?.phone : '',
+        membership_role: 'owner',
+        membership_status: 'active',
+      });
+    }
+    if (
+      authUserId
+      && !directoryProfiles.some((memberProfile) => memberProfile.user_id === authUserId)
+    ) {
+      directoryProfiles.push({
+        user_id: authUserId,
+        display_name: profile?.display_name,
+        email: profile?.email || authUserEmail,
+        phone: profile?.phone,
+        membership_role: currentMembership?.role,
+        membership_status: currentMembership?.status,
+      });
+    }
+    const importantMembers = directoryProfiles
+      .map((memberProfile) => {
+        const staffProfile = academyStaffProfiles.find(
+          (candidate) => candidate.user_id === memberProfile.user_id,
+        );
+        const memberRole = memberProfile.membership_role
+          || staffProfile?.role
+          || (memberProfile.user_id === ownerUserId ? 'owner' : null)
+          || (memberProfile.user_id === authUserId ? currentMembership?.role : null);
+        const normalizedRole = memberRole === 'assistant' ? 'teacher' : memberRole;
+        if (!['owner', 'teacher', 'manager'].includes(normalizedRole)) {
+          return null;
+        }
+        return {
+          id: `${normalizedRole}_${memberProfile.user_id}`,
+          serverUserId: memberProfile.user_id,
+          academyMemberId: staffProfile?.member_id || null,
+          email: memberProfile.email || '',
+          name: memberProfile.display_name || memberProfile.email || (
+            normalizedRole === 'owner' ? '학원 원장' : '내 계정'
+          ),
+          phone: memberProfile.phone || '',
+          subject: staffProfile?.subject || '',
+          subjects: staffProfile?.subjects || [],
+          wageType: staffProfile?.wage_type || 'hourly',
+          hourlyWage: staffProfile?.hourly_wage || 0,
+          monthlySalary: staffProfile?.monthly_salary || 0,
+          memo: staffProfile?.memo || '',
+          status: staffProfile?.status || 'active',
+          _role: normalizedRole,
+          _sourceRole: memberRole,
+          _kind: 'staff',
+          _isCurrentUser: memberProfile.user_id === authUserId,
+          _isDirectoryEntry: true,
+        };
+      })
+      .filter(Boolean);
+
     const seen = new Set();
     return [
       ...academyTeachers.map((staff) => ({ ...staff, _role: 'teacher', _sourceRole: 'teacher', _kind: 'staff' })),
       // SQL 043 적용 전 로컬에 남은 보조강사도 하나의 선생님 목록으로 표시한다.
       ...academyAssistants.map((staff) => ({ ...staff, _role: 'teacher', _sourceRole: 'assistant', _kind: 'staff' })),
-      ...(canInviteManagers
-        ? academyManagers.map((staff) => ({ ...staff, _role: 'manager', _sourceRole: 'manager', _kind: 'staff' }))
-        : []),
+      // 역할을 바꿀 수 있는지와 목록에서 볼 수 있는지는 별개다. 운영 매니저로
+      // 접속해도 본인을 포함한 매니저 구성원은 목록에 계속 표시한다.
+      ...academyManagers.map((staff) => ({ ...staff, _role: 'manager', _sourceRole: 'manager', _kind: 'staff' })),
+      // 원장은 academy_staff_profiles 대상이 아니므로 멤버십 디렉터리에서 보강한다.
+      // 로컬 배열 로딩이 늦을 때는 현재 로그인 사용자도 같은 방식으로 보강한다.
+      ...importantMembers,
     ].filter((staff) => {
       const key = staff.serverUserId || staff.academyMemberId
         || String(staff.email || '').trim().toLowerCase()
@@ -272,8 +350,22 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    });
-  }, [academyTeachers, academyAssistants, academyManagers, canInviteManagers]);
+    }).map((staff) => ({
+      ...staff,
+      _isCurrentUser: staff.serverUserId === authUserId,
+    }));
+  }, [
+    academyTeachers,
+    academyAssistants,
+    academyManagers,
+    academyMemberProfiles,
+    academyStaffProfiles,
+    memberships,
+    currentAcademyId,
+    authUserId,
+    authUserEmail,
+    profile,
+  ]);
 
   const pendingInvitations = useMemo(
     () => (academyInvitations || []).filter((inv) => inv.status === 'pending'),
@@ -299,6 +391,7 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
   // 직원별 요약 (이번 주 근무 시간, 오늘 근무 수)
   const staffSummaries = useMemo(() => {
     const map = new Map();
+    const staffIdByUserId = new Map();
     for (const staff of allStaff) {
       map.set(staff.id, {
         weekMin: 0,
@@ -308,10 +401,13 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
         todayCount: 0,
         hasShift: false,
       });
+      if (staff.serverUserId) staffIdByUserId.set(staff.serverUserId, staff.id);
     }
     for (const sh of academyStaffShifts) {
-      if (!sh.staffId || sh.status === 'canceled') continue;
-      const cur = map.get(sh.staffId);
+      if (sh.status === 'canceled') continue;
+      const resolvedStaffId = sh.staffId || staffIdByUserId.get(sh.staffUserId);
+      if (!resolvedStaffId) continue;
+      const cur = map.get(resolvedStaffId);
       if (!cur) continue;
       cur.hasShift = true;
       if (weekDates.includes(sh.date)) {
@@ -331,8 +427,7 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
     const q = search.trim().toLowerCase();
     const items = [];
     for (const s of allStaff) {
-      if (filter === 'teacher' && s._role !== 'teacher') continue;
-      if (filter === 'manager' && s._role !== 'manager') continue;
+      if (filter !== 'all' && s._role !== filter) continue;
       if (q && !(s.name || '').toLowerCase().includes(q)
             && !(s.email || '').toLowerCase().includes(q)) continue;
       items.push({ kind: 'staff', id: s.id, key: `staff_${s.id}`, staff: s });
@@ -414,8 +509,9 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
               >
                 {[
                   { id: 'all', label: '전체' },
+                  { id: 'owner', label: '원장' },
                   { id: 'teacher', label: '선생님' },
-                  ...(canInviteManagers ? [{ id: 'manager', label: '운영' }] : []),
+                  { id: 'manager', label: '운영' },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -469,13 +565,19 @@ function OwnerStaffView({ canInviteManagers = false, canManageStaffPermissions =
             }`}
           >
             {selectedItem ? (
-              <StaffDetailPanel
-                staff={selectedItem.staff}
-                summary={staffSummaries.get(selectedItem.staff.id)}
-                onBack={handleBackToList}
-                canManageManager={canInviteManagers}
-                canManageStaffPermissions={canManageStaffPermissions}
-              />
+              selectedItem.staff._role === 'owner' ? (
+                <OwnerMemberDetailPanel
+                  staff={selectedItem.staff}
+                  onBack={handleBackToList}
+                />
+              ) : (
+                <StaffDetailPanel
+                  staff={selectedItem.staff}
+                  summary={staffSummaries.get(selectedItem.staff.id)}
+                  onBack={handleBackToList}
+                  canManageManager={canInviteManagers}
+                />
+              )
             ) : (
               <EmptyDetailPanel onAdd={() => setInviteOpen(true)} />
             )}
@@ -637,10 +739,13 @@ function InvitationStatusModal({
 // ─── 직원 카드 ────────────────────────────────────────────────────
 function StaffRosterCard({ item, active, summary, onClick }) {
   const staff = item.staff;
+  const isOwner = staff._role === 'owner';
   const weekHours = formatShiftHoursFromMinutes(summary?.weekGrossMin ?? summary?.weekMin ?? 0);
   const netWeekHours = formatShiftHoursFromMinutes(summary?.weekMin || 0);
   const hasShift = summary?.hasShift;
-  const statusBadge = !hasShift
+  const statusBadge = isOwner
+    ? { label: '전체 권한', tone: 'bg-blue-50 text-blue-700' }
+    : !hasShift
     ? { label: '근무 미설정', tone: 'bg-amber-50 text-amber-700' }
     : { label: '근무 설정', tone: 'bg-emerald-50 text-emerald-700' };
   return (
@@ -663,8 +768,10 @@ function StaffRosterCard({ item, active, summary, onClick }) {
             {staff.name || '(이름 없음)'}
           </p>
           <p className="text-[11px] mt-0.5 text-[#8B95A1]">
-            {STAFF_ROLE_LABELS[staff._role] || '선생님'} · 이번 주 {weekHours}시간
-            {summary?.weekBreakMin > 0 ? ` · 휴게 제외 ${netWeekHours}시간` : ''}
+            {STAFF_ROLE_LABELS[staff._role] || '선생님'}
+            {staff._isCurrentUser ? ' · 나' : ''}
+            {!isOwner ? ` · 이번 주 ${weekHours}시간` : ''}
+            {!isOwner && summary?.weekBreakMin > 0 ? ` · 휴게 제외 ${netWeekHours}시간` : ''}
           </p>
         </div>
         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${statusBadge.tone}`}>
@@ -672,6 +779,56 @@ function StaffRosterCard({ item, active, summary, onClick }) {
         </span>
       </div>
     </button>
+  );
+}
+
+function OwnerMemberDetailPanel({ staff, onBack }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <button
+        type="button"
+        onClick={onBack}
+        className="md:hidden flex items-center gap-1 text-sm font-semibold text-[#4E5968]"
+      >
+        <ChevronLeft size={16} /> 목록으로
+      </button>
+      <div className="rounded-2xl bg-white p-4 shadow-sm md:p-6">
+        <div className="flex items-start gap-3">
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-base font-bold text-[#3182F6]">
+            {(staff.name || '?').charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="truncate text-lg font-bold text-[#191F28]">
+                {staff.name || '학원 원장'}
+              </p>
+              {staff._isCurrentUser && (
+                <span className="rounded-full bg-[#F2F4F6] px-2 py-1 text-[10px] font-bold text-[#6B7684]">
+                  나
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 truncate text-xs text-[#8B95A1]">
+              {staff.email || staff.phone || '원장 계정'}
+              {staff.email && staff.phone ? ` · ${staff.phone}` : ''}
+            </p>
+            <span className="mt-3 inline-flex rounded-lg bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-700">
+              원장
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="rounded-2xl bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2">
+          <ShieldCheck size={16} className="text-[#3182F6]" />
+          <p className="text-sm font-bold text-[#191F28]">권한</p>
+        </div>
+        <p className="mt-3 text-sm font-bold text-[#191F28]">모든 학원 관리 권한</p>
+        <p className="mt-1 text-xs leading-5 text-[#8B95A1]">
+          원장 권한은 학원 소유권과 연결되어 있어 직원 권한 화면에서 변경할 수 없어요.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -697,7 +854,7 @@ function EmptyDetailPanel({ onAdd }) {
 // 직원 상세 패널 (sub-tabs: 근무/계약/권한)
 // ═══════════════════════════════════════════════════════════════════
 function StaffDetailPanel({
-  staff, summary, onBack, canManageManager = false, canManageStaffPermissions = false,
+  staff, summary, onBack, canManageManager = false,
 }) {
   const [subTab, setSubTab] = useState('shift');
   const isAssistant = false;
@@ -914,8 +1071,6 @@ function StaffDetailPanel({
       {subTab === 'contract'   && <PayrollLockedPanel />}
       {subTab === 'permission' && <StaffPermissionSection
         staff={staff}
-        canManageManager={canManageManager}
-        canManageStaffPermissions={canManageStaffPermissions}
       />}
     </div>
   );
@@ -2739,84 +2894,29 @@ function Row({ label, value }) {
 // ═══════════════════════════════════════════════════════════════════
 // Sub-tab: 권한
 // ═══════════════════════════════════════════════════════════════════
-function StaffPermissionSection({
-  staff, canManageManager = false, canManageStaffPermissions = false,
-}) {
-  const staffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
-  const saveAcademyStaffProfile = useWorkspaceStore((s) => s.saveAcademyStaffProfile);
-  const showToast = useAcademyStore((s) => s.showToast);
-
-  const serverProfile = useMemo(
-    () => staff.serverUserId ? staffProfiles.find((p) => p.user_id === staff.serverUserId) : null,
-    [staffProfiles, staff.serverUserId],
-  );
-
-  const initial = useMemo(() => {
-    if (serverProfile?.permissions && typeof serverProfile.permissions === 'object'
-        && Object.keys(serverProfile.permissions).length > 0) {
-      return { ...resolvePermissions(staff._role, serverProfile.permissions) };
-    }
-    return { ...PERMISSION_DEFAULTS[staff._role] };
-  }, [serverProfile, staff._role]);
-
-  const [permissions, setPermissions] = useState(initial);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setPermissions(initial);
-  }, [initial, staff.id, staff._role]);
-
-  const dirty = useMemo(
-    () => PERMISSION_KEYS.some((k) => !!permissions[k] !== !!initial[k]),
-    [permissions, initial],
-  );
-
-  const handleSave = async () => {
-    if (!staff.serverUserId) {
-      showToast('서버 계정에 연결되지 않은 직원은 권한을 저장할 수 없어요.', 'error');
-      return;
-    }
-    setSaving(true);
-    try {
-      await saveAcademyStaffProfile({
-        userId: staff.serverUserId,
-        role: staff._role,
-        subjects: serverProfile?.subjects || [],
-        wageType: serverProfile?.wage_type || staff.wageType || 'hourly',
-        hourlyWage: serverProfile?.hourly_wage || staff.hourlyWage || 0,
-        monthlySalary: serverProfile?.monthly_salary || staff.monthlySalary || 0,
-        memo: serverProfile?.memo || null,
-        status: 'active',
-        permissions,
-        scope: serverProfile?.scope || {},
-      });
-      showToast('권한이 저장되었습니다.');
-    } catch (err) {
-      showToast(err?.message ?? '권한 저장에 실패했어요.', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
+function StaffPermissionSection({ staff }) {
+  const permissions = resolvePermissions(staff._role);
+  const roleLabel = STAFF_ROLE_LABELS[staff._role] || '선생님';
+  const scopeDescription = staff._role === 'manager'
+    ? '학원 전체 운영 범위에 적용돼요. 원장 권한과 다른 직원 급여는 포함되지 않아요.'
+    : '담당 반과 대체·보강 회차에 배정된 학생에게만 적용돼요.';
 
   return (
     <div className="flex flex-col gap-3">
       <div className="bg-white rounded-2xl p-4 md:p-5 shadow-sm">
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2">
           <ShieldCheck size={15} className="text-[#3182F6]" />
-          <p className="text-sm font-bold text-[#191F28]">기능 권한</p>
+          <p className="text-sm font-bold text-[#191F28]">{roleLabel} 기본 권한</p>
         </div>
-        <div className="flex flex-col gap-1">
-          {ACTIVE_PERMISSION_KEYS.map((key) => (
-            <label key={key} className="flex items-center justify-between py-2 cursor-pointer">
-              <span className="text-sm text-[#191F28]">{PERMISSION_LABELS[key]}</span>
-              <input
-                type="checkbox"
-                checked={!!permissions[key]}
-                disabled={!canManageStaffPermissions || (staff._role === 'manager' && !canManageManager)}
-                onChange={(e) => setPermissions((prev) => ({ ...prev, [key]: e.target.checked }))}
-                className="w-4 h-4 rounded accent-blue-600"
-              />
-            </label>
+        <p className="mt-2 text-xs leading-5 text-[#8B95A1]">{scopeDescription}</p>
+        <div className="mt-4 flex flex-col gap-2">
+          {ACTIVE_PERMISSION_KEYS.filter((key) => permissions[key]).map((key) => (
+            <div key={key} className="flex items-center gap-2 rounded-xl bg-[#F8F9FA] px-3 py-2.5">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                <Check size={12} strokeWidth={2.5} />
+              </span>
+              <span className="text-sm font-medium text-[#333D4B]">{PERMISSION_LABELS[key]}</span>
+            </div>
           ))}
           <div className="mt-1 flex items-center justify-between rounded-xl bg-[#F8F9FA] px-3 py-2.5">
             <span className="text-sm font-medium text-[#8B95A1]">수납 · 급여 · 드라이브</span>
@@ -2825,17 +2925,8 @@ function StaffPermissionSection({
             </span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={!dirty || saving || !staff.serverUserId || !canManageStaffPermissions || (staff._role === 'manager' && !canManageManager)}
-          className="mt-3 w-full py-3 rounded-xl bg-[#3182F6] text-white text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-1.5"
-        >
-          {saving ? <Loader2 size={13} className="animate-spin" /> : null}
-          {staff.serverUserId ? '권한 저장' : '서버 계정 연결 후 저장 가능'}
-        </button>
         <p className="text-[11px] text-[#8B95A1] mt-2 leading-relaxed">
-          기본값은 역할별로 설정돼 있어요. 권한 변경은 앱 안 UI 노출/숨김에 즉시 반영됩니다.
+          권한은 역할과 수업 배정에 따라 자동으로 적용돼요.
         </p>
       </div>
     </div>

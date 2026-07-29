@@ -4,6 +4,7 @@ import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import {
+  completeAcademyClassSession,
   updateClassSession as updateServerClassSession,
   upsertAcademyLessonRecord,
   upsertAcademyAttendanceRecordsBulk,
@@ -1252,7 +1253,7 @@ export default function ClassSessionPage() {
                   // 서버 완료가 성공한 뒤에만 로컬 상태를 바꾼다.
                   if (session.serverId && isAuthenticated && currentAcademyId) {
                     try {
-                      await updateServerClassSession(session.serverId, { status: 'completed' });
+                      await completeAcademyClassSession(session.serverId);
                       updateClassSession(session.id, { status: 'completed' });
                       await loadServerClassSessions();
                     } catch (err) {

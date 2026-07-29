@@ -176,6 +176,7 @@ function createDefaultAcademyProfile() {
 function createEmptyAcademyScopeState({
   ownerUserId = null,
   ownerAcademyId = null,
+  ownerRole = null,
 } = {}) {
   return {
     academyProfile: createDefaultAcademyProfile(),
@@ -200,6 +201,7 @@ function createEmptyAcademyScopeState({
     selectedAcademyStudentId: null,
     academyDataOwnerUserId: ownerUserId,
     academyDataOwnerAcademyId: ownerAcademyId,
+    academyDataOwnerRole: ownerRole,
   };
 }
 
@@ -281,6 +283,9 @@ const useAcademyStore = create(
   academyDataOwnerUserId: null,
   // 같은 계정이 여러 학원에 소속된 경우에도 캐시가 섞이지 않도록 현재 학원도 함께 기록한다.
   academyDataOwnerAcademyId: null,
+  // 같은 사용자라도 역할이 낮아졌다면 이전 역할에서 받은 넓은 범위의 캐시를
+  // 재사용하면 안 된다. 현재 캐시를 만든 앱 역할도 함께 저장한다.
+  academyDataOwnerRole: null,
 
   // === Toast ===
   toast: null,
@@ -2538,12 +2543,13 @@ const useAcademyStore = create(
   // ─── Account / academy scoping ───────────────────────
   // 사용자 또는 현재 학원이 달라지면 academy-scoped 캐시를 먼저 비운다.
   // 서버 fetch 전에 동기적으로 실행되어 이전 학원의 학생/급여가 화면에 섞이는 것을 막는다.
-  ensureAcademyDataScope: (userId, academyId) => {
+  ensureAcademyDataScope: (userId, academyId, ownerRole = null) => {
     if (!userId || !academyId) return;
     const state = get();
     if (
       state.academyDataOwnerUserId === userId &&
-      state.academyDataOwnerAcademyId === academyId
+      state.academyDataOwnerAcademyId === academyId &&
+      (!ownerRole || state.academyDataOwnerRole === ownerRole)
     ) {
       return;
     }
@@ -2551,6 +2557,12 @@ const useAcademyStore = create(
       ...createEmptyAcademyScopeState({
         ownerUserId: userId,
         ownerAcademyId: academyId,
+        ownerRole: ownerRole || (
+          state.academyDataOwnerUserId === userId
+          && state.academyDataOwnerAcademyId === academyId
+            ? state.academyDataOwnerRole
+            : null
+        ),
       }),
       schoolNames: [],
     });
@@ -2579,6 +2591,7 @@ const useAcademyStore = create(
     set(createEmptyAcademyScopeState({
       ownerUserId: state.academyDataOwnerUserId,
       ownerAcademyId: state.academyDataOwnerAcademyId,
+      ownerRole: state.academyDataOwnerRole,
     }));
     get().showToast('학원 데이터가 초기화되었어요.');
   },
@@ -2743,13 +2756,35 @@ const useAcademyStore = create(
     {
       name: 'academy-store',
       storage: createJSONStorage(() => createDeferredLocalStorage()),
-      version: 1,
+      version: 2,
       // 이전 버전에서 남아 있던 예시 학교 자동완성 캐시는 한 번 비운다.
       // 학생 레코드의 실제 school/schoolName 값은 건드리지 않는다.
       migrate: (persistedState, persistedVersion) => {
         if (!persistedState || typeof persistedState !== 'object') return persistedState;
         if (persistedVersion < 1) {
-          return { ...persistedState, schoolNames: [] };
+          persistedState = { ...persistedState, schoolNames: [] };
+        }
+        // 역할/담당 범위 RLS 도입 전에는 선생님 브라우저에도 학원 전체 학생과
+        // 반 데이터가 localStorage에 남을 수 있었다. 서버가 새 범위로 다시
+        // 내려주기 전 이전 캐시가 잠깐 보이지 않도록 학원 캐시만 한 번 비운다.
+        if (persistedVersion < 2) {
+          return {
+            ...persistedState,
+            academyStudents: [],
+            classGroups: [],
+            classSessions: [],
+            clinicTasks: [],
+            clinicRecords: [],
+            academyPayments: [],
+            academyLessonRecords: [],
+            academyAttendanceRecords: [],
+            academyStudentEvents: [],
+            academyExamResults: [],
+            academyConsultations: [],
+            academyPayrolls: [],
+            academyStaffShifts: [],
+            academyDataOwnerRole: null,
+          };
         }
         return persistedState;
       },
@@ -2792,6 +2827,7 @@ const useAcademyStore = create(
         // Phase 29 — 학원 데이터 소유자 (cross-account leak 방지용 marker)
         academyDataOwnerUserId: s.academyDataOwnerUserId,
         academyDataOwnerAcademyId: s.academyDataOwnerAcademyId,
+        academyDataOwnerRole: s.academyDataOwnerRole,
       }),
       // Migrate persisted profile to add prompt fields if missing
       onRehydrateStorage: () => (state) => {

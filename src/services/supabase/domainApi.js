@@ -295,6 +295,18 @@ export async function updateClassSession(id, patch = {}) {
   return data;
 }
 
+// 담당 선생님은 회차 일정 전체 UPDATE 권한 없이도 자신의 수업을 완료할 수 있다.
+// SQL 051의 제한된 RPC가 담당 배정과 역할을 서버에서 다시 확인한다.
+export async function completeAcademyClassSession(id) {
+  assertSupabaseConfigured();
+  if (!id) throw new Error('id가 필요해요.');
+  const { data, error } = await supabase.rpc('complete_assigned_class_session', {
+    p_session_id: id,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function updateFutureClassSessionRecordSchema({
   academyId,
   classGroupId,
