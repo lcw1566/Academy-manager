@@ -23,6 +23,7 @@ const loadStudentAttendancePage = () => import('./attendance/StudentAttendancePa
 const loadAcademyMorePage = () => import('./more/AcademyMorePage');
 const loadStaffPage = () => import('./staff/StaffPage');
 const loadChatPage = () => import('./chat/ChatPage');
+const loadDrivePage = () => import('./drive/DrivePage');
 
 const OwnerDashboard = lazy(loadOwnerDashboard);
 const TeacherDashboard = lazy(loadTeacherDashboard);
@@ -36,12 +37,14 @@ const StudentAttendancePage = lazy(loadStudentAttendancePage);
 const AcademyMorePage = lazy(loadAcademyMorePage);
 const StaffPage = lazy(loadStaffPage);
 const ChatPage = lazy(loadChatPage);
+const DrivePage = lazy(loadDrivePage);
 
 const COMMON_ACADEMY_TAB_LOADERS = [
   loadClassGroupsPage,
   loadAcademyStudentsPage,
   loadStudentAttendancePage,
   loadChatPage,
+  loadDrivePage,
   loadAcademyMorePage,
 ];
 
@@ -60,7 +63,7 @@ const TAB_CONFIG = {
     { id: 'staff',      label: '직원',   Icon: UserCog },
     { id: 'payments',   label: '수납',  Icon: CreditCard, pilotLocked: true },
     { id: 'owner-payroll', label: '급여', Icon: BarChart2, pilotLocked: true },
-    { id: 'drive',      label: '드라이브', Icon: FolderOpen, pilotLocked: true },
+    { id: 'drive',      label: '드라이브', Icon: FolderOpen },
     { id: 'chat',       label: '채팅',  Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
@@ -71,7 +74,7 @@ const TAB_CONFIG = {
     { id: 'students', label: '학생', Icon: Users },
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
     { id: 'payroll',  label: '급여', Icon: CreditCard, pilotLocked: true },
-    { id: 'drive',    label: '드라이브', Icon: FolderOpen, pilotLocked: true },
+    { id: 'drive',    label: '드라이브', Icon: FolderOpen },
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
@@ -84,7 +87,7 @@ const TAB_CONFIG = {
     { id: 'students', label: '학생', Icon: Users },
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
     { id: 'payroll',  label: '급여', Icon: CreditCard, pilotLocked: true },
-    { id: 'drive',    label: '드라이브', Icon: FolderOpen, pilotLocked: true },
+    { id: 'drive',    label: '드라이브', Icon: FolderOpen },
     { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
@@ -97,7 +100,7 @@ const TAB_CONFIG = {
     { id: 'staff',      label: '직원',  Icon: UserCog },
     { id: 'payments',   label: '수납',  Icon: CreditCard, pilotLocked: true },
     { id: 'payroll',    label: '급여',  Icon: BarChart2, pilotLocked: true },
-    { id: 'drive',      label: '드라이브', Icon: FolderOpen, pilotLocked: true },
+    { id: 'drive',      label: '드라이브', Icon: FolderOpen },
     { id: 'chat',       label: '채팅', Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
@@ -471,9 +474,7 @@ export default function AcademyAppLayout() {
       }
       if (activeTab === 'staff')      return <StaffPage />;
       if (activeTab === 'chat')       return <ChatPage />;
-      if (activeTab === 'drive') {
-        return <PilotLockedFeature featureId="drive" onReturn={() => setActiveTab('classes')} />;
-      }
+      if (activeTab === 'drive')      return <DrivePage />;
       // Phase 40 호환 — 이전 버전 store 에 'work' 가 저장되어 있어도 staff 로 매핑.
       if (activeTab === 'work')       return <StaffPage />;
       if (activeTab === 'more') {

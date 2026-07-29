@@ -29,7 +29,7 @@ export const PERMISSION_DEFAULTS = {
     canManagePayments: false,
     canManageStaff: false,
     canManageStaffPermissions: false,
-    canManageDrive: false,
+    canManageDrive: true,
   },
   assistant: {
     canViewStudents: true,
@@ -43,7 +43,7 @@ export const PERMISSION_DEFAULTS = {
     canManagePayments: false,
     canManageStaff: false,
     canManageStaffPermissions: false,
-    canManageDrive: false,
+    canManageDrive: true,
   },
   manager: {
     canViewStudents: true,
@@ -74,7 +74,7 @@ export const PERMISSION_LABELS = {
   canManagePayments: '수납 생성·수정·삭제',
   canManageStaff: '직원 초대·근무표 관리',
   canManageStaffPermissions: '선생님 권한 설정',
-  canManageDrive: '공유 자료 등록·삭제·다운로드 정책',
+  canManageDrive: '공유 드라이브 사용',
 };
 
 export const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS);

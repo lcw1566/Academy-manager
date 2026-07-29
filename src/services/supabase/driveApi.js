@@ -50,9 +50,64 @@ export async function listAcademyDriveFiles(academyId) {
   return data ?? [];
 }
 
+export async function listAcademyDriveFolders(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) return [];
+  const { data, error } = await supabase
+    .from('academy_drive_folders')
+    .select('*')
+    .eq('academy_id', academyId)
+    .order('created_at', { ascending: true })
+    .limit(500);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createAcademyDriveFolder({
+  academyId,
+  parentId = null,
+  name,
+} = {}) {
+  const user = await getCurrentUserOrThrow();
+  const normalizedName = String(name || '').trim();
+  if (!academyId) throw new Error('학원 정보를 찾을 수 없어요.');
+  if (!normalizedName) throw new Error('폴더 이름을 입력해주세요.');
+  if (normalizedName.length > 80) throw new Error('폴더 이름은 80자 이하로 입력해주세요.');
+  if (normalizedName.includes('/')) throw new Error('폴더 이름에는 /를 사용할 수 없어요.');
+
+  const { data, error } = await supabase
+    .from('academy_drive_folders')
+    .insert({
+      academy_id: academyId,
+      parent_id: parentId || null,
+      name: normalizedName,
+      created_by: user.id,
+    })
+    .select()
+    .single();
+  if (error?.code === '23505') throw new Error('같은 위치에 같은 이름의 폴더가 있어요.');
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteAcademyDriveFolder(folderId) {
+  assertSupabaseConfigured();
+  if (!folderId) throw new Error('삭제할 폴더 정보를 찾을 수 없어요.');
+  const { error } = await supabase
+    .from('academy_drive_folders')
+    .delete()
+    .eq('id', folderId);
+  if (error?.code === '23503') throw new Error('파일이나 하위 폴더가 남아 있는 폴더는 삭제할 수 없어요.');
+  if (error) throw error;
+}
+
 // 파일과 메타데이터를 모두 등록한다. 메타데이터 insert가 실패하면 막 업로드한
 // object를 바로 정리해 고아 파일이 남지 않게 한다.
-export async function uploadAcademyDriveFile({ academyId, file, downloadAllowed = false } = {}) {
+export async function uploadAcademyDriveFile({
+  academyId,
+  folderId = null,
+  file,
+} = {}) {
   const user = await getCurrentUserOrThrow();
   if (!academyId) throw new Error('학원 정보를 찾을 수 없어요.');
   if (!(file instanceof File)) throw new Error('업로드할 파일을 선택해주세요.');
@@ -79,7 +134,8 @@ export async function uploadAcademyDriveFile({ academyId, file, downloadAllowed 
         original_name: file.name.slice(0, 255),
         mime_type: mimeType,
         size_bytes: file.size,
-        download_allowed: Boolean(downloadAllowed),
+        folder_id: folderId || null,
+        download_allowed: true,
         created_by: user.id,
       })
       .select()

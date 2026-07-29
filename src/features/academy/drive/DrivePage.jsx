@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Download, Eye, File, FileImage, FileText, Loader2, LockKeyhole, Printer,
-  RefreshCw, Search, ShieldCheck, ShieldOff, Trash2, Upload,
+  ChevronLeft, ChevronRight, Download, Eye, File, FileImage, FileText, Folder,
+  FolderPlus, Loader2, Printer, RefreshCw, Search, Trash2, Upload,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
 import EmptyState from '../../../components/EmptyState';
 import useAcademyStore from '../../../store/useAcademyStore';
-import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { currentUserCan } from '../../../utils/staffPermissions';
 import {
   MAX_DRIVE_FILE_SIZE,
+  createAcademyDriveFolder,
   deleteAcademyDriveFile,
+  deleteAcademyDriveFolder,
   getAcademyDriveFileUrl,
   listAcademyDriveFiles,
-  updateAcademyDriveDownloadAllowed,
+  listAcademyDriveFolders,
   uploadAcademyDriveFile,
 } from '../../../services/supabase/driveApi';
 
@@ -92,38 +92,40 @@ function FileTypeIcon({ file, size = 20 }) {
 }
 
 export default function DrivePage() {
-  const role = useAcademyStore((s) => s.role);
   const showToast = useAcademyStore((s) => s.showToast);
-  const authUserId = useAuthStore((s) => s.user?.id);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
-  const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const [files, setFiles] = useState([]);
+  const [folders, setFolders] = useState([]);
+  const [currentFolderId, setCurrentFolderId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isFolderOpen, setIsFolderOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [preview, setPreview] = useState(null);
   const [busyFileId, setBusyFileId] = useState(null);
-  const isOwner = role === 'owner';
-  const myStaffProfile = useMemo(
-    () => academyStaffProfiles.find((profile) => profile.user_id === authUserId) || null,
-    [academyStaffProfiles, authUserId],
-  );
-  const canManageDrive = isOwner || currentUserCan(
-    { role, staffProfile: myStaffProfile },
-    'canManageDrive',
-  );
 
   const loadFiles = useCallback(async () => {
     if (!currentAcademyId) {
       setFiles([]);
+      setFolders([]);
       setIsLoading(false);
       return;
     }
     setIsLoading(true);
     setLoadError('');
     try {
-      setFiles(await listAcademyDriveFiles(currentAcademyId));
+      const [nextFiles, nextFolders] = await Promise.all([
+        listAcademyDriveFiles(currentAcademyId),
+        listAcademyDriveFolders(currentAcademyId),
+      ]);
+      setFiles(nextFiles);
+      setFolders(nextFolders);
+      setCurrentFolderId((current) => (
+        current && !nextFolders.some((folder) => folder.id === current) ? null : current
+      ));
     } catch (error) {
       setLoadError(error?.message || '공유 자료를 불러오지 못했어요.');
     } finally {
@@ -133,11 +135,35 @@ export default function DrivePage() {
 
   useEffect(() => { loadFiles(); }, [loadFiles]);
 
-  const visibleFiles = useMemo(() => {
+  const currentFolder = useMemo(
+    () => folders.find((folder) => folder.id === currentFolderId) || null,
+    [folders, currentFolderId],
+  );
+  const breadcrumbs = useMemo(() => {
+    const byId = new Map(folders.map((folder) => [folder.id, folder]));
+    const result = [];
+    const visited = new Set();
+    let cursor = currentFolder;
+    while (cursor && !visited.has(cursor.id)) {
+      visited.add(cursor.id);
+      result.unshift(cursor);
+      cursor = cursor.parent_id ? byId.get(cursor.parent_id) : null;
+    }
+    return result;
+  }, [folders, currentFolder]);
+  const visibleItems = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('ko-KR');
-    if (!query) return files;
-    return files.filter((file) => file.original_name.toLocaleLowerCase('ko-KR').includes(query));
-  }, [files, search]);
+    if (query) {
+      return {
+        folders: folders.filter((folder) => folder.name.toLocaleLowerCase('ko-KR').includes(query)),
+        files: files.filter((file) => file.original_name.toLocaleLowerCase('ko-KR').includes(query)),
+      };
+    }
+    return {
+      folders: folders.filter((folder) => (folder.parent_id || null) === currentFolderId),
+      files: files.filter((file) => (file.folder_id || null) === currentFolderId),
+    };
+  }, [files, folders, search, currentFolderId]);
 
   const withFileBusy = async (file, action) => {
     setBusyFileId(file.id);
@@ -169,57 +195,109 @@ export default function DrivePage() {
     anchor.remove();
   });
 
-  const toggleDownload = (file) => withFileBusy(file, async () => {
-    const updated = await updateAcademyDriveDownloadAllowed(file.id, !file.download_allowed);
-    setFiles((current) => current.map((item) => item.id === updated.id ? updated : item));
-    showToast(updated.download_allowed ? '이 자료의 다운로드를 허용했어요.' : '이 자료의 다운로드를 차단했어요.');
-  });
-
-  const removeFile = (file) => {
-    if (!window.confirm(`“${file.original_name}” 자료를 삭제할까요?\n삭제하면 복구할 수 없어요.`)) return;
-    withFileBusy(file, async () => {
+  const removeFile = async (file) => {
+    setIsDeleting(true);
+    await withFileBusy(file, async () => {
       await deleteAcademyDriveFile(file);
       setFiles((current) => current.filter((item) => item.id !== file.id));
+      setDeleteTarget(null);
       showToast('자료를 삭제했어요.');
     });
+    setIsDeleting(false);
+  };
+
+  const removeFolder = async (folder) => {
+    const hasChildren = folders.some((item) => item.parent_id === folder.id)
+      || files.some((item) => item.folder_id === folder.id);
+    if (hasChildren) {
+      showToast('파일이나 하위 폴더를 먼저 비워주세요.', 'error');
+      setDeleteTarget(null);
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      await deleteAcademyDriveFolder(folder.id);
+      setFolders((current) => current.filter((item) => item.id !== folder.id));
+      if (currentFolderId === folder.id) setCurrentFolderId(folder.parent_id || null);
+      setDeleteTarget(null);
+      showToast('폴더를 삭제했어요.');
+    } catch (error) {
+      showToast(error?.message || '폴더를 삭제하지 못했어요.', 'error');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
     <div>
       <Header
         title="공유 드라이브"
-        right={canManageDrive ? (
-          <button
-            type="button"
-            onClick={() => setIsUploadOpen(true)}
-            className="h-9 w-9 md:w-auto md:px-4 flex items-center justify-center gap-1.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold shadow-sm active:bg-[#0050CC]"
-            aria-label="자료 올리기"
-          >
-            <Upload size={16} />
-            <span className="hidden md:inline">자료 올리기</span>
-          </button>
-        ) : null}
+        right={(
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsFolderOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#F2F4F6] text-[#4E5968] active:bg-[#E5E8EB] md:w-auto md:px-3"
+              aria-label="새 폴더"
+            >
+              <FolderPlus size={16} />
+              <span className="ml-1.5 hidden text-sm font-bold md:inline">새 폴더</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsUploadOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#0064FF] text-sm font-bold text-white shadow-sm active:bg-[#0050CC] md:w-auto md:px-4"
+              aria-label="자료 올리기"
+            >
+              <Upload size={16} />
+              <span className="ml-1.5 hidden md:inline">자료 올리기</span>
+            </button>
+          </div>
+        )}
       />
 
       <div className="pt-14 md:pt-0 pb-6 px-4 md:px-0">
         <section className="rounded-2xl bg-blue-50 border border-blue-100 px-4 py-3.5">
           <div className="flex items-start gap-3">
             <span className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shadow-sm shrink-0">
-              <LockKeyhole size={17} className="text-[#0064FF]" />
+              <Folder size={17} className="text-[#0064FF]" />
             </span>
             <div className="min-w-0">
               <p className="text-sm font-bold text-gray-900">학원 내부 공유 자료</p>
               <p className="text-xs text-gray-600 mt-0.5 leading-5">
-                PDF·이미지·워드(DOCX)·한글(HWP/HWPX)·텍스트 자료는 다운로드 없이도 앱 안에서 열람·인쇄할 수 있어요.
+                모든 직원이 폴더를 만들고 자료를 올리거나 내려받을 수 있어요.
               </p>
             </div>
           </div>
-          {canManageDrive && (
-            <p className="mt-3 text-[11px] text-blue-700 font-medium">
-              자료 등록, 삭제와 다운로드 허용 여부는 원장 또는 권한이 있는 운영 매니저가 변경할 수 있어요.
-            </p>
-          )}
         </section>
+
+        <div className="mt-4 flex min-h-10 items-center gap-1 overflow-x-auto whitespace-nowrap rounded-xl border border-gray-100 bg-white px-2 py-1 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setCurrentFolderId(null)}
+            className={`rounded-lg px-2.5 py-2 text-xs font-bold ${
+              currentFolderId ? 'text-[#6B7684] active:bg-gray-50' : 'bg-blue-50 text-[#0064FF]'
+            }`}
+          >
+            드라이브
+          </button>
+          {breadcrumbs.map((folder) => (
+            <div key={folder.id} className="flex items-center gap-1">
+              <ChevronRight size={13} className="text-[#B0B8C1]" />
+              <button
+                type="button"
+                onClick={() => setCurrentFolderId(folder.id)}
+                className={`rounded-lg px-2.5 py-2 text-xs font-bold ${
+                  folder.id === currentFolderId
+                    ? 'bg-blue-50 text-[#0064FF]'
+                    : 'text-[#6B7684] active:bg-gray-50'
+                }`}
+              >
+                {folder.name}
+              </button>
+            </div>
+          ))}
+        </div>
 
         <div className="mt-4 flex items-center gap-2 bg-white rounded-2xl px-4 py-3 shadow-sm border border-gray-100">
           <Search size={16} className="text-gray-400 shrink-0" />
@@ -242,25 +320,45 @@ export default function DrivePage() {
             <p className="text-xs text-gray-500 mt-1 break-words">{loadError}</p>
             <button type="button" onClick={loadFiles} className="mt-4 px-4 py-2 rounded-xl bg-gray-900 text-white text-xs font-bold">다시 시도</button>
           </div>
-        ) : visibleFiles.length === 0 ? (
+        ) : visibleItems.files.length === 0 && visibleItems.folders.length === 0 ? (
           <EmptyState
-            icon={files.length ? '🔎' : '🗂️'}
-            title={files.length ? '검색 결과가 없어요' : '공유된 자료가 없어요'}
-            description={canManageDrive && !files.length ? '오른쪽 위 버튼으로 첫 자료를 올려보세요.' : '다른 검색어를 입력하거나 나중에 다시 확인해보세요.'}
+            icon={search ? '🔎' : '🗂️'}
+            title={search ? '검색 결과가 없어요' : '이 폴더가 비어 있어요'}
+            description={search ? '다른 검색어를 입력해보세요.' : '새 폴더를 만들거나 자료를 올려보세요.'}
           />
         ) : (
           <div className="mt-4 flex flex-col gap-2">
-            {visibleFiles.map((file) => (
+            {currentFolderId && !search && (
+              <button
+                type="button"
+                onClick={() => setCurrentFolderId(currentFolder?.parent_id || null)}
+                className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3.5 text-left shadow-sm active:bg-gray-50"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-50 text-[#6B7684]">
+                  <ChevronLeft size={20} />
+                </span>
+                <span className="text-sm font-bold text-[#333D4B]">상위 폴더</span>
+              </button>
+            )}
+            {visibleItems.folders.map((folder) => (
+              <DriveFolderCard
+                key={folder.id}
+                folder={folder}
+                onOpen={() => {
+                  setCurrentFolderId(folder.id);
+                  setSearch('');
+                }}
+                onDelete={() => setDeleteTarget({ kind: 'folder', item: folder })}
+              />
+            ))}
+            {visibleItems.files.map((file) => (
               <DriveFileCard
                 key={file.id}
                 file={file}
-                isOwner={isOwner}
-                canManageDrive={canManageDrive}
                 isBusy={busyFileId === file.id}
                 onOpen={() => openPreview(file)}
                 onDownload={() => downloadFile(file)}
-                onToggleDownload={() => toggleDownload(file)}
-                onDelete={() => removeFile(file)}
+                onDelete={() => setDeleteTarget({ kind: 'file', item: file })}
               />
             ))}
           </div>
@@ -270,6 +368,7 @@ export default function DrivePage() {
       <UploadDriveSheet
         isOpen={isUploadOpen}
         academyId={currentAcademyId}
+        folderId={currentFolderId}
         onClose={() => setIsUploadOpen(false)}
         onUploaded={(file) => {
           setFiles((current) => [file, ...current]);
@@ -279,12 +378,37 @@ export default function DrivePage() {
         onError={(message) => showToast(message, 'error')}
       />
 
+      <CreateFolderSheet
+        isOpen={isFolderOpen}
+        academyId={currentAcademyId}
+        parentId={currentFolderId}
+        onClose={() => setIsFolderOpen(false)}
+        onCreated={(folder) => {
+          setFolders((current) => [...current, folder]);
+          setIsFolderOpen(false);
+          showToast('새 폴더를 만들었어요.');
+        }}
+        onError={(message) => showToast(message, 'error')}
+      />
+
+      {deleteTarget && (
+        <DeleteDriveItemSheet
+          target={deleteTarget}
+          isBusy={isDeleting}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => (
+            deleteTarget.kind === 'file'
+              ? removeFile(deleteTarget.item)
+              : removeFolder(deleteTarget.item)
+          )}
+        />
+      )}
+
       {preview && (
         <DrivePreviewSheet
           file={preview.file}
           url={preview.url}
           kind={preview.kind}
-          isOwner={isOwner}
           onClose={() => setPreview(null)}
           onDownload={() => downloadFile(preview.file)}
           onError={(message) => showToast(message, 'error')}
@@ -294,8 +418,28 @@ export default function DrivePage() {
   );
 }
 
-function DriveFileCard({ file, isOwner, canManageDrive, isBusy, onOpen, onDownload, onToggleDownload, onDelete }) {
-  const canDownload = isOwner || file.download_allowed;
+function DriveFolderCard({ folder, onOpen, onDelete }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3.5 shadow-sm">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-[#3182F6]"
+        aria-label={`${folder.name} 폴더 열기`}
+      >
+        <Folder size={20} />
+      </button>
+      <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
+        <p className="truncate text-sm font-bold text-gray-900">{folder.name}</p>
+        <p className="mt-1 text-[11px] text-gray-400">폴더 · {formatDate(folder.created_at)}</p>
+      </button>
+      <IconAction label="폴더 삭제" Icon={Trash2} onClick={onDelete} tone="red" />
+      <IconAction label="폴더 열기" Icon={ChevronRight} onClick={onOpen} />
+    </div>
+  );
+}
+
+function DriveFileCard({ file, isBusy, onOpen, onDownload, onDelete }) {
   const previewable = canPreview(file);
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-3.5 flex items-center gap-3">
@@ -310,8 +454,6 @@ function DriveFileCard({ file, isOwner, canManageDrive, isBusy, onOpen, onDownlo
           <span>{formatBytes(file.size_bytes)}</span>
           <span>·</span>
           <span>{formatDate(file.created_at)}</span>
-          <span>·</span>
-          {file.download_allowed ? <span className="text-emerald-600 font-semibold">다운로드 허용</span> : <span className="text-amber-600 font-semibold">다운로드 차단</span>}
         </div>
       </div>
       <div className="flex items-center gap-0.5 shrink-0">
@@ -320,13 +462,8 @@ function DriveFileCard({ file, isOwner, canManageDrive, isBusy, onOpen, onDownlo
         ) : (
           <>
             {previewable && <IconAction label="열기" Icon={Eye} onClick={onOpen} />}
-            {canDownload && <IconAction label="다운로드" Icon={Download} onClick={onDownload} />}
-            {canManageDrive && (
-              <>
-                <IconAction label={file.download_allowed ? '다운로드 차단' : '다운로드 허용'} Icon={file.download_allowed ? ShieldCheck : ShieldOff} onClick={onToggleDownload} tone={file.download_allowed ? 'emerald' : 'amber'} />
-                <IconAction label="삭제" Icon={Trash2} onClick={onDelete} tone="red" />
-              </>
-            )}
+            <IconAction label="다운로드" Icon={Download} onClick={onDownload} />
+            <IconAction label="삭제" Icon={Trash2} onClick={onDelete} tone="red" />
           </>
         )}
       </div>
@@ -335,20 +472,18 @@ function DriveFileCard({ file, isOwner, canManageDrive, isBusy, onOpen, onDownlo
 }
 
 function IconAction({ label, Icon, onClick, tone = 'gray' }) {
-  const color = tone === 'red' ? 'text-red-400 active:bg-red-50' : tone === 'emerald' ? 'text-emerald-500 active:bg-emerald-50' : tone === 'amber' ? 'text-amber-500 active:bg-amber-50' : 'text-gray-400 active:bg-gray-100';
+  const color = tone === 'red' ? 'text-red-400 active:bg-red-50' : 'text-gray-400 active:bg-gray-100';
   return <button type="button" onClick={onClick} className={`w-8 h-8 rounded-lg flex items-center justify-center ${color}`} aria-label={label} title={label}><Icon size={16} /></button>;
 }
 
-function UploadDriveSheet({ isOpen, academyId, onClose, onUploaded, onError }) {
+function UploadDriveSheet({ isOpen, academyId, folderId, onClose, onUploaded, onError }) {
   const [file, setFile] = useState(null);
-  const [downloadAllowed, setDownloadAllowed] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) {
       setFile(null);
-      setDownloadAllowed(false);
       setIsUploading(false);
     }
   }, [isOpen]);
@@ -368,7 +503,7 @@ function UploadDriveSheet({ isOpen, academyId, onClose, onUploaded, onError }) {
     if (!academyId) { onError('학원 정보를 찾을 수 없어요.'); return; }
     setIsUploading(true);
     try {
-      const uploaded = await uploadAcademyDriveFile({ academyId, file, downloadAllowed });
+      const uploaded = await uploadAcademyDriveFile({ academyId, folderId, file });
       onUploaded(uploaded);
     } catch (error) {
       onError(error?.message || '자료 업로드에 실패했어요.');
@@ -384,7 +519,7 @@ function UploadDriveSheet({ isOpen, academyId, onClose, onUploaded, onError }) {
       title="공유 자료 올리기"
       footer={<button type="button" disabled={isUploading} onClick={upload} className="w-full mb-3 rounded-2xl bg-[#0064FF] py-3.5 text-sm font-bold text-white disabled:bg-blue-300">{isUploading ? '업로드 중…' : '자료 올리기'}</button>}
     >
-      <p className="text-sm text-gray-600 leading-6">모든 재직 직원이 자료를 열람할 수 있어요. PDF·이미지·DOCX·HWP/HWPX·텍스트는 앱 안에서 바로 인쇄할 수 있습니다.</p>
+      <p className="text-sm text-gray-600 leading-6">모든 재직 직원이 자료를 열람하고 내려받을 수 있어요. PDF·이미지·DOCX·HWP/HWPX·텍스트는 앱 안에서 바로 인쇄할 수 있습니다.</p>
       <input ref={inputRef} type="file" accept={COMMON_ACADEMY_FILE_ACCEPT} onChange={chooseFile} className="hidden" />
       <button type="button" onClick={() => inputRef.current?.click()} className="mt-5 w-full min-h-28 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 flex flex-col items-center justify-center gap-2 px-4">
         <Upload size={21} className="text-[#0064FF]" />
@@ -393,15 +528,126 @@ function UploadDriveSheet({ isOpen, academyId, onClose, onUploaded, onError }) {
         ) : <span className="text-sm font-bold text-[#0064FF]">파일 선택</span>}
       </button>
       <p className="mt-2 text-[11px] text-gray-400">파일당 최대 {MAX_DRIVE_FILE_LABEL} · HWP/HWPX, Word, Excel, PPT, PDF, 이미지, CSV, ZIP 등을 올릴 수 있어요.</p>
-      <label className="mt-5 flex items-start gap-3 rounded-2xl bg-gray-50 px-4 py-3.5 cursor-pointer">
-        <input type="checkbox" checked={downloadAllowed} onChange={(event) => setDownloadAllowed(event.target.checked)} className="mt-0.5 w-4 h-4 accent-[#0064FF]" />
-        <span><span className="block text-sm font-bold text-gray-900">직원 다운로드 허용</span><span className="block text-xs text-gray-500 mt-1 leading-5">해제하면 앱 안에서 열람·인쇄만 가능해요. 원장은 항상 내려받을 수 있어요.</span></span>
-      </label>
     </Modal>
   );
 }
 
-function DrivePreviewSheet({ file, url, kind, isOwner, onClose, onDownload, onError }) {
+function CreateFolderSheet({
+  isOpen,
+  academyId,
+  parentId,
+  onClose,
+  onCreated,
+  onError,
+}) {
+  const [name, setName] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setName('');
+      setIsCreating(false);
+    }
+  }, [isOpen]);
+
+  const createFolder = async () => {
+    if (!name.trim()) {
+      onError('폴더 이름을 입력해주세요.');
+      return;
+    }
+    setIsCreating(true);
+    try {
+      const folder = await createAcademyDriveFolder({
+        academyId,
+        parentId,
+        name,
+      });
+      onCreated(folder);
+    } catch (error) {
+      onError(error?.message || '폴더를 만들지 못했어요.');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={isCreating ? () => {} : onClose}
+      title="새 폴더"
+      footer={(
+        <button
+          type="button"
+          disabled={isCreating || !name.trim()}
+          onClick={createFolder}
+          className="mb-3 w-full rounded-2xl bg-[#0064FF] py-3.5 text-sm font-bold text-white disabled:bg-blue-300"
+        >
+          {isCreating ? '만드는 중…' : '폴더 만들기'}
+        </button>
+      )}
+    >
+      <label className="block">
+        <span className="text-sm font-bold text-[#333D4B]">폴더 이름</span>
+        <input
+          autoFocus
+          value={name}
+          maxLength={80}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) createFolder();
+          }}
+          placeholder="예: 중등 영어 자료"
+          className="mt-2 h-14 w-full rounded-2xl border border-[#D1D6DB] bg-white px-4 text-base font-semibold text-[#191F28] outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-blue-100"
+        />
+      </label>
+      <p className="mt-2 text-xs text-[#8B95A1]">현재 위치 안에 새 폴더가 만들어져요.</p>
+    </Modal>
+  );
+}
+
+function DeleteDriveItemSheet({ target, isBusy, onClose, onConfirm }) {
+  const isFolder = target.kind === 'folder';
+  const name = isFolder ? target.item.name : target.item.original_name;
+  return (
+    <Modal
+      isOpen
+      onClose={isBusy ? () => {} : onClose}
+      title={isFolder ? '폴더를 삭제할까요?' : '자료를 삭제할까요?'}
+      footer={(
+        <div className="mb-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onClose}
+            className="rounded-2xl bg-[#F2F4F6] py-3.5 text-sm font-bold text-[#4E5968]"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onConfirm}
+            className="flex items-center justify-center gap-1.5 rounded-2xl bg-red-500 py-3.5 text-sm font-bold text-white disabled:bg-red-300"
+          >
+            {isBusy ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
+            삭제
+          </button>
+        </div>
+      )}
+    >
+      <div className="rounded-2xl bg-red-50 px-4 py-4">
+        <p className="break-words text-sm font-bold text-[#191F28]">{name}</p>
+        <p className="mt-1 text-xs leading-5 text-red-600">
+          {isFolder
+            ? '비어 있는 폴더만 삭제할 수 있어요.'
+            : '삭제한 자료는 복구할 수 없어요.'}
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+function DrivePreviewSheet({ file, url, kind, onClose, onDownload, onError }) {
   const frameRef = useRef(null);
   const [printUrl, setPrintUrl] = useState('');
   const [isPreparingPrint, setIsPreparingPrint] = useState(false);
@@ -457,7 +703,6 @@ function DrivePreviewSheet({ file, url, kind, isOwner, onClose, onDownload, onEr
     }, 120);
   };
 
-  const canDownload = isOwner || file.download_allowed;
   const renderPreview = () => {
     if (kind === 'pdf' || kind === 'image') {
       return <iframe ref={frameRef} src={printUrl || url} onLoad={handleFrameLoad} title={`${file.original_name} 미리보기`} className="w-full h-full bg-white" />;
@@ -480,7 +725,7 @@ function DrivePreviewSheet({ file, url, kind, isOwner, onClose, onDownload, onEr
       size="wide"
       footer={(
         <div className="flex gap-2 mb-3">
-          {canDownload && <button type="button" onClick={onDownload} className="flex-1 rounded-2xl bg-gray-100 py-3 text-sm font-bold text-gray-700 flex items-center justify-center gap-1.5"><Download size={16} />다운로드</button>}
+          <button type="button" onClick={onDownload} className="flex-1 rounded-2xl bg-gray-100 py-3 text-sm font-bold text-gray-700 flex items-center justify-center gap-1.5"><Download size={16} />다운로드</button>
           <button type="button" disabled={isPreparingPrint || !isDocumentReady} onClick={printFile} className="flex-1 rounded-2xl bg-[#0064FF] py-3 text-sm font-bold text-white flex items-center justify-center gap-1.5 disabled:bg-blue-300"><Printer size={16} />{isPreparingPrint ? '인쇄 준비 중…' : isDocumentReady ? '바로 인쇄' : '자료 여는 중…'}</button>
         </div>
       )}

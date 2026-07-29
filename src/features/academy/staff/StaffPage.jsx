@@ -2919,7 +2919,7 @@ function StaffPermissionSection({ staff }) {
             </div>
           ))}
           <div className="mt-1 flex items-center justify-between rounded-xl bg-[#F8F9FA] px-3 py-2.5">
-            <span className="text-sm font-medium text-[#8B95A1]">수납 · 급여 · 드라이브</span>
+            <span className="text-sm font-medium text-[#8B95A1]">수납 · 급여</span>
             <span className="rounded-full bg-[#F2F4F6] px-2 py-1 text-[10px] font-bold text-[#8B95A1]">
               파일럿 이후
             </span>
