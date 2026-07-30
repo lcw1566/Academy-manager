@@ -452,6 +452,7 @@ function isMissingAcademySettingsColumnError(error) {
     message.includes('clinic_default_items') ||
     message.includes('tuition_policy') ||
     message.includes('tuition_rates') ||
+    message.includes('job_title_permissions') ||
     message.includes('tuition_policy_onboarded_at') ||
     message.includes('address') ||
     message.includes('phone') ||
@@ -468,6 +469,7 @@ function buildAcademySettingsPayload({
   clinicDefaultActivityType,
   tuitionPolicy,
   tuitionRates,
+  jobTitlePermissions,
   address,
   phone,
 } = {}) {
@@ -496,6 +498,12 @@ function buildAcademySettingsPayload({
       ? tuitionRates
       : {};
   }
+  if (jobTitlePermissions !== undefined) {
+    out.job_title_permissions =
+      jobTitlePermissions && typeof jobTitlePermissions === 'object' && !Array.isArray(jobTitlePermissions)
+        ? jobTitlePermissions
+        : {};
+  }
   if (address !== undefined) out.address = (address || '').trim() || null;
   if (phone !== undefined) out.phone = (phone || '').trim() || null;
   out.academy_onboarded_at = new Date().toISOString();
@@ -514,6 +522,7 @@ export async function createAcademyAsOwner({
   clinicDefaultActivityType,
   tuitionPolicy,
   tuitionRates,
+  jobTitlePermissions,
   address,
   phone,
 } = {}) {
@@ -532,6 +541,7 @@ export async function createAcademyAsOwner({
     clinicDefaultActivityType,
     tuitionPolicy,
     tuitionRates,
+    jobTitlePermissions,
     address,
     phone,
   });
@@ -613,6 +623,14 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
       ? patch.tuitionRates
       : {};
   }
+  if (patch.jobTitlePermissions !== undefined) {
+    dbPatch.job_title_permissions =
+      patch.jobTitlePermissions
+      && typeof patch.jobTitlePermissions === 'object'
+      && !Array.isArray(patch.jobTitlePermissions)
+        ? patch.jobTitlePermissions
+        : {};
+  }
   if (patch.address !== undefined) dbPatch.address = (patch.address || '').trim() || null;
   if (patch.phone !== undefined) dbPatch.phone = (patch.phone || '').trim() || null;
   if (patch.markOnboarded === true) dbPatch.academy_onboarded_at = new Date().toISOString();
@@ -654,6 +672,9 @@ export async function updateAcademyProfileSettings(academyId, patch = {}) {
     }
     if (dbPatch.tuition_rates !== undefined) {
       throw new Error('수강료 가격표 저장을 위해 SQL 033을 먼저 적용해주세요.');
+    }
+    if (dbPatch.job_title_permissions !== undefined) {
+      throw new Error('직책별 권한 저장을 위해 SQL 057을 먼저 적용해주세요.');
     }
     if (dbPatch.tuition_policy !== undefined) {
       throw new Error('수강료 기준 저장을 위해 SQL 030을 먼저 적용해주세요.');

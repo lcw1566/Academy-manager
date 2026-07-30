@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   LogIn,
   LogOut,
@@ -13,10 +11,11 @@ import {
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
+import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { addDaysYMD, formatDateShort } from '../../../utils/date';
+import { formatDateShort } from '../../../utils/date';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getRoomTagClassName } from '../../../utils/roomTags';
 import {
@@ -122,6 +121,14 @@ export default function StudentAttendancePage() {
     { role, staffProfile: myStaffProfile },
     'canEditAttendance',
   );
+  const canSeeAllClasses = role === 'owner' || currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageClasses',
+  );
+  const canSeeAllStudents = role === 'owner' || currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageStudents',
+  );
   const canRecordNow = canEdit
     && selectedDate === todayYmd
     && settings.studentCheckMethod !== 'disabled'
@@ -160,7 +167,7 @@ export default function StudentAttendancePage() {
     const merged = mergePlannedAndActualClassSessions(planned, classSessions)
       .filter((session) => session.date === selectedDate && session.status !== 'canceled')
       .sort((a, b) => String(a.startTime || '').localeCompare(String(b.startTime || '')));
-    if (role !== 'teacher') return merged;
+    if (canSeeAllClasses) return merged;
     return merged.filter((session) => {
       const group = classGroups.find((item) => item.id === session.classGroupId);
       if (session.substituteTeacherUserId || session.substituteTeacherId) {
@@ -178,7 +185,7 @@ export default function StudentAttendancePage() {
     classSessionExceptions,
     classGroups,
     classSessions,
-    role,
+    canSeeAllClasses,
     authUserId,
     myTeacher,
   ]);
@@ -211,7 +218,7 @@ export default function StudentAttendancePage() {
         };
       })
       .filter((row) => {
-        if (role === 'teacher' && !row.expected) return false;
+        if (!canSeeAllStudents && !row.expected) return false;
         if (normalizedSearch) {
           const haystack = [
             row.student.name,
@@ -241,7 +248,7 @@ export default function StudentAttendancePage() {
     sessionsByStudentId,
     search,
     viewFilter,
-    role,
+    canSeeAllStudents,
   ]);
 
   const summary = useMemo(() => {
@@ -250,7 +257,7 @@ export default function StudentAttendancePage() {
     const insideIds = new Set();
     const leftIds = new Set();
     for (const student of academyStudents) {
-      if (role === 'teacher' && !sessionsByStudentId.has(student.id)) continue;
+      if (!canSeeAllStudents && !sessionsByStudentId.has(student.id)) continue;
       if (sessionsByStudentId.has(student.id)) expectedIds.add(student.id);
       const state = getStudentDayCheckState(student.serverId, selectedDate, studentCheckEvents);
       if (state.events.some((event) => event.event_type === 'check_in')) checkedInIds.add(student.id);
@@ -263,7 +270,13 @@ export default function StudentAttendancePage() {
       inside: insideIds.size,
       left: leftIds.size,
     };
-  }, [academyStudents, sessionsByStudentId, selectedDate, studentCheckEvents, role]);
+  }, [
+    academyStudents,
+    sessionsByStudentId,
+    selectedDate,
+    studentCheckEvents,
+    canSeeAllStudents,
+  ]);
   const openSession = async (session) => {
     try {
       const actual = session?.isPlanned
@@ -321,9 +334,17 @@ export default function StudentAttendancePage() {
     }
   };
 
-  const goDate = (days) => setSelectedDate((date) => addDaysYMD(date, days));
   const isToday = selectedDate === todayYmd;
   const qrEnabled = settings.studentCheckMethod === 'qr' && isToday;
+  const calendarSchedules = useMemo(() => {
+    const classDots = classSessions
+      .filter((session) => session?.date && session.status !== 'canceled')
+      .map((session) => ({ date: session.date, type: 'class' }));
+    const attendanceDots = studentCheckEvents
+      .map((event) => ({ date: getAcademyYmd(event.event_time), type: 'performance' }))
+      .filter((event) => event.date);
+    return [...classDots, ...attendanceDots];
+  }, [classSessions, studentCheckEvents]);
 
   return (
     <div>
@@ -341,102 +362,115 @@ export default function StudentAttendancePage() {
         ) : null}
       />
 
-      <div className="px-4 pt-[72px] pb-6 md:pt-0">
-        <div className="mb-4 flex items-center justify-between rounded-2xl border border-[#E5E8EB] bg-white px-3 py-2">
-          <button type="button" onClick={() => goDate(-1)} className="h-10 w-10 rounded-xl text-gray-500 active:bg-gray-100">
-            <ChevronLeft size={20} className="mx-auto" />
-          </button>
-          <button type="button" onClick={() => setSelectedDate(todayYmd)} className="min-w-0 px-3 text-center">
-            <p className="text-sm font-extrabold text-gray-900">
-              {isToday ? '오늘' : formatDateShort(selectedDate)}
-            </p>
-            <p className="mt-0.5 text-[11px] font-medium text-gray-400">{selectedDate}</p>
-          </button>
-          <button type="button" onClick={() => goDate(1)} className="h-10 w-10 rounded-xl text-gray-500 active:bg-gray-100">
-            <ChevronRight size={20} className="mx-auto" />
-          </button>
-        </div>
-
-        <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-          <SummaryItem label="예정" value={summary.expected} Icon={CalendarDays} tone="gray" />
-          <SummaryItem label="등원" value={summary.checkedIn} Icon={CheckCircle2} tone="blue" />
-          <SummaryItem label="원내" value={summary.inside} Icon={LogIn} tone="green" />
-          <SummaryItem label="하원" value={summary.left} Icon={LogOut} tone="indigo" />
-        </div>
-
-        {settings.studentCheckMethod === 'disabled' && (
-          <div className="mb-4 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-medium leading-5 text-amber-800">
-            등하원을 사용하지 않도록 설정했어요. 학원 설정에서 다시 켤 수 있어요.
-          </div>
-        )}
-        {!isToday && (
-          <div className="mb-4 rounded-2xl bg-gray-100 px-4 py-3 text-xs font-medium text-gray-600">
-            지난 날짜에 빠진 등원·하원은 학생별로 기록을 추가할 수 있어요.
-          </div>
-        )}
-
-        <div className="mb-3 flex h-[52px] items-center gap-2.5 rounded-2xl border border-[#D1D6DB] bg-white px-4 focus-within:border-[#3182F6] focus-within:ring-2 focus-within:ring-blue-100">
-          <Search size={18} className="flex-shrink-0 text-[#8B95A1]" />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="학생 이름, 학교, 학년 검색"
-            className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#191F28] outline-none placeholder:text-[#8B95A1]"
+      <div className="pt-14 pb-6 md:pt-0">
+        <div className="pt-4">
+          <WeeklyExpandableCalendar
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            schedules={calendarSchedules}
           />
         </div>
 
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-          {VIEW_FILTERS.map((filter) => (
-            <button
-              key={filter.id}
-              type="button"
-              onClick={() => setViewFilter(filter.id)}
-              className={`flex-shrink-0 rounded-full px-3.5 py-2 text-xs font-bold ${
-                viewFilter === filter.id
-                  ? 'bg-[#191F28] text-white'
-                  : 'border border-gray-200 bg-white text-gray-500'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-
-        {eventsError && (
-          <div className="mb-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-medium text-red-700">
-            {eventsError}
+        <div className="px-4 pt-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-base font-black text-[#191F28]">
+                {isToday ? '오늘' : formatDateShort(selectedDate)}
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium text-[#8B95A1]">{selectedDate}</p>
+            </div>
+            {!isToday && (
+              <button
+                type="button"
+                onClick={() => setSelectedDate(todayYmd)}
+                className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700"
+              >
+                오늘
+              </button>
+            )}
           </div>
-        )}
 
-        {isLoading && rows.length === 0 ? (
-          <div className="rounded-2xl bg-white px-5 py-10 text-center text-sm text-gray-400">불러오는 중...</div>
-        ) : rows.length === 0 ? (
-          <div className="rounded-2xl bg-white px-5 py-10 text-center shadow-sm">
-            <Users size={24} className="mx-auto mb-2 text-gray-300" />
-            <p className="text-sm font-bold text-gray-700">표시할 학생이 없어요</p>
-            <p className="mt-1 text-xs text-gray-400">검색어나 필터를 바꿔보세요.</p>
+          <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <SummaryItem label="예정" value={summary.expected} Icon={CalendarDays} tone="gray" />
+            <SummaryItem label="등원" value={summary.checkedIn} Icon={CheckCircle2} tone="blue" />
+            <SummaryItem label="원내" value={summary.inside} Icon={LogIn} tone="green" />
+            <SummaryItem label="하원" value={summary.left} Icon={LogOut} tone="indigo" />
           </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {rows.map((row) => (
-              <StudentPresenceRow
-                key={row.student.id}
-                row={row}
-                canRecord={canRecordNow}
-                canAddPast={canEdit && !isToday && selectedDate < todayYmd}
-                saving={savingStudentId === row.student.id}
-                hasServerId={!!row.student.serverId}
-                classGroups={classGroups}
-                onRecord={() => recordNextEvent(row)}
-                onAddPast={() => {
-                  setManualEntryTarget(row);
-                  setManualEntry({ eventType: 'check_in', time: '15:00' });
-                }}
-                onOpenSession={(session) => void openSession(session)}
-              />
+
+          {settings.studentCheckMethod === 'disabled' && (
+            <div className="mb-4 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-medium leading-5 text-amber-800">
+              등하원을 사용하지 않도록 설정했어요. 학원 설정에서 다시 켤 수 있어요.
+            </div>
+          )}
+          {!isToday && (
+            <div className="mb-4 rounded-2xl bg-gray-100 px-4 py-3 text-xs font-medium text-gray-600">
+              지난 날짜에 빠진 등원·하원은 학생별로 기록을 추가할 수 있어요.
+            </div>
+          )}
+
+          <div className="mb-3 flex h-[52px] items-center gap-2.5 rounded-2xl border border-[#D1D6DB] bg-white px-4 focus-within:border-[#3182F6] focus-within:ring-2 focus-within:ring-blue-100">
+            <Search size={18} className="flex-shrink-0 text-[#8B95A1]" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="학생 이름, 학교, 학년 검색"
+              className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#191F28] outline-none placeholder:text-[#8B95A1]"
+            />
+          </div>
+
+          <div className="mb-4 flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+            {VIEW_FILTERS.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                onClick={() => setViewFilter(filter.id)}
+                className={`flex-shrink-0 rounded-full px-3.5 py-2 text-xs font-bold ${
+                  viewFilter === filter.id
+                    ? 'bg-[#191F28] text-white'
+                    : 'border border-gray-200 bg-white text-gray-500'
+                }`}
+              >
+                {filter.label}
+              </button>
             ))}
           </div>
-        )}
+
+          {eventsError && (
+            <div className="mb-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-medium text-red-700">
+              {eventsError}
+            </div>
+          )}
+
+          {isLoading && rows.length === 0 ? (
+            <div className="rounded-2xl bg-white px-5 py-10 text-center text-sm text-gray-400">불러오는 중...</div>
+          ) : rows.length === 0 ? (
+            <div className="rounded-2xl bg-white px-5 py-10 text-center shadow-sm">
+              <Users size={24} className="mx-auto mb-2 text-gray-300" />
+              <p className="text-sm font-bold text-gray-700">표시할 학생이 없어요</p>
+              <p className="mt-1 text-xs text-gray-400">검색어나 필터를 바꿔보세요.</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {rows.map((row) => (
+                <StudentPresenceRow
+                  key={row.student.id}
+                  row={row}
+                  canRecord={canRecordNow}
+                  canAddPast={canEdit && !isToday && selectedDate < todayYmd}
+                  saving={savingStudentId === row.student.id}
+                  hasServerId={!!row.student.serverId}
+                  classGroups={classGroups}
+                  onRecord={() => recordNextEvent(row)}
+                  onAddPast={() => {
+                    setManualEntryTarget(row);
+                    setManualEntry({ eventType: 'check_in', time: '15:00' });
+                  }}
+                  onOpenSession={(session) => void openSession(session)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {manualEntryTarget && (

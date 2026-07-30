@@ -9,14 +9,14 @@
 // 흐름:
 //   1) 원장이 이메일 입력
 //   2) "계정 검색" → findProfileByEmail (best-effort; RLS 차단 가능)
-//   3) 직책과 권한 선택 후 "앱 초대 보내기" → createAcademyInvitation
+//   3) 직책 선택 후 "앱 초대 보내기" → createAcademyInvitation
 //   4) 직원이 같은 이메일로 로그인한 뒤 "받은 초대" 에서 수락
-//   5) 수락 즉시 선택한 권한으로 학원 접근이 활성화됨
+//   5) 수락 즉시 직책에 연결된 기본 권한으로 학원 접근이 활성화됨
 //
 // 안전 가드:
 //   - 본인이 본인을 초대하는 케이스 차단 (원장 == 입력 이메일)
 //   - 이메일은 lowercase trim 후 비교/전송
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Mail, Search, Send, Loader2, Check, Info } from 'lucide-react';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -25,16 +25,14 @@ import {
   createAcademyInvitation,
   listAcademyInvitations,
 } from '../../../services/supabase/workspaceApi';
+import {
+  getJobTitlePolicy,
+  normalizeJobTitlePermissions,
+} from '../../../utils/staffPermissions';
 
 function normalizeEmail(value) {
   return (value ?? '').trim().toLowerCase();
 }
-
-const PERMISSION_OPTIONS = [
-  { id: 'teacher', label: '기본 권한', description: '담당 수업과 학생 기록 관리' },
-  { id: 'manager', label: '운영 권한', description: '학원 운영과 직원 관리 포함' },
-];
-const JOB_TITLE_PRESETS = ['선생님', '조교', '실장', '부원장', '행정'];
 
 export default function StaffInviteWidget({
   initialEmail,    // 폼에 기존에 저장된 이메일 (있으면 prefill)
@@ -47,6 +45,7 @@ export default function StaffInviteWidget({
   onInviteSent,    // 초대 row 생성 시 inviteStatus='pending' 등 폼에 반영
 }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const refreshWorkspaceCollaborationState = useWorkspaceStore(
     (s) => s.refreshWorkspaceCollaborationState,
   );
@@ -61,16 +60,26 @@ export default function StaffInviteWidget({
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState(null); // {type:'success'|'error'|'info', text}
   const [existingInvite, setExistingInvite] = useState(null);
+  const currentAcademy = memberships.find(
+    (membership) => membership.academy_id === currentAcademyId,
+  )?.academy;
+  const jobTitlePermissions = useMemo(
+    () => normalizeJobTitlePermissions(currentAcademy?.job_title_permissions),
+    [currentAcademy?.job_title_permissions],
+  );
+  const availableJobTitles = Object.entries(jobTitlePermissions)
+    .filter(([, policy]) => canInviteManagers || policy.role !== 'manager');
 
   // 폼 prefill 이 바뀌면 따라가도록 (수정 시작 시 등)
   useEffect(() => {
     setEmail(initialEmail || '');
-    setRole(initialRole);
-    setJobTitle(initialJobTitle || '선생님');
+    const nextTitle = initialJobTitle || '선생님';
+    setRole(getJobTitlePolicy(jobTitlePermissions, nextTitle, initialRole).role);
+    setJobTitle(nextTitle);
     setSearchResult(null);
     setFeedback(null);
     setExistingInvite(null);
-  }, [initialEmail, initialRole, initialJobTitle]);
+  }, [initialEmail, initialRole, initialJobTitle, jobTitlePermissions]);
 
   // 학원에 이미 같은 이메일의 역할 없는 직원 초대가 있는지 조회 (정보용)
   useEffect(() => {
@@ -107,17 +116,14 @@ export default function StaffInviteWidget({
     onEmailChange?.(value);
   };
 
-  const handleRoleChange = (nextRole) => {
-    setRole(nextRole);
-    setFeedback(null);
-    onRoleChange?.(nextRole);
-  };
-
   const handleJobTitleChange = (value) => {
     const nextValue = value.slice(0, 40);
+    const nextRole = getJobTitlePolicy(jobTitlePermissions, nextValue, 'teacher').role;
     setJobTitle(nextValue);
+    setRole(nextRole);
     setFeedback(null);
     onJobTitleChange?.(nextValue);
+    onRoleChange?.(nextRole);
   };
 
   const handleSearch = async () => {
@@ -246,56 +252,26 @@ export default function StaffInviteWidget({
       </div>
 
       <label className="mt-2 text-xs font-semibold text-gray-600">직책</label>
-      <div className="flex flex-wrap gap-1.5">
-        {JOB_TITLE_PRESETS.map((title) => (
+      <div className="grid grid-cols-2 gap-2">
+        {availableJobTitles.map(([title, policy]) => (
           <button
             key={title}
             type="button"
             onClick={() => handleJobTitleChange(title)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
+            className={`rounded-2xl border px-3 py-3 text-left transition-colors ${
               jobTitle === title
-                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                : 'border-gray-200 bg-white text-gray-600'
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-200 bg-white'
             }`}
           >
-            {title}
+            <span className={`block text-xs font-bold ${jobTitle === title ? 'text-blue-700' : 'text-gray-800'}`}>
+              {title}
+            </span>
+            <span className="mt-1 block text-[10px] text-gray-500">
+              기본 권한 {Object.values(policy.permissions).filter(Boolean).length}개
+            </span>
           </button>
         ))}
-      </div>
-      <input
-        value={jobTitle}
-        onChange={(event) => handleJobTitleChange(event.target.value)}
-        placeholder="직책을 직접 입력할 수 있어요"
-        className="input"
-        maxLength={40}
-      />
-
-      <label className="mt-2 text-xs font-semibold text-gray-600">권한</label>
-      <div className={`grid ${canInviteManagers ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-        {PERMISSION_OPTIONS
-          .filter((option) => option.id !== 'manager' || canInviteManagers)
-          .map((option) => {
-            const selected = role === option.id;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => handleRoleChange(option.id)}
-                className={`rounded-2xl border px-3 py-3 text-left transition-colors ${
-                  selected
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 bg-white active:bg-gray-50'
-                }`}
-              >
-                <span className={`block text-xs font-bold ${selected ? 'text-blue-700' : 'text-gray-800'}`}>
-                  {option.label}
-                </span>
-                <span className="mt-1 block text-[10px] leading-snug text-gray-500">
-                  {option.description}
-                </span>
-              </button>
-            );
-          })}
       </div>
 
       {/* 현재 invitation 상태 표시 */}
@@ -349,7 +325,7 @@ export default function StaffInviteWidget({
       )}
 
       <p className="text-[11px] text-gray-400 leading-relaxed mt-1">
-        직책은 직원에게 표시되는 이름이고, 권한은 사용할 수 있는 기능을 정해요.
+        직책을 선택하면 학원 설정의 기본 권한이 함께 적용돼요.
       </p>
     </div>
   );

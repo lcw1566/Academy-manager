@@ -35,6 +35,8 @@ import {
   inferAcademyTypeFromSubjects,
 } from '../../../constants/academySettings';
 import ClinicDefaultItemsEditor from '../clinic/ClinicDefaultItemsEditor';
+import JobTitlePermissionEditor from './JobTitlePermissionEditor';
+import { normalizeJobTitlePermissions } from '../../../utils/staffPermissions';
 
 export default function AcademyMorePage({
   mobileNavigationItems = [],
@@ -89,6 +91,9 @@ export default function AcademyMorePage({
       currentAcademy?.tuition_rates && typeof currentAcademy.tuition_rates === 'object'
         ? currentAcademy.tuition_rates
         : DEFAULT_ACADEMY_SETTINGS.tuitionRates;
+    const serverJobTitlePermissions = normalizeJobTitlePermissions(
+      currentAcademy?.job_title_permissions,
+    );
     const localName = academyProfile?.name;
     const localAcademyType = academyProfile?.academyType || DEFAULT_ACADEMY_SETTINGS.academyType;
     const localAcademySubjects = Array.isArray(academyProfile?.academySubjects)
@@ -108,6 +113,9 @@ export default function AcademyMorePage({
         : DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems;
     const localTuitionPolicy = academyProfile?.tuitionPolicy || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy;
     const localTuitionRates = academyProfile?.tuitionRates || DEFAULT_ACADEMY_SETTINGS.tuitionRates;
+    const localJobTitlePermissions = normalizeJobTitlePermissions(
+      academyProfile?.jobTitlePermissions,
+    );
     const localAddress = academyProfile?.address || '';
     const localPhone = academyProfile?.phone || '';
     const serverAddress = currentAcademy?.address ?? localAddress;
@@ -122,6 +130,7 @@ export default function AcademyMorePage({
       JSON.stringify(localClinicDefaultItems) === JSON.stringify(serverClinicDefaultItems) &&
       localTuitionPolicy === serverTuitionPolicy &&
       JSON.stringify(localTuitionRates) === JSON.stringify(serverTuitionRates) &&
+      JSON.stringify(localJobTitlePermissions) === JSON.stringify(serverJobTitlePermissions) &&
       localAddress === serverAddress &&
       localPhone === serverPhone
     ) return;
@@ -136,6 +145,7 @@ export default function AcademyMorePage({
       clinicDefaultItems: serverClinicDefaultItems,
       tuitionPolicy: serverTuitionPolicy,
       tuitionRates: serverTuitionRates,
+      jobTitlePermissions: serverJobTitlePermissions,
       address: serverAddress,
       phone: serverPhone,
     });
@@ -150,6 +160,7 @@ export default function AcademyMorePage({
     currentAcademy?.clinic_default_items,
     currentAcademy?.tuition_policy,
     currentAcademy?.tuition_rates,
+    currentAcademy?.job_title_permissions,
     currentAcademy?.address,
     currentAcademy?.phone,
     academyProfile,
@@ -183,6 +194,7 @@ export default function AcademyMorePage({
         clinicDefaultItems: data.clinicDefaultItems,
         tuitionPolicy: data.tuitionPolicy,
         tuitionRates: data.tuitionRates,
+        jobTitlePermissions: data.jobTitlePermissions,
         address: data.address,
         phone: data.phone,
       });
@@ -845,7 +857,10 @@ function AcademyProfileModal({
         : DEFAULT_ACADEMY_SETTINGS.clinicDefaultItems,
     tuitionPolicy: DEFAULT_ACADEMY_SETTINGS.tuitionPolicy,
     tuitionRates: profile?.tuitionRates || DEFAULT_ACADEMY_SETTINGS.tuitionRates,
-  }), [profile]);
+    jobTitlePermissions: normalizeJobTitlePermissions(
+      profile?.jobTitlePermissions || academy?.job_title_permissions,
+    ),
+  }), [profile, academy?.job_title_permissions]);
   const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
   const attendance = readAttendanceSettings(academy);
@@ -969,6 +984,16 @@ function AcademyProfileModal({
             rates={form.tuitionRates}
             onChange={(tuitionRates) => setForm((current) => ({ ...current, tuitionRates }))}
             subjects={form.academySubjects}
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold text-gray-600">직책별 기본 권한</label>
+          <JobTitlePermissionEditor
+            value={form.jobTitlePermissions}
+            onChange={(jobTitlePermissions) => setForm((current) => ({
+              ...current,
+              jobTitlePermissions,
+            }))}
           />
         </div>
         <div>

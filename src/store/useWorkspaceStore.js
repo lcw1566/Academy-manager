@@ -68,6 +68,7 @@ import useAuthStore from './useAuthStore';
 import useAcademyStore from './useAcademyStore';
 import { isTransientRequestError, retryAsync } from '../utils/asyncRetry';
 import { localizeError } from '../utils/localizeError';
+import { normalizeJobTitlePermissions } from '../utils/staffPermissions';
 import {
   getCurrentMonth,
   getDaysInMonth,
@@ -126,6 +127,7 @@ function syncAcademyProfileFromServer(academy) {
       academy.tuition_rates && typeof academy.tuition_rates === 'object'
         ? academy.tuition_rates
         : {},
+    jobTitlePermissions: normalizeJobTitlePermissions(academy.job_title_permissions),
     address: academy.address ?? localProfile.address ?? '',
     phone: academy.phone ?? localProfile.phone ?? '',
   });
@@ -851,10 +853,27 @@ const useWorkspaceStore = create(
           }
 
           ensureCurrentAcademyDataScope(currentAcademyId);
+          const currentAcademy = memberships.find(
+            (membership) => membership.academy_id === currentAcademyId,
+          )?.academy;
           syncAcademyProfileFromServer(
-            memberships.find((membership) => membership.academy_id === currentAcademyId)?.academy,
+            currentAcademy,
           );
-          set({ memberships, currentAcademyId });
+          const jobTitlePermissions = normalizeJobTitlePermissions(
+            currentAcademy?.job_title_permissions,
+          );
+          set((state) => ({
+            memberships,
+            currentAcademyId,
+            academyStaffProfiles: (state.academyStaffProfiles || []).map((staffProfile) => (
+              staffProfile.academy_id === currentAcademyId
+                ? {
+                  ...staffProfile,
+                  academy_job_title_permissions: jobTitlePermissions,
+                }
+                : staffProfile
+            )),
+          }));
           return memberships;
         } catch (err) {
           if (reportError) {
@@ -940,13 +959,30 @@ const useWorkspaceStore = create(
             markOnboarded: true,
           });
           if (updated) {
+            const jobTitlePermissions = normalizeJobTitlePermissions(
+              updated.job_title_permissions,
+            );
             set((s) => ({
               memberships: (s.memberships || []).map((m) =>
                 m.academy_id === academyId
                   ? { ...m, academy: { ...(m.academy || {}), ...updated } }
                   : m
               ),
+              academyStaffProfiles: (s.academyStaffProfiles || []).map((staffProfile) => (
+                staffProfile.academy_id === academyId
+                  ? {
+                    ...staffProfile,
+                    academy_job_title_permissions: jobTitlePermissions,
+                  }
+                  : staffProfile
+              )),
             }));
+            // 직책의 담당 범위가 바뀌면 SQL 057이 멤버십 역할도 갱신한다.
+            // 목록 캐시를 바로 다시 받아 새 직책/권한이 현재 화면에도 일치하게 한다.
+            await Promise.all([
+              get().loadAcademyMemberProfiles?.(),
+              get().loadAcademyStaffProfiles?.(),
+            ]);
           }
           return updated;
         } catch (err) {
@@ -1573,12 +1609,19 @@ const useWorkspaceStore = create(
         try {
           const list = await listAcademyStaffProfiles(academyId);
           if (!isCurrentAcademy(get, academyId)) return list;
-          set({ academyStaffProfiles: list });
+          const academy = (get().memberships || [])
+            .find((membership) => membership.academy_id === academyId)?.academy;
+          const jobTitlePermissions = normalizeJobTitlePermissions(academy?.job_title_permissions);
+          const enrichedList = list.map((profile) => ({
+            ...profile,
+            academy_job_title_permissions: jobTitlePermissions,
+          }));
+          set({ academyStaffProfiles: enrichedList });
           // member profiles + staff profiles 가 모두 있어야 의미가 있다.
           // 둘 중 어느 쪽이 먼저 끝나든 mirror 를 호출하면 다른 쪽이 아직
           // 비어 있어도 안전하게 무시되므로 양쪽 모두에서 호출한다.
           get().syncLocalStaffFromServerMembers();
-          return list;
+          return enrichedList;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
           set({
@@ -1599,6 +1642,14 @@ const useWorkspaceStore = create(
         }
         const aId = academyId || get().currentAcademyId;
         const saved = await upsertAcademyStaffProfile({ academyId: aId, userId, ...rest });
+        const academy = (get().memberships || [])
+          .find((membership) => membership.academy_id === aId)?.academy;
+        const enrichedSaved = {
+          ...saved,
+          academy_job_title_permissions: normalizeJobTitlePermissions(
+            academy?.job_title_permissions,
+          ),
+        };
         // cache 갱신 (있으면 교체, 없으면 추가)
         set((s) => {
           const idx = s.academyStaffProfiles.findIndex(
@@ -1606,15 +1657,15 @@ const useWorkspaceStore = create(
           );
           if (idx >= 0) {
             const next = s.academyStaffProfiles.slice();
-            next[idx] = saved;
+            next[idx] = enrichedSaved;
             return { academyStaffProfiles: next };
           }
-          return { academyStaffProfiles: [...s.academyStaffProfiles, saved] };
+          return { academyStaffProfiles: [...s.academyStaffProfiles, enrichedSaved] };
         });
         // Mirror this single change into local arrays so the existing
         // class-teacher selector + payroll generator can see it immediately.
         get().syncLocalStaffFromServerMembers();
-        return saved;
+        return enrichedSaved;
       },
 
       // Mirror accepted academy members into local staff arrays based on role.

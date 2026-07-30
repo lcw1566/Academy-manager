@@ -713,31 +713,33 @@ export default function ClassSessionPage() {
     return false;
   }, [session, group, authUserId, myTeacherLocal]);
 
-  // 권한 + 본인 담당 세션이어야 teacher 가 편집 가능. owner 는 항상 허용.
-  const canEditLessonRecords =
-    role === 'owner'
-      ? true
-      : role === 'manager'
-        ? currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
-      : role === 'teacher'
-        && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
-        && isMyAssignedSession;
+  const hasAcademyWideClassAccess = currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageClasses',
+  );
+  const hasAcademyWideStudentAccess = currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageStudents',
+  );
+  // 직책/개인 권한을 기준으로 판단한다. 담당 범위 직원은 본인 회차만 편집한다.
+  const canEditLessonRecords = role === 'owner' || (
+    currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
+    && (hasAcademyWideClassAccess || isMyAssignedSession)
+  );
   const canEditAttendance = attendanceSettings.studentCheckMethod !== 'disabled' && (
-    role === 'owner'
-      ? true
-      : role === 'manager'
-        ? currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance')
-      : role === 'teacher'
-        && currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance')
-        && isMyAssignedSession
+    role === 'owner' || (
+      currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance')
+      && (
+        hasAcademyWideClassAccess
+        || hasAcademyWideStudentAccess
+        || isMyAssignedSession
+      )
+    )
   );
   // 기존 canEdit (lesson record 입력/저장) → 권한 기반.
   const canEdit = canEditLessonRecords;
   const isOwnerRole = role === 'owner';
-  const canManageSession = role === 'owner' || (
-    role === 'manager'
-    && currentUserCan({ role, staffProfile: myStaffProfile }, 'canManageClasses')
-  );
+  const canManageSession = role === 'owner' || hasAcademyWideClassAccess;
 
   const substituteTeacher = useMemo(() => {
     if (!session?.substituteTeacherId) return null;

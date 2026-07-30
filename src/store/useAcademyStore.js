@@ -34,6 +34,7 @@ import {
 } from '../services/supabase/hydrateMappers';
 import { computeLessonHoursForMonth } from '../utils/shiftCoverage';
 import { normalizeRecordSchema } from '../constants/learningActivitySettings';
+import { DEFAULT_JOB_TITLE_PERMISSIONS } from '../utils/staffPermissions';
 
 const noopStorage = {
   getItem: () => null,
@@ -172,6 +173,7 @@ function createDefaultAcademyProfile() {
     clinicDefaultItems: {},
     tuitionPolicy: 'school_level',
     tuitionRates: {},
+    jobTitlePermissions: DEFAULT_JOB_TITLE_PERMISSIONS,
   };
 }
 

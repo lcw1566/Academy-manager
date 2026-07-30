@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   getTodayYMD,
@@ -47,6 +47,11 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
     }
     return map;
   }, [schedules]);
+
+  // 부모의 "오늘" 이동처럼 선택 날짜가 외부에서 바뀌어도 해당 주/월이 보이게 한다.
+  useEffect(() => {
+    if (selectedDate) setPivotDate(selectedDate);
+  }, [selectedDate]);
 
   const shift = (delta) => {
     if (isExpanded) {

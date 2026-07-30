@@ -82,7 +82,7 @@ export default function ClassGroupsPage() {
   const enriched = useMemo(() =>
     classGroups
     .filter((group) => {
-      if (canManage || role === 'owner' || role === 'manager') return true;
+      if (canManage) return true;
       if (group.teacherUserId && authUserId && group.teacherUserId === authUserId) return true;
       if (authUserId && (group.assistantUserIds || []).includes(authUserId)) return true;
       if ((group.assistantIds || []).some((id) => myInstructorIds.has(id))) return true;
