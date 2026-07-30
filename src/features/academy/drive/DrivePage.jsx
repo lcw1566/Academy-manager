@@ -96,6 +96,53 @@ function canPreview(file) {
   return previewKind(file) !== null;
 }
 
+function exactArrayBuffer(bytes) {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+function mountSafeHangulHtml(container, html) {
+  if (!container) return false;
+  const parsed = new DOMParser().parseFromString(String(html || ''), 'text/html');
+  parsed.querySelectorAll(
+    'script, iframe, object, embed, link, meta, style, form, input, button, textarea, select, svg',
+  ).forEach((node) => node.remove());
+
+  const allowedAttributes = new Set([
+    'class', 'style', 'rowspan', 'colspan', 'src', 'alt', 'width', 'height',
+  ]);
+  parsed.body.querySelectorAll('*').forEach((element) => {
+    [...element.attributes].forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      if (!allowedAttributes.has(name) || name.startsWith('on')) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+
+    const style = element.getAttribute('style') || '';
+    if (/url\s*\(|expression\s*\(|@import|behavior\s*:/i.test(style)) {
+      element.removeAttribute('style');
+    }
+
+    if (element.hasAttribute('src')) {
+      const src = element.getAttribute('src') || '';
+      if (!/^data:image\/(?:png|jpe?g|gif|webp|bmp);base64,/i.test(src)) {
+        element.removeAttribute('src');
+      }
+    }
+  });
+
+  if (!parsed.body.textContent?.trim() && !parsed.body.querySelector('img, table')) {
+    return false;
+  }
+
+  const fragment = document.createDocumentFragment();
+  [...parsed.body.childNodes].forEach((node) => {
+    fragment.appendChild(document.importNode(node, true));
+  });
+  container.replaceChildren(fragment);
+  return true;
+}
+
 function FileTypeIcon({ file, size = 20 }) {
   if (isPdf(file)) return <FileText size={size} className="text-red-500" />;
   if (isImage(file)) return <FileImage size={size} className="text-emerald-500" />;
@@ -937,7 +984,9 @@ function DrivePreviewSheet({ file, url, kind, onClose, onDownload, onError }) {
         {renderPreview()}
       </div>
       <p className="mt-3 text-xs text-gray-500 text-center">
-        {kind === 'hangul' ? '한글 문서는 텍스트 중심으로 열람·인쇄됩니다. 복잡한 편집 서식은 PDF 변환본을 권장합니다.' : '인쇄 버튼을 누르면 이 기기의 인쇄 대화상자가 열립니다.'}
+        {kind === 'hangul'
+          ? '표·이미지·기본 서식을 반영한 미리보기예요. 원본과 일부 다를 수 있어요.'
+          : '인쇄 버튼을 누르면 이 기기의 인쇄 대화상자가 열립니다.'}
       </p>
     </Modal>
   );
@@ -980,11 +1029,40 @@ function DocumentPreview({ url, kind, onReady, onError }) {
         }
 
         if (kind === 'hangul') {
-          setStatus('한글 문서에서 내용을 읽는 중이에요…');
-          const { hwpToText } = await import('@ssabrojs/hwpxjs/browser');
-          const content = await hwpToText(new Uint8Array(bytes));
-          if (cancelled) return;
-          setText(content?.trim() || '표시할 텍스트를 찾지 못했어요. 복잡한 서식 자료는 PDF 변환본을 올려주세요.');
+          setStatus('한글 문서의 표와 서식을 그리는 중이에요…');
+          const {
+            HwpxReader,
+            detectFormat,
+            hwpToHwpx,
+          } = await import('@ssabrojs/hwpxjs/browser');
+          const sourceBytes = new Uint8Array(bytes);
+          const format = detectFormat(sourceBytes);
+          let hwpxBytes = sourceBytes;
+          if (format === 'hwp') {
+            hwpxBytes = await hwpToHwpx(sourceBytes, {
+              title: '씨닛 미리보기',
+              creator: '씨닛',
+            });
+          } else if (format !== 'hwpx') {
+            throw new Error('지원하는 HWP 5.0 또는 HWPX 문서가 아니에요.');
+          }
+
+          if (cancelled || !containerRef.current) return;
+          const reader = new HwpxReader();
+          await reader.loadFromArrayBuffer(exactArrayBuffer(hwpxBytes));
+          const html = await reader.extractHtml({
+            paragraphTag: 'p',
+            tableClassName: 'drive-hwpx-table',
+            renderImages: true,
+            renderTables: true,
+            renderStyles: true,
+            embedImages: true,
+          });
+          if (cancelled || !containerRef.current) return;
+          if (!mountSafeHangulHtml(containerRef.current, html)) {
+            throw new Error('미리보기로 표시할 문서 내용을 찾지 못했어요.');
+          }
+          setStatus('');
           onReadyRef.current();
           return;
         }
@@ -1018,6 +1096,22 @@ function DocumentPreview({ url, kind, onReady, onError }) {
       <div className="min-h-72 bg-[#f2f2f2] overflow-auto p-3 md:p-6">
         <div ref={containerRef} className="drive-docx-host" />
         {status && <p className="sr-only">{status}</p>}
+      </div>
+    );
+  }
+
+  if (kind === 'hangul') {
+    return (
+      <div className="drive-hangul-scroll relative min-h-72 max-h-[52vh] overflow-auto bg-[#eef0f3] p-2.5 md:p-5">
+        <div ref={containerRef} className="drive-hangul-page" />
+        {status && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-5">
+            <div className="flex items-center gap-2 rounded-full bg-white/95 px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm">
+              <Loader2 size={17} className="animate-spin text-[#0064FF]" />
+              {status}
+            </div>
+          </div>
+        )}
       </div>
     );
   }

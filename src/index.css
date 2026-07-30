@@ -133,6 +133,50 @@ input[type="month"].input {
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.16);
 }
 
+/* HWP/HWPX는 표·이미지·기본 글자/문단 서식을 HTML로 복원해 문서 페이지처럼
+   보여준다. 원본에 페이지 크기 정보가 없는 경우에도 읽기 좋은 A4 폭을 유지한다. */
+.drive-hangul-page {
+  width: min(100%, 794px);
+  min-height: 560px;
+  margin: 0 auto;
+  padding: clamp(24px, 5vw, 64px);
+  overflow-wrap: anywhere;
+  background: #fff;
+  color: #191f28;
+  font-family: "Noto Sans KR", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-size: 14px;
+  line-height: 1.75;
+  box-shadow: 0 1px 7px rgba(0, 0, 0, 0.14);
+}
+
+.drive-hangul-page p {
+  min-height: 1.2em;
+  margin: 0.28em 0;
+  white-space: pre-wrap;
+}
+
+.drive-hangul-page .drive-hwpx-table {
+  width: 100%;
+  margin: 14px 0;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.drive-hangul-page .drive-hwpx-table th,
+.drive-hangul-page .drive-hwpx-table td {
+  min-width: 42px;
+  padding: 7px 9px;
+  border: 1px solid #cfd5dc;
+  vertical-align: top;
+  white-space: pre-wrap;
+}
+
+.drive-hangul-page img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+}
+
 @media print {
   body * {
     visibility: hidden !important;
@@ -164,5 +208,20 @@ input[type="month"].input {
   .drive-docx-host .drive-docx-preview {
     margin: 0 auto !important;
     box-shadow: none !important;
+  }
+
+  .drive-hangul-page {
+    width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 12mm !important;
+    box-shadow: none !important;
+  }
+
+  .drive-hangul-scroll {
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: white !important;
   }
 }
