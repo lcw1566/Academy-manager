@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Download, Eye, File, FileImage, FileText, Folder,
-  FolderPlus, Loader2, Printer, RefreshCw, RotateCcw, Search, Trash2, Upload,
+  FolderPlus, Loader2, Maximize2, Minimize2, Minus, Plus, Printer, RefreshCw,
+  RotateCcw, Search, Trash2, Upload,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
@@ -141,6 +142,46 @@ function mountSafeHangulHtml(container, html) {
   });
   container.replaceChildren(fragment);
   return true;
+}
+
+function safeRhwpSvgMarkup(markup) {
+  const parsed = new DOMParser().parseFromString(String(markup || ''), 'image/svg+xml');
+  if (parsed.querySelector('parsererror')) return '';
+  const root = parsed.documentElement;
+  if (root?.nodeName?.toLowerCase() !== 'svg') return '';
+
+  root.querySelectorAll(
+    'script, iframe, object, embed, foreignObject, audio, video, animate, animateMotion, animateTransform, set',
+  ).forEach((node) => node.remove());
+  root.querySelectorAll('*').forEach((element) => {
+    [...element.attributes].forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim();
+      if (name.startsWith('on')) {
+        element.removeAttribute(attribute.name);
+        return;
+      }
+      if (name === 'href' || name === 'xlink:href') {
+        if (!value.startsWith('#') && !/^data:image\/(?:png|jpe?g|gif|webp|bmp);base64,/i.test(value)) {
+          element.removeAttribute(attribute.name);
+        }
+        return;
+      }
+      if (name === 'style' && /url\s*\(|expression\s*\(|@import|behavior\s*:/i.test(value)) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+  });
+  root.setAttribute('aria-hidden', 'true');
+  root.setAttribute('focusable', 'false');
+  return root.outerHTML;
+}
+
+function nextPaint() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+    else window.setTimeout(resolve, 0);
+  });
 }
 
 function FileTypeIcon({ file, size = 20 }) {
@@ -985,7 +1026,7 @@ function DrivePreviewSheet({ file, url, kind, onClose, onDownload, onError }) {
       </div>
       <p className="mt-3 text-xs text-gray-500 text-center">
         {kind === 'hangul'
-          ? '표·이미지·기본 서식을 반영한 미리보기예요. 원본과 일부 다를 수 있어요.'
+          ? '페이지 형태로 보여드려요. 원본 프로그램과 일부 다를 수 있어요.'
           : '인쇄 버튼을 누르면 이 기기의 인쇄 대화상자가 열립니다.'}
       </p>
     </Modal>
@@ -994,17 +1035,40 @@ function DrivePreviewSheet({ file, url, kind, onClose, onDownload, onError }) {
 
 function DocumentPreview({ url, kind, onReady, onError }) {
   const containerRef = useRef(null);
+  const hangulViewerRef = useRef(null);
   const onReadyRef = useRef(onReady);
   const onErrorRef = useRef(onError);
   const [text, setText] = useState('');
   const [status, setStatus] = useState('자료를 여는 중이에요…');
   const [failed, setFailed] = useState(false);
+  const [hangulPages, setHangulPages] = useState([]);
+  const [hangulPageCount, setHangulPageCount] = useState(0);
+  const [hangulZoom, setHangulZoom] = useState(100);
+  const [hangulFallback, setHangulFallback] = useState(false);
+  const [canFullscreen, setCanFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  useEffect(() => {
+    setCanFullscreen(Boolean(document.fullscreenEnabled));
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === hangulViewerRef.current);
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await hangulViewerRef.current?.requestFullscreen();
+    } catch {
+      onErrorRef.current('이 기기에서는 전체 화면을 열지 못했어요.');
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
+    let rhwpDocument = null;
     const load = async () => {
       try {
         const response = await fetch(url);
@@ -1029,13 +1093,63 @@ function DocumentPreview({ url, kind, onReady, onError }) {
         }
 
         if (kind === 'hangul') {
-          setStatus('한글 문서의 표와 서식을 그리는 중이에요…');
+          const sourceBytes = new Uint8Array(bytes);
+          try {
+            setStatus('한글 문서의 페이지를 만드는 중이에요…');
+            const { createRhwpDocument } = await import('./rhwpViewer');
+            if (typeof document !== 'undefined' && document.fonts?.ready) {
+              await document.fonts.ready;
+            }
+            rhwpDocument = await createRhwpDocument(sourceBytes);
+            if (cancelled) {
+              rhwpDocument.free();
+              rhwpDocument = null;
+              return;
+            }
+
+            const pageCount = rhwpDocument.pageCount();
+            if (!Number.isInteger(pageCount) || pageCount < 1 || pageCount > 500) {
+              throw new Error(pageCount > 500
+                ? '500쪽이 넘는 문서는 원본을 다운로드해주세요.'
+                : '표시할 페이지가 없어요.');
+            }
+
+            setHangulPageCount(pageCount);
+            const renderedPages = Array(pageCount).fill('');
+            for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+              if (cancelled) return;
+              const svg = safeRhwpSvgMarkup(rhwpDocument.renderPageSvg(pageIndex));
+              if (!svg) throw new Error(`${pageIndex + 1}쪽을 표시하지 못했어요.`);
+              renderedPages[pageIndex] = svg;
+              if (pageIndex === 0 || (pageIndex + 1) % 3 === 0 || pageIndex === pageCount - 1) {
+                setHangulPages([...renderedPages]);
+                setStatus(pageIndex === pageCount - 1
+                  ? ''
+                  : `${pageIndex + 1}/${pageCount}쪽을 준비하고 있어요…`);
+                await nextPaint();
+              }
+            }
+
+            if (!cancelled) onReadyRef.current();
+            return;
+          } catch (rhwpError) {
+            rhwpDocument?.free();
+            rhwpDocument = null;
+            if (cancelled) return;
+            console.warn('[drive] rHWP preview failed, using compatibility preview', rhwpError);
+            setHangulPages([]);
+            setHangulPageCount(0);
+            setHangulFallback(true);
+            setStatus('호환 미리보기로 여는 중이에요…');
+            await nextPaint();
+            if (cancelled) return;
+          }
+
           const {
             HwpxReader,
             detectFormat,
             hwpToHwpx,
           } = await import('@ssabrojs/hwpxjs/browser');
-          const sourceBytes = new Uint8Array(bytes);
           const format = detectFormat(sourceBytes);
           let hwpxBytes = sourceBytes;
           if (format === 'hwp') {
@@ -1084,7 +1198,11 @@ function DocumentPreview({ url, kind, onReady, onError }) {
       }
     };
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      rhwpDocument?.free();
+      rhwpDocument = null;
+    };
   }, [url, kind]);
 
   if (failed) {
@@ -1102,9 +1220,72 @@ function DocumentPreview({ url, kind, onReady, onError }) {
 
   if (kind === 'hangul') {
     return (
-      <div className="drive-hangul-scroll relative min-h-72 max-h-[52vh] overflow-auto bg-[#eef0f3] p-2.5 md:p-5">
-        <div ref={containerRef} className="drive-hangul-page" />
-        {status && (
+      <div ref={hangulViewerRef} className="drive-hangul-scroll relative min-h-72 max-h-[52vh] overflow-auto bg-[#eef0f3] p-2.5 md:p-5">
+        {!hangulFallback && hangulPageCount > 0 && (
+          <div className="drive-rhwp-toolbar sticky top-0 z-10 mx-auto mb-3 flex w-fit items-center gap-1 rounded-2xl bg-white/95 p-1.5 shadow-sm backdrop-blur">
+            <span className="px-2 text-xs font-semibold text-gray-500">{hangulPageCount}쪽</span>
+            <button
+              type="button"
+              aria-label="축소"
+              disabled={hangulZoom <= 60}
+              onClick={() => setHangulZoom((value) => Math.max(60, value - 10))}
+              className="flex h-8 w-8 items-center justify-center rounded-xl text-gray-600 transition-colors hover:bg-gray-100 disabled:text-gray-300"
+            >
+              <Minus size={16} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setHangulZoom(100)}
+              className="min-w-12 rounded-xl px-1.5 py-1.5 text-xs font-bold text-[#0064FF] transition-colors hover:bg-blue-50"
+            >
+              {hangulZoom}%
+            </button>
+            <button
+              type="button"
+              aria-label="확대"
+              disabled={hangulZoom >= 180}
+              onClick={() => setHangulZoom((value) => Math.min(180, value + 10))}
+              className="flex h-8 w-8 items-center justify-center rounded-xl text-gray-600 transition-colors hover:bg-gray-100 disabled:text-gray-300"
+            >
+              <Plus size={16} />
+            </button>
+            {canFullscreen && (
+              <button
+                type="button"
+                aria-label={isFullscreen ? '전체 화면 닫기' : '전체 화면'}
+                onClick={toggleFullscreen}
+                className="ml-0.5 flex h-8 w-8 items-center justify-center rounded-xl text-gray-600 transition-colors hover:bg-gray-100"
+              >
+                {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              </button>
+            )}
+          </div>
+        )}
+        {hangulFallback ? (
+          <div ref={containerRef} className="drive-hangul-page" />
+        ) : (
+          <div
+            className="drive-rhwp-pages"
+            style={{
+              width: `${hangulZoom}%`,
+              maxWidth: `${Math.round(794 * hangulZoom / 100)}px`,
+            }}
+          >
+            {hangulPages.map((svg, index) => (
+              svg ? (
+                <div
+                  key={index}
+                  className="drive-rhwp-page"
+                  aria-label={`${index + 1}쪽`}
+                  dangerouslySetInnerHTML={{ __html: svg }}
+                />
+              ) : (
+                <div key={index} className="drive-rhwp-page drive-rhwp-page-loading animate-pulse" />
+              )
+            ))}
+          </div>
+        )}
+        {status && (hangulFallback || !hangulPages.some(Boolean)) && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-5">
             <div className="flex items-center gap-2 rounded-full bg-white/95 px-4 py-2.5 text-sm font-medium text-gray-600 shadow-sm">
               <Loader2 size={17} className="animate-spin text-[#0064FF]" />

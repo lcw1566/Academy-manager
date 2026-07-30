@@ -177,6 +177,43 @@ input[type="month"].input {
   height: auto;
 }
 
+.drive-rhwp-pages {
+  margin: 0 auto;
+  transform-origin: top center;
+}
+
+.drive-rhwp-page {
+  width: 100%;
+  margin: 0 auto 16px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 7px rgba(0, 0, 0, 0.14);
+}
+
+.drive-rhwp-page:last-child {
+  margin-bottom: 0;
+}
+
+.drive-rhwp-page svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+}
+
+.drive-rhwp-page-loading {
+  aspect-ratio: 210 / 297;
+  max-height: 720px;
+}
+
+.drive-hangul-scroll:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  padding: 20px;
+  background: #eef0f3;
+}
+
 @media print {
   body * {
     visibility: hidden !important;
@@ -223,5 +260,27 @@ input[type="month"].input {
     overflow: visible !important;
     padding: 0 !important;
     background: white !important;
+  }
+
+  .drive-rhwp-toolbar {
+    display: none !important;
+  }
+
+  .drive-rhwp-pages {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .drive-rhwp-page {
+    margin: 0 !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .drive-rhwp-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 }
