@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { Plus, Search, ChevronRight, Phone } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { Plus, Search, ChevronRight, Phone, Loader2, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -17,6 +17,10 @@ export default function AcademyStudentsPage() {
   const { role, academyStudents, classGroups, clinicTasks, navigateToAcademyStudent } = useAcademyStore();
   const authUserId = useAuthStore((s) => s.user?.id);
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const isStudentsLoading = useWorkspaceStore((s) => s.isServerStudentsLoading);
+  const studentsError = useWorkspaceStore((s) => s.serverStudentsError);
+  const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [schoolFilter, setSchoolFilter] = useState('all');
@@ -28,6 +32,13 @@ export default function AcademyStudentsPage() {
     { role, staffProfile: myStaffProfile },
     'canManageStudents',
   );
+
+  // 앱 진입 시 다른 데이터보다 학생 조회가 늦어져 빈 상태가 먼저 굳는 일을 막는다.
+  // 탭이 열릴 때 현재 학원 기준으로 한 번 더 동기화하며 store가 academyId를 검증한다.
+  useEffect(() => {
+    if (!currentAcademyId) return;
+    void loadServerStudents();
+  }, [currentAcademyId, loadServerStudents]);
 
   const schoolOptions = useMemo(
     () => [...new Set(academyStudents.map((student) => student.school).filter(Boolean))]
@@ -156,7 +167,29 @@ export default function AcademyStudentsPage() {
           </div>
         )}
 
-        {filtered.length === 0 ? (
+        {studentsError && (
+          <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-2xl bg-red-50 px-4 py-3">
+            <p className="min-w-0 text-xs font-semibold leading-5 text-red-700">
+              학생 목록을 불러오지 못했어요.
+            </p>
+            <button
+              type="button"
+              onClick={() => void loadServerStudents()}
+              disabled={isStudentsLoading}
+              className="flex flex-shrink-0 items-center gap-1 rounded-xl bg-white px-3 py-2 text-xs font-bold text-red-600 disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={isStudentsLoading ? 'animate-spin' : ''} />
+              다시 시도
+            </button>
+          </div>
+        )}
+
+        {isStudentsLoading && academyStudents.length === 0 ? (
+          <div className="mx-4 flex items-center justify-center gap-2 rounded-2xl bg-white px-5 py-12 text-sm font-semibold text-[#8B95A1] shadow-sm">
+            <Loader2 size={17} className="animate-spin text-blue-500" />
+            학생 목록을 불러오는 중이에요
+          </div>
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon="👤"
             title={academyStudents.length === 0 ? '학생이 없어요' : '조건에 맞는 학생이 없어요'}
