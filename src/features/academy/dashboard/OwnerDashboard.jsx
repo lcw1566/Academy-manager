@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
 import {
   Clock,
   FileText,
@@ -60,7 +59,6 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const academyProfile = useAcademyStore((s) => s.academyProfile);
   const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords) ?? [];
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
-  const navigateToClassGroup = useAcademyStore((s) => s.navigateToClassGroup);
   const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const showToast = useAcademyStore((s) => s.showToast);
@@ -152,14 +150,27 @@ export default function OwnerDashboard({ operationsOnly = false }) {
     [mergedClassSessions, todayStr]
   );
 
-  const schedules = useMemo(() => [
-    ...mergedClassSessions.filter((s) => s.status !== 'canceled').map((s) => ({ date: s.date, type: 'class' })),
-  ], [mergedClassSessions]);
-
-  const daySessions = useMemo(
-    () => mergedClassSessions.filter((s) => s.date === selectedDate && s.status !== 'canceled')
-      .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
-    [mergedClassSessions, selectedDate]
+  const schedules = useMemo(
+    () => mergedClassSessions
+      .filter((session) => session.status !== 'canceled')
+      .map((session) => {
+        const group = classGroups.find((item) => item.id === session.classGroupId);
+        return {
+          id: session.id,
+          date: session.date,
+          type: 'class',
+          startTime: session.startTime,
+          endTime: session.endTime,
+          title: group?.name || '수업',
+          subtitle: [
+            session.room || group?.room,
+            `${session.studentIds?.length || 0}명`,
+          ].filter(Boolean).join(' · '),
+          badge: session.sessionKind === 'makeup' ? '보강' : '',
+          onClick: () => void openSession(session),
+        };
+      }),
+    [mergedClassSessions, classGroups, openSession],
   );
 
   const todayClinicCount = useMemo(
@@ -312,9 +323,6 @@ export default function OwnerDashboard({ operationsOnly = false }) {
     unfinishedLessonRecordSessions,
   ]);
 
-  const isToday = selectedDate === todayStr;
-  const dateLabel = isToday ? '오늘 일정' : formatDateShort(selectedDate);
-
   return (
     <div className="pt-6 pb-4">
       {/* 인사 */}
@@ -344,40 +352,13 @@ export default function OwnerDashboard({ operationsOnly = false }) {
 
       {/* 주간 캘린더 */}
       <div className="mb-5">
-        <WeeklyExpandableCalendar selectedDate={selectedDate} onSelectDate={setSelectedDate} schedules={schedules} />
-      </div>
-
-      {/* 선택 날짜 일정 */}
-      <div className="px-4 mb-5">
-        <p className="text-sm font-bold text-gray-700 mb-3">{dateLabel}</p>
-        {daySessions.length === 0 ? (
-          <div className="bg-white rounded-2xl px-4 py-5 text-center shadow-sm">
-            <p className="text-sm text-gray-400">수업이 없어요</p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {daySessions.map((session) => {
-              const group = classGroups.find((g) => g.id === session.classGroupId);
-              return (
-                <motion.button
-                  key={session.id}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => { navigateToClassGroup(session.classGroupId); }}
-                  className="bg-white rounded-2xl p-4 shadow-sm text-left w-full"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-                    <span className="font-semibold text-gray-900 text-sm flex-1">{group?.name || '수업'}</span>
-                    <span className="text-xs text-gray-400">{formatTimeRange(session.startTime, session.endTime)}</span>
-                  </div>
-                  <p className="text-xs text-gray-400 ml-4">
-                    {[session.room, `${session.studentIds?.length || 0}명`].filter(Boolean).join(' · ')}
-                  </p>
-                </motion.button>
-              );
-            })}
-          </div>
-        )}
+        <WeeklyExpandableCalendar
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          schedules={schedules}
+          showAgenda
+          emptyAgendaText="수업 일정이 없어요"
+        />
       </div>
 
       {/* 요약 카드 */}

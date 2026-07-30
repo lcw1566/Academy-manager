@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import { Clock, FileText, LogIn } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -56,7 +55,6 @@ export default function TeacherDashboard() {
   const academyAttendanceRecords = useAcademyStore((s) => s.academyAttendanceRecords);
   const academyTeachers = useAcademyStore((s) => s.academyTeachers);
   const academyProfile = useAcademyStore((s) => s.academyProfile);
-  const navigateToClassGroup = useAcademyStore((s) => s.navigateToClassGroup);
   const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const showToast = useAcademyStore((s) => s.showToast);
@@ -180,12 +178,31 @@ export default function TeacherDashboard() {
     [mySessions, todayStr]
   );
 
-  const daySessions = useMemo(
-    () => mySessions.filter((s) => s.date === selectedDate).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
-    [mySessions, selectedDate]
+  const schedules = useMemo(
+    () => mySessions.map((session) => {
+      const group = classGroups.find((item) => item.id === session.classGroupId);
+      const sessionAttended = academyAttendanceRecords.filter((attendanceRecord) => (
+        attendanceRecord.sessionId === session.id && isEffectiveAttendance(attendanceRecord)
+      )).length;
+      return {
+        id: session.id,
+        date: session.date,
+        type: 'class',
+        startTime: session.startTime,
+        endTime: session.endTime,
+        title: group?.name || '수업',
+        subtitle: [
+          session.room || group?.room,
+          `${session.studentIds?.length || 0}명`,
+        ].filter(Boolean).join(' · '),
+        badge: sessionAttended > 0
+          ? `출결 ${sessionAttended}/${session.studentIds?.length || 0}`
+          : session.sessionKind === 'makeup' ? '보강' : '',
+        onClick: () => void openSession(session),
+      };
+    }),
+    [mySessions, classGroups, academyAttendanceRecords, openSession],
   );
-
-  const schedules = useMemo(() => mySessions.map((s) => ({ date: s.date, type: 'class' })), [mySessions]);
 
   const myClinics = useMemo(() => {
     if (!myTeacher) return [];
@@ -217,9 +234,6 @@ export default function TeacherDashboard() {
     () => new Set(academyLessonRecords.filter((lr) => todaySessions.some((s) => s.id === lr.sessionId)).map((lr) => lr.studentId)),
     [academyLessonRecords, todaySessions]
   );
-
-  const isToday = selectedDate === todayStr;
-  const dateLabel = isToday ? '오늘 내 수업' : formatDateShort(selectedDate);
 
   // Phase 32 — 작성 필요한 수업 기록: 본인 담당 완료 세션 중 _common_ 기록 없는 것
   const unfinishedRecordSessions = useMemo(() => {
@@ -334,52 +348,17 @@ export default function TeacherDashboard() {
       <HomeActionList items={homeActions} />
 
       <div className="mb-5">
-        <WeeklyExpandableCalendar selectedDate={selectedDate} onSelectDate={setSelectedDate} schedules={schedules} />
+        <WeeklyExpandableCalendar
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          schedules={schedules}
+          showAgenda
+          emptyAgendaText="내 수업 일정이 없어요"
+        />
       </div>
 
       {/* Phase 31 — 오늘 근무 카드 + 출/퇴근 */}
       <MyTodayShiftCard staff={myTeacher} staffRole="teacher" />
-
-      {/* 선택 날짜 수업 */}
-      <div className="px-4 mb-5">
-        <p className="text-sm font-bold text-gray-700 mb-3">{dateLabel}</p>
-        {daySessions.length === 0 ? (
-          <div className="bg-white rounded-2xl px-4 py-5 text-center shadow-sm">
-            <p className="text-sm text-gray-400">수업이 없어요</p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {daySessions.map((session) => {
-              const group = classGroups.find((g) => g.id === session.classGroupId);
-              const sessionAttended = academyAttendanceRecords.filter((a) => (
-                a.sessionId === session.id && isEffectiveAttendance(a)
-              )).length;
-              return (
-                <motion.button
-                  key={session.id}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => navigateToClassGroup(session.classGroupId)}
-                  className="bg-white rounded-2xl p-4 shadow-sm text-left w-full"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0" />
-                    <span className="font-semibold text-gray-900 text-sm flex-1">{group?.name || '수업'}</span>
-                    <span className="text-xs text-blue-600 font-medium">{formatClock(session.startTime)}</span>
-                  </div>
-                  <div className="flex items-center gap-3 ml-4 mt-1">
-                    <span className="text-xs text-gray-400">{session.studentIds?.length || 0}명</span>
-                    {sessionAttended > 0 && (
-                      <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-medium">
-                        출결 {sessionAttended}/{session.studentIds?.length || 0}
-                      </span>
-                    )}
-                  </div>
-                </motion.button>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
       {/* 요약 카드 */}
       <div className="px-4 grid grid-cols-2 gap-3 mb-5">

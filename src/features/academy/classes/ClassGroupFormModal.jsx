@@ -215,6 +215,44 @@ export function matchSessionPairs(localSessions, serverSessions) {
 }
 
 const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'];
+const CLASS_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
+  const hour = Math.floor(index / 2);
+  const minute = index % 2 === 0 ? 0 : 30;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+});
+
+function formatKoreanTime(value) {
+  const [rawHour, rawMinute] = String(value || '').split(':').map(Number);
+  if (!Number.isFinite(rawHour) || !Number.isFinite(rawMinute)) return '시간 선택';
+  const period = rawHour < 12 ? '오전' : '오후';
+  const hour = rawHour % 12 || 12;
+  return `${period} ${hour}:${String(rawMinute).padStart(2, '0')}`;
+}
+
+function TimeSelect({ value, onChange, label }) {
+  const options = CLASS_TIME_OPTIONS.includes(value)
+    ? CLASS_TIME_OPTIONS
+    : [...CLASS_TIME_OPTIONS, value].filter(Boolean).sort();
+  return (
+    <div className="relative min-w-0">
+      <select
+        value={value || ''}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={label}
+        className="h-12 w-full appearance-none rounded-xl border border-[#D1D6DB] bg-white py-0 pl-3 pr-9 text-sm font-bold text-[#191F28] outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-blue-100"
+      >
+        {!value && <option value="">시간 선택</option>}
+        {options.map((time) => (
+          <option key={time} value={time}>{formatKoreanTime(time)}</option>
+        ))}
+      </select>
+      <ChevronDown
+        size={15}
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#8B95A1]"
+      />
+    </div>
+  );
+}
 const LEVEL_GROUPS = [
   {
     label: '초등',
@@ -1051,18 +1089,16 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             {form.useSameTime ? (
               <>
                 <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                  <input
-                    type="time"
+                  <TimeSelect
                     value={form.startTime}
-                    onChange={(e) => set('startTime', e.target.value)}
-                    className="input"
+                    onChange={(value) => set('startTime', value)}
+                    label="수업 시작 시간"
                   />
                   <span className="text-gray-400 text-sm">~</span>
-                  <input
-                    type="time"
+                  <TimeSelect
                     value={form.endTime}
-                    onChange={(e) => set('endTime', e.target.value)}
-                    className="input"
+                    onChange={(value) => set('endTime', value)}
+                    label="수업 종료 시간"
                   />
                 </div>
                 {timeError && (
@@ -1082,18 +1118,16 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
                     <div key={day}>
                       <div className="grid grid-cols-[44px_1fr_auto_1fr] items-center gap-2">
                         <span className="text-sm font-bold text-[#191F28]">{day}요일</span>
-                        <input
-                          type="time"
+                        <TimeSelect
                           value={t.startTime || ''}
-                          onChange={(e) => setWeekdayTime(day, 'startTime', e.target.value)}
-                          className="input"
+                          onChange={(value) => setWeekdayTime(day, 'startTime', value)}
+                          label={`${day}요일 시작 시간`}
                         />
                         <span className="text-gray-400 text-sm">~</span>
-                        <input
-                          type="time"
+                        <TimeSelect
                           value={t.endTime || ''}
-                          onChange={(e) => setWeekdayTime(day, 'endTime', e.target.value)}
-                          className="input"
+                          onChange={(value) => setWeekdayTime(day, 'endTime', value)}
+                          label={`${day}요일 종료 시간`}
                         />
                       </div>
                       {err && (

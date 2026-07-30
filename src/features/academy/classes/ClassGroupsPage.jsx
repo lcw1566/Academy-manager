@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus, ChevronRight, Users, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -6,10 +6,10 @@ import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
+import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import ClassGroupFormModal from './ClassGroupFormModal';
 import { today, addDaysYMD, formatDateShort } from '../../../utils/date';
 import { getTeacherDisplayName, OWNER_TEACHER_ID } from '../../../utils/format';
-import { useState } from 'react';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getRoomTagClassName } from '../../../utils/roomTags';
 import {
@@ -38,6 +38,7 @@ export default function ClassGroupsPage() {
 
   const [showForm, setShowForm] = useState(false);
   const todayStr = today();
+  const [selectedDate, setSelectedDate] = useState(todayStr);
   const isOwner = role === 'owner';
 
   // Phase 30 — canManageClasses 권한이 있으면 owner 가 아닌 staff 도 + 버튼 노출.
@@ -67,8 +68,8 @@ export default function ClassGroupsPage() {
   const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
   const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
   const mergedClassSessions = useMemo(() => {
-    const from = todayStr;
-    const to = addDaysYMD(todayStr, 60);
+    const from = addDaysYMD(todayStr, -31);
+    const to = addDaysYMD(todayStr, 90);
     const plannedRaw = buildPlannedClassSessions({
       rules: classScheduleRules,
       exceptions: classSessionExceptions,
@@ -104,6 +105,31 @@ export default function ClassGroupsPage() {
     }),
     [classGroups, mergedClassSessions, instructors, academyProfile, todayStr, canManage, role, authUserId, myInstructorIds]
   );
+  const calendarSchedules = useMemo(() => {
+    const visibleGroupIds = new Set(enriched.map((group) => group.id));
+    return mergedClassSessions
+      .filter((session) => (
+        session.status !== 'canceled'
+        && visibleGroupIds.has(session.classGroupId)
+      ))
+      .map((session) => {
+        const group = enriched.find((item) => item.id === session.classGroupId);
+        return {
+          id: session.id,
+          date: session.date,
+          type: 'class',
+          startTime: session.startTime,
+          endTime: session.endTime,
+          title: group?.name || '수업',
+          subtitle: [
+            session.room || group?.room,
+            `${session.studentIds?.length || 0}명`,
+          ].filter(Boolean).join(' · '),
+          badge: session.sessionKind === 'makeup' ? '보강' : '',
+          onClick: () => navigateToClassGroup(session.classGroupId),
+        };
+      });
+  }, [mergedClassSessions, enriched, navigateToClassGroup]);
 
   return (
     <div>
@@ -126,6 +152,16 @@ export default function ClassGroupsPage() {
       <div className="pt-14 md:pt-0 pb-6">
         <div className="px-4 pt-4 mb-3">
           <p className="text-sm text-gray-400">반 단위로 수업을 관리해요.</p>
+        </div>
+
+        <div className="mb-5">
+          <WeeklyExpandableCalendar
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
+            schedules={calendarSchedules}
+            showAgenda
+            emptyAgendaText="수업 일정이 없어요"
+          />
         </div>
 
         {enriched.length === 0 ? (

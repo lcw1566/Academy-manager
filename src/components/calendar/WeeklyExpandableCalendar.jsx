@@ -22,8 +22,22 @@ const DOT_COLORS = {
 };
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+const TYPE_LABELS = {
+  class: '수업',
+  consultation: '상담',
+  payment: '수납',
+  exam: '시험',
+  performance: '기록',
+  school: '학교',
+};
 
-export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, schedules = [] }) {
+export default function WeeklyExpandableCalendar({
+  selectedDate,
+  onSelectDate,
+  schedules = [],
+  showAgenda = false,
+  emptyAgendaText = '등록된 일정이 없어요',
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [pivotDate, setPivotDate] = useState(getTodayYMD());
 
@@ -47,6 +61,14 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
     }
     return map;
   }, [schedules]);
+  const selectedSchedules = useMemo(
+    () => schedules
+      .filter((schedule) => schedule?.date === selectedDate)
+      .sort((a, b) => String(a.time || a.startTime || '').localeCompare(
+        String(b.time || b.startTime || ''),
+      )),
+    [schedules, selectedDate],
+  );
 
   // 부모의 "오늘" 이동처럼 선택 날짜가 외부에서 바뀌어도 해당 주/월이 보이게 한다.
   useEffect(() => {
@@ -58,9 +80,13 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
       const shiftedMonth = delta > 0
         ? nextMonth(pivotDate.slice(0, 7))
         : prevMonth(pivotDate.slice(0, 7));
-      setPivotDate(`${shiftedMonth}-01`);
+      const nextDate = `${shiftedMonth}-01`;
+      setPivotDate(nextDate);
+      onSelectDate(nextDate);
     } else {
-      setPivotDate(addDaysYMD(pivotDate, delta * 7));
+      const nextDate = addDaysYMD(selectedDate || pivotDate, delta * 7);
+      setPivotDate(nextDate);
+      onSelectDate(nextDate);
     }
   };
 
@@ -152,6 +178,68 @@ export default function WeeklyExpandableCalendar({ selectedDate, onSelectDate, s
           })}
         </div>
       </div>
+
+      {showAgenda && (
+        <div className="mx-3 mt-2 border-t border-[#F2F4F6] px-1 pb-2 pt-3">
+          <div className="mb-2 flex items-center justify-between gap-2 px-1">
+            <p className="text-xs font-extrabold text-[#333D4B]">
+              {selectedDate === todayStr ? '오늘 일정' : `${Number(selectedDate?.slice(5, 7)) || ''}월 ${Number(selectedDate?.slice(8, 10)) || ''}일 일정`}
+            </p>
+            {selectedSchedules.length > 0 && (
+              <span className="text-[11px] font-bold text-[#8B95A1]">
+                {selectedSchedules.length}개
+              </span>
+            )}
+          </div>
+          {selectedSchedules.length === 0 ? (
+            <div className="rounded-xl bg-[#F8F9FA] px-3 py-3 text-center text-xs font-medium text-[#8B95A1]">
+              {emptyAgendaText}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {selectedSchedules.slice(0, 4).map((schedule, index) => {
+                const time = schedule.time
+                  || [schedule.startTime, schedule.endTime].filter(Boolean).join('–');
+                const interactive = typeof schedule.onClick === 'function';
+                return (
+                  <button
+                    key={schedule.id || `${schedule.date}-${time}-${schedule.title || index}`}
+                    type="button"
+                    onClick={schedule.onClick}
+                    disabled={!interactive}
+                    className="flex w-full items-center gap-3 rounded-xl bg-[#F8F9FA] px-3 py-2.5 text-left enabled:active:scale-[0.99] enabled:active:bg-[#F2F4F6]"
+                  >
+                    <span className={`h-8 w-1 flex-shrink-0 rounded-full ${DOT_COLORS[schedule.type] || 'bg-gray-300'}`} />
+                    <span className="w-[76px] flex-shrink-0 text-xs font-extrabold text-[#333D4B]">
+                      {time || TYPE_LABELS[schedule.type] || '일정'}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-[#191F28]">
+                        {schedule.title || TYPE_LABELS[schedule.type] || '일정'}
+                      </span>
+                      {schedule.subtitle && (
+                        <span className="mt-0.5 block truncate text-[11px] font-medium text-[#8B95A1]">
+                          {schedule.subtitle}
+                        </span>
+                      )}
+                    </span>
+                    {schedule.badge && (
+                      <span className="flex-shrink-0 rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-600">
+                        {schedule.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              {selectedSchedules.length > 4 && (
+                <p className="px-2 py-1 text-center text-[11px] font-bold text-[#8B95A1]">
+                  일정 {selectedSchedules.length - 4}개 더 있어요
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 펼치기/접기 버튼 */}
       <button
