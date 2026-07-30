@@ -83,6 +83,12 @@ export default function ClinicPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerClinicRecords = useWorkspaceStore((s) => s.loadServerClinicRecords);
+  const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
+  const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
+  const loadClassScheduleRules = useWorkspaceStore((s) => s.loadClassScheduleRules);
+  const loadClassSessionExceptions = useWorkspaceStore(
+    (s) => s.loadClassSessionExceptions,
+  );
   const ensureClassSessionsForRangeLocal = useWorkspaceStore(
     (s) => s.ensureClassSessionsForRangeLocal,
   );
@@ -111,13 +117,33 @@ export default function ClinicPage() {
 
   useEffect(() => {
     if (!currentAcademyId || !todayStr) return;
-    void ensureClassSessionsForRangeLocal({
-      fromDate: todayStr,
-      toDate: todayStr,
-    }).catch((error) => {
-      console.warn('[clinic] 오늘 수업 회차 준비 실패', error);
-    });
-  }, [currentAcademyId, ensureClassSessionsForRangeLocal, todayStr]);
+    void (async () => {
+      try {
+        // 로그인 직후 또는 다른 기기에서 반 시간을 바꾼 직후에도 전역 초기화와
+        // 실시간 이벤트 순서에 의존하지 않고 오늘 일정의 최신 원본을 먼저 받는다.
+        await Promise.all([
+          loadServerClassGroups(),
+          loadServerClassSessions(),
+          loadClassScheduleRules(),
+          loadClassSessionExceptions({ fromDate: todayStr, toDate: todayStr }),
+        ]);
+        await ensureClassSessionsForRangeLocal({
+          fromDate: todayStr,
+          toDate: todayStr,
+        });
+      } catch (error) {
+        console.warn('[clinic] 오늘 수업 회차 준비 실패', error);
+      }
+    })();
+  }, [
+    currentAcademyId,
+    ensureClassSessionsForRangeLocal,
+    loadClassScheduleRules,
+    loadClassSessionExceptions,
+    loadServerClassGroups,
+    loadServerClassSessions,
+    todayStr,
+  ]);
 
   // 보조강사: 강사가 수업에서 남긴 보완 항목 목록
   const supportItems = useMemo(() => {
@@ -188,7 +214,7 @@ export default function ClinicPage() {
       const studentIds = Array.isArray(session.studentIds) && session.studentIds.length > 0
         ? session.studentIds
         : group?.studentIds || [];
-      const students = studentIds
+      const students = [...new Set(studentIds)]
         .map((studentId) => academyStudents.find((student) => student.id === studentId))
         .filter(Boolean)
         .map((student) => ({

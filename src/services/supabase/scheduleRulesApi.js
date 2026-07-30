@@ -434,7 +434,10 @@ export async function listClassSessionExceptions(academyId, { fromDate, toDate }
     .eq('academy_id', academyId);
   if (fromDate) query = query.gte('session_date', fromDate);
   if (toDate) query = query.lte('session_date', toDate);
-  query = query.order('session_date');
+  query = query
+    .order('session_date')
+    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false });
   const { data, error } = await query;
   if (error) throw error;
   return data ?? [];

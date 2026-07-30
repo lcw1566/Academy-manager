@@ -289,18 +289,20 @@ export default function StudentAttendancePage() {
   ]);
 
   const attendanceGroups = useMemo(() => {
-    const remainingRows = new Map(rows.map((row) => [row.student.id, row]));
+    const rowsByStudentId = new Map(rows.map((row) => [row.student.id, row]));
+    const assignedStudentIds = new Set();
     const groups = [];
 
     for (const session of daySessions) {
       const sessionRows = [];
+      const seenInSession = new Set();
       for (const studentId of session.studentIds || []) {
-        const row = remainingRows.get(studentId);
+        if (seenInSession.has(studentId)) continue;
+        const row = rowsByStudentId.get(studentId);
         if (!row) continue;
+        seenInSession.add(studentId);
         sessionRows.push(row);
-        // 등하원은 수업별 출석이 아니라 하루 단위 상태이므로, 같은 학생이
-        // 여러 수업에 있어도 가장 이른 수업 묶음에 한 번만 표시한다.
-        remainingRows.delete(studentId);
+        assignedStudentIds.add(studentId);
       }
       if (sessionRows.length === 0) continue;
       groups.push({
@@ -312,7 +314,11 @@ export default function StudentAttendancePage() {
       });
     }
 
-    const unassignedRows = [...remainingRows.values()];
+    // 등·하원 상태 자체는 학생의 하루 기록이지만, 운영 화면의 묶음은 반별이다.
+    // 따라서 여러 반에 속한 학생은 각 반에 모두 표시하고 동일한 하루 상태를 공유한다.
+    const unassignedRows = rows.filter(
+      (row) => !assignedStudentIds.has(row.student.id),
+    );
     if (unassignedRows.length > 0) {
       groups.push({
         id: 'attendance-unassigned',

@@ -22,6 +22,13 @@ import useAcademyStore from '../../../store/useAcademyStore';
 
 export default function SessionExceptionSheet({ session, group, onClose }) {
   const createException = useWorkspaceStore((s) => s.createClassSessionExceptionLocal);
+  const ensureClassSessionsForRangeLocal = useWorkspaceStore(
+    (s) => s.ensureClassSessionsForRangeLocal,
+  );
+  const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
+  const loadClassSessionExceptions = useWorkspaceStore(
+    (s) => s.loadClassSessionExceptions,
+  );
   const showToast = useAcademyStore((s) => s.showToast);
 
   const [mode, setMode] = useState(null); // null | 'cancel' | 'reschedule' | 'extra'
@@ -50,6 +57,8 @@ export default function SessionExceptionSheet({ session, group, onClose }) {
     if (saving) return;
     setSaving(true);
     try {
+      let successMessage = '';
+      const targetDate = mode === 'extra' ? extraDate : session.date;
       if (mode === 'cancel') {
         await createException({
           class_group_id: groupServerId,
@@ -58,7 +67,7 @@ export default function SessionExceptionSheet({ session, group, onClose }) {
           reason: reason || null,
           memo: memo || null,
         });
-        showToast('휴강으로 처리됐어요.');
+        successMessage = '휴강으로 처리됐어요.';
       } else if (mode === 'reschedule') {
         await createException({
           class_group_id: groupServerId,
@@ -69,7 +78,7 @@ export default function SessionExceptionSheet({ session, group, onClose }) {
           reason: reason || null,
           memo: memo || null,
         });
-        showToast('시간이 변경됐어요.');
+        successMessage = '시간이 변경됐어요.';
       } else if (mode === 'extra') {
         await createException({
           class_group_id: groupServerId,
@@ -79,8 +88,29 @@ export default function SessionExceptionSheet({ session, group, onClose }) {
           end_time: end || null,
           memo: memo || null,
         });
-        showToast('보강 수업이 추가됐어요.');
+        successMessage = '보강 수업이 추가됐어요.';
       }
+
+      // 예외 행만 저장하고 닫으면 기존 실제 회차가 잠시 남아 등하원·클리닉에
+      // 이전 시간이 보일 수 있다. 해당 날짜를 즉시 다시 실체화하고 최신 행을 받는다.
+      try {
+        await ensureClassSessionsForRangeLocal({
+          fromDate: targetDate,
+          toDate: targetDate,
+          classGroupId: groupServerId,
+        });
+        await Promise.all([
+          loadServerClassSessions(),
+          loadClassSessionExceptions({ fromDate: targetDate, toDate: targetDate }),
+        ]);
+      } catch (refreshError) {
+        console.warn('[class-session] saved exception refresh deferred', refreshError);
+        showToast('변경은 저장됐지만 화면 반영이 늦어지고 있어요.', 'error');
+        onClose?.();
+        return;
+      }
+
+      showToast(successMessage);
       onClose?.();
     } catch (err) {
       showToast(err?.message || '저장에 실패했어요.', 'error');

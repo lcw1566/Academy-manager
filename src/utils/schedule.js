@@ -236,6 +236,7 @@ export function buildPlannedClassSessions({ rules = [], exceptions = [], fromDat
   });
 
   const result = [];
+  const exceptionPriority = { cancel: 1, reschedule: 2, substitute: 3 };
 
   for (const ymd of enumerateDates(fromDate, toDate)) {
     const dow = dayOfWeekOfYMD(ymd);
@@ -243,17 +244,28 @@ export function buildPlannedClassSessions({ rules = [], exceptions = [], fromDat
     for (const rule of filteredRules) {
       if (rule.day_of_week !== dow) continue;
       if (!isRuleActiveOnDate(rule, ymd)) continue;
-      const relatedExc = filteredExceptions.find(
-        (e) => e.class_group_id === rule.class_group_id
+      // DB 실체화 함수와 같은 우선순위(cancel → reschedule → substitute)를 쓴다.
+      // 같은 종류가 여러 번 저장된 레거시 데이터는 가장 최근 행을 적용한다.
+      const relatedExc = filteredExceptions
+        .filter((e) => (
+          e.class_group_id === rule.class_group_id
           && e.session_date === ymd
-          && (e.type === 'cancel' || e.type === 'reschedule' || e.type === 'substitute'),
-      );
+          && Object.prototype.hasOwnProperty.call(exceptionPriority, e.type)
+        ))
+        .sort((a, b) => (
+          exceptionPriority[a.type] - exceptionPriority[b.type]
+          || String(b.created_at || '').localeCompare(
+            String(a.created_at || ''),
+          )
+          || String(b.id || '').localeCompare(String(a.id || ''))
+        ))[0];
       if (relatedExc?.type === 'cancel') continue;
       const startTime = relatedExc?.start_time || rule.start_time || '';
       const endTime = relatedExc?.end_time || rule.end_time || '';
       result.push({
         id: `rule:${rule.id}:${ymd}`,
         source: 'rule',
+        ruleId: rule.id,
         classGroupId: rule.class_group_id,
         date: ymd,
         startTime,
@@ -277,6 +289,7 @@ export function buildPlannedClassSessions({ rules = [], exceptions = [], fromDat
     result.push({
       id: `exc:${exc.id}`,
       source: 'exception',
+      ruleId: null,
       classGroupId: exc.class_group_id,
       date: exc.session_date,
       startTime: exc.start_time,
@@ -344,12 +357,12 @@ export function isGenerationCapped(originalEndYMD, { todayYMD, windowDays = FUTU
 // 룰/예외로 계산한 planned 항목과 기존 academy_staff_shifts /
 // class_sessions 의 actual 행을 합쳐 중복 없는 단일 목록을 만든다.
 //
-// 중복 키:
-//   - 수업 : `${date}__${classGroupId}__${startTime}`
+// 중복 판정:
+//   - 수업 : rule/exception ID 우선, 없으면 날짜+반+시간 및 정기 회차 자연키
 //   - 직원 : `${date}__${staffUserId or staffId}__${scheduledStartTime}`
 //
-// 실제(legacy) 행이 키와 일치하면 planned 는 제거된다. 즉 "실제 우선".
-// 14일 안에서는 모든 항목이 actual 로 노출되고, 14일 너머는 planned 만 노출.
+// 수업은 실제 회차 ID와 기록 연결은 보존하면서 최신 planned 시간·담당·학생
+// 스냅샷을 덮어 쓴다. DB 동기화 직전에도 이전/새 시간이 중복 노출되지 않는다.
 
 // 수업: planned 항목을 classSession 모양으로 변환해 반환.
 // 기존 뷰가 classSession 모양을 기대하므로 호환을 위해 동일 필드 사용.
@@ -362,22 +375,87 @@ export function isGenerationCapped(originalEndYMD, { todayYMD, windowDays = FUTU
 //
 // 호출자는 plannedItems 에 group → studentIds / room 등을 미리 채워 둔다.
 export function mergePlannedAndActualClassSessions(plannedItems = [], actualSessions = []) {
-  const actualKeys = new Set();
+  const consumedPlannedIndexes = new Set();
   const out = [];
+
+  const groupKeyOf = (item) => item?.classGroupServerId || item?.classGroupId || '';
+  const timeKeyOf = (item) => (
+    `${item?.date || ''}__${groupKeyOf(item)}__${(item?.startTime || '').slice(0, 5)}`
+  );
+  const isPlannedExtra = (item) => (
+    item?.plannedSource === 'exception' || item?.plannedExceptionType === 'extra'
+  );
+  const isActualExtra = (item) => (
+    !!item?.sessionExceptionId && !item?.scheduleRuleId
+  );
+
   for (const s of actualSessions) {
     if (!s) continue;
-    out.push({ ...s, isPlanned: false });
-    const groupKey = s.classGroupServerId || s.classGroupId;
-    const k = `${s.date}__${groupKey}__${(s.startTime || '').slice(0, 5)}`;
-    actualKeys.add(k);
+    let plannedIndex = plannedItems.findIndex((p, index) => (
+      !consumedPlannedIndexes.has(index)
+      && p
+      && timeKeyOf(p) === timeKeyOf(s)
+      && (isActualExtra(s) ? isPlannedExtra(p) : !isPlannedExtra(p))
+    ));
+
+    if (plannedIndex < 0 && s.scheduleRuleId) {
+      plannedIndex = plannedItems.findIndex((p, index) => (
+        !consumedPlannedIndexes.has(index)
+        && p
+        && p.date === s.date
+        && p.scheduleRuleId === s.scheduleRuleId
+      ));
+    }
+
+    if (plannedIndex < 0 && s.sessionExceptionId) {
+      plannedIndex = plannedItems.findIndex((p, index) => (
+        !consumedPlannedIndexes.has(index)
+        && p
+        && p.date === s.date
+        && p.sessionExceptionId === s.sessionExceptionId
+      ));
+    }
+
+    // 규칙 수정 직후 DB 회차 갱신보다 UI 계산이 먼저 끝나는 짧은 구간에도
+    // 같은 반·날짜의 정기 회차를 두 개로 보이지 않게 한다. 예정 규칙의 최신
+    // 시간만 실제 회차에 덮어 쓰고, 기록 연결에 필요한 실제 회차 ID는 보존한다.
+    if (plannedIndex < 0 && !isActualExtra(s)) {
+      plannedIndex = plannedItems.findIndex((p, index) => (
+        !consumedPlannedIndexes.has(index)
+        && p
+        && !isPlannedExtra(p)
+        && p.date === s.date
+        && groupKeyOf(p) === groupKeyOf(s)
+      ));
+    }
+
+    const planned = plannedIndex >= 0 ? plannedItems[plannedIndex] : null;
+    if (planned) consumedPlannedIndexes.add(plannedIndex);
+    const canApplyLatestSchedule = planned && s.status !== 'completed';
+    out.push({
+      ...s,
+      ...(canApplyLatestSchedule ? {
+        startTime: planned.startTime || s.startTime,
+        endTime: planned.endTime || s.endTime,
+        room: planned.room || s.room,
+        teacherUserId: planned.teacherUserId || s.teacherUserId,
+        substituteTeacherUserId:
+          planned.substituteTeacherUserId ?? s.substituteTeacherUserId,
+        substituteReason: planned.substituteReason ?? s.substituteReason,
+        studentIds: Array.isArray(planned.studentIds) ? planned.studentIds : s.studentIds,
+        scheduleRuleId: planned.scheduleRuleId || s.scheduleRuleId,
+        sessionExceptionId: planned.sessionExceptionId ?? s.sessionExceptionId,
+        plannedSource: planned.plannedSource,
+        plannedExceptionType: planned.plannedExceptionType,
+      } : {}),
+      isPlanned: false,
+    });
   }
-  for (const p of plannedItems) {
-    if (!p) continue;
-    const groupKey = p.classGroupServerId || p.classGroupId;
-    const k = `${p.date}__${groupKey}__${(p.startTime || '').slice(0, 5)}`;
-    if (actualKeys.has(k)) continue;
+  plannedItems.forEach((p, index) => {
+    if (!p) return;
+    if (consumedPlannedIndexes.has(index)) return;
     out.push({ ...p, isPlanned: true });
-  }
+  });
   out.sort((a, b) => {
     if (a.date !== b.date) return a.date.localeCompare(b.date);
     return (a.startTime || '').localeCompare(b.startTime || '');
@@ -447,6 +525,9 @@ export function plannedToClassSessionShape(plannedItems = [], classGroups = []) 
       classGroupId: group.id, // local id 로 통일
       classGroupServerId: group.serverId || group.id,
       date: p.date,
+      occurrenceDate: p.date,
+      scheduleRuleId: p.ruleId || null,
+      sessionExceptionId: p.exceptionId || null,
       startTime: p.startTime || '',
       endTime: p.endTime || '',
       room: p.room || group.room || '',

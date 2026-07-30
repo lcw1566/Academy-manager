@@ -1911,7 +1911,28 @@ const useWorkspaceStore = create(
         try {
           const list = await listClassSessionExceptions(academyId, { fromDate, toDate });
           if (!isCurrentAcademy(get, academyId)) return list;
-          set({ classSessionExceptions: list, classSessionExceptionsLoadedAt: new Date().toISOString() });
+          set((state) => {
+            // 하루 화면이 자기 날짜만 새로고침하더라도 다른 날짜의 휴강·보강을
+            // 전역 캐시에서 지우지 않는다. 범위 없는 전체 조회만 완전히 교체한다.
+            if (!fromDate && !toDate) {
+              return {
+                classSessionExceptions: list,
+                classSessionExceptionsLoadedAt: new Date().toISOString(),
+              };
+            }
+            const outsideRequestedRange = (state.classSessionExceptions || []).filter((item) => {
+              const date = item?.session_date || '';
+              if (fromDate && date < fromDate) return true;
+              if (toDate && date > toDate) return true;
+              return false;
+            });
+            const byId = new Map(outsideRequestedRange.map((item) => [item.id, item]));
+            list.forEach((item) => byId.set(item.id, item));
+            return {
+              classSessionExceptions: [...byId.values()],
+              classSessionExceptionsLoadedAt: new Date().toISOString(),
+            };
+          });
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
