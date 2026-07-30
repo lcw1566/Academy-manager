@@ -31,9 +31,10 @@
 
 Dashboard → SQL Editor 에서 **번호 순서대로 현재 최신 파일까지** 실행:
 
-- [ ] 신규 환경: [`supabase/README.md`](../supabase/README.md)의 실행 순서대로 `001`~`063`
-- [ ] 기존 환경: 마지막 적용 번호 다음 파일부터 `063`까지
+- [ ] 신규 환경: [`supabase/README.md`](../supabase/README.md)의 실행 순서대로 `001`~`064`
+- [ ] 기존 환경: 마지막 적용 번호 다음 파일부터 `064`까지
 - [ ] `063_shared_student_attendance_for_staff.sql` 적용
+- [ ] `064_drive_edge_function_service_role_grants.sql` 적용
 - [ ] [`diagnose_cross_device_consistency.sql`](../supabase/sql/diagnostics/diagnose_cross_device_consistency.sql) 결과에서 핵심 항목이 모두 `true`
 
 각 SQL 은 idempotent — 재실행해도 안전합니다.
