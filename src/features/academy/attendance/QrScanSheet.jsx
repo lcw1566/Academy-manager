@@ -290,21 +290,20 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
     if (fieldKey === 'actual_start_time') writePatch.actualStartTime = time;
     else { writePatch.actualEndTime = time; writePatch.status = 'completed'; }
 
-    // 1) staff_attendance_logs upsert.
-    if (staffUserId) {
-      try {
-        const confirmedPatch = {
-          [fieldKey]: time,
-          status: 'approved',
-          approved_at: new Date().toISOString(),
-        };
-        if (existingLog?.id) {
-          await useWorkspaceStore.getState().updateStaffAttendanceLogLocal(
+    // 1) staff_attendance_logs가 서버 기준 원본이다. 이 저장이 실패하면 로컬
+    // 근무표만 바꾸거나 성공 메시지를 표시하지 않는다.
+    try {
+      const confirmedPatch = {
+        [fieldKey]: time,
+        status: 'approved',
+        approved_at: new Date().toISOString(),
+      };
+      const savedLog = existingLog?.id
+        ? await useWorkspaceStore.getState().updateStaffAttendanceLogLocal(
             existingLog.id,
             confirmedPatch,
-          );
-        } else {
-          await useWorkspaceStore.getState().createStaffAttendanceLogLocal({
+          )
+        : await useWorkspaceStore.getState().createStaffAttendanceLogLocal({
             staff_user_id: staffUserId,
             staff_role: staffRoleForLog,
             work_date: todayStr,
@@ -316,10 +315,19 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
             status: 'approved',
             approved_at: confirmedPatch.approved_at,
           });
-        }
-      } catch (err) {
-        console.warn('[qr] attendance log upsert failed', err);
+      if (!savedLog?.id) {
+        throw new Error('서버에서 근태 저장 결과를 확인하지 못했어요.');
       }
+    } catch (err) {
+      console.error('[qr] attendance log upsert failed', err);
+      const detail = err?.message || '네트워크를 확인하고 다시 시도해주세요.';
+      showToast('근태 기록을 저장하지 못했어요.', 'error');
+      setResult({
+        ok: false,
+        title: '근태 저장에 실패했어요.',
+        detail,
+      });
+      return;
     }
 
     // 2) legacy academy_staff_shifts (best-effort 호환).

@@ -88,6 +88,7 @@ const WORKSPACE_STORAGE_KEY = 'seenit-workspace';
 let workspaceInitializationPromise = null;
 let workspaceInitializationUserId = null;
 const classSessionMaterializationPromises = new Map();
+const REALTIME_RETRY_DELAYS_MS = [1000, 3000, 10000, 30000];
 const pendingWorkspaceRealtimeReasons = new Set();
 
 function getDefaultClassSessionRange() {
@@ -299,6 +300,10 @@ const initialState = {
   // localStorage, so they only live for the current browser session.
   workspaceRealtimeChannel: null,
   workspaceRealtimeRefreshTimer: null,
+  workspaceRealtimeRetryTimer: null,
+  workspaceRealtimeRetryCount: 0,
+  workspaceRealtimeStatus: 'idle',
+  workspaceRealtimeError: null,
 };
 
 const PENDING_ACCOUNT_TYPE_KEY = 'pending-account-type';
@@ -364,18 +369,30 @@ const useWorkspaceStore = create(
         });
       },
 
-      stopWorkspaceRealtime: () => {
+      stopWorkspaceRealtime: ({ preserveRetry = false } = {}) => {
         const channel = get().workspaceRealtimeChannel;
         const timer = get().workspaceRealtimeRefreshTimer;
+        const retryTimer = get().workspaceRealtimeRetryTimer;
         if (timer) clearTimeout(timer);
+        if (retryTimer) clearTimeout(retryTimer);
+        // removeChannel이 CLOSED 상태를 동기적으로 알리더라도 이전 채널의
+        // 콜백이 재연결을 다시 예약하지 못하도록 상태를 먼저 비운다.
+        set({
+          workspaceRealtimeChannel: null,
+          workspaceRealtimeRefreshTimer: null,
+          workspaceRealtimeRetryTimer: null,
+          ...(!preserveRetry
+            ? {
+                workspaceRealtimeRetryCount: 0,
+                workspaceRealtimeStatus: 'idle',
+                workspaceRealtimeError: null,
+              }
+            : {}),
+        });
         if (channel && supabase) {
           supabase.removeChannel(channel);
         }
         pendingWorkspaceRealtimeReasons.clear();
-        set({
-          workspaceRealtimeChannel: null,
-          workspaceRealtimeRefreshTimer: null,
-        });
       },
 
       scheduleWorkspaceRealtimeRefresh: (reason = 'realtime') => {
@@ -560,9 +577,13 @@ const useWorkspaceStore = create(
         const authUser = useAuthStore.getState().user;
         if (!authUser?.id) return;
 
-        get().stopWorkspaceRealtime?.();
+        get().stopWorkspaceRealtime?.({ preserveRetry: true });
 
         const academyId = get().currentAcademyId || 'none';
+        set({
+          workspaceRealtimeStatus: 'connecting',
+          workspaceRealtimeError: null,
+        });
         const channel = supabase
           .channel(`workspace-collaboration:${authUser.id}:${academyId}`)
           .on(
@@ -681,9 +702,42 @@ const useWorkspaceStore = create(
 
         set({ workspaceRealtimeChannel: channel });
         channel.subscribe((status) => {
+          // 이미 학원 전환이나 재연결로 교체된 채널의 늦은 상태 이벤트는 무시한다.
+          if (get().workspaceRealtimeChannel !== channel) return;
           if (status === 'SUBSCRIBED') {
+            const retryTimer = get().workspaceRealtimeRetryTimer;
+            if (retryTimer) clearTimeout(retryTimer);
+            set({
+              workspaceRealtimeStatus: 'subscribed',
+              workspaceRealtimeError: null,
+              workspaceRealtimeRetryTimer: null,
+              workspaceRealtimeRetryCount: 0,
+            });
             get().scheduleWorkspaceRealtimeRefresh('realtime-subscribed');
+            return;
           }
+          if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) return;
+
+          const retryCount = get().workspaceRealtimeRetryCount;
+          const retryDelay = REALTIME_RETRY_DELAYS_MS[
+            Math.min(retryCount, REALTIME_RETRY_DELAYS_MS.length - 1)
+          ];
+          const previousRetryTimer = get().workspaceRealtimeRetryTimer;
+          if (previousRetryTimer) clearTimeout(previousRetryTimer);
+          const retryTimer = setTimeout(() => {
+            if (!useAuthStore.getState().user?.id) return;
+            get().startWorkspaceRealtime();
+          }, retryDelay);
+          set({
+            workspaceRealtimeStatus: 'reconnecting',
+            workspaceRealtimeError: status,
+            workspaceRealtimeRetryTimer: retryTimer,
+            workspaceRealtimeRetryCount: retryCount + 1,
+          });
+          // 채널이 끊긴 순간에도 서버 원본을 한 번 직접 확인한다.
+          void get().refreshWorkspaceCollaborationState({
+            reason: `realtime-${status.toLowerCase()}`,
+          });
         });
       },
 
@@ -1062,7 +1116,10 @@ const useWorkspaceStore = create(
         }
         set({ isServerStudentsLoading: true, serverStudentsError: null });
         try {
-          const list = await listAcademyStudents(academyId);
+          const list = await retryAsync(
+            () => listAcademyStudents(academyId),
+            { attempts: 3, delays: [300, 900] },
+          );
           if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverStudents: list,
@@ -1124,7 +1181,10 @@ const useWorkspaceStore = create(
         }
         set({ isServerClassGroupsLoading: true, serverClassGroupsError: null });
         try {
-          const list = await listAcademyClassGroups(academyId);
+          const list = await retryAsync(
+            () => listAcademyClassGroups(academyId),
+            { attempts: 3, delays: [300, 900] },
+          );
           if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverClassGroups: list,
@@ -1157,7 +1217,10 @@ const useWorkspaceStore = create(
         }
         set({ isServerClassSessionsLoading: true, serverClassSessionsError: null });
         try {
-          const list = await listAcademyClassSessions(academyId);
+          const list = await retryAsync(
+            () => listAcademyClassSessions(academyId),
+            { attempts: 3, delays: [300, 900] },
+          );
           if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverClassSessions: list,
@@ -1412,7 +1475,10 @@ const useWorkspaceStore = create(
         }
         set({ isServerClinicRecordsLoading: true, serverClinicRecordsError: null });
         try {
-          const list = await listAcademyClinicRecords(academyId);
+          const list = await retryAsync(
+            () => listAcademyClinicRecords(academyId),
+            { attempts: 3, delays: [300, 900] },
+          );
           if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverClinicRecords: list,
@@ -1445,7 +1511,10 @@ const useWorkspaceStore = create(
         }
         set({ isServerAttendanceRecordsLoading: true, serverAttendanceRecordsError: null });
         try {
-          const list = await listAcademyAttendanceRecords(academyId);
+          const list = await retryAsync(
+            () => listAcademyAttendanceRecords(academyId),
+            { attempts: 3, delays: [300, 900] },
+          );
           if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverAttendanceRecords: list,
@@ -1949,7 +2018,10 @@ const useWorkspaceStore = create(
         if (!academyId) { set({ staffAttendanceLogs: [], staffAttendanceLogsError: null }); return []; }
         set({ isStaffAttendanceLogsLoading: true, staffAttendanceLogsError: null });
         try {
-          const list = await listStaffAttendanceLogs(academyId, { fromDate, toDate, limit });
+          const list = await retryAsync(
+            () => listStaffAttendanceLogs(academyId, { fromDate, toDate, limit }),
+            { attempts: 3, delays: [300, 900] },
+          );
           if (!isCurrentAcademy(get, academyId)) return list;
           set({ staffAttendanceLogs: list, staffAttendanceLogsLoadedAt: new Date().toISOString() });
           return list;
@@ -2042,7 +2114,10 @@ const useWorkspaceStore = create(
             : {}),
         });
         try {
-          const list = await listStudentCheckEvents(academyId, { sinceDateYMD, studentId, limit });
+          const list = await retryAsync(
+            () => listStudentCheckEvents(academyId, { sinceDateYMD, studentId, limit }),
+            { attempts: 3, delays: [300, 900] },
+          );
           if (!isCurrentAcademy(get, academyId)) return list;
           // 날짜를 빠르게 바꿨을 때 먼저 보낸 느린 응답이 새 날짜 결과를
           // 덮어쓰지 않게 한다.

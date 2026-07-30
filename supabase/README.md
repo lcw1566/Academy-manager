@@ -42,7 +42,9 @@ supabase/
     ├── 042_staff_biweekly_work_rules.sql (직원 격주 근무 규칙)
     ├── 052_shared_drive_folders_and_member_access.sql (전체 직원 공유 + 폴더)
     ├── 053_drive_safety_guards.sql (휴지통 + 용량·확장자·감사 이력)
-    └── 054_staff_job_titles.sql (표시용 직책과 기능 권한 분리)
+    ├── 054_staff_job_titles.sql (표시용 직책과 기능 권한 분리)
+    ├── ...                               (학생·수업·권한·일정 후속 보정)
+    └── 063_shared_student_attendance_for_staff.sql (직원 간 학생·등하원 조회 통일)
 ```
 
 ## 실행 순서 요약
@@ -82,9 +84,14 @@ supabase/
 | 52 | `052_shared_drive_folders_and_member_access.sql` | 전체 활성 직원 드라이브 사용, 중첩 폴더 |
 | 53 | `053_drive_safety_guards.sql` | 7일 휴지통, 1GB 한도, 파일 형식 제한, 변경 이력 |
 | 54 | `054_staff_job_titles.sql` | 직원 직책 저장, 초대 수락 시 직책 전달, role 기반 권한과 분리 |
+| 63 | `063_shared_student_attendance_for_staff.sql` | 학생 조회 권한 직원의 관련 기록 공통 조회, 등하원 RPC 권한·재원 예정 기준 통일, 학원 설정 Realtime 등록 |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
+
+> 운영 환경은 중간 번호를 건너뛰지 말고 현재 최신 번호인 `063`까지 순서대로
+> 적용하세요. 적용 뒤 `sql/diagnostics/diagnose_cross_device_consistency.sql`로
+> 핵심 함수·트리거·Realtime 등록 상태를 읽기 전용으로 확인할 수 있습니다.
 
 ### 직원 초대·역할 배정 배포 (026)
 

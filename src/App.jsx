@@ -281,9 +281,16 @@ export default function App() {
         refresh();
       }
     };
+    const handleOnline = () => {
+      // 모바일 절전·Wi-Fi 전환 뒤 기존 채널이 CLOSED 상태로 남는 경우가 있어
+      // 온라인 복귀 시 채널과 서버 원본 조회를 함께 복구한다.
+      startWorkspaceRealtime();
+      refresh();
+    };
 
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', refresh);
+      window.addEventListener('online', handleOnline);
     }
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -292,6 +299,7 @@ export default function App() {
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', refresh);
+        window.removeEventListener('online', handleOnline);
       }
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange);

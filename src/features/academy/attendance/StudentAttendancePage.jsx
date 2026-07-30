@@ -242,7 +242,14 @@ export default function StudentAttendancePage() {
   const rows = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();
     return academyStudents
-      .filter((student) => ['active', 'scheduled'].includes(student.status || 'active'))
+      .filter((student) => {
+        const status = student.status || 'active';
+        if (status === 'active') return true;
+        // 재원 예정 학생은 실제 시작일부터만 등하원 대상에 포함한다.
+        // 서버 RPC(SQL 063)도 같은 기준을 사용한다.
+        return status === 'scheduled'
+          && (!student.enrollmentDate || student.enrollmentDate <= selectedDate);
+      })
       .map((student) => {
         const state = getStudentDayCheckState(student.serverId, selectedDate, studentCheckEvents);
         const sessions = sessionsByStudentId.get(student.id) || [];
