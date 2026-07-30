@@ -431,7 +431,12 @@ export function mergePlannedAndActualClassSessions(plannedItems = [], actualSess
 
     const planned = plannedIndex >= 0 ? plannedItems[plannedIndex] : null;
     if (planned) consumedPlannedIndexes.add(plannedIndex);
-    const canApplyLatestSchedule = planned && s.status !== 'completed';
+    const canApplyLatestSchedule = planned && (
+      s.status !== 'completed'
+      // 완료 회차의 기본 규칙 변경은 역사로 보존하지만, 사용자가 이 회차에
+      // 명시적으로 저장한 시간 정정은 최신 값이므로 즉시 보여준다.
+      || planned.plannedExceptionType === 'reschedule'
+    );
     out.push({
       ...s,
       ...(canApplyLatestSchedule ? {

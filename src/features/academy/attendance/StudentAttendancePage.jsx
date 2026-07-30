@@ -595,7 +595,7 @@ export default function StudentAttendancePage() {
               <p className="mt-1 text-xs text-gray-400">검색어나 필터를 바꿔보세요.</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2 md:gap-2.5">
               {attendanceGroups.map((attendanceGroup) => {
                 const {
                   id,
@@ -625,15 +625,15 @@ export default function StudentAttendancePage() {
                 return (
                   <section
                     key={id}
-                    className="overflow-hidden rounded-[22px] border border-[#E5E8EB] bg-white"
+                    className="overflow-hidden rounded-2xl border border-[#E5E8EB] bg-white md:rounded-[22px]"
                   >
                     <button
                       type="button"
                       onClick={() => toggleAttendanceGroup(id)}
-                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors active:bg-[#F9FAFB]"
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors active:bg-[#F9FAFB] md:gap-3 md:px-4 md:py-3.5"
                       aria-expanded={expanded}
                     >
-                      <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-[#E8F3FF] text-[#1B64DA]">
+                      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#E8F3FF] text-[#1B64DA] md:h-9 md:w-9 md:rounded-xl">
                         <GroupIcon size={16} />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -644,9 +644,9 @@ export default function StudentAttendancePage() {
                           {detail || `${groupRows.length}명`}
                         </span>
                       </span>
-                      <span className="flex flex-shrink-0 items-center gap-2">
+                      <span className="flex flex-shrink-0 items-center gap-1.5 md:gap-2">
                         <span className="text-[11px] font-bold text-[#6B7684]">
-                          등원 {checkedInCount}/{groupRows.length}
+                          <span className="hidden sm:inline">등원 </span>{checkedInCount}/{groupRows.length}
                         </span>
                         <ChevronDown
                           size={17}
@@ -785,24 +785,30 @@ function StudentPresenceRow({
   return (
     <div className={
       nested
-        ? 'border-t border-[#F2F4F6] bg-white p-4 transition-colors hover:bg-[#F9FAFB]'
+        ? 'border-t border-[#F2F4F6] bg-white p-3 transition-colors hover:bg-[#F9FAFB] md:p-4'
         : 'rounded-[22px] border border-[#E5E8EB] bg-white p-4 transition-colors hover:border-[#D1D6DB]'
     }>
-      <div className="grid items-center gap-4 md:grid-cols-[minmax(200px,0.9fr)_minmax(280px,1.35fr)_auto]">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[#E8F3FF] text-base font-black text-[#1B64DA]">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 md:grid-cols-[minmax(200px,0.9fr)_minmax(280px,1.35fr)_auto] md:gap-4">
+        <div className="flex min-w-0 items-center gap-2.5 md:gap-3">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[#E8F3FF] text-sm font-black text-[#1B64DA] md:h-11 md:w-11 md:text-base">
             {(student.name || '?')[0]}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-extrabold text-[#191F28]">{student.name}</p>
-            <p className="mt-1 truncate text-xs font-medium text-[#6B7684]">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p className="truncate text-sm font-extrabold text-[#191F28] md:text-[15px]">{student.name}</p>
+              <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold md:hidden ${presence.badge}`}>
+                <PresenceIcon size={10} />
+                {presence.label}
+              </span>
+            </div>
+            <p className="mt-0.5 truncate text-[11px] font-medium text-[#6B7684] md:mt-1 md:text-xs">
               {[student.school, student.grade].filter(Boolean).join(' · ') || '학교 정보 없음'}
             </p>
           </div>
         </div>
 
-        <div className="min-w-0 border-t border-gray-100 pt-3 md:border-l md:border-t-0 md:pl-4 md:pt-0">
-          <p className="mb-2 text-[10px] font-bold text-[#8B95A1]">오늘 수업</p>
+        <div className="col-span-2 row-start-2 min-w-0 border-t border-gray-100 pt-2 md:col-span-1 md:row-start-auto md:border-l md:border-t-0 md:pl-4 md:pt-0">
+          <p className="mb-1.5 hidden text-[10px] font-bold text-[#8B95A1] md:block">오늘 수업</p>
           {sessions.length > 0 ? (
             <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: 'none' }}>
               {sessions.map((session) => {
@@ -812,7 +818,7 @@ function StudentPresenceRow({
                     key={session.id}
                     type="button"
                     onClick={() => onOpenSession(session)}
-                    className="flex flex-shrink-0 items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50 px-2.5 py-2 text-left active:bg-gray-100"
+                    className="flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-left active:bg-gray-100 md:rounded-xl md:px-2.5 md:py-2"
                   >
                     <span className="text-xs font-black text-[#191F28]">{session.startTime || '미정'}</span>
                     <span className="max-w-28 truncate text-[11px] font-semibold text-[#4E5968]">{group?.name || '수업'}</span>
@@ -830,8 +836,8 @@ function StudentPresenceRow({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-gray-100 pt-3 md:justify-end md:border-t-0 md:pt-0">
-          <div className="min-w-0 text-left md:text-right">
+        <div className="col-start-2 row-start-1 flex items-center justify-end gap-3 md:col-start-auto md:row-start-auto md:justify-end">
+          <div className="hidden min-w-0 text-right md:block">
             <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${presence.badge}`}>
               <PresenceIcon size={11} />
               {presence.label}
@@ -843,7 +849,7 @@ function StudentPresenceRow({
               type="button"
               onClick={canRecord ? onRecord : onAddPast}
               disabled={saving || !hasServerId}
-              className={`h-11 min-w-[76px] flex-shrink-0 rounded-xl px-3 text-xs font-extrabold transition-transform active:scale-[0.97] disabled:opacity-40 ${
+              className={`h-9 min-w-[68px] flex-shrink-0 rounded-[10px] px-2.5 text-[11px] font-extrabold transition-transform active:scale-[0.97] disabled:opacity-40 md:h-11 md:min-w-[76px] md:rounded-xl md:px-3 md:text-xs ${
                 canAddPast
                   ? 'border border-[#D1D6DB] bg-white text-[#4E5968]'
                   : state.isInside
