@@ -79,9 +79,13 @@ const SUPPORT_TAG_TYPES = [
 
 // ─── 공통 수업 기록 초기값 ─────────────────────────────────────────────────
 function buildCommonRecord(lr) {
+  const lessonContent = [...new Set([
+    String(lr?.commonProgress || '').trim(),
+    String(lr?.commonContent || '').trim(),
+  ].filter(Boolean))].join('\n');
   return {
-    commonProgress:    lr?.commonProgress    ?? '',
-    commonContent:     lr?.commonContent     ?? '',
+    commonProgress:    '',
+    commonContent:     lessonContent,
     commonHomework:    lr?.commonHomework     ?? '',
     nextLessonPlan:    lr?.nextLessonPlan     ?? '',
     teacherMemo:       lr?.teacherMemo        ?? '',
@@ -1062,12 +1066,8 @@ export default function ClassSessionPage() {
                 <p className="min-w-0 flex-1 text-xs text-blue-500">참여 학생에게 공통으로 적용돼요</p>
               </div>
               <div className="flex flex-col gap-3">
-                {recordBlocks.has('progress') && (
-                  <CommonField label="오늘 진도" placeholder="예: Lesson 3 본문 대화문"
-                    value={commonRec.commonProgress} onChange={(v) => setCommonField('commonProgress', v)} single />
-                )}
                 {recordBlocks.has('content') && (
-                  <CommonField label="활동 내용" placeholder="오늘 진행한 내용을 기록해요"
+                  <CommonField label="수업 내용" placeholder="진도와 핵심 내용을 함께 적어주세요"
                     value={commonRec.commonContent} onChange={(v) => setCommonField('commonContent', v)} />
                 )}
                 {recordBlocks.has('homework') && (

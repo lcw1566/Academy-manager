@@ -20,7 +20,6 @@ export const CLINIC_ACTIVITY_TYPES = [
 ];
 
 export const CLASS_RECORD_BLOCKS = [
-  { id: 'progress', type: 'short_text', label: '진도', scope: 'common', system: true },
   { id: 'content', type: 'long_text', label: '수업 내용', scope: 'common', system: true },
   { id: 'homework', type: 'short_text', label: '공통 숙제', scope: 'common', system: true },
   { id: 'next_plan', type: 'short_text', label: '다음 계획', scope: 'common', system: true },
@@ -40,27 +39,21 @@ export const CUSTOM_RECORD_BLOCK_TYPES = [
 ];
 
 export const DEFAULT_CLASS_RECORD_BLOCKS = [
-  'progress',
   'content',
   'homework',
   'next_plan',
-  'teacher_memo',
-  'student_evaluation',
   'student_memo',
   'support',
 ];
 
 const CLASS_RECORD_PRESETS = {
   regular_class: DEFAULT_CLASS_RECORD_BLOCKS,
-  one_on_one: [
-    'progress', 'content', 'homework', 'next_plan',
-    'student_evaluation', 'student_memo', 'support',
-  ],
-  special_lecture: ['progress', 'content', 'homework', 'teacher_memo', 'student_memo'],
+  one_on_one: DEFAULT_CLASS_RECORD_BLOCKS,
+  special_lecture: ['content', 'homework', 'next_plan', 'student_memo'],
   makeup: ['content', 'next_plan', 'student_memo', 'support'],
   assessment: ['content', 'score', 'student_memo', 'support'],
   self_study: ['content', 'homework', 'student_memo'],
-  coaching: ['content', 'next_plan', 'teacher_memo', 'student_memo'],
+  coaching: ['content', 'next_plan', 'student_memo'],
   other: DEFAULT_CLASS_RECORD_BLOCKS,
 };
 
@@ -69,16 +62,21 @@ const RECORD_BLOCK_BY_ID = new Map(CLASS_RECORD_BLOCKS.map((block) => [block.id,
 
 export function normalizeClassRecordBlocks(value) {
   if (!Array.isArray(value)) return [...DEFAULT_CLASS_RECORD_BLOCKS];
-  return [...new Set(value.filter((id) => VALID_RECORD_BLOCK_IDS.has(id)))];
+  return [...new Set(
+    value
+      .map((id) => (id === 'progress' ? 'content' : id))
+      .filter((id) => VALID_RECORD_BLOCK_IDS.has(id)),
+  )];
 }
 
 function normalizeSchemaBlock(block, index) {
   if (typeof block === 'string') {
-    const systemBlock = RECORD_BLOCK_BY_ID.get(block);
+    const systemBlock = RECORD_BLOCK_BY_ID.get(block === 'progress' ? 'content' : block);
     return systemBlock ? { ...systemBlock } : null;
   }
   if (!block || typeof block !== 'object') return null;
-  const systemBlock = RECORD_BLOCK_BY_ID.get(block.id);
+  const normalizedId = block.id === 'progress' ? 'content' : block.id;
+  const systemBlock = RECORD_BLOCK_BY_ID.get(normalizedId);
   if (systemBlock) return { ...systemBlock, required: block.required === true };
   const type = CUSTOM_RECORD_BLOCK_TYPES.some((option) => option.id === block.type)
     ? block.type

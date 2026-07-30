@@ -11,15 +11,19 @@ import {
   updateClassSession as updateServerClassSession,
 } from '../../../services/supabase/domainApi';
 import { formatKoreanCurrency, formatPhoneNumber } from '../../../utils/format';
-import { getTodayYMD } from '../../../utils/date';
-import { getSchoolTagClassName } from '../../../utils/schoolTags';
+import { getDaysInMonth, getTodayYMD } from '../../../utils/date';
+import { getSchoolTagStyle } from '../../../utils/schoolTags';
 import { STUDENT_STATUS_OPTIONS } from '../../../utils/studentStatus';
 import { readAttendanceSettings } from '../attendance/attendanceHelpers';
 import {
   ACADEMY_SUBJECT_OPTIONS,
   DEFAULT_ACADEMY_SETTINGS,
 } from '../../../constants/academySettings';
-import { calculateSuggestedStudentTuition } from '../../../utils/studentBilling';
+import {
+  calculateSuggestedStudentTuition,
+  getAcademicYearForMonth,
+  projectStudentGrade,
+} from '../../../utils/studentBilling';
 import { createClientUuid } from '../../../utils/uuid';
 
 const SCHOOL_TYPES = [
@@ -45,7 +49,7 @@ const PARENT_TITLE_OPTIONS = [
   { value: 'mother',   label: '어머님' },
   { value: 'father',   label: '아버님' },
   { value: 'guardian', label: '보호자님' },
-  { value: 'parent',   label: '학부모님' },
+  { value: 'custom',   label: '직접 입력' },
 ];
 
 const PARENT_TITLE_LABEL = {
@@ -65,10 +69,17 @@ function inferParentTitle(parentName, studentName) {
   return '';
 }
 
-export function buildParentDisplayName(studentName, parentTitle) {
-  const title = PARENT_TITLE_LABEL[parentTitle] || PARENT_TITLE_LABEL.guardian;
+export function buildParentDisplayName(studentName, parentTitle, parentTitleCustom = '') {
+  const title = parentTitle === 'custom'
+    ? String(parentTitleCustom || '').trim()
+    : PARENT_TITLE_LABEL[parentTitle];
+  if (!title) return '';
   const trimmed = (studentName || '').trim();
   return trimmed ? `${trimmed} ${title}` : title;
+}
+
+function currentAcademicYear() {
+  return getAcademicYearForMonth(getTodayYMD().slice(0, 7));
 }
 
 // 빈 문자열을 null 로 정리. Supabase nullable 컬럼과 호환.
@@ -114,9 +125,13 @@ function mapAcademyStudentFormToServerPayload(form) {
     school_type: emptyToNull(form.schoolType),
     school_name: emptyToNull(form.school),
     grade: emptyToNull(form.grade),
+    grade_reference_year: form.gradeReferenceYear || null,
     phone: emptyToNull(form.phone),
     parent_phone: emptyToNull(form.parentPhone),
     parent_title: emptyToNull(form.parentTitle),
+    parent_title_custom: form.parentTitle === 'custom'
+      ? emptyToNull(String(form.parentTitleCustom || '').trim())
+      : null,
     parent_name: emptyToNull(form.parentName),
     checkin_pin: emptyToNull(normalizePinOrEmpty(form.checkinPin)),
     enrollment_date: emptyToNull(form.enrollmentDate),
@@ -163,8 +178,12 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     schoolType: editStudent?.schoolType || '',
     school: editStudent?.school || editStudent?.schoolName || '',
     grade: normalizeGradeForSchoolType(editStudent?.grade, editStudent?.schoolType),
+    gradeReferenceYear: editStudent?.gradeReferenceYear || currentAcademicYear(),
     phone: editStudent?.phone || '',
-    parentTitle: editStudent?.parentTitle || inferParentTitle(editStudent?.parentName, editStudent?.name),
+    parentTitle: editStudent?.parentTitle === 'parent'
+      ? 'guardian'
+      : (editStudent?.parentTitle || inferParentTitle(editStudent?.parentName, editStudent?.name)),
+    parentTitleCustom: editStudent?.parentTitleCustom || '',
     parentPhone: editStudent?.parentPhone || '',
     checkinPin: editStudent?.checkinPin || '',
     enrollmentDate: editStudent?.enrollmentDate || (isEdit ? '' : getTodayYMD()),
@@ -211,12 +230,14 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     tuitionPolicy,
     schoolType: form.schoolType,
     grade: form.grade,
+    gradeReferenceYear: form.gradeReferenceYear,
     subjectIds: form.tuitionSubjects,
   }), [
     tuitionRates,
     tuitionPolicy,
     form.schoolType,
     form.grade,
+    form.gradeReferenceYear,
     form.tuitionSubjects,
   ]);
 
@@ -241,6 +262,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
       ...f,
       schoolType: type,
       grade: f.schoolType === type ? f.grade : '',
+      gradeReferenceYear: f.schoolType === type ? f.gradeReferenceYear : currentAcademicYear(),
       school: f.schoolType === type ? f.school : '',
     }));
   };
@@ -248,6 +270,27 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const gradeOptions = GRADE_OPTIONS[form.schoolType] || [];
   const showGradeButtons = form.schoolType && form.schoolType !== 'adult' && form.schoolType !== 'other' && gradeOptions.length > 0;
   const showSchoolName = form.schoolType && form.schoolType !== 'adult';
+  const academicYear = currentAcademicYear();
+  const nextAcademicYear = academicYear + 1;
+  const nextMarchMonth = `${nextAcademicYear}-03`;
+  const nextGrade = projectStudentGrade({
+    schoolType: form.schoolType,
+    grade: form.grade,
+    gradeReferenceYear: form.gradeReferenceYear,
+    targetMonth: nextMarchMonth,
+  });
+  const nextSuggestedTuition = calculateSuggestedStudentTuition({
+    tuitionRates,
+    tuitionPolicy,
+    schoolType: form.schoolType,
+    grade: form.grade,
+    gradeReferenceYear: form.gradeReferenceYear,
+    targetMonth: nextMarchMonth,
+    subjectIds: form.tuitionSubjects,
+  });
+  const academicYearEnd = `${nextAcademicYear}-02-${String(
+    getDaysInMonth(nextAcademicYear, 2),
+  ).padStart(2, '0')}`;
 
   const filteredSuggestions = form.school.trim()
     ? schoolNames.filter((s) => s.includes(form.school) && s !== form.school)
@@ -271,8 +314,8 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const handleSubmit = async () => {
     if (submitting) return;
     if (!form.name.trim()) return alert('이름을 입력해주세요.');
-    if (form.schoolType !== 'adult' && !form.parentTitle) {
-      return alert('상담 시 사용할 학부모 호칭을 선택해주세요.');
+    if (form.parentTitle === 'custom' && !form.parentTitleCustom.trim()) {
+      return alert('직접 사용할 학부모 호칭을 입력해주세요.');
     }
     if (
       form.tuitionEffectiveFrom
@@ -282,9 +325,11 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
       return alert('수강료 적용 종료일은 시작일보다 뒤여야 해요.');
     }
     const trimmedName = form.name.trim();
-    const parentDisplayName = form.parentTitle
-      ? buildParentDisplayName(trimmedName, form.parentTitle)
-      : '';
+    const parentDisplayName = buildParentDisplayName(
+      trimmedName,
+      form.parentTitle,
+      form.parentTitleCustom,
+    );
     const resolvedCheckinPin = normalizePinOrEmpty(form.checkinPin)
       || lastFourDigits(form.phone, form.parentPhone);
     const data = {
@@ -617,7 +662,8 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
                 <button
                   type="button"
                   onClick={editSchoolName}
-                  className={`inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold ${getSchoolTagClassName(form.school)}`}
+                  className="inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-semibold"
+                  style={getSchoolTagStyle(form.school)}
                   aria-label={`${form.school} 학교명 수정`}
                 >
                   <span className="truncate">{form.school}</span>
@@ -655,7 +701,10 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
                         }}
                         className="flex w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-50 last:border-0"
                       >
-                        <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${getSchoolTagClassName(schoolName)}`}>
+                        <span
+                          className="rounded-lg border px-2.5 py-1 text-xs font-semibold"
+                          style={getSchoolTagStyle(schoolName)}
+                        >
                           {schoolName}
                         </span>
                       </button>
@@ -677,7 +726,8 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
                       setIsEditingSchool(false);
                       setShowSuggestions(false);
                     }}
-                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-transform active:scale-95 ${getSchoolTagClassName(s)}`}
+                    className="rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-transform active:scale-95"
+                    style={getSchoolTagStyle(s)}
                   >
                     {s}
                   </button>
@@ -692,7 +742,14 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
           <Field label="학년">
             <div className="flex gap-2 flex-wrap">
               {gradeOptions.map((g) => (
-                <button key={g} type="button" onClick={() => set('grade', g)}
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setForm((current) => ({
+                    ...current,
+                    grade: g,
+                    gradeReferenceYear: currentAcademicYear(),
+                  }))}
                   className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${
                     form.grade === g ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'
                   }`}>
@@ -735,6 +792,35 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
           )}
 
           <Field label="월 기본 금액">
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setForm((current) => ({
+                  ...current,
+                  tuitionSource: 'academy_rate',
+                  baseTuition: suggestedBaseTuition > 0 ? String(suggestedBaseTuition) : '',
+                  tuitionEffectiveTo: '',
+                }))}
+                className={`rounded-xl border px-3 py-2.5 text-xs font-bold ${
+                  form.tuitionSource === 'academy_rate'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-600'
+                }`}
+              >
+                가격표 자동
+              </button>
+              <button
+                type="button"
+                onClick={() => set('tuitionSource', 'custom')}
+                className={`rounded-xl border px-3 py-2.5 text-xs font-bold ${
+                  form.tuitionSource === 'custom'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 bg-white text-gray-600'
+                }`}
+              >
+                직접 입력
+              </button>
+            </div>
             <div className="flex gap-2">
               <input
                 inputMode="numeric"
@@ -746,6 +832,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
                 }))}
                 placeholder="0"
                 className="input min-w-0 flex-1"
+                readOnly={form.tuitionSource === 'academy_rate'}
               />
               {form.tuitionSource === 'custom' && (
                 <button
@@ -767,25 +854,73 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
             </p>
           </Field>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <Field label="적용 시작">
-              <input
-                type="date"
-                value={form.tuitionEffectiveFrom}
-                onChange={(event) => set('tuitionEffectiveFrom', event.target.value)}
-                className="input"
-              />
-            </Field>
-            <Field label="적용 종료 (선택)">
-              <input
-                type="date"
-                value={form.tuitionEffectiveTo}
-                onChange={(event) => set('tuitionEffectiveTo', event.target.value)}
-                className="input"
-              />
-            </Field>
-          </div>
-          <p className="mt-2 text-[11px] text-[#8B95A1]">나중에 학생별로 조정할 수 있어요.</p>
+          {form.tuitionSource === 'academy_rate' ? (
+            <div className="mt-3 rounded-xl bg-white px-3 py-2.5">
+              <p className="text-xs font-bold text-[#4E5968]">
+                매년 3월 다음 학년 가격표로 자동 변경
+              </p>
+              {form.grade && nextGrade.advancedBy > 0 && (
+                <p className="mt-1 text-[11px] text-[#8B95A1]">
+                  {nextAcademicYear}년 3월부터 {nextGrade.grade}
+                  {nextSuggestedTuition > 0
+                    ? ` · ${formatKoreanCurrency(nextSuggestedTuition)}`
+                    : ''}
+                  {nextGrade.needsReview ? ' · 학교 정보 확인 필요' : ''}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="mt-3">
+              <div className="mb-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => set('tuitionEffectiveTo', '')}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] font-bold ${
+                    !form.tuitionEffectiveTo
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 bg-white text-gray-500'
+                  }`}
+                >
+                  계속 적용
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set('tuitionEffectiveTo', academicYearEnd)}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] font-bold ${
+                    form.tuitionEffectiveTo === academicYearEnd
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 bg-white text-gray-500'
+                  }`}
+                >
+                  이번 학년도까지
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="적용 시작">
+                  <input
+                    type="date"
+                    value={form.tuitionEffectiveFrom}
+                    onChange={(event) => set('tuitionEffectiveFrom', event.target.value)}
+                    className="input"
+                  />
+                </Field>
+                <Field label="적용 종료">
+                  <input
+                    type="date"
+                    value={form.tuitionEffectiveTo}
+                    onChange={(event) => set('tuitionEffectiveTo', event.target.value)}
+                    className="input"
+                  />
+                </Field>
+              </div>
+              <p className="mt-2 text-[11px] text-[#8B95A1]">
+                종료 후에는 학원 가격표로 자동 전환돼요.
+              </p>
+            </div>
+          )}
+          <p className="mt-3 text-[11px] font-medium text-blue-600">
+            추가 비용이 있는 수업에 배정되면 기본 수강료에 자동으로 더해져요.
+          </p>
         </div>
 
         <Field label="학생 연락처">
@@ -807,6 +942,15 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
               </button>
             ))}
           </div>
+          {form.parentTitle === 'custom' && (
+            <input
+              value={form.parentTitleCustom}
+              onChange={(event) => set('parentTitleCustom', event.target.value.slice(0, 20))}
+              placeholder="예: 할머님"
+              maxLength={20}
+              className="input mt-2"
+            />
+          )}
         </Field>
 
         {showCheckinPin && (

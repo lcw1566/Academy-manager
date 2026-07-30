@@ -43,6 +43,7 @@ import {
   listAcademyLessonRecords,
   listAcademyAttendanceRecords,
   listAcademyClinicRecords,
+  listAcademyExamResults,
   listAcademyPayments,
   listAcademyPayrolls,
   listAcademyStaffShifts,
@@ -177,6 +178,11 @@ const initialState = {
   isServerStudentsLoading: false,
   serverStudentsError: null,
   serverStudentsLoadedAt: null, // ISO string
+
+  serverExamResults: [],
+  isServerExamResultsLoading: false,
+  serverExamResultsError: null,
+  serverExamResultsLoadedAt: null,
 
   // 서버 반 (read-only)
   serverClassGroups: [],
@@ -440,6 +446,9 @@ const useWorkspaceStore = create(
             case 'students':
               queue('students', () => get().loadServerStudents());
               break;
+            case 'exam_results':
+              queue('examResults', () => get().loadServerExamResults());
+              break;
             case 'class_groups':
               queue('classGroups', () => get().loadServerClassGroups());
               break;
@@ -513,6 +522,7 @@ const useWorkspaceStore = create(
 
             const [
               students,
+              examResults,
               classGroups,
               classSessions,
               lessonRecords,
@@ -522,6 +532,7 @@ const useWorkspaceStore = create(
               payrolls,
             ] = await Promise.all([
               get().loadServerStudents(),
+              get().loadServerExamResults(),
               get().loadServerClassGroups(),
               get().loadServerClassSessions(),
               get().loadServerLessonRecords(),
@@ -536,6 +547,7 @@ const useWorkspaceStore = create(
               hydrateSnapshot(
                 {
                   students,
+                  examResults,
                   classGroups,
                   classSessions,
                   lessonRecords,
@@ -615,6 +627,11 @@ const useWorkspaceStore = create(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'students' },
             () => get().scheduleWorkspaceRealtimeRefresh('students'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'exam_results' },
+            () => get().scheduleWorkspaceRealtimeRefresh('exam_results'),
           )
           .on(
             'postgres_changes',
@@ -951,6 +968,7 @@ const useWorkspaceStore = create(
         set({ currentAcademyId: academyId });
         // 학원 전환 시 서버 데이터 갱신
         get().loadServerStudents();
+        get().loadServerExamResults();
         get().loadServerClassGroups();
         void get().loadServerClassSessions().then(
           () => get().ensureClassSessionsForRangeLocal(),
@@ -1052,6 +1070,35 @@ const useWorkspaceStore = create(
           return [];
         } finally {
           if (isCurrentAcademy(get, academyId)) set({ isServerStudentsLoading: false });
+        }
+      },
+
+      loadServerExamResults: async () => {
+        if (!isSupabaseConfigured) {
+          set({ serverExamResults: [] });
+          return [];
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) {
+          set({ serverExamResults: [], serverExamResultsError: null });
+          return [];
+        }
+        set({ isServerExamResultsLoading: true, serverExamResultsError: null });
+        try {
+          const list = await listAcademyExamResults(academyId);
+          if (!isCurrentAcademy(get, academyId)) return list;
+          set({
+            serverExamResults: list,
+            serverExamResultsLoadedAt: new Date().toISOString(),
+          });
+          useAcademyStore.getState().syncAcademyTableFromServer?.('examResults', list);
+          return list;
+        } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
+          set({ serverExamResultsError: err?.message ?? '성적을 불러오지 못했어요.' });
+          return [];
+        } finally {
+          if (isCurrentAcademy(get, academyId)) set({ isServerExamResultsLoading: false });
         }
       },
 

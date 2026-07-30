@@ -9,6 +9,7 @@ import {
   createAcademyPayment,
   updatePayment as updateServerPayment,
   deletePayment as deleteServerPayment,
+  deleteExamResult as deleteServerExamResult,
 } from '../../../services/supabase/domainApi';
 import { getKoreaHHMM, getKoreanWeekdayFromYMD, today } from '../../../utils/date';
 import { attendanceStatusMap, formatCurrency, toTelHref } from '../../../utils/format';
@@ -16,9 +17,11 @@ import { isEffectiveAttendance } from '../../../utils/attendanceRecords';
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
+import AcademyExamResultModal from './AcademyExamResultModal';
 import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
 import { currentUserCan } from '../../../utils/staffPermissions';
-import { getSchoolTagClassName } from '../../../utils/schoolTags';
+import { getSchoolTagStyle } from '../../../utils/schoolTags';
+import { getMissingStudentInformation } from '../../../utils/studentCompleteness';
 import { getStudentStatusMeta } from '../../../utils/studentStatus';
 import { getAcademyYmd, readAttendanceSettings } from '../attendance/attendanceHelpers';
 import {
@@ -30,10 +33,19 @@ import {
 
 // 역할별 탭 정의
 const TABS_BY_ROLE = {
-  owner:     ['요약', '등하원', '수업 기록', '클리닉 기록', '정산'],
-  teacher:   ['요약', '등하원', '수업 기록', '클리닉 기록'],
-  assistant: ['요약', '등하원', '수업 기록', '클리닉 기록'],
-  manager:   ['요약', '등하원', '수업 기록', '클리닉 기록', '정산'],
+  owner:     ['요약', '등하원', '수업 기록', '클리닉 기록', '성적', '정산'],
+  teacher:   ['요약', '등하원', '수업 기록', '클리닉 기록', '성적'],
+  assistant: ['요약', '등하원', '수업 기록', '클리닉 기록', '성적'],
+  manager:   ['요약', '등하원', '수업 기록', '클리닉 기록', '성적', '정산'],
+};
+
+const EXAM_TYPE_LABELS = {
+  school: '학교 시험',
+  midterm: '중간고사',
+  final: '기말고사',
+  mock: '모의고사',
+  sat: '수능',
+  other: '기타',
 };
 
 function nowHHMM() {
@@ -134,6 +146,13 @@ const SUPPORT_TAG_MAP = {
   test_retry: '테스트 재응시', absence_makeup: '결석 보강', other: '기타',
 };
 
+function getCombinedLessonContent(commonRecord) {
+  return [...new Set([
+    String(commonRecord?.commonProgress || '').trim(),
+    String(commonRecord?.commonContent || '').trim(),
+  ].filter(Boolean))].join('\n');
+}
+
 function StatusBadge({ type }) {
   const styles = {
     present:    'bg-blue-50 text-blue-700',
@@ -194,7 +213,8 @@ function SessionRecordCard({ record, onClinicClick }) {
     || lessonRecord.scoreNote
   );
   const hasSupport = lessonRecord && ((lessonRecord.supportTags?.length > 0) || lessonRecord.supportMemo?.trim());
-  const hasCommon = commonRecord && (commonRecord.commonContent || commonRecord.commonProgress || commonRecord.commonHomework);
+  const combinedLessonContent = getCombinedLessonContent(commonRecord);
+  const hasCommon = commonRecord && (combinedLessonContent || commonRecord.commonHomework);
   const hasAnyRecord = hasEval || hasScore || hasSupport || hasCommon || clinicSummary.total > 0;
 
   return (
@@ -228,8 +248,8 @@ function SessionRecordCard({ record, onClinicClick }) {
             <p className="text-xs text-gray-500">
               {[classGroupName, subject, activityLabel].filter(Boolean).join(' · ')} · {startTime}–{endTime}
             </p>
-            {!isFuture && commonRecord?.commonProgress && (
-              <p className="text-xs text-gray-400 mt-1.5 line-clamp-1">진도: {commonRecord.commonProgress}</p>
+            {!isFuture && combinedLessonContent && (
+              <p className="text-xs text-gray-400 mt-1.5 line-clamp-1">수업 내용: {combinedLessonContent}</p>
             )}
             <div className="flex items-center gap-1.5 flex-wrap mt-2">
               {!isFuture && hasAnyRecord && (
@@ -267,11 +287,10 @@ function SessionRecordCard({ record, onClinicClick }) {
               {hasCommon && (
                 <div className="mb-3 bg-blue-50 rounded-xl px-3 py-3">
                   <p className="text-xs font-semibold text-blue-700 mb-2">공통 수업 기록</p>
-                  {commonRecord.commonProgress && <InfoRow label="진도" value={commonRecord.commonProgress} />}
-                  {commonRecord.commonContent && (
+                  {combinedLessonContent && (
                     <div className="mt-1.5">
                       <p className="text-xs text-blue-600 font-medium">수업 내용</p>
-                      <p className="text-xs text-blue-800 mt-0.5 whitespace-pre-wrap">{commonRecord.commonContent}</p>
+                      <p className="text-xs text-blue-800 mt-0.5 whitespace-pre-wrap">{combinedLessonContent}</p>
                     </div>
                   )}
                   {commonRecord.commonHomework && <InfoRow label="공통 숙제" value={commonRecord.commonHomework} />}
@@ -357,7 +376,7 @@ export default function AcademyStudentDetailPage() {
   const {
     role, selectedAcademyStudentId, academyStudents, classGroups, classSessions,
     academyAttendanceRecords, academyLessonRecords, clinicTasks, clinicRecords = [], academyPayments,
-    academyTeachers,
+    academyTeachers, academyExamResults = [],
     deleteAcademyStudent, goBackFromAcademyStudent, showToast,
     updateAcademyPayment, addAcademyPayment, deleteAcademyPayment,
     setPaymentServerId,
@@ -369,6 +388,8 @@ export default function AcademyStudentDetailPage() {
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
   const loadServerPayments = useWorkspaceStore((s) => s.loadServerPayments);
+  const loadServerExamResults = useWorkspaceStore((s) => s.loadServerExamResults);
+  const isServerExamResultsLoading = useWorkspaceStore((s) => s.isServerExamResultsLoading);
   const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
   const isStudentCheckEventsLoading = useWorkspaceStore((s) => s.isStudentCheckEventsLoading);
   const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
@@ -398,6 +419,8 @@ export default function AcademyStudentDetailPage() {
   const [activeTab, setActiveTab] = useState('요약');
   const [showEdit, setShowEdit] = useState(false);
   const [showClinicForm, setShowClinicForm] = useState(false);
+  const [examResultModal, setExamResultModal] = useState(null);
+  const [deletingExamResultId, setDeletingExamResultId] = useState('');
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ classGroupId: '', amount: '', month: today().slice(0, 7) });
 
@@ -422,6 +445,18 @@ export default function AcademyStudentDetailPage() {
   const studentClinicRecords = useMemo(
     () => !student ? [] : (clinicRecords || []).filter((r) => r.studentId === student.id).sort((a, b) => (b.date || '').localeCompare(a.date || '')),
     [clinicRecords, student]
+  );
+
+  const studentExamResults = useMemo(
+    () => !student
+      ? []
+      : academyExamResults
+        .filter((result) => result.studentId === (student.serverId || student.id))
+        .sort((a, b) => (
+          `${b.examDate || ''} ${b.createdAt || ''}`
+            .localeCompare(`${a.examDate || ''} ${a.createdAt || ''}`)
+        )),
+    [academyExamResults, student],
   );
 
   const pendingClinicCount = useMemo(
@@ -542,6 +577,11 @@ export default function AcademyStudentDetailPage() {
     loadStudentCheckEvents,
   ]);
 
+  useEffect(() => {
+    if (activeTab !== '성적' || !currentAcademyId) return;
+    loadServerExamResults();
+  }, [activeTab, currentAcademyId, loadServerExamResults]);
+
   if (!student) {
     return (
       <div className="min-h-[60vh] flex items-center">
@@ -562,6 +602,7 @@ export default function AcademyStudentDetailPage() {
     );
   }
   const statusMeta = getStudentStatusMeta(student.status);
+  const missingInformation = getMissingStudentInformation(student);
 
   // 최근 수업 (요약용): 미래 회차는 제외한다.
   const latestRecord = dailyRecords.find((r) => !r.isFuture) || null;
@@ -590,6 +631,23 @@ export default function AcademyStudentDetailPage() {
   // ── 렌더 함수들 ───────────────────────────────────────────────────
 
   const renderSummary = () => (
+    <div>
+      {missingInformation.length > 0 && (
+        <button
+          type="button"
+          onClick={() => canManageStudents && setShowEdit(true)}
+          className="mb-4 flex w-full items-center gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-left"
+        >
+          <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-red-500 ring-4 ring-white" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-bold text-red-700">확인할 정보가 있어요</span>
+            <span className="mt-0.5 block truncate text-xs text-red-500">
+              {missingInformation.map((item) => item.label).join(', ')}
+            </span>
+          </span>
+          {canManageStudents && <span className="text-xs font-bold text-red-600">수정</span>}
+        </button>
+      )}
     <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
       <div className="md:col-span-2 flex flex-col gap-4">
       {/* 기본 정보 */}
@@ -668,6 +726,7 @@ export default function AcademyStudentDetailPage() {
       </div>
       </div>
     </div>
+    </div>
   );
 
   const renderAttendance = () => {
@@ -734,6 +793,120 @@ export default function AcademyStudentDetailPage() {
       </div>
     );
   };
+
+  const handleDeleteExamResult = async (result) => {
+    if (!canManageStudents || deletingExamResultId) return;
+    if (!window.confirm(`'${result.examName || '성적 기록'}'을 삭제할까요?`)) return;
+    setDeletingExamResultId(result.serverId || result.id);
+    try {
+      await deleteServerExamResult(result.serverId || result.id);
+      await loadServerExamResults();
+      showToast('성적 기록을 삭제했어요.');
+    } catch (error) {
+      console.error('[exam-results] delete failed', error);
+      showToast(error?.message || '성적 기록을 삭제하지 못했어요.', 'error');
+    } finally {
+      setDeletingExamResultId('');
+    }
+  };
+
+  const renderExamResults = () => (
+    <div>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-base font-black text-[#191F28]">성적</p>
+          <p className="mt-0.5 text-xs font-medium text-[#8B95A1]">시험 결과를 날짜순으로 확인해요.</p>
+        </div>
+        {canManageStudents && (
+          <button
+            type="button"
+            onClick={() => setExamResultModal({ mode: 'create' })}
+            className="flex h-10 items-center gap-1.5 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white active:scale-[0.98]"
+          >
+            <Plus size={15} />
+            추가
+          </button>
+        )}
+      </div>
+
+      {isServerExamResultsLoading && studentExamResults.length === 0 ? (
+        <div className="rounded-2xl bg-white px-5 py-10 text-center text-sm text-[#8B95A1] shadow-sm">
+          불러오는 중...
+        </div>
+      ) : studentExamResults.length === 0 ? (
+        <div className="rounded-2xl bg-white px-5 py-10 text-center shadow-sm">
+          <p className="text-sm font-bold text-[#333D4B]">아직 성적 기록이 없어요</p>
+          <p className="mt-1 text-xs font-medium text-[#8B95A1]">시험 결과가 생기면 여기에 모아볼 수 있어요.</p>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-[#E5E8EB] bg-white shadow-sm">
+          {studentExamResults.map((result, index) => {
+            const hasScore = result.score !== '' && result.score !== null && result.score !== undefined;
+            const hasMaxScore = result.maxScore !== '' && result.maxScore !== null && result.maxScore !== undefined;
+            return (
+              <article
+                key={result.id}
+                className={`flex items-center gap-4 px-4 py-4 ${index > 0 ? 'border-t border-[#F2F4F6]' : ''}`}
+              >
+                <div className="flex h-12 w-12 flex-shrink-0 flex-col items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                  <span className="text-[10px] font-bold">{result.examDate?.slice(5, 7) || '--'}월</span>
+                  <span className="text-base font-black leading-none">{result.examDate?.slice(8, 10) || '--'}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-black text-[#191F28]">{result.examName || '시험'}</p>
+                    {result.subject && (
+                      <span className="rounded-md bg-[#F2F4F6] px-2 py-0.5 text-[10px] font-bold text-[#6B7684]">
+                        {result.subject}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 truncate text-xs font-medium text-[#8B95A1]">
+                    {EXAM_TYPE_LABELS[result.examType] || '기타'}
+                    {result.grade ? ` · ${result.grade}` : ''}
+                    {result.memo ? ` · ${result.memo}` : ''}
+                  </p>
+                </div>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <div className="text-right">
+                    {hasScore ? (
+                      <>
+                        <span className="text-lg font-black text-[#191F28]">{Number(result.score).toLocaleString('ko-KR')}</span>
+                        {hasMaxScore && <span className="text-xs font-bold text-[#8B95A1]">/{Number(result.maxScore).toLocaleString('ko-KR')}</span>}
+                      </>
+                    ) : (
+                      <span className="text-xs font-bold text-[#B0B8C1]">점수 없음</span>
+                    )}
+                  </div>
+                  {canManageStudents && (
+                    <div className="flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => setExamResultModal({ mode: 'edit', result })}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl text-[#8B95A1] active:bg-gray-100"
+                        aria-label="성적 수정"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteExamResult(result)}
+                        disabled={deletingExamResultId === (result.serverId || result.id)}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl text-[#B0B8C1] active:bg-red-50 active:text-red-500 disabled:opacity-40"
+                        aria-label="성적 삭제"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 
   const renderLessonHistory = () => {
     const currentAndPastRecords = dailyRecords.filter((record) => !record.isFuture);
@@ -1060,6 +1233,12 @@ export default function AcademyStudentDetailPage() {
           <div>
             <div className="flex items-center gap-2">
               <p className="text-xl font-bold text-gray-900">{student.name}</p>
+              {missingInformation.length > 0 && (
+                <span
+                  className="h-2 w-2 rounded-full bg-red-500 ring-4 ring-red-50"
+                  title={`${missingInformation.map((item) => item.label).join(', ')} 확인 필요`}
+                />
+              )}
               {canManageStudents ? (
                 <button
                   type="button"
@@ -1078,7 +1257,10 @@ export default function AcademyStudentDetailPage() {
             <div className="mt-1 flex items-center gap-2">
               {student.grade && <span className="text-sm text-gray-500">{student.grade}</span>}
               {student.school && (
-                <span className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${getSchoolTagClassName(student.school)}`}>
+                <span
+                  className="rounded-md border px-2 py-0.5 text-[11px] font-semibold"
+                  style={getSchoolTagStyle(student.school)}
+                >
                   {student.school}
                 </span>
               )}
@@ -1105,6 +1287,7 @@ export default function AcademyStudentDetailPage() {
           {activeTab === '등하원' && renderAttendance()}
           {activeTab === '수업 기록' && renderLessonHistory()}
           {activeTab === '클리닉 기록' && renderClinic()}
+          {activeTab === '성적' && renderExamResults()}
           {activeTab === '정산' && renderSettlement()}
         </div>
       </div>
@@ -1112,6 +1295,13 @@ export default function AcademyStudentDetailPage() {
       {showEdit && <AcademyStudentFormModal editStudent={student} onClose={() => setShowEdit(false)} />}
       {showClinicForm && (
         <ClinicRecordFormModal presetStudentId={student.id} onClose={() => setShowClinicForm(false)} />
+      )}
+      {examResultModal && (
+        <AcademyExamResultModal
+          student={student}
+          result={examResultModal.result || null}
+          onClose={() => setExamResultModal(null)}
+        />
       )}
     </div>
   );

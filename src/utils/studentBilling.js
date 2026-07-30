@@ -15,14 +15,69 @@ export function getStudentTuitionLevel(schoolType = '', grade = '') {
   return gradeNumber ? `${prefix}${gradeNumber}` : prefix === '초' ? '초등' : prefix === '중' ? '중등' : '고등';
 }
 
+const SCHOOL_GRADE_SEQUENCE = [
+  ['elementary', '1학년'], ['elementary', '2학년'], ['elementary', '3학년'],
+  ['elementary', '4학년'], ['elementary', '5학년'], ['elementary', '6학년'],
+  ['middle', '1학년'], ['middle', '2학년'], ['middle', '3학년'],
+  ['high', '1학년'], ['high', '2학년'], ['high', '3학년'],
+];
+
+export function getAcademicYearForMonth(month = '') {
+  const resolvedMonth = /^\d{4}-\d{2}$/.test(String(month))
+    ? String(month)
+    : new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+    }).format(new Date()).slice(0, 7);
+  const [year, monthNumber] = resolvedMonth.split('-').map(Number);
+  if (!year || !monthNumber) return new Date().getFullYear();
+  return monthNumber >= 3 ? year : year - 1;
+}
+
+export function projectStudentGrade({
+  schoolType = '',
+  grade = '',
+  gradeReferenceYear,
+  targetMonth = '',
+} = {}) {
+  const sourceIndex = SCHOOL_GRADE_SEQUENCE.findIndex(
+    ([type, value]) => type === schoolType && value === grade,
+  );
+  const referenceYear = Number(gradeReferenceYear);
+  if (sourceIndex < 0 || !Number.isInteger(referenceYear)) {
+    return { schoolType, grade, advancedBy: 0, needsReview: false };
+  }
+  const advancedBy = Math.max(0, getAcademicYearForMonth(targetMonth) - referenceYear);
+  const targetIndex = sourceIndex + advancedBy;
+  if (targetIndex >= SCHOOL_GRADE_SEQUENCE.length) {
+    return { schoolType: 'high', grade: '3학년', advancedBy, needsReview: true };
+  }
+  const [projectedSchoolType, projectedGrade] = SCHOOL_GRADE_SEQUENCE[targetIndex];
+  return {
+    schoolType: projectedSchoolType,
+    grade: projectedGrade,
+    advancedBy,
+    needsReview: projectedSchoolType !== schoolType,
+  };
+}
+
 export function calculateSuggestedStudentTuition({
   tuitionRates = {},
   tuitionPolicy = 'school_level',
   schoolType = '',
   grade = '',
+  gradeReferenceYear,
+  targetMonth = '',
   subjectIds = [],
 } = {}) {
-  const level = getStudentTuitionLevel(schoolType, grade);
+  const projected = projectStudentGrade({
+    schoolType,
+    grade,
+    gradeReferenceYear,
+    targetMonth,
+  });
+  const level = getStudentTuitionLevel(projected.schoolType, projected.grade);
   if (!level) return 0;
   // 이전 버전의 반별 설정 값이 남아 있어도 새 학생 중심 가격표는 학교별
   // 기본 금액을 사용한다.
@@ -56,6 +111,16 @@ function monthRange(month) {
     start: `${month}-01`,
     end: `${month}-${String(lastDay).padStart(2, '0')}`,
   };
+}
+
+export function isCustomTuitionActiveForMonth(student, month) {
+  if (student?.tuitionSource !== 'custom') return false;
+  const range = monthRange(month);
+  if (!range) return false;
+  const effectiveFrom = student.tuitionEffectiveFrom || student.enrollmentDate || '';
+  const effectiveTo = student.tuitionEffectiveTo || '';
+  return (!effectiveFrom || effectiveFrom <= range.end)
+    && (!effectiveTo || effectiveTo >= range.start);
 }
 
 function resolveAdditionalAmount(group, studentAliases) {

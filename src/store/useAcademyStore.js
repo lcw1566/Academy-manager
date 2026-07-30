@@ -17,11 +17,13 @@ import { generatePaymentForMonth, groupHasPayment, resolveStudentBilling } from 
 import {
   calculateStudentMonthlyCharge,
   calculateSuggestedStudentTuition,
+  isCustomTuitionActiveForMonth,
 } from '../utils/studentBilling';
 import { ACADEMY_SUBJECT_OPTIONS } from '../constants/academySettings';
 import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../constants/aiPrompts';
 import {
   mapServerStudentToLocal,
+  mapServerExamResultToLocal,
   mapServerClassGroupToLocal,
   mapServerClassSessionToLocal,
   expandServerLessonRecordToLocal,
@@ -1355,6 +1357,9 @@ const useAcademyStore = create(
         case 'students':
           mapped = rows.map(mapServerStudentToLocal).filter(Boolean);
           return { academyStudents: mergeById(state.academyStudents, mapped) };
+        case 'examResults':
+          mapped = rows.map(mapServerExamResultToLocal).filter(Boolean);
+          return { academyExamResults: mergeById(state.academyExamResults, mapped) };
         case 'classGroups':
           mapped = resolveAssistantIds(
             rows.map(mapServerClassGroupToLocal).filter(Boolean),
@@ -1987,21 +1992,24 @@ const useAcademyStore = create(
       const effectiveSubjectIds = student.tuitionSubjects?.length
         ? student.tuitionSubjects
         : inferredSubjectIds;
-      const automaticBaseTuition = student.tuitionSource !== 'custom'
-        ? calculateSuggestedStudentTuition({
+      const automaticBaseTuition = calculateSuggestedStudentTuition({
           tuitionRates: academyProfile?.tuitionRates,
           tuitionPolicy: academyProfile?.tuitionPolicy,
           schoolType: student.schoolType,
           grade: student.grade,
+          gradeReferenceYear: student.gradeReferenceYear,
+          targetMonth: month,
           subjectIds: effectiveSubjectIds,
-        })
-        : 0;
+      });
+      const customTuitionApplies = isCustomTuitionActiveForMonth(student, month);
       const charge = calculateStudentMonthlyCharge({
         student: {
           ...student,
-          baseTuition: student.tuitionSource === 'custom'
-            ? student.baseTuition
-            : (student.baseTuition || automaticBaseTuition),
+          // 가격표 학생은 저장 당시 금액이 아니라 청구 월의 학년/가격표로 계산한다.
+          // 학생별 조정 기간이 끝나면 같은 방식으로 학원 가격표에 자동 복귀한다.
+          baseTuition: customTuitionApplies ? student.baseTuition : automaticBaseTuition,
+          tuitionEffectiveFrom: student.enrollmentDate || student.tuitionEffectiveFrom,
+          tuitionEffectiveTo: '',
         },
         groups: classGroups,
         sessions: billingSessions,
@@ -2285,6 +2293,7 @@ const useAcademyStore = create(
 
     // 변환
     const newStudents = (snapshot.students || []).map(mapServerStudentToLocal).filter(Boolean);
+    const newExamResults = (snapshot.examResults || []).map(mapServerExamResultToLocal).filter(Boolean);
     const newClassGroups = (snapshot.classGroups || []).map(mapServerClassGroupToLocal).filter(Boolean);
     const newClassSessions = (snapshot.classSessions || []).map(mapServerClassSessionToLocal).filter(Boolean);
     const newAttendance = (snapshot.attendanceRecords || [])
@@ -2321,6 +2330,7 @@ const useAcademyStore = create(
       const resolvedClassGroups = resolveAssistantIds(newClassGroups, s.academyAssistants);
       const resolvedClassSessions = resolveAssistantIds(newClassSessions, s.academyAssistants);
       const mergedStudents = mergeByIdOrServerId(s.academyStudents, newStudents);
+      const mergedExamResults = mergeByIdOrServerId(s.academyExamResults, newExamResults);
       const mergedClassGroups = mergeByIdOrServerId(s.classGroups, resolvedClassGroups);
       const mergedClassSessions = mergeByIdOrServerId(s.classSessions, resolvedClassSessions);
       // lesson_records: server snapshot 에 들어 있는 sessionId 의 local row 들은 전부 교체
@@ -2344,6 +2354,7 @@ const useAcademyStore = create(
 
       counts = {
         students: newStudents.length,
+        examResults: newExamResults.length,
         classGroups: newClassGroups.length,
         classSessions: newClassSessions.length,
         lessonRecords: newLessonRecords.length,
@@ -2355,6 +2366,7 @@ const useAcademyStore = create(
 
       return {
         academyStudents: mergedStudents,
+        academyExamResults: mergedExamResults,
         classGroups: mergedClassGroups,
         classSessions: mergedClassSessions,
         academyLessonRecords: mergedLessonRecords,

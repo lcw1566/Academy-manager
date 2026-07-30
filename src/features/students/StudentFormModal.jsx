@@ -3,7 +3,7 @@ import { Check } from 'lucide-react';
 import Modal from '../../components/Modal';
 import useAcademyStore from '../../store/useAcademyStore';
 import { formatPhoneNumber } from '../../utils/format';
-import { getSchoolTagClassName } from '../../utils/schoolTags';
+import { getSchoolTagStyle } from '../../utils/schoolTags';
 
 const SUBJECTS = ['수학', '영어', '국어', '과학', '물리', '화학', '사회', '역사', '기타'];
 
@@ -223,7 +223,10 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
                       onMouseDown={() => handleSelectSuggestion(s)}
                       className="flex w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-50 last:border-0"
                     >
-                      <span className={`rounded-lg border px-2.5 py-1 text-xs font-semibold ${getSchoolTagClassName(s)}`}>
+                      <span
+                        className="rounded-lg border px-2.5 py-1 text-xs font-semibold"
+                        style={getSchoolTagStyle(s)}
+                      >
                         {s}
                       </span>
                     </button>
@@ -247,7 +250,8 @@ export default function StudentFormModal({ onClose, initial = null, onAddClass }
                           key={s}
                           type="button"
                           onClick={() => setSchoolName(s)}
-                          className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-transform active:scale-95 ${getSchoolTagClassName(s)}`}
+                          className="rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-transform active:scale-95"
+                          style={getSchoolTagStyle(s)}
                         >
                           {s}
                         </button>

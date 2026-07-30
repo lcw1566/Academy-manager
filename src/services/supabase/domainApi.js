@@ -641,6 +641,67 @@ export async function deleteClinicRecord(id) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// exam_results
+// ────────────────────────────────────────────────────────────────
+
+export async function listAcademyExamResults(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const { data, error } = await supabase
+    .from('exam_results')
+    .select('*')
+    .eq('mode', 'academy')
+    .eq('academy_id', academyId)
+    .order('exam_date', { ascending: false })
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function createAcademyExamResult({ academyId, ...payload } = {}) {
+  const user = await getCurrentUserOrThrow();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!payload.student_id) throw new Error('학생을 선택해주세요.');
+  const row = sanitizeExamResultPayload({
+    ...payload,
+    mode: 'academy',
+    academy_id: academyId,
+    user_id: user.id,
+  });
+  const { data, error } = await supabase
+    .from('exam_results')
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateExamResult(id, patch = {}) {
+  assertSupabaseConfigured();
+  if (!id) throw new Error('id가 필요해요.');
+  const safe = sanitizeExamResultPayload(patch, {
+    strip: ['id', 'mode', 'academy_id', 'user_id', 'student_id', 'created_at', 'updated_at'],
+  });
+  if (Object.keys(safe).length === 0) throw new Error('변경할 항목이 없어요.');
+  const { data, error } = await supabase
+    .from('exam_results')
+    .update(safe)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteExamResult(id) {
+  assertSupabaseConfigured();
+  if (!id) throw new Error('id가 필요해요.');
+  const { error } = await supabase.from('exam_results').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ────────────────────────────────────────────────────────────────
 // payments
 // unique (class_group_id, student_id, month).
 // class_group_id NULL 일 때는 PG 표준상 unique 가 작동하지 않음 → 호출처에서
@@ -977,11 +1038,11 @@ export async function deleteAcademyStaffShift(id) {
 const STUDENT_ALLOWED_FIELDS = new Set([
   'id', 'academy_id', 'user_id', 'mode',
   'name', 'school_type', 'school_name', 'grade',
-  'phone', 'parent_phone', 'parent_title', 'parent_name',
+  'phone', 'parent_phone', 'parent_title', 'parent_title_custom', 'parent_name',
   'enrollment_date', 'status', 'memo', 'class_group_ids',
   'checkin_pin',
   'base_tuition', 'tuition_subjects', 'tuition_source',
-  'tuition_effective_from', 'tuition_effective_to',
+  'tuition_effective_from', 'tuition_effective_to', 'grade_reference_year',
   'clinic_record_fields', 'clinic_default_activity_type', 'clinic_default_items',
 ]);
 
@@ -991,6 +1052,22 @@ function sanitizeStudentPayload(input, { strip = [] } = {}) {
     if (!STUDENT_ALLOWED_FIELDS.has(key)) continue;
     if (strip.includes(key)) continue;
     if (value === undefined) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
+const EXAM_RESULT_ALLOWED_FIELDS = new Set([
+  'academy_id', 'user_id', 'mode', 'student_id',
+  'exam_name', 'exam_type', 'subject', 'exam_date',
+  'score', 'max_score', 'grade', 'memo',
+]);
+
+function sanitizeExamResultPayload(input, { strip = [] } = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(input ?? {})) {
+    if (!EXAM_RESULT_ALLOWED_FIELDS.has(key)) continue;
+    if (strip.includes(key) || value === undefined) continue;
     out[key] = value;
   }
   return out;

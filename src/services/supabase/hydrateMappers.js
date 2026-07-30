@@ -26,8 +26,10 @@ export function mapServerStudentToLocal(s) {
     schoolType: s.school_type ?? '',
     school: s.school_name ?? '',
     grade: s.grade ?? '',
+    gradeReferenceYear: s.grade_reference_year ?? null,
     phone: s.phone ?? '',
     parentTitle: s.parent_title ?? '',
+    parentTitleCustom: s.parent_title_custom ?? '',
     parentName: s.parent_name ?? '',
     parentPhone: s.parent_phone ?? '',
     checkinPin: s.checkin_pin ?? '',
@@ -48,6 +50,25 @@ export function mapServerStudentToLocal(s) {
     classGroupIds: Array.isArray(s.class_group_ids) ? s.class_group_ids : [],
     createdAt: s.created_at,
     updatedAt: s.updated_at,
+  };
+}
+
+export function mapServerExamResultToLocal(result) {
+  if (!result) return null;
+  return {
+    id: result.id,
+    serverId: result.id,
+    studentId: result.student_id,
+    examName: result.exam_name ?? '',
+    examType: result.exam_type ?? 'other',
+    subject: result.subject ?? '',
+    examDate: result.exam_date ?? '',
+    score: result.score ?? '',
+    maxScore: result.max_score ?? '',
+    grade: result.grade ?? '',
+    memo: result.memo ?? '',
+    createdAt: result.created_at,
+    updatedAt: result.updated_at,
   };
 }
 

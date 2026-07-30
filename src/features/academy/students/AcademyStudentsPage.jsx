@@ -8,9 +8,10 @@ import { currentUserCan } from '../../../utils/staffPermissions';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
-import { getSchoolTagClassName } from '../../../utils/schoolTags';
+import { getSchoolTagStyle } from '../../../utils/schoolTags';
 import { getStudentStatusMeta, STUDENT_STATUS_OPTIONS } from '../../../utils/studentStatus';
 import { toTelHref } from '../../../utils/format';
+import { getMissingStudentInformation } from '../../../utils/studentCompleteness';
 
 export default function AcademyStudentsPage() {
   const { role, academyStudents, classGroups, clinicTasks, navigateToAcademyStudent } = useAcademyStore();
@@ -175,6 +176,7 @@ export default function AcademyStudentsPage() {
               const pendingCount = getPendingClinics(student.id);
               const statusMeta = getStudentStatusMeta(student.status);
               const callNumber = student.phone || student.parentPhone || '';
+              const missingInformation = getMissingStudentInformation(student);
               return (
                 <motion.div
                   key={student.id}
@@ -189,20 +191,19 @@ export default function AcademyStudentsPage() {
                     <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-blue-50">
                       <span className="font-bold text-blue-600">{(student.name || '?')[0]}</span>
                     </div>
-                    <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap">
-                      <p className="flex-shrink-0 font-bold text-gray-900">{student.name}</p>
-                      {student.grade && (
-                        <span className="flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
-                          {student.grade}
-                        </span>
-                      )}
-                      {student.school && (
-                        <span className={`max-w-28 flex-shrink truncate rounded-md border px-2 py-0.5 text-[11px] font-semibold md:max-w-44 ${getSchoolTagClassName(student.school)}`}>
-                          {student.school}
-                        </span>
-                      )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <p className="truncate font-bold text-gray-900">{student.name}</p>
+                        {missingInformation.length > 0 && (
+                          <span
+                            className="h-2 w-2 flex-shrink-0 rounded-full bg-red-500 ring-4 ring-red-50"
+                            title={`${missingInformation.map((item) => item.label).join(', ')} 확인 필요`}
+                            aria-label={`${missingInformation.map((item) => item.label).join(', ')} 확인 필요`}
+                          />
+                        )}
+                      </div>
                       {groups.length > 0 && (
-                        <p className="hidden min-w-0 truncate text-xs font-medium text-blue-600 sm:block">
+                        <p className="mt-0.5 hidden min-w-0 truncate text-xs font-medium text-blue-600 sm:block">
                           {groups.map((g) => g.name).join(', ')}
                         </p>
                       )}
@@ -212,9 +213,28 @@ export default function AcademyStudentsPage() {
                         </span>
                       )}
                     </div>
-                    <span className={`flex-shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold md:px-2.5 md:text-[11px] ${statusMeta.badgeClassName}`}>
-                      {statusMeta.label}
-                    </span>
+                    <div className="ml-auto flex min-w-0 flex-shrink items-center justify-end gap-2">
+                      {(student.school || student.grade) && (
+                        <div className="flex min-w-0 items-center justify-end gap-1.5">
+                          {student.school && (
+                            <span
+                              className="max-w-20 truncate rounded-md border px-1.5 py-0.5 text-[10px] font-semibold sm:max-w-32 sm:px-2 sm:text-[11px] lg:max-w-48"
+                              style={getSchoolTagStyle(student.school)}
+                            >
+                              {student.school}
+                            </span>
+                          )}
+                          {student.grade && (
+                            <span className="flex-shrink-0 text-[10px] font-semibold text-gray-500 sm:text-xs">
+                              {student.grade}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <span className={`flex-shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold md:px-2.5 md:text-[11px] ${statusMeta.badgeClassName}`}>
+                        {statusMeta.label}
+                      </span>
+                    </div>
                     <ChevronRight size={16} className="hidden text-gray-300 flex-shrink-0 md:block" />
                   </button>
                   {callNumber && (
