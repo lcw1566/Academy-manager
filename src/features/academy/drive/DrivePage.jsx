@@ -1014,6 +1014,7 @@ function DrivePreviewSheet({ file, url, kind, onClose, onDownload, onError }) {
       onClose={onClose}
       title={file.original_name}
       size="wide"
+      fitContent
       footer={(
         <div className="flex gap-2 mb-3">
           <button type="button" onClick={onDownload} className="flex-1 rounded-2xl bg-gray-100 py-3 text-sm font-bold text-gray-700 flex items-center justify-center gap-1.5"><Download size={16} />다운로드</button>

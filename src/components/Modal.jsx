@@ -25,6 +25,8 @@ import { fadeTransition, tossSpring } from '../utils/motion';
  */
 // size: 'default' (max-w-md md:max-w-[560px]) | 'wide' (max-w-md md:max-w-[760px])
 //   'wide' 는 2-col 폼처럼 데스크톱에서 가로 공간이 더 필요한 모달용. 모바일 폭은 유지.
+// fitContent: true면 콘텐츠 높이만 사용하고 92dvh까지만 확장한다. 문서 미리보기처럼
+// 내부에 자체 스크롤 영역이 있는 화면에서 불필요한 빈 공간을 만들지 않는다.
 export default function Modal({
   isOpen,
   onClose,
@@ -32,6 +34,7 @@ export default function Modal({
   children,
   footer,
   size = 'default',
+  fitContent = false,
   isLoading = false,
   loadingLabel = '불러오는 중이에요',
 }) {
@@ -75,7 +78,7 @@ export default function Modal({
             dragElastic={{ top: 0, bottom: 0.18 }}
             dragConstraints={{ top: 0, bottom: 0 }}
             onDragEnd={handleDragEnd}
-            className={`sheet-shell absolute bottom-0 left-0 right-0 max-w-md ${
+            className={`${fitContent ? 'sheet-shell-auto' : 'sheet-shell'} absolute bottom-0 left-0 right-0 max-w-md ${
               size === 'wide' ? 'md:max-w-[760px]' : 'md:max-w-[560px]'
             } mx-auto bg-white rounded-t-[28px] flex flex-col overflow-hidden shadow-2xl transform-gpu`}
             style={{
