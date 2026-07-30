@@ -31,6 +31,74 @@ async function getCurrentUserOrThrow() {
   return data.user;
 }
 
+async function readDriveFunctionError(error, fallback) {
+  const response = error?.context;
+  if (response && typeof response.clone === 'function') {
+    try {
+      const payload = await response.clone().json();
+      if (typeof payload?.error === 'string' && payload.error.trim()) {
+        return payload.error.trim();
+      }
+    } catch {
+      // Edge Function이 JSON이 아닌 응답을 반환한 경우 아래 상태별 문구를 쓴다.
+    }
+  }
+
+  if (response?.status === 401) {
+    return '로그인 정보가 만료됐어요. 다시 로그인해주세요.';
+  }
+  if (response?.status === 403) {
+    return '이 자료를 처리할 권한이 없어요.';
+  }
+  if (response?.status === 404) {
+    return '자료를 찾을 수 없어요. 목록을 새로고침해주세요.';
+  }
+  if (response?.status >= 500) {
+    return '파일 서버에서 요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요.';
+  }
+  return fallback;
+}
+
+async function getDriveAccessToken({ refresh = false } = {}) {
+  const result = refresh
+    ? await supabase.auth.refreshSession()
+    : await supabase.auth.getSession();
+  if (result.error) throw result.error;
+
+  let session = result.data?.session || null;
+  const expiresAt = Number(session?.expires_at) || 0;
+  if (!refresh && session?.refresh_token && expiresAt * 1000 <= Date.now() + 30_000) {
+    const refreshed = await supabase.auth.refreshSession();
+    if (refreshed.error) throw refreshed.error;
+    session = refreshed.data?.session || null;
+  }
+  if (!session?.access_token) {
+    throw new Error('로그인 정보가 만료됐어요. 다시 로그인해주세요.');
+  }
+  return session.access_token;
+}
+
+// FunctionsClient의 내부 세션 갱신 시점에 의존하지 않고 현재 access token을
+// 명시적으로 보낸다. 모바일 절전 복귀 등의 오래된 토큰은 401에서 한 번 갱신한다.
+async function invokeAcademyDriveFile(body) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const accessToken = await getDriveAccessToken({ refresh: attempt > 0 });
+    const { data, error } = await supabase.functions.invoke('academy-drive-file', {
+      body,
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!error) return data;
+
+    const status = Number(error?.context?.status) || 0;
+    if (status === 401 && attempt === 0) continue;
+    throw new Error(await readDriveFunctionError(
+      error,
+      '파일 요청을 처리하지 못했어요.',
+    ));
+  }
+  throw new Error('로그인 정보가 만료됐어요. 다시 로그인해주세요.');
+}
+
 function extensionFrom(name = '') {
   const match = String(name).match(/\.([a-z0-9]{1,12})$/i);
   return match ? `.${match[1].toLowerCase()}` : '';
@@ -158,10 +226,7 @@ export async function restoreAcademyDriveFolder(folderId) {
 }
 
 async function permanentlyDeleteAcademyDriveFileById(fileId) {
-  const { data, error } = await supabase.functions.invoke('academy-drive-file', {
-    body: { fileId, action: 'delete' },
-  });
-  if (error) throw error;
+  const data = await invokeAcademyDriveFile({ fileId, action: 'delete' });
   if (!data?.deleted) throw new Error(data?.error || '자료를 영구 삭제하지 못했어요.');
 }
 
@@ -289,10 +354,7 @@ export async function getAcademyDriveFileUrl(fileId, action = 'view') {
   if (!['view', 'print', 'download'].includes(action)) {
     throw new Error('잘못된 파일 요청이에요.');
   }
-  const { data, error } = await supabase.functions.invoke('academy-drive-file', {
-    body: { fileId, action },
-  });
-  if (error) throw error;
+  const data = await invokeAcademyDriveFile({ fileId, action });
   if (!data?.url) throw new Error('파일 주소를 만들지 못했어요.');
   return data.url;
 }
