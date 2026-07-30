@@ -9,9 +9,9 @@
 // 흐름:
 //   1) 원장이 이메일 입력
 //   2) "계정 검색" → findProfileByEmail (best-effort; RLS 차단 가능)
-//   3) 역할 선택 후 "앱 초대 보내기" → createAcademyInvitation
+//   3) 직책과 권한 선택 후 "앱 초대 보내기" → createAcademyInvitation
 //   4) 직원이 같은 이메일로 로그인한 뒤 "받은 초대" 에서 수락
-//   5) 수락 즉시 선택한 역할로 학원 접근이 활성화됨
+//   5) 수락 즉시 선택한 권한으로 학원 접근이 활성화됨
 //
 // 안전 가드:
 //   - 본인이 본인을 초대하는 케이스 차단 (원장 == 입력 이메일)
@@ -30,17 +30,20 @@ function normalizeEmail(value) {
   return (value ?? '').trim().toLowerCase();
 }
 
-const ROLE_OPTIONS = [
-  { id: 'teacher', label: '선생님', description: '강사, 보조강사 모두 포함' },
-  { id: 'manager', label: '운영 매니저', description: '데스크 운영·직원 관리 담당' },
+const PERMISSION_OPTIONS = [
+  { id: 'teacher', label: '기본 권한', description: '담당 수업과 학생 기록 관리' },
+  { id: 'manager', label: '운영 권한', description: '학원 운영과 직원 관리 포함' },
 ];
+const JOB_TITLE_PRESETS = ['선생님', '조교', '실장', '부원장', '행정'];
 
 export default function StaffInviteWidget({
   initialEmail,    // 폼에 기존에 저장된 이메일 (있으면 prefill)
   initialRole = 'teacher',
+  initialJobTitle = '선생님',
   canInviteManagers = false,
   onEmailChange,   // 폼에 이메일 값을 다시 반영 (저장 시 함께 persist)
   onRoleChange,
+  onJobTitleChange,
   onInviteSent,    // 초대 row 생성 시 inviteStatus='pending' 등 폼에 반영
 }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
@@ -52,6 +55,7 @@ export default function StaffInviteWidget({
 
   const [email, setEmail] = useState(initialEmail || '');
   const [role, setRole] = useState(initialRole);
+  const [jobTitle, setJobTitle] = useState(initialJobTitle || '선생님');
   const [searching, setSearching] = useState(false);
   const [searchResult, setSearchResult] = useState(null); // 'found' | 'unknown' | null
   const [sending, setSending] = useState(false);
@@ -62,10 +66,11 @@ export default function StaffInviteWidget({
   useEffect(() => {
     setEmail(initialEmail || '');
     setRole(initialRole);
+    setJobTitle(initialJobTitle || '선생님');
     setSearchResult(null);
     setFeedback(null);
     setExistingInvite(null);
-  }, [initialEmail, initialRole]);
+  }, [initialEmail, initialRole, initialJobTitle]);
 
   // 학원에 이미 같은 이메일의 역할 없는 직원 초대가 있는지 조회 (정보용)
   useEffect(() => {
@@ -108,6 +113,13 @@ export default function StaffInviteWidget({
     onRoleChange?.(nextRole);
   };
 
+  const handleJobTitleChange = (value) => {
+    const nextValue = value.slice(0, 40);
+    setJobTitle(nextValue);
+    setFeedback(null);
+    onJobTitleChange?.(nextValue);
+  };
+
   const handleSearch = async () => {
     setFeedback(null);
     if (!cleanedEmail) {
@@ -125,7 +137,7 @@ export default function StaffInviteWidget({
         setSearchResult('found');
         setFeedback({
           type: 'info',
-          text: `계정을 확인했어요. ${ROLE_OPTIONS.find((item) => item.id === role)?.label || '직원'} 초대를 보낼 수 있어요.`,
+          text: `계정을 확인했어요. ${jobTitle.trim() || '직원'} 초대를 보낼 수 있어요.`,
         });
       } else {
         // 프로필 인덱스 생성 지연이나 RLS/네트워크 상황에서는 가입 직후에도
@@ -165,6 +177,7 @@ export default function StaffInviteWidget({
         academyId: currentAcademyId,
         email: cleanedEmail,
         role,
+        jobTitle,
       });
       setExistingInvite(inv);
       // Phase 33 — 즉시 store 에 반영해서 "대기 중인 초대" 카드가 곧바로 등장.
@@ -172,9 +185,14 @@ export default function StaffInviteWidget({
       refreshWorkspaceCollaborationState?.({ reason: 'invite-created' });
       setFeedback({
         type: 'success',
-        text: `${ROLE_OPTIONS.find((item) => item.id === role)?.label || '직원'} 초대를 보냈어요. 상대방은 수락만 하면 바로 참여해요.`,
+        text: `${jobTitle.trim() || '직원'} 초대를 보냈어요. 상대방은 수락만 하면 바로 참여해요.`,
       });
-      onInviteSent?.({ email: cleanedEmail, role, status: inv.status });
+      onInviteSent?.({
+        email: cleanedEmail,
+        role,
+        jobTitle: inv.job_title || jobTitle.trim(),
+        status: inv.status,
+      });
     } catch (err) {
       setFeedback({ type: 'error', text: err?.message ?? '초대 생성에 실패했어요.' });
     } finally {
@@ -211,11 +229,50 @@ export default function StaffInviteWidget({
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-xs font-semibold text-gray-600">
-        초대할 역할
+      <label className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
+        <Mail size={12} className="text-gray-400" />
+        계정 이메일
       </label>
+      <div className="flex gap-2">
+        <input
+          type="email"
+          inputMode="email"
+          autoComplete="off"
+          value={email}
+          onChange={(e) => handleChange(e.target.value)}
+          placeholder="staff@example.com"
+          className="input flex-1"
+        />
+      </div>
+
+      <label className="mt-2 text-xs font-semibold text-gray-600">직책</label>
+      <div className="flex flex-wrap gap-1.5">
+        {JOB_TITLE_PRESETS.map((title) => (
+          <button
+            key={title}
+            type="button"
+            onClick={() => handleJobTitleChange(title)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-bold transition-colors ${
+              jobTitle === title
+                ? 'border-blue-500 bg-blue-50 text-blue-700'
+                : 'border-gray-200 bg-white text-gray-600'
+            }`}
+          >
+            {title}
+          </button>
+        ))}
+      </div>
+      <input
+        value={jobTitle}
+        onChange={(event) => handleJobTitleChange(event.target.value)}
+        placeholder="직책을 직접 입력할 수 있어요"
+        className="input"
+        maxLength={40}
+      />
+
+      <label className="mt-2 text-xs font-semibold text-gray-600">권한</label>
       <div className={`grid ${canInviteManagers ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-        {ROLE_OPTIONS
+        {PERMISSION_OPTIONS
           .filter((option) => option.id !== 'manager' || canInviteManagers)
           .map((option) => {
             const selected = role === option.id;
@@ -241,22 +298,6 @@ export default function StaffInviteWidget({
           })}
       </div>
 
-      <label className="text-xs font-semibold text-gray-600 flex items-center gap-1.5">
-        <Mail size={12} className="text-gray-400" />
-        계정 이메일
-      </label>
-      <div className="flex gap-2">
-        <input
-          type="email"
-          inputMode="email"
-          autoComplete="off"
-          value={email}
-          onChange={(e) => handleChange(e.target.value)}
-          placeholder="staff@example.com"
-          className="input flex-1"
-        />
-      </div>
-
       {/* 현재 invitation 상태 표시 */}
       {inviteStatusLabel && (
         <div className={`text-xs font-semibold rounded-xl px-3 py-2 ${inviteStatusTone}`}>
@@ -277,7 +318,7 @@ export default function StaffInviteWidget({
         <button
           type="button"
           onClick={handleInvite}
-          disabled={sending || !cleanedEmail || isMyOwnEmail || !currentAcademyId}
+          disabled={sending || !cleanedEmail || !jobTitle.trim() || isMyOwnEmail || !currentAcademyId}
           className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-60"
         >
           {sending ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
@@ -308,7 +349,7 @@ export default function StaffInviteWidget({
       )}
 
       <p className="text-[11px] text-gray-400 leading-relaxed mt-1">
-        초대받은 직원은 이메일을 확인하고 수락하면 선택한 역할로 바로 참여해요.
+        직책은 직원에게 표시되는 이름이고, 권한은 사용할 수 있는 기능을 정해요.
       </p>
     </div>
   );

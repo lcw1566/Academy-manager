@@ -41,7 +41,8 @@ supabase/
     ├── 041_assistant_attendance_default_permission.sql (보조강사 기본 등하원 권한)
     ├── 042_staff_biweekly_work_rules.sql (직원 격주 근무 규칙)
     ├── 052_shared_drive_folders_and_member_access.sql (전체 직원 공유 + 폴더)
-    └── 053_drive_safety_guards.sql (휴지통 + 용량·확장자·감사 이력)
+    ├── 053_drive_safety_guards.sql (휴지통 + 용량·확장자·감사 이력)
+    └── 054_staff_job_titles.sql (표시용 직책과 기능 권한 분리)
 ```
 
 ## 실행 순서 요약
@@ -80,6 +81,7 @@ supabase/
 | 42 | `042_staff_biweekly_work_rules.sql` | 직원 반복 근무의 매주/격주 주기 저장 |
 | 52 | `052_shared_drive_folders_and_member_access.sql` | 전체 활성 직원 드라이브 사용, 중첩 폴더 |
 | 53 | `053_drive_safety_guards.sql` | 7일 휴지통, 1GB 한도, 파일 형식 제한, 변경 이력 |
+| 54 | `054_staff_job_titles.sql` | 직원 직책 저장, 초대 수락 시 직책 전달, role 기반 권한과 분리 |
 
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.

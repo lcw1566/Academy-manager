@@ -273,8 +273,8 @@ export default function WorkspaceSelectionPage() {
                     </p>
                     <p className="text-xs text-gray-500 mt-0.5">
                       {inv.role === 'pending'
-                        ? '직원 초대 · 수락 후 역할 배정'
-                        : `${roleMap[inv.role] || inv.role} 초대`}
+                        ? '직원 초대 · 수락 후 권한 설정'
+                        : `${inv.job_title || roleMap[inv.role] || inv.role} 초대`}
                     </p>
                   </div>
                   <button

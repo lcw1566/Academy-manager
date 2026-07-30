@@ -1687,7 +1687,7 @@ const useAcademyStore = create(
   upsertLocalTeacherFromServerStaff: (payload = {}) => {
     const {
       userId, memberId, email, displayName, phone,
-      subject, subjects, wageType, hourlyWage, monthlySalary, hourlyMode, memo, status,
+      jobTitle, subject, subjects, wageType, hourlyWage, monthlySalary, hourlyMode, memo, status,
     } = payload;
     if (!userId) return null;
     const normalizedEmail = (email || '').trim().toLowerCase() || null;
@@ -1714,6 +1714,7 @@ const useAcademyStore = create(
         email: normalizedEmail,
         name: displayName || existing?.name || normalizedEmail || '(이름 없음)',
         phone: phone || existing?.phone || '',
+        jobTitle: jobTitle !== undefined ? jobTitle : (existing?.jobTitle ?? ''),
         subject: subject !== undefined ? subject : (existing?.subject ?? ''),
         subjects: Array.isArray(subjects)
           ? subjects
@@ -1746,7 +1747,7 @@ const useAcademyStore = create(
   upsertLocalAssistantFromServerStaff: (payload = {}) => {
     const {
       userId, memberId, email, displayName, phone,
-      subject, subjects, wageType, hourlyWage, monthlySalary, hourlyMode, memo, status,
+      jobTitle, subject, subjects, wageType, hourlyWage, monthlySalary, hourlyMode, memo, status,
     } = payload;
     if (!userId) return null;
     const normalizedEmail = (email || '').trim().toLowerCase() || null;
@@ -1773,6 +1774,7 @@ const useAcademyStore = create(
         email: normalizedEmail,
         name: displayName || existing?.name || normalizedEmail || '(이름 없음)',
         phone: phone || existing?.phone || '',
+        jobTitle: jobTitle !== undefined ? jobTitle : (existing?.jobTitle ?? ''),
         subject: subject !== undefined ? subject : (existing?.subject ?? ''),
         subjects: Array.isArray(subjects)
           ? subjects
@@ -1805,7 +1807,7 @@ const useAcademyStore = create(
   upsertLocalManagerFromServerStaff: (payload = {}) => {
     const {
       userId, memberId, email, displayName, phone,
-      subject, subjects, wageType, hourlyWage, monthlySalary, memo, status,
+      jobTitle, subject, subjects, wageType, hourlyWage, monthlySalary, memo, status,
     } = payload;
     if (!userId) return null;
     const normalizedEmail = (email || '').trim().toLowerCase() || null;
@@ -1829,6 +1831,7 @@ const useAcademyStore = create(
         email: normalizedEmail,
         name: displayName || existing?.name || normalizedEmail || '(이름 없음)',
         phone: phone || existing?.phone || '',
+        jobTitle: jobTitle !== undefined ? jobTitle : (existing?.jobTitle ?? ''),
         subject: subject !== undefined ? subject : (existing?.subject ?? '운영'),
         subjects: Array.isArray(subjects) ? subjects : (Array.isArray(existing?.subjects) ? existing.subjects : []),
         wageType: wageType || existing?.wageType || 'hourly',

@@ -17,7 +17,7 @@ import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAcademyStore from '../../store/useAcademyStore';
 
 const INVITE_ROLE_LABEL = {
-  teacher: '선생님', assistant: '선생님', manager: '운영 매니저', pending: '직원',
+  teacher: '기본', assistant: '기본', manager: '운영', pending: '미설정',
 };
 
 export default function StaffWaitingPage({ assignmentMembership = null }) {
@@ -106,7 +106,7 @@ export default function StaffWaitingPage({ assignmentMembership = null }) {
           </div>
         </div>
 
-        {/* 역할 배정 대기 */}
+        {/* 권한 설정 대기 */}
         {isRoleAssignmentPending && (
           <div className="bg-white rounded-2xl p-4 shadow-sm mb-4">
             <div className="flex items-center gap-3">
@@ -115,11 +115,11 @@ export default function StaffWaitingPage({ assignmentMembership = null }) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-gray-900 truncate">{waitingAcademyName}</p>
-                <p className="text-xs text-orange-700 mt-0.5">직원 역할 배정 대기</p>
+                <p className="text-xs text-orange-700 mt-0.5">직원 권한 설정 대기</p>
               </div>
             </div>
             <p className="mt-3 rounded-xl bg-orange-50 px-3 py-2.5 text-xs leading-relaxed text-orange-700">
-              역할이 배정될 때까지 학생·수업·자료 등 학원 정보에는 접근할 수 없어요.
+              권한이 설정될 때까지 학생·수업·자료 등 학원 정보에는 접근할 수 없어요.
             </p>
             <button
               type="button"
@@ -177,8 +177,8 @@ export default function StaffWaitingPage({ assignmentMembership = null }) {
                       <p className="text-sm font-bold text-gray-900 truncate">{academyName}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
                         {inv.role === 'pending'
-                          ? '직원 초대 · 수락 후 역할 배정'
-                          : `${roleLabel} 역할`}
+                          ? '직원 초대 · 수락 후 권한 설정'
+                          : `${inv.job_title || roleLabel} · ${roleLabel} 권한`}
                       </p>
                     </div>
                     <button

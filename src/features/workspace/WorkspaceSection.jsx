@@ -33,7 +33,7 @@ const ACCOUNT_TYPE_HINT = {
   },
   staff: {
     title: '직원 계정',
-    desc: '학원 초대를 수락한 뒤 원장 또는 운영 매니저가 역할을 배정해요.',
+    desc: '학원 초대를 수락한 뒤 원장 또는 운영 매니저가 권한을 설정해요.',
     Icon: Users,
     iconBg: 'bg-purple-50',
     iconColor: 'text-purple-600',
@@ -41,7 +41,7 @@ const ACCOUNT_TYPE_HINT = {
 };
 
 const INVITE_ROLE_LABEL = {
-  teacher: '선생님', assistant: '선생님', manager: '운영 매니저', pending: '직원',
+  teacher: '기본', assistant: '기본', manager: '운영', pending: '미설정',
 };
 
 export default function WorkspaceSection() {
@@ -576,8 +576,8 @@ function InvitationsCard({ invitations, loading, acceptingId, onAccept, onRefres
                   </p>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {inv.role === 'pending'
-                      ? '직원 초대 · 수락 후 역할 배정'
-                      : `${roleLabel} 역할`}
+                      ? '직원 초대 · 수락 후 권한 설정'
+                      : `${inv.job_title || roleLabel} · ${roleLabel} 권한`}
                   </p>
                 </div>
                 <button

@@ -674,7 +674,9 @@ function StaffMoreSections({
                   <p className="text-sm font-semibold text-gray-900 truncate">
                     {inv.academy?.name || '학원'}
                   </p>
-                  <p className="text-xs text-gray-500 mt-0.5">{roleMap[inv.role] || inv.role}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {inv.job_title || roleMap[inv.role] || inv.role}
+                  </p>
                 </div>
                 <button
                   type="button"

@@ -200,14 +200,25 @@ function normalizeEmail(email) {
 
 function assertStaffRole(role) {
   if (!['teacher', 'manager'].includes(role)) {
-    throw new Error('직원 역할은 선생님 또는 운영 매니저여야 해요.');
+    throw new Error('직원 권한은 기본 또는 운영 권한이어야 해요.');
   }
 }
 
-// 원장 또는 운영 매니저가 역할을 정해 직원을 초대한다.
+function normalizeJobTitle(value) {
+  const cleaned = String(value ?? '').trim();
+  if (cleaned.length > 40) throw new Error('직책은 40자 이내로 입력해주세요.');
+  return cleaned || null;
+}
+
+// 원장 또는 운영 매니저가 직책과 권한을 정해 직원을 초대한다.
 // 직원은 수락만 하면 바로 active 멤버가 된다. SQL 026의 pending 초대는 기존
 // 초대와 예외 상황을 위한 호환 경로로 계속 지원한다.
-export async function createAcademyInvitation({ academyId, email, role = 'teacher' }) {
+export async function createAcademyInvitation({
+  academyId,
+  email,
+  role = 'teacher',
+  jobTitle,
+}) {
   const user = await getCurrentUserOrThrow();
   if (!academyId) throw new Error('academyId가 필요해요.');
   const cleanedEmail = normalizeEmail(email);
@@ -230,6 +241,8 @@ export async function createAcademyInvitation({ academyId, email, role = 'teache
     academy_id: academyId,
     email: cleanedEmail,
     role,
+    job_title: normalizeJobTitle(jobTitle)
+      || (role === 'manager' ? '운영 매니저' : '선생님'),
     status: 'pending',
     invited_by: user.id,
     accepted_user_id: null,
@@ -287,6 +300,7 @@ export async function listMyPendingInvitations() {
       academy_id: row.academy_id,
       email: row.email,
       role: row.role,
+      job_title: row.job_title || null,
       status: row.status,
       invited_by: row.invited_by,
       accepted_user_id: row.accepted_user_id,
@@ -717,6 +731,7 @@ function sanitizeStaffProfilePayload(input = {}) {
     return Math.max(0, Math.round(n));
   };
   if (input.role !== undefined) out.role = input.role;
+  if (input.jobTitle !== undefined) out.job_title = normalizeJobTitle(input.jobTitle);
   if (input.subject !== undefined) out.subject = input.subject;
   if (input.subjects !== undefined) {
     out.subjects = Array.isArray(input.subjects) ? input.subjects : [];

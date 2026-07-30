@@ -1626,6 +1626,7 @@ const useWorkspaceStore = create(
             email: profile.email,
             displayName: profile.display_name,
             phone: profile.phone,
+            jobTitle: staff?.job_title,
             // staff_profile 이 없으면 최소 정보만 — 원장이 스태프 탭에서 채울 수 있음.
             subject: staff?.subject,
             subjects: staff?.subjects,
