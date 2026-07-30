@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   LogIn,
   LogOut,
@@ -104,6 +105,7 @@ export default function StudentAttendancePage() {
   const [selectedDate, setSelectedDate] = useState(todayYmd);
   const [viewFilter, setViewFilter] = useState('expected');
   const [search, setSearch] = useState('');
+  const [expandedGroupIds, setExpandedGroupIds] = useState(() => new Set());
   const [savingStudentId, setSavingStudentId] = useState(null);
   const [manualEntryTarget, setManualEntryTarget] = useState(null);
   const [manualEntry, setManualEntry] = useState({ eventType: 'check_in', time: '15:00' });
@@ -251,6 +253,61 @@ export default function StudentAttendancePage() {
     canSeeAllStudents,
   ]);
 
+  const attendanceGroups = useMemo(() => {
+    const remainingRows = new Map(rows.map((row) => [row.student.id, row]));
+    const groups = [];
+
+    for (const session of daySessions) {
+      const sessionRows = [];
+      for (const studentId of session.studentIds || []) {
+        const row = remainingRows.get(studentId);
+        if (!row) continue;
+        sessionRows.push(row);
+        // 등하원은 수업별 출석이 아니라 하루 단위 상태이므로, 같은 학생이
+        // 여러 수업에 있어도 가장 이른 수업 묶음에 한 번만 표시한다.
+        remainingRows.delete(studentId);
+      }
+      if (sessionRows.length === 0) continue;
+      groups.push({
+        id: session.id,
+        session,
+        classGroup: classGroups.find((item) => item.id === session.classGroupId) || null,
+        rows: sessionRows,
+        isUnassigned: false,
+      });
+    }
+
+    const unassignedRows = [...remainingRows.values()];
+    if (unassignedRows.length > 0) {
+      groups.push({
+        id: 'attendance-unassigned',
+        session: null,
+        classGroup: null,
+        rows: unassignedRows,
+        isUnassigned: true,
+      });
+    }
+    return groups;
+  }, [rows, daySessions, classGroups]);
+
+  const attendanceGroupKey = attendanceGroups.map((group) => group.id).join('|');
+  useEffect(() => {
+    const availableIds = attendanceGroups.map((group) => group.id);
+    setExpandedGroupIds((current) => {
+      if (availableIds.some((id) => current.has(id))) return current;
+      return availableIds[0] ? new Set([availableIds[0]]) : new Set();
+    });
+  }, [selectedDate, attendanceGroupKey]);
+
+  const toggleAttendanceGroup = (groupId) => {
+    setExpandedGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
+
   const summary = useMemo(() => {
     const expectedIds = new Set();
     const checkedInIds = new Set();
@@ -293,6 +350,19 @@ export default function StudentAttendancePage() {
     if (!canRecordNow || savingStudentId || !row.student.serverId) return;
     setSavingStudentId(row.student.id);
     try {
+      // 예정 회차가 아직 DB에 만들어지지 않은 상태에서 등원이 먼저 저장되면
+      // 수업 출석 자동 연결이 빠질 수 있다. 해당 날짜 회차를 먼저 준비하되,
+      // 준비 실패가 하루 단위 등하원 기록 자체를 막지는 않게 한다.
+      if (row.sessions.some((session) => session.isPlanned)) {
+        try {
+          await ensureClassSessionsForRangeLocal({
+            fromDate: selectedDate,
+            toDate: selectedDate,
+          });
+        } catch (materializeError) {
+          console.warn('[attendance] 등원 전 수업 회차 준비 실패', materializeError);
+        }
+      }
       const result = await toggleStudentCheckEventLocal({
         studentId: row.student.serverId,
         source: 'teacher_manual',
@@ -450,24 +520,95 @@ export default function StudentAttendancePage() {
               <p className="mt-1 text-xs text-gray-400">검색어나 필터를 바꿔보세요.</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              {rows.map((row) => (
-                <StudentPresenceRow
-                  key={row.student.id}
-                  row={row}
-                  canRecord={canRecordNow}
-                  canAddPast={canEdit && !isToday && selectedDate < todayYmd}
-                  saving={savingStudentId === row.student.id}
-                  hasServerId={!!row.student.serverId}
-                  classGroups={classGroups}
-                  onRecord={() => recordNextEvent(row)}
-                  onAddPast={() => {
-                    setManualEntryTarget(row);
-                    setManualEntry({ eventType: 'check_in', time: '15:00' });
-                  }}
-                  onOpenSession={(session) => void openSession(session)}
-                />
-              ))}
+            <div className="flex flex-col gap-2.5">
+              {attendanceGroups.map((attendanceGroup) => {
+                const {
+                  id,
+                  session,
+                  classGroup,
+                  rows: groupRows,
+                  isUnassigned,
+                } = attendanceGroup;
+                const expanded = expandedGroupIds.has(id) || search.trim().length > 0;
+                const checkedInCount = groupRows.filter((row) => (
+                  row.state.events.some((event) => event.event_type === 'check_in')
+                )).length;
+                const title = isUnassigned
+                  ? '그 외 학생'
+                  : classGroup?.name || session?.activityName || '수업';
+                const detail = isUnassigned
+                  ? '수업 미배정 또는 별도 등하원 기록'
+                  : [
+                      session?.startTime && session?.endTime
+                        ? `${session.startTime}–${session.endTime}`
+                        : session?.startTime,
+                      classGroup?.subject,
+                      session?.room || classGroup?.room,
+                    ].filter(Boolean).join(' · ');
+                const GroupIcon = isUnassigned ? Users : Clock3;
+
+                return (
+                  <section
+                    key={id}
+                    className="overflow-hidden rounded-[22px] border border-[#E5E8EB] bg-white"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => toggleAttendanceGroup(id)}
+                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors active:bg-[#F9FAFB]"
+                      aria-expanded={expanded}
+                    >
+                      <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-[#E8F3FF] text-[#1B64DA]">
+                        <GroupIcon size={16} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-extrabold text-[#191F28]">
+                          {title}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[11px] font-medium text-[#8B95A1]">
+                          {detail || `${groupRows.length}명`}
+                        </span>
+                      </span>
+                      <span className="flex flex-shrink-0 items-center gap-2">
+                        <span className="text-[11px] font-bold text-[#6B7684]">
+                          등원 {checkedInCount}/{groupRows.length}
+                        </span>
+                        <ChevronDown
+                          size={17}
+                          className={`text-[#8B95A1] transition-transform duration-200 ${
+                            expanded ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </span>
+                    </button>
+                    <div
+                      className="grid transition-[grid-template-rows] duration-200 ease-out"
+                      style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
+                    >
+                      <div className="overflow-hidden">
+                        {groupRows.map((row) => (
+                          <StudentPresenceRow
+                            key={row.student.id}
+                            row={row}
+                            nested
+                            canRecord={canRecordNow}
+                            canAddPast={canEdit && !isToday && selectedDate < todayYmd}
+                            saving={savingStudentId === row.student.id}
+                            hasServerId={!!row.student.serverId}
+                            classGroups={classGroups}
+                            onRecord={() => recordNextEvent(row)}
+                            onAddPast={() => {
+                              setManualEntryTarget(row);
+                              setManualEntry({ eventType: 'check_in', time: '15:00' });
+                            }}
+                            onOpenSession={(targetSession) => void openSession(targetSession)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </section>
+                );
+              })}
             </div>
           )}
         </div>
@@ -560,13 +701,18 @@ function StudentPresenceRow({
   onRecord,
   onAddPast,
   onOpenSession,
+  nested = false,
 }) {
   const { student, state, sessions, presence } = row;
   const PresenceIcon = presence.icon;
   const actionLabel = state.isInside ? '하원 처리' : state.latest ? '재등원' : '등원 처리';
 
   return (
-    <div className="rounded-[22px] border border-[#E5E8EB] bg-white p-4 transition-colors hover:border-[#D1D6DB]">
+    <div className={
+      nested
+        ? 'border-t border-[#F2F4F6] bg-white p-4 transition-colors hover:bg-[#F9FAFB]'
+        : 'rounded-[22px] border border-[#E5E8EB] bg-white p-4 transition-colors hover:border-[#D1D6DB]'
+    }>
       <div className="grid items-center gap-4 md:grid-cols-[minmax(200px,0.9fr)_minmax(280px,1.35fr)_auto]">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[#E8F3FF] text-base font-black text-[#1B64DA]">

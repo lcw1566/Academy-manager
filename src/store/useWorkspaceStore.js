@@ -262,6 +262,9 @@ const initialState = {
   isStudentCheckEventsLoading: false,
   studentCheckEventsError: null,
   studentCheckEventsLoadedAt: null,
+  // 실시간 이벤트가 들어와도 현재 등하원 화면의 날짜 범위를 그대로 다시
+  // 조회한다. 학생 상세의 studentId 조회는 이 목록 쿼리를 덮어쓰지 않는다.
+  studentCheckEventsListQuery: null,
 
   // Phase 44.5 / Phase A — 룰 기반 스케줄 모델 (SQL 014).
   // 모두 read-only 미리보기. Phase B 에서 ClassGroupFormModal / ShiftFormModal
@@ -476,7 +479,10 @@ const useWorkspaceStore = create(
               queue('staffShifts', () => get().loadServerStaffShifts());
               break;
             case 'student_check_events':
-              queue('studentCheckEvents', () => get().loadStudentCheckEvents());
+              queue(
+                'studentCheckEvents',
+                () => get().loadStudentCheckEvents(get().studentCheckEventsListQuery || {}),
+              );
               break;
             case 'class_schedule_rules':
               queue('classScheduleRules', () => get().loadClassScheduleRules());
@@ -2022,13 +2028,37 @@ const useWorkspaceStore = create(
         }
         const academyId = get().currentAcademyId;
         if (!academyId) {
-          set({ studentCheckEvents: [], studentCheckEventsError: null });
+          set({
+            studentCheckEvents: [],
+            studentCheckEventsError: null,
+            studentCheckEventsListQuery: null,
+          });
           return [];
         }
-        set({ isStudentCheckEventsLoading: true, studentCheckEventsError: null });
+        const listQuery = !studentId
+          ? {
+              ...(sinceDateYMD ? { sinceDateYMD } : {}),
+              ...(limit ? { limit } : {}),
+            }
+          : null;
+        const isLatestListQuery = () => (
+          !!studentId
+          || JSON.stringify(get().studentCheckEventsListQuery || {})
+            === JSON.stringify(listQuery || {})
+        );
+        set({
+          isStudentCheckEventsLoading: true,
+          studentCheckEventsError: null,
+          ...(!studentId
+            ? { studentCheckEventsListQuery: listQuery }
+            : {}),
+        });
         try {
           const list = await listStudentCheckEvents(academyId, { sinceDateYMD, studentId, limit });
           if (!isCurrentAcademy(get, academyId)) return list;
+          // 날짜를 빠르게 바꿨을 때 먼저 보낸 느린 응답이 새 날짜 결과를
+          // 덮어쓰지 않게 한다.
+          if (!isLatestListQuery()) return list;
           set((state) => ({
             // 학생 상세에서 과거 기록을 불러올 때 다른 학생의 당일 캐시를 지우지 않는다.
             studentCheckEvents: studentId
@@ -2042,13 +2072,16 @@ const useWorkspaceStore = create(
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
+          if (!isLatestListQuery()) return [];
           set({
             studentCheckEventsError:
               err?.message ?? '학생 체크인 이벤트를 불러오지 못했어요.',
           });
           return [];
         } finally {
-          if (isCurrentAcademy(get, academyId)) set({ isStudentCheckEventsLoading: false });
+          if (isCurrentAcademy(get, academyId) && isLatestListQuery()) {
+            set({ isStudentCheckEventsLoading: false });
+          }
         }
       },
 
