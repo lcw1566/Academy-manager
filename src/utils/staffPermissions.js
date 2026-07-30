@@ -10,7 +10,7 @@
 // academy_members.role은 담당 범위와 안전한 초대 전이를 위한 내부 값으로 유지한다.
 
 // 역할별 기본 권한 (PERMISSION_DEFAULTS)
-//   teacher:  학생/수업/등하원 상태 편집 + 급여 조회
+//   teacher:  전체 학생 관리 + 담당 수업/등하원 상태 편집 + 급여 조회
 //   assistant: 이전 버전 호환 별칭이며 teacher와 같은 권한
 //   manager:   데스크 실무 운영(학생·수납·직원·공유자료) + 본인 급여 조회.
 //              학원 삭제/최종 설정/다른 직원 급여 관리는 포함하지 않는다.
@@ -23,7 +23,7 @@ export const PERMISSION_DEFAULTS = {
     canViewPayroll: true,
     canViewPayments: false,
     canManageClasses: false,
-    canManageStudents: false,
+    canManageStudents: true,
     canManagePayments: false,
     canManageStaff: false,
     canManageStaffPermissions: false,
@@ -37,7 +37,7 @@ export const PERMISSION_DEFAULTS = {
     canViewPayroll: true,
     canViewPayments: false,
     canManageClasses: false,
-    canManageStudents: false,
+    canManageStudents: true,
     canManagePayments: false,
     canManageStaff: false,
     canManageStaffPermissions: false,

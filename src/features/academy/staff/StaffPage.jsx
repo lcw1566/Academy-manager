@@ -3011,7 +3011,7 @@ function StaffPermissionSection({ staff, canEdit = false }) {
           <p className="mt-1 text-xs leading-5 text-[#8B95A1]">
             {titlePolicy.role === 'manager'
               ? '학원 전체 운영 범위를 기준으로 적용돼요.'
-              : '담당 반과 배정된 학생 범위를 기준으로 적용돼요.'}
+              : '학생 관리는 전체, 수업 기록은 담당 반을 기준으로 적용돼요.'}
           </p>
         </div>
         {hasOverrides && (

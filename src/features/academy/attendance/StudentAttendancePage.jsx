@@ -89,9 +89,22 @@ export default function StudentAttendancePage() {
   const classScheduleRules = useWorkspaceStore((state) => state.classScheduleRules) ?? [];
   const classSessionExceptions = useWorkspaceStore((state) => state.classSessionExceptions) ?? [];
   const studentCheckEvents = useWorkspaceStore((state) => state.studentCheckEvents) ?? [];
-  const isLoading = useWorkspaceStore((state) => state.isStudentCheckEventsLoading);
+  const isEventsLoading = useWorkspaceStore((state) => state.isStudentCheckEventsLoading);
+  const isStudentsLoading = useWorkspaceStore((state) => state.isServerStudentsLoading);
+  const isClassGroupsLoading = useWorkspaceStore((state) => state.isServerClassGroupsLoading);
+  const isClassSessionsLoading = useWorkspaceStore((state) => state.isServerClassSessionsLoading);
   const eventsError = useWorkspaceStore((state) => state.studentCheckEventsError);
+  const studentsError = useWorkspaceStore((state) => state.serverStudentsError);
+  const classGroupsError = useWorkspaceStore((state) => state.serverClassGroupsError);
+  const classSessionsError = useWorkspaceStore((state) => state.serverClassSessionsError);
   const loadStudentCheckEvents = useWorkspaceStore((state) => state.loadStudentCheckEvents);
+  const loadServerStudents = useWorkspaceStore((state) => state.loadServerStudents);
+  const loadServerClassGroups = useWorkspaceStore((state) => state.loadServerClassGroups);
+  const loadServerClassSessions = useWorkspaceStore((state) => state.loadServerClassSessions);
+  const loadClassScheduleRules = useWorkspaceStore((state) => state.loadClassScheduleRules);
+  const loadClassSessionExceptions = useWorkspaceStore(
+    (state) => state.loadClassSessionExceptions,
+  );
   const ensureClassSessionsForRangeLocal = useWorkspaceStore(
     (state) => state.ensureClassSessionsForRangeLocal,
   );
@@ -103,7 +116,7 @@ export default function StudentAttendancePage() {
 
   const todayYmd = getAcademyYmd() || '';
   const [selectedDate, setSelectedDate] = useState(todayYmd);
-  const [viewFilter, setViewFilter] = useState('expected');
+  const [viewFilter, setViewFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [expandedGroupIds, setExpandedGroupIds] = useState(() => new Set());
   const [savingStudentId, setSavingStudentId] = useState(null);
@@ -129,7 +142,7 @@ export default function StudentAttendancePage() {
   );
   const canSeeAllStudents = role === 'owner' || currentUserCan(
     { role, staffProfile: myStaffProfile },
-    'canManageStudents',
+    'canViewStudents',
   );
   const canRecordNow = canEdit
     && selectedDate === todayYmd
@@ -141,8 +154,29 @@ export default function StudentAttendancePage() {
   );
 
   useEffect(() => {
+    if (!currentAcademyId || !role) return;
+    // 전역 초기 로딩의 완료 시점과 무관하게 등하원 화면 진입 시 필요한 세
+    // 테이블을 직접 확인한다. 로그인 직후 역할 캐시가 초기화되는 경합에서도
+    // 화면이 스스로 복구된다.
+    void Promise.all([
+      loadServerStudents(),
+      loadServerClassGroups(),
+      loadServerClassSessions(),
+      loadClassScheduleRules(),
+    ]);
+  }, [
+    currentAcademyId,
+    role,
+    loadServerStudents,
+    loadServerClassGroups,
+    loadServerClassSessions,
+    loadClassScheduleRules,
+  ]);
+
+  useEffect(() => {
     if (!selectedDate || !currentAcademyId) return;
     loadStudentCheckEvents({ sinceDateYMD: selectedDate, limit: 1000 });
+    loadClassSessionExceptions({ fromDate: selectedDate, toDate: selectedDate });
     void ensureClassSessionsForRangeLocal({
       fromDate: selectedDate,
       toDate: selectedDate,
@@ -154,6 +188,7 @@ export default function StudentAttendancePage() {
     currentAcademyId,
     ensureClassSessionsForRangeLocal,
     loadStudentCheckEvents,
+    loadClassSessionExceptions,
   ]);
 
   const daySessions = useMemo(() => {
@@ -406,6 +441,29 @@ export default function StudentAttendancePage() {
 
   const isToday = selectedDate === todayYmd;
   const qrEnabled = settings.studentCheckMethod === 'qr' && isToday;
+  const isAttendanceDataLoading = isEventsLoading
+    || isStudentsLoading
+    || isClassGroupsLoading
+    || isClassSessionsLoading;
+  const attendanceDataError = studentsError
+    || classGroupsError
+    || classSessionsError
+    || eventsError;
+  const retryAttendanceData = () => {
+    void Promise.all([
+      loadServerStudents(),
+      loadServerClassGroups(),
+      loadServerClassSessions(),
+      loadClassScheduleRules(),
+      loadClassSessionExceptions({ fromDate: selectedDate, toDate: selectedDate }),
+      loadStudentCheckEvents({ sinceDateYMD: selectedDate, limit: 1000 }),
+    ]).then(() => ensureClassSessionsForRangeLocal({
+      fromDate: selectedDate,
+      toDate: selectedDate,
+    })).catch((error) => {
+      console.warn('[attendance] 데이터 다시 불러오기 실패', error);
+    });
+  };
   const calendarSchedules = useMemo(() => {
     const classDots = classSessions
       .filter((session) => session?.date && session.status !== 'canceled')
@@ -505,14 +563,25 @@ export default function StudentAttendancePage() {
             ))}
           </div>
 
-          {eventsError && (
-            <div className="mb-3 rounded-2xl bg-red-50 px-4 py-3 text-xs font-medium text-red-700">
-              {eventsError}
+          {attendanceDataError && (
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl bg-red-50 px-4 py-3">
+              <p className="min-w-0 text-xs font-medium text-red-700">
+                {attendanceDataError}
+              </p>
+              <button
+                type="button"
+                onClick={retryAttendanceData}
+                className="flex-shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-red-600"
+              >
+                다시 불러오기
+              </button>
             </div>
           )}
 
-          {isLoading && rows.length === 0 ? (
-            <div className="rounded-2xl bg-white px-5 py-10 text-center text-sm text-gray-400">불러오는 중...</div>
+          {isAttendanceDataLoading && rows.length === 0 ? (
+            <div className="rounded-2xl bg-white px-5 py-10 text-center text-sm text-gray-400">
+              학생과 수업을 불러오는 중...
+            </div>
           ) : rows.length === 0 ? (
             <div className="rounded-2xl bg-white px-5 py-10 text-center shadow-sm">
               <Users size={24} className="mx-auto mb-2 text-gray-300" />

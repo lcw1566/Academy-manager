@@ -517,10 +517,6 @@ const useWorkspaceStore = create(
           ]);
 
           if (get().currentAcademyId) {
-            const refreshAcademyId = get().currentAcademyId;
-            const academyStore = useAcademyStore.getState();
-            const hydrateSnapshot = academyStore.hydrateAcademyFromServerSnapshot;
-
             await Promise.all([
               get().loadAcademyMemberProfiles(),
               get().loadAcademyStaffProfiles(),
@@ -528,17 +524,11 @@ const useWorkspaceStore = create(
             ]);
             get().syncLocalStaffFromServerMembers();
 
-            const [
-              students,
-              examResults,
-              classGroups,
-              classSessions,
-              lessonRecords,
-              attendanceRecords,
-              clinicRecords,
-              payments,
-              payrolls,
-            ] = await Promise.all([
+            // 각 로더는 성공한 테이블만 해당 로컬 캐시에 반영한다. 실패한 로더가
+            // 반환하는 []을 전체 snapshot의 "정상적인 빈 테이블"로 해석하면
+            // 포커스 복귀 때 직원 화면의 학생·반 목록이 간헐적으로 모두 지워진다.
+            // 따라서 부분 갱신 결과를 다시 일괄 hydrate하지 않는다.
+            await Promise.all([
               get().loadServerStudents(),
               get().loadServerExamResults(),
               get().loadServerClassGroups(),
@@ -549,29 +539,6 @@ const useWorkspaceStore = create(
               get().loadServerPayments(),
               get().loadServerPayrolls(),
             ]);
-
-            if (get().currentAcademyId !== refreshAcademyId) return;
-            if (typeof hydrateSnapshot === 'function') {
-              hydrateSnapshot(
-                {
-                  students,
-                  examResults,
-                  classGroups,
-                  classSessions,
-                  lessonRecords,
-                  attendanceRecords,
-                  clinicRecords,
-                  payments,
-                  payrolls,
-                },
-                {
-                  strategy: 'serverWins',
-                  // 권한이 회수된 직원 기기에 과거 캐시가 남지 않게 owner만
-                  // local-only 항목을 보존한다.
-                  preserveLocalOnly: academyStore.role === 'owner',
-                },
-              );
-            }
 
             await Promise.all([
               get().loadServerStaffShifts(),
