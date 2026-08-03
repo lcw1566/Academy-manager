@@ -489,6 +489,11 @@ html.dark .bg-rose-50 {
     background-color: var(--seenit-dark-surface) !important;
   }
 
+  /* PC의 탭 제목 영역은 라이트 모드와 동일하게 페이지 배경에 녹아들어야 한다. */
+  html.dark .md\:bg-transparent {
+    background-color: transparent !important;
+  }
+
   html.dark .md\:bg-white .bg-\[\#F2F4F6\],
   html.dark .md\:bg-white .bg-\[\#F8FAFC\] {
     background-color: var(--seenit-dark-surface-raised) !important;
