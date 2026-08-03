@@ -144,76 +144,36 @@ function mountSafeHangulHtml(container, html) {
   return true;
 }
 
-function repairRhwpTableCellFills(parsed, rhwpDocument, pageIndex) {
-  try {
-    const layout = JSON.parse(rhwpDocument.getPageControlLayout(pageIndex));
-    const tables = (layout?.controls || []).filter((control) => control?.type === 'table');
-    if (!tables.length) return 0;
+function namespaceRhwpSvgIds(parsed, pageIndex) {
+  const idMap = new Map();
+  const prefix = `drive-rhwp-page-${pageIndex + 1}-`;
 
-    const clips = [...parsed.querySelectorAll('clipPath[id] > rect')].map((rect) => ({
-      id: rect.parentElement?.getAttribute('id') || '',
-      x: Number(rect.getAttribute('x')),
-      y: Number(rect.getAttribute('y')),
-      width: Number(rect.getAttribute('width')),
-      height: Number(rect.getAttribute('height')),
-    })).filter((clip) => clip.id.startsWith('cell-clip-')
-      && [clip.x, clip.y, clip.width, clip.height].every(Number.isFinite));
-    const clipGroups = new Map();
-    parsed.querySelectorAll('g[clip-path]').forEach((group) => {
-      const match = group.getAttribute('clip-path')?.match(/^url\(#(.+)\)$/);
-      if (match) clipGroups.set(match[1], group);
-    });
+  parsed.querySelectorAll('[id]').forEach((element) => {
+    const originalId = element.getAttribute('id');
+    if (!originalId) return;
+    const uniqueId = `${prefix}${originalId}`;
+    idMap.set(originalId, uniqueId);
+    element.setAttribute('id', uniqueId);
+  });
+  if (!idMap.size) return;
 
-    const closeEnough = (left, right) => Math.abs(left - right) <= 0.25;
-    let repaired = 0;
-    tables.forEach((table) => {
-      (table.cells || []).forEach((cell) => {
-        const properties = JSON.parse(rhwpDocument.getCellProperties(
-          table.secIdx,
-          table.paraIdx,
-          table.controlIdx,
-          cell.cellIdx,
-        ));
-        const fillColor = String(properties?.fillColor || '').trim();
-        if (properties?.fillType !== 'solid'
-          || !/^#[0-9a-f]{6}$/i.test(fillColor)
-          || fillColor.toLowerCase() === '#ffffff') return;
-
-        const clip = clips.find((candidate) => closeEnough(candidate.x, cell.x)
-          && closeEnough(candidate.y, cell.y)
-          && closeEnough(candidate.width, cell.w)
-          && closeEnough(candidate.height, cell.h));
-        const group = clip ? clipGroups.get(clip.id) : null;
-        if (!group) return;
-
-        const alreadyPainted = [...group.children].some((child) => {
-          if (child.tagName?.toLowerCase() !== 'rect') return false;
-          return closeEnough(Number(child.getAttribute('x')), cell.x)
-            && closeEnough(Number(child.getAttribute('y')), cell.y)
-            && closeEnough(Number(child.getAttribute('width')), cell.w)
-            && closeEnough(Number(child.getAttribute('height')), cell.h);
-        });
-        if (alreadyPainted) return;
-
-        const fill = parsed.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        fill.setAttribute('x', String(cell.x));
-        fill.setAttribute('y', String(cell.y));
-        fill.setAttribute('width', String(cell.w));
-        fill.setAttribute('height', String(cell.h));
-        fill.setAttribute('fill', fillColor);
-        fill.setAttribute('pointer-events', 'none');
-        group.insertBefore(fill, group.firstChild);
-        repaired += 1;
+  parsed.querySelectorAll('*').forEach((element) => {
+    [...element.attributes].forEach((attribute) => {
+      let nextValue = attribute.value;
+      if (nextValue.startsWith('#')) {
+        const replacement = idMap.get(nextValue.slice(1));
+        if (replacement) nextValue = `#${replacement}`;
+      }
+      nextValue = nextValue.replace(/url\(\s*(['"]?)#([^)'"\s]+)\1\s*\)/g, (match, quote, id) => {
+        const replacement = idMap.get(id);
+        return replacement ? `url(#${replacement})` : match;
       });
+      if (nextValue !== attribute.value) element.setAttribute(attribute.name, nextValue);
     });
-    return repaired;
-  } catch (error) {
-    console.warn('[drive] rHWP table fill repair skipped', error);
-    return 0;
-  }
+  });
 }
 
-function safeRhwpSvgMarkup(markup, rhwpDocument, pageIndex) {
+function safeRhwpSvgMarkup(markup, pageIndex) {
   const parsed = new DOMParser().parseFromString(String(markup || ''), 'image/svg+xml');
   if (parsed.querySelector('parsererror')) return '';
   const root = parsed.documentElement;
@@ -241,7 +201,10 @@ function safeRhwpSvgMarkup(markup, rhwpDocument, pageIndex) {
       }
     });
   });
-  repairRhwpTableCellFills(parsed, rhwpDocument, pageIndex);
+  // rHWP는 각 페이지에서 cell-clip-0 같은 SVG ID를 다시 사용한다. 여러 쪽을
+  // 한 DOM에 렌더링하면 뒤쪽 페이지가 앞쪽 페이지의 clipPath를 참조하므로
+  // 표 배경과 글자가 흰색처럼 잘린다. 페이지별 ID와 참조를 함께 고유화한다.
+  namespaceRhwpSvgIds(parsed, pageIndex);
   root.setAttribute('aria-hidden', 'true');
   root.setAttribute('focusable', 'false');
   return root.outerHTML;
@@ -1189,11 +1152,7 @@ function DocumentPreview({ url, kind, onReady, onError }) {
             const renderedPages = Array(pageCount).fill('');
             for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
               if (cancelled) return;
-              const svg = safeRhwpSvgMarkup(
-                rhwpDocument.renderPageSvg(pageIndex),
-                rhwpDocument,
-                pageIndex,
-              );
+              const svg = safeRhwpSvgMarkup(rhwpDocument.renderPageSvg(pageIndex), pageIndex);
               if (!svg) throw new Error(`${pageIndex + 1}쪽을 표시하지 못했어요.`);
               renderedPages[pageIndex] = svg;
               if (pageIndex === 0 || (pageIndex + 1) % 3 === 0 || pageIndex === pageCount - 1) {
