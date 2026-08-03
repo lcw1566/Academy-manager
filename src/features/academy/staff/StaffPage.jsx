@@ -48,7 +48,7 @@ import {
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
 import {
-  removeAcademyMember, updateAcademyMemberRole,
+  manageAcademyStaffAccess, removeAcademyMember,
 } from '../../../services/supabase/workspaceApi';
 import {
   buildRecurringStaffWorkPreview,
@@ -69,6 +69,7 @@ import {
   currentUserCan,
   getJobTitlePolicy,
   normalizeJobTitlePermissions,
+  OWNER_DELEGATED_PERMISSION_KEYS,
 } from '../../../utils/staffPermissions';
 import StaffInviteWidget from '../more/StaffInviteWidget';
 
@@ -126,7 +127,6 @@ const PILOT_LOCKED_PERMISSION_KEYS = new Set([
   'canViewPayroll',
   'canViewPayments',
   'canManagePayments',
-  'canManageStaffPermissions',
   // 공유 드라이브는 모든 활성 직원에게 공통 제공한다.
   'canManageDrive',
 ]);
@@ -237,9 +237,21 @@ export default function StaffPage() {
     { role, staffProfile: myStaffProfile },
     'canManageStaff',
   );
-  if (canManageStaff) {
+  const canManageStaffAccess = role === 'owner' || currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageStaffPermissions',
+  );
+  const canRemoveStaff = role === 'owner' || currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canRemoveStaff',
+  );
+  if (canManageStaff || canManageStaffAccess || canRemoveStaff) {
     return <OwnerStaffView
+      canInviteStaff={canManageStaff}
       canInviteManagers={role === 'owner'}
+      canManageStaffAccess={canManageStaffAccess}
+      canManageSensitiveAccess={role === 'owner'}
+      canRemoveStaff={canRemoveStaff}
     />;
   }
   return <MyStaffView />;
@@ -248,7 +260,13 @@ export default function StaffPage() {
 // ═══════════════════════════════════════════════════════════════════
 // Owner 뷰 — 직원 리스트 + 상세
 // ═══════════════════════════════════════════════════════════════════
-function OwnerStaffView({ canInviteManagers = false }) {
+function OwnerStaffView({
+  canInviteStaff = false,
+  canInviteManagers = false,
+  canManageStaffAccess = false,
+  canManageSensitiveAccess = false,
+  canRemoveStaff = false,
+}) {
   const authUserId = useAuthStore((s) => s.user?.id);
   const authUserEmail = useAuthStore((s) => s.user?.email);
   const academyTeachers = useAcademyStore((s) => s.academyTeachers) ?? [];
@@ -485,7 +503,7 @@ function OwnerStaffView({ canInviteManagers = false }) {
     <div className="w-full">
       <Header
         title="직원"
-        right={
+        right={canInviteStaff ? (
           <button
             type="button"
             onClick={() => setInviteOpen(true)}
@@ -493,7 +511,7 @@ function OwnerStaffView({ canInviteManagers = false }) {
           >
             <Plus size={14} /> 직원 초대
           </button>
-        }
+        ) : null}
       />
       <div className="pt-14 pb-6 md:pt-0">
         <div className="px-4 pt-4 md:grid md:grid-cols-[320px_1fr] lg:grid-cols-[340px_1fr] md:gap-6">
@@ -504,7 +522,7 @@ function OwnerStaffView({ canInviteManagers = false }) {
             }`}
           >
             <div className="md:bg-white md:rounded-2xl md:p-3 md:shadow-sm">
-              <button
+              {canInviteStaff && <button
                 type="button"
                 onClick={openInvitationStatus}
                 className="mb-3 flex w-full items-center justify-between rounded-2xl bg-[#F8FAFC] px-3 py-3 text-left active:bg-[#F2F4F6]"
@@ -521,7 +539,7 @@ function OwnerStaffView({ canInviteManagers = false }) {
                   </span>
                 </span>
                 <ChevronRight size={15} className="flex-shrink-0 text-[#B0B8C1]" />
-              </button>
+              </button>}
 
               <div className="mb-3 flex items-center gap-2 rounded-2xl border border-[#E5E8EB] bg-white px-3.5 py-3 shadow-sm">
                 <Search size={15} className="flex-shrink-0 text-[#8B95A1]" />
@@ -561,13 +579,13 @@ function OwnerStaffView({ canInviteManagers = false }) {
                 ))}
               </div>
 
-              <button
+              {canInviteStaff && <button
                 type="button"
                 onClick={() => setInviteOpen(true)}
                 className="md:hidden w-full flex items-center justify-center gap-1.5 mb-3 py-2.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold active:bg-[#0050CC]"
               >
                 <Plus size={14} /> 직원 초대
-              </button>
+              </button>}
 
               {visibleItems.length === 0 ? (
                 <div className="py-8 text-center">
@@ -607,8 +625,10 @@ function OwnerStaffView({ canInviteManagers = false }) {
                   staff={selectedItem.staff}
                   summary={staffSummaries.get(selectedItem.staff.id)}
                   onBack={handleBackToList}
-                  canManageManager={canInviteManagers}
-                  canRemoveMember={canInviteManagers}
+                  canManageAccess={canManageStaffAccess}
+                  canManageSensitiveAccess={canManageSensitiveAccess}
+                  canManageWork={canInviteStaff}
+                  canRemoveMember={canRemoveStaff}
                   onRemoved={() => {
                     setSelectedKey(null);
                     setMobileDetailOpen(false);
@@ -616,14 +636,16 @@ function OwnerStaffView({ canInviteManagers = false }) {
                 />
               )
             ) : (
-              <EmptyDetailPanel onAdd={() => setInviteOpen(true)} />
+              <EmptyDetailPanel
+                onAdd={canInviteStaff ? () => setInviteOpen(true) : null}
+              />
             )}
           </section>
         </div>
       </div>
 
       {/* 직원 초대 — 직책에 학원 기본 권한이 연결된다. */}
-      {inviteOpen && (
+      {inviteOpen && canInviteStaff && (
         <Modal
           isOpen
           onClose={() => setInviteOpen(false)}
@@ -876,13 +898,15 @@ function EmptyDetailPanel({ onAdd }) {
       <UsersIcon size={22} className="text-gray-300 mx-auto mb-2" />
       <p className="text-sm font-semibold text-[#191F28]">등록된 직원이 없어요.</p>
       <p className="text-xs text-[#8B95A1] mt-1 mb-4">선생님을 초대해보세요.</p>
-      <button
-        type="button"
-        onClick={onAdd}
-        className="px-4 py-2.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold active:bg-[#0050CC]"
-      >
-        + 직원 초대
-      </button>
+      {onAdd && (
+        <button
+          type="button"
+          onClick={onAdd}
+          className="px-4 py-2.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold active:bg-[#0050CC]"
+        >
+          + 직원 초대
+        </button>
+      )}
     </div>
   );
 }
@@ -891,12 +915,18 @@ function EmptyDetailPanel({ onAdd }) {
 // 직원 상세 패널 (sub-tabs: 근무/계약/권한)
 // ═══════════════════════════════════════════════════════════════════
 function StaffDetailPanel({
-  staff, summary, onBack, canManageManager = false, canRemoveMember = false, onRemoved,
+  staff,
+  summary,
+  onBack,
+  canManageAccess = false,
+  canManageSensitiveAccess = false,
+  canManageWork = false,
+  canRemoveMember = false,
+  onRemoved,
 }) {
   const [subTab, setSubTab] = useState('shift');
   const isAssistant = false;
   const staffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
-  const saveAcademyStaffProfile = useWorkspaceStore((s) => s.saveAcademyStaffProfile);
   const loadAcademyMemberProfiles = useWorkspaceStore((s) => s.loadAcademyMemberProfiles);
   const loadAcademyStaffProfiles = useWorkspaceStore((s) => s.loadAcademyStaffProfiles);
   const changeLocalStaffRole = useAcademyStore((s) => s.changeLocalStaffRole);
@@ -918,7 +948,28 @@ function StaffDetailPanel({
     serverProfile?.job_title || getStaffJobTitle(staff),
   );
   const [jobTitleSaving, setJobTitleSaving] = useState(false);
-  const canEditJobTitle = canManageManager;
+  const titlePolicy = getJobTitlePolicy(
+    jobTitlePermissions,
+    serverProfile?.job_title || getStaffJobTitle(staff),
+    staff._role,
+  );
+  const targetPermissions = resolvePermissions(
+    staff._role,
+    serverProfile?.permissions || staff.permissions || {},
+    titlePolicy.permissions,
+  );
+  const targetHasDelegatedAccess = [...OWNER_DELEGATED_PERMISSION_KEYS]
+    .some((key) => targetPermissions[key]);
+  const targetIsProtected = staff._isCurrentUser
+    || (targetHasDelegatedAccess && !canManageSensitiveAccess);
+  const canEditJobTitle = canManageAccess && !targetIsProtected;
+  const canRemoveTarget = canRemoveMember && !targetIsProtected;
+  const detailTabs = useMemo(
+    () => (canManageWork
+      ? SUB_TABS
+      : SUB_TABS.filter((tab) => tab.id === 'permission')),
+    [canManageWork],
+  );
   const deactivateLocalStaff = useAcademyStore((s) => s.deactivateLocalStaff);
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -927,6 +978,12 @@ function StaffDetailPanel({
     setJobTitleDraft(serverProfile?.job_title || getStaffJobTitle(staff));
     setJobTitleEditing(false);
   }, [staff?.id, staff?._role, staff?.jobTitle, serverProfile?.job_title]);
+
+  useEffect(() => {
+    if (!detailTabs.some((tab) => tab.id === subTab)) {
+      setSubTab(detailTabs[0]?.id || 'permission');
+    }
+  }, [detailTabs, subTab]);
 
   const handleJobTitleSave = async () => {
     const nextTitle = jobTitleDraft.trim();
@@ -943,33 +1000,17 @@ function StaffDetailPanel({
       return;
     }
     setJobTitleSaving(true);
-    let serverRoleChanged = false;
     const previousRole = staff._role;
     try {
       const nextPolicy = getJobTitlePolicy(jobTitlePermissions, nextTitle, staff._role);
-      if (nextPolicy.role !== previousRole) {
-        await updateAcademyMemberRole({
-          academyId: currentAcademyId,
-          userId: staff.serverUserId,
-          role: nextPolicy.role,
-        });
-        serverRoleChanged = true;
-      }
-      await saveAcademyStaffProfile({
+      await manageAcademyStaffAccess({
+        academyId: currentAcademyId,
         userId: staff.serverUserId,
-        role: nextPolicy.role,
         jobTitle: nextTitle,
-        subjects: serverProfile?.subjects || staff.subjects || [],
-        wageType: serverProfile?.wage_type || staff.wageType || 'hourly',
-        hourlyWage: serverProfile?.hourly_wage ?? staff.hourlyWage ?? 0,
-        monthlySalary: serverProfile?.monthly_salary ?? staff.monthlySalary ?? 0,
-        memo: serverProfile?.memo ?? staff.memo ?? null,
-        status: serverProfile?.status || staff.status || 'active',
         // 직책을 바꾸면 이전 직책의 개인 예외가 새 직책에 섞이지 않게 초기화한다.
         permissions: nextTitle === (serverProfile?.job_title || getStaffJobTitle(staff))
           ? (serverProfile?.permissions || staff.permissions || {})
           : {},
-        scope: serverProfile?.scope || staff.scope || {},
       });
       await Promise.all([
         loadAcademyMemberProfiles?.(),
@@ -986,17 +1027,6 @@ function StaffDetailPanel({
       showToast('직책을 변경했어요.');
       setJobTitleEditing(false);
     } catch (err) {
-      if (serverRoleChanged) {
-        try {
-          await updateAcademyMemberRole({
-            academyId: currentAcademyId,
-            userId: staff.serverUserId,
-            role: previousRole,
-          });
-        } catch (rollbackError) {
-          console.warn('[staff] 직책 변경 롤백 실패', rollbackError);
-        }
-      }
       await Promise.allSettled([
         loadAcademyMemberProfiles?.(),
         loadAcademyStaffProfiles?.(),
@@ -1008,7 +1038,7 @@ function StaffDetailPanel({
   };
 
   const handleRemoveMember = async () => {
-    if (removing || !canRemoveMember || !staff.serverUserId) return;
+    if (removing || !canRemoveTarget || !staff.serverUserId) return;
     setRemoving(true);
     try {
       const result = await removeAcademyMember({
@@ -1127,7 +1157,7 @@ function StaffDetailPanel({
 
       {/* sub-tabs */}
       <div className="bg-white rounded-2xl p-1 shadow-sm flex gap-1">
-        {SUB_TABS.map((tab) => {
+        {detailTabs.map((tab) => {
           const active = subTab === tab.id;
           return (
             <button
@@ -1145,14 +1175,15 @@ function StaffDetailPanel({
       </div>
 
       {/* sub-tab 본문 */}
-      {subTab === 'shift'      && <StaffShiftSection staff={staff} />}
+      {subTab === 'shift' && canManageWork && <StaffShiftSection staff={staff} />}
       {subTab === 'contract'   && <PayrollLockedPanel />}
       {subTab === 'permission' && <StaffPermissionSection
         staff={staff}
-        canEdit={canManageManager}
+        canEdit={canManageAccess && !targetIsProtected}
+        canEditSensitive={canManageSensitiveAccess}
       />}
 
-      {canRemoveMember && !staff._isCurrentUser && (
+      {canRemoveTarget && (
         <div className="rounded-2xl border border-red-100 bg-white p-4 shadow-sm md:p-5">
           <p className="text-sm font-bold text-[#191F28]">직원 관리</p>
           <p className="mt-1 text-xs leading-5 text-[#8B95A1]">
@@ -3026,9 +3057,11 @@ function Row({ label, value }) {
 // ═══════════════════════════════════════════════════════════════════
 // Sub-tab: 권한
 // ═══════════════════════════════════════════════════════════════════
-function StaffPermissionSection({ staff, canEdit = false }) {
+function StaffPermissionSection({ staff, canEdit = false, canEditSensitive = false }) {
   const staffProfiles = useWorkspaceStore((state) => state.academyStaffProfiles) ?? [];
-  const saveAcademyStaffProfile = useWorkspaceStore((state) => state.saveAcademyStaffProfile);
+  const currentAcademyId = useWorkspaceStore((state) => state.currentAcademyId);
+  const loadAcademyMemberProfiles = useWorkspaceStore((state) => state.loadAcademyMemberProfiles);
+  const loadAcademyStaffProfiles = useWorkspaceStore((state) => state.loadAcademyStaffProfiles);
   const showToast = useAcademyStore((state) => state.showToast);
   const serverProfile = staffProfiles.find((profile) => profile.user_id === staff.serverUserId) || null;
   const policies = normalizeJobTitlePermissions(
@@ -3055,7 +3088,7 @@ function StaffPermissionSection({ staff, canEdit = false }) {
   const hasChanges = JSON.stringify(draftOverrides) !== JSON.stringify(savedOverrides);
 
   const toggle = (key) => {
-    if (!canEdit) return;
+    if (!canEdit || (OWNER_DELEGATED_PERMISSION_KEYS.has(key) && !canEditSensitive)) return;
     setDraftOverrides((current) => ({
       ...current,
       [key]: !effectivePermissions[key],
@@ -3068,19 +3101,16 @@ function StaffPermissionSection({ staff, canEdit = false }) {
     if (!canEdit || !staff.serverUserId || saving) return;
     setSaving(true);
     try {
-      await saveAcademyStaffProfile({
+      await manageAcademyStaffAccess({
+        academyId: currentAcademyId,
         userId: staff.serverUserId,
-        role: titlePolicy.role,
         jobTitle,
-        subjects: serverProfile?.subjects || staff.subjects || [],
-        wageType: serverProfile?.wage_type || staff.wageType || 'hourly',
-        hourlyWage: serverProfile?.hourly_wage ?? staff.hourlyWage ?? 0,
-        monthlySalary: serverProfile?.monthly_salary ?? staff.monthlySalary ?? 0,
-        memo: serverProfile?.memo ?? staff.memo ?? null,
-        status: serverProfile?.status || staff.status || 'active',
         permissions: draftOverrides,
-        scope: serverProfile?.scope || staff.scope || {},
       });
+      await Promise.all([
+        loadAcademyMemberProfiles?.(),
+        loadAcademyStaffProfiles?.(),
+      ]);
       showToast('개인 권한을 저장했어요.');
     } catch (error) {
       showToast(error?.message || '권한을 저장하지 못했어요.', 'error');
@@ -3114,17 +3144,22 @@ function StaffPermissionSection({ staff, canEdit = false }) {
         {ACTIVE_PERMISSION_KEYS.map((key) => {
           const overridden = typeof draftOverrides[key] === 'boolean';
           const enabled = effectivePermissions[key];
+          const sensitive = OWNER_DELEGATED_PERMISSION_KEYS.has(key);
+          const rowEditable = canEdit && (!sensitive || canEditSensitive);
           return (
             <button
               key={key}
               type="button"
               onClick={() => toggle(key)}
-              disabled={!canEdit}
+              disabled={!rowEditable}
               className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#F8F9FA] px-3 py-3 text-left disabled:cursor-default"
             >
               <span>
                 <span className="block text-sm font-medium text-[#333D4B]">{PERMISSION_LABELS[key]}</span>
                 {overridden && <span className="mt-0.5 block text-[10px] font-bold text-blue-600">개인별 조정</span>}
+                {sensitive && !canEditSensitive && (
+                  <span className="mt-0.5 block text-[10px] font-bold text-[#8B95A1]">원장만 부여·회수</span>
+                )}
               </span>
               <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border ${
                 enabled

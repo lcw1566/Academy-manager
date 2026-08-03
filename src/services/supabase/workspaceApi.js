@@ -783,13 +783,47 @@ function sanitizeStaffProfilePayload(input = {}) {
 export async function listAcademyStaffProfiles(academyId) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
-  const { data, error } = await supabase
-    .from('academy_staff_profiles')
-    .select('*')
-    .eq('academy_id', academyId)
-    .order('created_at', { ascending: true });
+  const [{ data, error }, accessResult] = await Promise.all([
+    supabase
+      .from('academy_staff_profiles')
+      .select('*')
+      .eq('academy_id', academyId)
+      .order('created_at', { ascending: true }),
+    supabase.rpc('list_academy_staff_access_profiles', { p_academy_id: academyId }),
+  ]);
   if (error) throw error;
-  return data ?? [];
+  // SQL 067 적용 전에는 기존 owner/self 조회만으로 동작을 유지한다.
+  const accessErrorText = String(accessResult.error?.message || '');
+  const ignoredAccessError = ['42883', '42501', 'PGRST202'].includes(accessResult.error?.code)
+    || accessErrorText.includes('list_academy_staff_access_profiles');
+  const accessRows = ignoredAccessError ? [] : (accessResult.data ?? []);
+  if (accessResult.error && !ignoredAccessError) throw accessResult.error;
+  const merged = new Map((data ?? []).map((row) => [row.user_id, row]));
+  accessRows.forEach((row) => {
+    merged.set(row.user_id, { ...(merged.get(row.user_id) || {}), ...row });
+  });
+  return [...merged.values()].sort((a, b) =>
+    String(a.created_at || '').localeCompare(String(b.created_at || '')));
+}
+
+// 직책과 개인 권한을 서버 트랜잭션 하나로 변경한다. SQL 067이 자기 수정,
+// 원장 수정, 고위험 권한 재위임과 권한 상승을 최종 검증한다.
+export async function manageAcademyStaffAccess({ academyId, userId, jobTitle, permissions = {} }) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!userId) throw new Error('직원 계정 정보가 필요해요.');
+  const { data, error } = await supabase.rpc('manage_academy_staff_access', {
+    p_academy_id: academyId,
+    p_user_id: userId,
+    p_job_title: normalizeJobTitle(jobTitle),
+    p_permissions: permissions && typeof permissions === 'object' ? permissions : {},
+  });
+  if (error?.code === '42883' || error?.code === 'PGRST202'
+      || String(error?.message || '').includes('manage_academy_staff_access')) {
+    throw new Error('직책·권한 관리를 위해 SQL 067을 먼저 적용해주세요.');
+  }
+  if (error) throw new Error(error.message || '직책과 권한을 저장하지 못했어요.');
+  return data;
 }
 
 // Owner creates or updates a staff profile row. Keyed by (academy_id, user_id).

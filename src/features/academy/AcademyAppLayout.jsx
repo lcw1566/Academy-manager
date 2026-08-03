@@ -362,7 +362,9 @@ export default function AcademyAppLayout() {
       }
       if (tab.id === 'staff') {
         return role === 'owner'
-          || currentUserCan({ role, staffProfile: myStaffProfile }, 'canManageStaff');
+          || currentUserCan({ role, staffProfile: myStaffProfile }, 'canManageStaff')
+          || currentUserCan({ role, staffProfile: myStaffProfile }, 'canManageStaffPermissions')
+          || currentUserCan({ role, staffProfile: myStaffProfile }, 'canRemoveStaff');
       }
       return true;
     });

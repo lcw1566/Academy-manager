@@ -7,7 +7,6 @@ import {
 } from '../../../utils/staffPermissions';
 
 const SENSITIVE_KEYS = new Set([
-  'canManageStaffPermissions',
   // 현재 잠긴 기능과 전 직원 공통 기능은 직책마다 다르게 설정하지 않는다.
   'canViewPayroll',
   'canViewPayments',
@@ -22,6 +21,8 @@ const ACADEMY_WIDE_MANAGEMENT_KEYS = new Set([
   'canManageStudents',
   'canManagePayments',
   'canManageStaff',
+  'canManageStaffPermissions',
+  'canRemoveStaff',
 ]);
 
 export default function JobTitlePermissionEditor({ value, onChange }) {
@@ -126,6 +127,7 @@ export default function JobTitlePermissionEditor({ value, onChange }) {
                   </div>
                   <p className="mt-3 text-[11px] leading-5 text-[#8B95A1]">
                     학생·반·직원 관리 권한을 켜면 학원 전체 범위로 자동 적용돼요.
+                    직책·권한 관리와 직원 내보내기는 원장만 부여하거나 회수할 수 있어요.
                   </p>
                   {!['선생님', '운영 매니저'].includes(title) && (
                     <button

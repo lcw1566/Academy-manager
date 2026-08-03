@@ -27,6 +27,7 @@ export const PERMISSION_DEFAULTS = {
     canManagePayments: false,
     canManageStaff: false,
     canManageStaffPermissions: false,
+    canRemoveStaff: false,
     canManageDrive: true,
   },
   assistant: {
@@ -41,6 +42,7 @@ export const PERMISSION_DEFAULTS = {
     canManagePayments: false,
     canManageStaff: false,
     canManageStaffPermissions: false,
+    canRemoveStaff: false,
     canManageDrive: true,
   },
   manager: {
@@ -54,8 +56,9 @@ export const PERMISSION_DEFAULTS = {
     canManageStudents: true,
     canManagePayments: true,
     canManageStaff: true,
-    // 역할 자체와 권한 정책은 원장만 변경한다.
+    // 직원 접근 권한과 내보내기는 원장이 필요한 사람에게 명시적으로 위임한다.
     canManageStaffPermissions: false,
+    canRemoveStaff: false,
     canManageDrive: true,
   },
 };
@@ -71,9 +74,17 @@ export const PERMISSION_LABELS = {
   canManageStudents: '학생 등록·수정·삭제',
   canManagePayments: '수납 생성·수정·삭제',
   canManageStaff: '직원 초대·근무표 관리',
-  canManageStaffPermissions: '선생님 권한 설정',
+  canManageStaffPermissions: '직책·권한 부여/회수',
+  canRemoveStaff: '직원 내보내기',
   canManageDrive: '공유 드라이브 사용',
 };
+
+// 이 두 권한은 다른 직원에게 다시 나눠줄 수 있는 고위험 권한이다.
+// 보유자는 일반 권한을 관리할 수 있지만, 이 값 자체의 부여·회수는 원장만 한다.
+export const OWNER_DELEGATED_PERMISSION_KEYS = new Set([
+  'canManageStaffPermissions',
+  'canRemoveStaff',
+]);
 
 export const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS);
 
