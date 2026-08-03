@@ -17,13 +17,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Plus, ChevronLeft, ChevronRight, Pencil,
-  Clock, Search, Users as UsersIcon, GraduationCap, Mail, X as XIcon,
+  Clock, Users as UsersIcon, GraduationCap, Mail, X as XIcon,
   Loader2, Check, BookOpen, Coffee,
   LogIn, LogOut as LogOutIcon, ShieldCheck,
   UserMinus,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
+import { ListSearchField, ListFilterChips } from '../../../components/filters/ListFilters';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -541,43 +542,26 @@ function OwnerStaffView({
                 <ChevronRight size={15} className="flex-shrink-0 text-[#B0B8C1]" />
               </button>}
 
-              <div className="mb-3 flex items-center gap-2 rounded-2xl border border-[#E5E8EB] bg-white px-3.5 py-3 shadow-sm">
-                <Search size={15} className="flex-shrink-0 text-[#8B95A1]" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="이름 또는 이메일 검색"
-                  className="min-w-0 flex-1 bg-transparent text-sm text-[#333D4B] placeholder:text-[#B0B8C1] focus:outline-none"
-                />
-              </div>
-              <div
-                className="mb-3 flex gap-2 overflow-x-auto pb-1"
-                style={{ scrollbarWidth: 'none' }}
-                aria-label="직원 권한 필터"
-              >
-                {[
-                  { id: 'all', label: '전체' },
-                  { id: 'owner', label: '원장' },
+              <ListSearchField
+                value={search}
+                onChange={setSearch}
+                placeholder="이름 또는 이메일 검색"
+                className="mb-3"
+              />
+              <ListFilterChips
+                value={filter}
+                onChange={setFilter}
+                ariaLabel="직원 직책 필터"
+                className="mb-3"
+                options={[
+                  { value: 'all', label: '전체' },
+                  { value: 'owner', label: '원장' },
                   ...jobTitleFilters.map((title) => ({
-                    id: `title:${title}`,
+                    value: `title:${title}`,
                     label: title,
                   })),
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setFilter(item.id)}
-                    aria-pressed={filter === item.id}
-                    className={`flex-shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold transition-colors active:scale-[0.97] ${
-                      filter === item.id
-                        ? 'border-[#0064FF] bg-[#0064FF] text-white'
-                        : 'border-[#E5E8EB] bg-white text-[#6B7684]'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
+                ]}
+              />
 
               {canInviteStaff && <button
                 type="button"

@@ -7,12 +7,12 @@ import {
   LogIn,
   LogOut,
   QrCode,
-  Search,
   Users,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
+import { ListSearchField, ListFilterChips } from '../../../components/filters/ListFilters';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -549,31 +549,21 @@ export default function StudentAttendancePage() {
             </div>
           )}
 
-          <div className="mb-3 flex h-[52px] items-center gap-2.5 rounded-2xl border border-[#D1D6DB] bg-white px-4 focus-within:border-[#3182F6] focus-within:ring-2 focus-within:ring-blue-100">
-            <Search size={18} className="flex-shrink-0 text-[#8B95A1]" />
-            <input
+          <div className="mb-4 space-y-2">
+            <ListSearchField
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={setSearch}
               placeholder="학생 이름, 학교, 학년 검색"
-              className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#191F28] outline-none placeholder:text-[#8B95A1]"
             />
-          </div>
-
-          <div className="mb-4 flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-            {VIEW_FILTERS.map((filter) => (
-              <button
-                key={filter.id}
-                type="button"
-                onClick={() => setViewFilter(filter.id)}
-                className={`flex-shrink-0 rounded-full px-3.5 py-2 text-xs font-bold ${
-                  viewFilter === filter.id
-                    ? 'bg-[#191F28] text-white'
-                    : 'border border-gray-200 bg-white text-gray-500'
-                }`}
-              >
-                {filter.label}
-              </button>
-            ))}
+            <ListFilterChips
+              value={viewFilter}
+              onChange={setViewFilter}
+              ariaLabel="등하원 상태 필터"
+              options={VIEW_FILTERS.map((filter) => ({
+                value: filter.id,
+                label: filter.label,
+              }))}
+            />
           </div>
 
           {attendanceDataError && (

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Plus, Search, ChevronRight, Phone, Loader2, RefreshCw } from 'lucide-react';
+import { Plus, ChevronRight, Phone, Loader2, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -7,6 +7,12 @@ import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
+import {
+  ListSearchField,
+  ListFilterChips,
+  ListFilterSelect,
+  ListFilterSelectGrid,
+} from '../../../components/filters/ListFilters';
 import AcademyStudentFormModal from './AcademyStudentFormModal';
 import { getSchoolTagStyle } from '../../../utils/schoolTags';
 import { getStudentStatusMeta, STUDENT_STATUS_OPTIONS } from '../../../utils/studentStatus';
@@ -101,71 +107,44 @@ export default function AcademyStudentsPage() {
       />
 
       <div className="pt-14 md:pt-0 pb-6">
-        {/* 검색 */}
-        <div className="px-4 pt-4 mb-3">
-          <div className="flex items-center gap-3 bg-white rounded-2xl px-4 py-3 shadow-sm">
-            <Search size={16} className="text-gray-400 flex-shrink-0" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="이름 또는 학교 검색"
-              className="flex-1 text-sm focus:outline-none text-gray-700 bg-transparent"
-            />
-          </div>
-        </div>
+        <div className="px-4 pt-4 mb-3 space-y-2">
+          <ListSearchField
+            value={search}
+            onChange={setSearch}
+            placeholder="이름 또는 학교 검색"
+          />
 
-        {academyStudents.length > 0 && (
-          <div className="mb-4 px-4">
-            <div
-              className="flex gap-2 overflow-x-auto pb-2"
-              style={{ scrollbarWidth: 'none' }}
-              aria-label="재원 상태 필터"
-            >
-              {[{ value: 'all', label: '전체' }, ...STUDENT_STATUS_OPTIONS].map((option) => (
-                <motion.button
-                  key={option.value}
-                  type="button"
-                  whileTap={{ scale: 0.97 }}
-                  aria-pressed={statusFilter === option.value}
-                  onClick={() => setStatusFilter(option.value)}
-                  className={`flex-shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-bold ${
-                    statusFilter === option.value
-                      ? 'border-[#0064FF] bg-[#0064FF] text-white'
-                      : 'border-[#E5E8EB] bg-white text-[#6B7684]'
-                  }`}
-                >
-                  {option.label}
-                </motion.button>
-              ))}
-            </div>
-            {(schoolOptions.length > 0 || gradeOptions.length > 0) && (
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  value={schoolFilter}
-                  onChange={(event) => setSchoolFilter(event.target.value)}
-                  aria-label="학교 필터"
-                  className="h-10 min-w-0 rounded-xl border border-[#E5E8EB] bg-white px-3 text-xs font-bold text-[#4E5968] outline-none"
-                >
-                  <option value="all">학교 전체</option>
-                  {schoolOptions.map((school) => (
-                    <option key={school} value={school}>{school}</option>
-                  ))}
-                </select>
-                <select
-                  value={gradeFilter}
-                  onChange={(event) => setGradeFilter(event.target.value)}
-                  aria-label="학년 필터"
-                  className="h-10 min-w-0 rounded-xl border border-[#E5E8EB] bg-white px-3 text-xs font-bold text-[#4E5968] outline-none"
-                >
-                  <option value="all">학년 전체</option>
-                  {gradeOptions.map((grade) => (
-                    <option key={grade} value={grade}>{grade}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-        )}
+          {academyStudents.length > 0 && (
+            <ListFilterChips
+              value={statusFilter}
+              onChange={setStatusFilter}
+              ariaLabel="재원 상태 필터"
+              options={[{ value: 'all', label: '전체' }, ...STUDENT_STATUS_OPTIONS]}
+            />
+          )}
+          {academyStudents.length > 0 && (schoolOptions.length > 0 || gradeOptions.length > 0) && (
+            <ListFilterSelectGrid>
+              <ListFilterSelect
+                value={schoolFilter}
+                onChange={setSchoolFilter}
+                ariaLabel="학교 필터"
+                options={[
+                  { value: 'all', label: '학교 전체' },
+                  ...schoolOptions.map((value) => ({ value, label: value })),
+                ]}
+              />
+              <ListFilterSelect
+                value={gradeFilter}
+                onChange={setGradeFilter}
+                ariaLabel="학년 필터"
+                options={[
+                  { value: 'all', label: '학년 전체' },
+                  ...gradeOptions.map((value) => ({ value, label: value })),
+                ]}
+              />
+            </ListFilterSelectGrid>
+          )}
+        </div>
 
         {/* 학생 수 */}
         {academyStudents.length > 0 && (

@@ -12,6 +12,7 @@ import {
 import EmptyState from '../../../components/EmptyState';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
+import { ListFilterChips } from '../../../components/filters/ListFilters';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
 import {
   buildPlannedClassSessions,
@@ -952,16 +953,12 @@ function AllSessionsModal({ sessions, students, attendanceRecords, todayYMD, onS
   return (
     <Modal isOpen onClose={onClose} title="전체 수업일">
       <div className="flex flex-col gap-3">
-        <div className="flex gap-2">
-          {FILTERS.map((f) => (
-            <button key={f.id} type="button" onClick={() => setFilter(f.id)}
-              className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-colors ${
-                filter === f.id ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-500'
-              }`}>
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <ListFilterChips
+          value={filter}
+          onChange={setFilter}
+          ariaLabel="수업일 필터"
+          options={FILTERS.map((item) => ({ value: item.id, label: item.label }))}
+        />
         {filtered.length === 0 ? (
           <div className="bg-white rounded-2xl p-6 text-center">
             <p className="text-sm text-gray-400">해당 수업일이 없어요</p>

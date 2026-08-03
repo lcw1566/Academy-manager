@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Download, Eye, File, FileImage, FileText, Folder,
   FolderPlus, Loader2, Maximize2, Minimize2, Minus, Plus, Printer, RefreshCw,
-  RotateCcw, Search, Trash2, Upload,
+  RotateCcw, Trash2, Upload,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
 import EmptyState from '../../../components/EmptyState';
+import { ListSearchField } from '../../../components/filters/ListFilters';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import {
@@ -568,18 +569,17 @@ export default function DrivePage() {
           </div>
         )}
 
-        <div className="mt-4 flex items-center gap-2 bg-white rounded-2xl px-4 py-3 shadow-sm border border-gray-100">
-          <Search size={16} className="text-gray-400 shrink-0" />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={isTrashView ? '휴지통 검색' : '자료 이름 검색'}
-            className="flex-1 min-w-0 bg-transparent text-sm text-gray-800 outline-none"
-          />
-          <button type="button" onClick={loadFiles} className="p-1 -mr-1 text-gray-400 active:text-[#0064FF]" aria-label="새로고침">
-            <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-          </button>
-        </div>
+        <ListSearchField
+          value={search}
+          onChange={setSearch}
+          placeholder={isTrashView ? '휴지통 검색' : '자료 이름 검색'}
+          className="mt-4"
+          trailing={(
+            <button type="button" onClick={loadFiles} className="p-1 -mr-1 text-[#8B95A1] active:text-[#0064FF]" aria-label="새로고침">
+              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+            </button>
+          )}
+        />
 
         {isLoading ? (
           <DriveLoading />

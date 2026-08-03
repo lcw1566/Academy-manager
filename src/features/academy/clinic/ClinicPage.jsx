@@ -10,6 +10,7 @@ import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { deleteClinicRecord as deleteServerClinicRecord } from '../../../services/supabase/domainApi';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
+import { ListFilterChips } from '../../../components/filters/ListFilters';
 import ClinicRecordFormModal from './ClinicRecordFormModal';
 import ClinicInlineWorksheet from './ClinicInlineWorksheet';
 import ClinicEventFormModal from './ClinicEventFormModal';
@@ -831,40 +832,19 @@ export default function ClinicPage() {
           </div>
         )}
 
-        {/* 날짜 필터 */}
-        <div className="px-4 mb-2">
-          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-            {DATE_FILTER_OPTIONS.map(({ id, label }) => (
-              <motion.button
-                key={id}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => setDateFilter(id)}
-                className={`flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${
-                  dateFilter === id ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 border border-gray-200'
-                }`}
-              >
-                {label}
-              </motion.button>
-            ))}
-          </div>
-        </div>
-
-        {/* 과목 필터 */}
-        <div className="px-4 mb-4">
-          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-            {CLINIC_SUBJECT_FILTERS.map(({ id, label }) => (
-              <motion.button
-                key={id}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => setSubjectFilter(id)}
-                className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
-                  subjectFilter === id ? 'bg-[#0064FF] text-white' : 'bg-white text-gray-500 border border-gray-200'
-                }`}
-              >
-                {label}
-              </motion.button>
-            ))}
-          </div>
+        <div className="px-4 mb-4 space-y-2">
+          <ListFilterChips
+            value={dateFilter}
+            onChange={setDateFilter}
+            ariaLabel="클리닉 날짜 필터"
+            options={DATE_FILTER_OPTIONS.map(({ id, label }) => ({ value: id, label }))}
+          />
+          <ListFilterChips
+            value={subjectFilter}
+            onChange={setSubjectFilter}
+            ariaLabel="클리닉 과목 필터"
+            options={CLINIC_SUBJECT_FILTERS.map(({ id, label }) => ({ value: id, label }))}
+          />
         </div>
 
         {/* 클리닉 목록 */}

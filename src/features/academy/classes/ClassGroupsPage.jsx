@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react';
-import {
-  Plus, ChevronRight, Users, Clock, Search, SlidersHorizontal, RotateCcw,
-} from 'lucide-react';
+import { Plus, ChevronRight, Users, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -9,6 +7,12 @@ import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
+import {
+  ListSearchField,
+  ListFilterChips,
+  ListFilterSelect,
+  ListFilterSelectGrid,
+} from '../../../components/filters/ListFilters';
 import ClassGroupFormModal from './ClassGroupFormModal';
 import { today, addDaysYMD, formatDateShort } from '../../../utils/date';
 import { getTeacherDisplayName, OWNER_TEACHER_ID } from '../../../utils/format';
@@ -42,7 +46,6 @@ export default function ClassGroupsPage() {
   const todayStr = today();
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [search, setSearch] = useState('');
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [levelFilter, setLevelFilter] = useState('all');
   const [teacherFilter, setTeacherFilter] = useState('all');
@@ -198,93 +201,68 @@ export default function ClassGroupsPage() {
           <p className="text-sm text-gray-400">반 단위로 수업을 관리해요.</p>
         </div>
 
-        <div className="px-4 mb-4">
-          <div className="flex items-center gap-2">
-            <label className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-2xl border border-[#E5E8EB] bg-white px-3.5 shadow-sm focus-within:border-[#3182F6] focus-within:ring-2 focus-within:ring-blue-50">
-              <Search size={16} className="flex-shrink-0 text-[#8B95A1]" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="반·학생·선생님 검색"
-                className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#191F28] placeholder:text-[#B0B8C1] focus:outline-none"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => setFiltersOpen((open) => !open)}
-              aria-expanded={filtersOpen}
-              className={`relative flex h-11 flex-shrink-0 items-center gap-1.5 rounded-2xl border px-3.5 text-sm font-bold transition-colors ${
-                filtersOpen || activeFilterCount > 0
-                  ? 'border-[#3182F6] bg-blue-50 text-[#1B64DA]'
-                  : 'border-[#E5E8EB] bg-white text-[#4E5968]'
-              }`}
-            >
-              <SlidersHorizontal size={15} /> 필터
-              {activeFilterCount > 0 && (
-                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#3182F6] px-1 text-[10px] text-white">
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
+        <div className="px-4 mb-4 space-y-2">
+          <ListSearchField
+            value={search}
+            onChange={setSearch}
+            placeholder="반·학생·선생님 검색"
+          />
+          <ListFilterChips
+            value={statusFilter}
+            onChange={setStatusFilter}
+            ariaLabel="수업 상태 필터"
+            options={[
+              { value: 'all', label: '전체' },
+              { value: 'active', label: '운영 중' },
+              { value: 'pending', label: '대기' },
+              { value: 'inactive', label: '종료' },
+            ]}
+          />
+          <ListFilterSelectGrid columns={3}>
+            <ListFilterSelect
+              value={subjectFilter}
+              onChange={setSubjectFilter}
+              ariaLabel="과목 필터"
+              options={[
+                { value: 'all', label: '과목 전체' },
+                ...filterOptions.subjects.map((value) => ({ value, label: value })),
+              ]}
+            />
+            <ListFilterSelect
+              value={levelFilter}
+              onChange={setLevelFilter}
+              ariaLabel="학년 또는 레벨 필터"
+              options={[
+                { value: 'all', label: '학년/레벨 전체' },
+                ...filterOptions.levels.map((value) => ({ value, label: value })),
+              ]}
+            />
+            <ListFilterSelect
+              value={teacherFilter}
+              onChange={setTeacherFilter}
+              ariaLabel="담당 선생님 필터"
+              options={[
+                { value: 'all', label: '선생님 전체' },
+                ...filterOptions.teachers.map((value) => ({ value, label: value })),
+              ]}
+              className="col-span-2 md:col-span-1"
+            />
+          </ListFilterSelectGrid>
+          <div className="flex items-center justify-between px-1">
+            <p className="text-[11px] font-semibold text-[#8B95A1]">{filteredGroups.length}개 반</p>
+            {(activeFilterCount > 0 || search.trim()) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  resetFilters();
+                }}
+                className="text-xs font-bold text-[#4E5968]"
+              >
+                초기화
+              </button>
+            )}
           </div>
-
-          {filtersOpen && (
-            <div className="mt-2 rounded-2xl border border-[#E5E8EB] bg-white p-3 shadow-sm">
-              <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                <FilterSelect
-                  label="상태"
-                  value={statusFilter}
-                  onChange={setStatusFilter}
-                  options={[
-                    { value: 'all', label: '상태 전체' },
-                    { value: 'active', label: '운영 중' },
-                    { value: 'pending', label: '대기' },
-                    { value: 'inactive', label: '종료' },
-                  ]}
-                />
-                <FilterSelect
-                  label="과목"
-                  value={subjectFilter}
-                  onChange={setSubjectFilter}
-                  options={[
-                    { value: 'all', label: '과목 전체' },
-                    ...filterOptions.subjects.map((value) => ({ value, label: value })),
-                  ]}
-                />
-                <FilterSelect
-                  label="학년/레벨"
-                  value={levelFilter}
-                  onChange={setLevelFilter}
-                  options={[
-                    { value: 'all', label: '학년/레벨 전체' },
-                    ...filterOptions.levels.map((value) => ({ value, label: value })),
-                  ]}
-                />
-                <FilterSelect
-                  label="담당 선생님"
-                  value={teacherFilter}
-                  onChange={setTeacherFilter}
-                  options={[
-                    { value: 'all', label: '선생님 전체' },
-                    ...filterOptions.teachers.map((value) => ({ value, label: value })),
-                  ]}
-                />
-              </div>
-              <div className="mt-2 flex items-center justify-between px-1">
-                <p className="text-[11px] font-semibold text-[#8B95A1]">
-                  {filteredGroups.length}개 반
-                </p>
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  disabled={activeFilterCount === 0}
-                  className="flex items-center gap-1 text-xs font-bold text-[#4E5968] disabled:opacity-35"
-                >
-                  <RotateCcw size={12} /> 초기화
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="mb-4">
@@ -401,22 +379,5 @@ export default function ClassGroupsPage() {
         <ClassGroupFormModal onClose={() => setShowForm(false)} />
       )}
     </div>
-  );
-}
-
-function FilterSelect({ label, value, onChange, options }) {
-  return (
-    <label className="min-w-0">
-      <span className="sr-only">{label}</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-xl border border-[#E5E8EB] bg-[#F8F9FA] px-3 text-xs font-bold text-[#333D4B] focus:border-[#3182F6] focus:bg-white focus:outline-none"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
-    </label>
   );
 }
