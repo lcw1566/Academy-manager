@@ -22,6 +22,7 @@ import {
 import {
   calculateSuggestedStudentTuition,
   getAcademicYearForMonth,
+  isSubjectTuitionMode,
   projectStudentGrade,
 } from '../../../utils/studentBilling';
 import { createClientUuid } from '../../../utils/uuid';
@@ -170,8 +171,25 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     || DEFAULT_ACADEMY_SETTINGS.academySubjects;
   const configuredSubjectIds = (Array.isArray(configuredSubjectsValue) ? configuredSubjectsValue : [])
     .filter((subjectId) => ACADEMY_SUBJECT_OPTIONS.some((option) => option.id === subjectId));
-  const initialTuitionSubjects = editStudent?.tuitionSubjects
-    || (configuredSubjectIds.length === 1 ? configuredSubjectIds : []);
+  const editStudentAliases = new Set(
+    [editStudent?.id, editStudent?.serverId].filter(Boolean),
+  );
+  const inferredTuitionSubjects = [...new Set(
+    classGroups
+      .filter((group) => (
+        group.feePolicy !== 'additional'
+        && (group.studentIds || []).some((studentId) => editStudentAliases.has(studentId))
+      ))
+      .map((group) => ACADEMY_SUBJECT_OPTIONS.find(
+        (option) => option.id === group.subject || option.label === group.subject,
+      )?.id)
+      .filter(Boolean),
+  )];
+  const initialTuitionSubjects = editStudent?.tuitionSubjects?.length
+    ? editStudent.tuitionSubjects
+    : inferredTuitionSubjects.length > 0
+      ? inferredTuitionSubjects
+      : (configuredSubjectIds.length === 1 ? configuredSubjectIds : []);
 
   const [form, setForm] = useState({
     name: editStudent?.name || '',
@@ -240,6 +258,18 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     form.gradeReferenceYear,
     form.tuitionSubjects,
   ]);
+  const automaticTuitionIssue = useMemo(() => {
+    if (form.tuitionSource !== 'academy_rate') return '';
+    if (!form.schoolType) return '학교 구분을 선택하면 가격표를 적용할 수 있어요.';
+    if (['elementary', 'middle', 'high'].includes(form.schoolType) && !form.grade) {
+      return '학년을 선택하면 정확한 가격을 계산할 수 있어요.';
+    }
+    if (isSubjectTuitionMode(tuitionRates) && form.tuitionSubjects.length === 0) {
+      return '수강 과목을 한 개 이상 선택해주세요.';
+    }
+    if (suggestedBaseTuition <= 0) return '해당 조건의 가격표가 비어 있어요. 학원 설정을 확인해주세요.';
+    return '';
+  }, [form.tuitionSource, form.schoolType, form.grade, form.tuitionSubjects, tuitionRates, suggestedBaseTuition]);
 
   useEffect(() => {
     if (form.tuitionSource !== 'academy_rate') return;
@@ -316,6 +346,9 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     if (!form.name.trim()) return alert('이름을 입력해주세요.');
     if (form.parentTitle === 'custom' && !form.parentTitleCustom.trim()) {
       return alert('직접 사용할 학부모 호칭을 입력해주세요.');
+    }
+    if (form.tuitionSource === 'custom' && form.baseTuition === '') {
+      return alert('학생별 학원비를 입력해주세요. 0원도 직접 입력할 수 있어요.');
     }
     if (
       form.tuitionEffectiveFrom
@@ -426,6 +459,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
     const selectedGroups = classGroups.filter((group) => selectedClassGroupIds.includes(group.id));
     const effectiveFromDate = createdStudent.enrollmentDate || getTodayYMD();
     const assignedSubjectIds = selectedGroups
+      .filter((group) => group.feePolicy !== 'additional')
       .map((group) => ACADEMY_SUBJECT_OPTIONS.find(
         (option) => option.id === group.subject || option.label === group.subject,
       )?.id)
@@ -441,6 +475,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
         tuitionPolicy,
         schoolType: createdStudent.schoolType,
         grade: createdStudent.grade,
+        gradeReferenceYear: createdStudent.gradeReferenceYear,
         subjectIds: nextTuitionSubjects,
       });
 
@@ -852,6 +887,14 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
               {formatKoreanCurrency(Number(form.baseTuition) || 0)}
               {form.tuitionSource === 'academy_rate' ? ' · 가격표 자동 적용' : ' · 학생별 조정'}
             </p>
+            {automaticTuitionIssue && (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5">
+                <span className="mt-1 h-2 w-2 flex-shrink-0 rounded-full bg-red-500" />
+                <p className="text-xs font-semibold leading-5 text-red-600">
+                  {automaticTuitionIssue}
+                </p>
+              </div>
+            )}
           </Field>
 
           {form.tuitionSource === 'academy_rate' ? (

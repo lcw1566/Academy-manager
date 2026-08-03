@@ -12,12 +12,18 @@ import { getSchoolTagStyle } from '../../../utils/schoolTags';
 import { getStudentStatusMeta, STUDENT_STATUS_OPTIONS } from '../../../utils/studentStatus';
 import { toTelHref } from '../../../utils/format';
 import { getMissingStudentInformation } from '../../../utils/studentCompleteness';
+import { resolveStudentBaseTuition } from '../../../utils/studentBilling';
+import { DEFAULT_ACADEMY_SETTINGS } from '../../../constants/academySettings';
+import { getCurrentMonth } from '../../../utils/date';
 
 export default function AcademyStudentsPage() {
-  const { role, academyStudents, classGroups, clinicTasks, navigateToAcademyStudent } = useAcademyStore();
+  const {
+    role, academyStudents, classGroups, clinicTasks, navigateToAcademyStudent, academyProfile,
+  } = useAcademyStore();
   const authUserId = useAuthStore((s) => s.user?.id);
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const isStudentsLoading = useWorkspaceStore((s) => s.isServerStudentsLoading);
   const studentsError = useWorkspaceStore((s) => s.serverStudentsError);
   const loadServerStudents = useWorkspaceStore((s) => s.loadServerStudents);
@@ -26,6 +32,9 @@ export default function AcademyStudentsPage() {
   const [schoolFilter, setSchoolFilter] = useState('all');
   const [gradeFilter, setGradeFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
+  const currentAcademy = memberships.find(
+    (membership) => membership.academy_id === currentAcademyId,
+  )?.academy || null;
 
   const myStaffProfile = academyStaffProfiles.find((profile) => profile.user_id === authUserId) || null;
   const canManageStudents = role === 'owner' || currentUserCan(
@@ -210,6 +219,20 @@ export default function AcademyStudentsPage() {
               const statusMeta = getStudentStatusMeta(student.status);
               const callNumber = student.phone || student.parentPhone || '';
               const missingInformation = getMissingStudentInformation(student);
+              const tuition = resolveStudentBaseTuition({
+                student,
+                groups: classGroups,
+                tuitionRates: currentAcademy?.tuition_rates
+                  || academyProfile?.tuitionRates
+                  || DEFAULT_ACADEMY_SETTINGS.tuitionRates,
+                tuitionPolicy: currentAcademy?.tuition_policy
+                  || academyProfile?.tuitionPolicy
+                  || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy,
+                month: getCurrentMonth(),
+              });
+              const informationToCheck = tuition.issues?.length > 0
+                ? [...missingInformation, { key: 'tuition', label: '학원비' }]
+                : missingInformation;
               return (
                 <motion.div
                   key={student.id}
@@ -227,11 +250,11 @@ export default function AcademyStudentsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <p className="truncate font-bold text-gray-900">{student.name}</p>
-                        {missingInformation.length > 0 && (
+                        {informationToCheck.length > 0 && (
                           <span
                             className="h-2 w-2 flex-shrink-0 rounded-full bg-red-500 ring-4 ring-red-50"
-                            title={`${missingInformation.map((item) => item.label).join(', ')} 확인 필요`}
-                            aria-label={`${missingInformation.map((item) => item.label).join(', ')} 확인 필요`}
+                            title={`${informationToCheck.map((item) => item.label).join(', ')} 확인 필요`}
+                            aria-label={`${informationToCheck.map((item) => item.label).join(', ')} 확인 필요`}
                           />
                         )}
                       </div>

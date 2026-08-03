@@ -29,14 +29,16 @@ import {
   CLINIC_ACTIVITY_TYPES,
   getActivityLabel,
 } from '../../../constants/learningActivitySettings';
+import { ACADEMY_SUBJECT_OPTIONS, DEFAULT_ACADEMY_SETTINGS } from '../../../constants/academySettings';
+import { resolveStudentBaseTuition } from '../../../utils/studentBilling';
 
 
 // 역할별 탭 정의
 const TABS_BY_ROLE = {
-  owner:     ['요약', '등하원', '수업 기록', '클리닉 기록', '성적', '정산'],
+  owner:     ['요약', '등하원', '수업 기록', '클리닉 기록', '성적'],
   teacher:   ['요약', '등하원', '수업 기록', '클리닉 기록', '성적'],
   assistant: ['요약', '등하원', '수업 기록', '클리닉 기록', '성적'],
-  manager:   ['요약', '등하원', '수업 기록', '클리닉 기록', '성적', '정산'],
+  manager:   ['요약', '등하원', '수업 기록', '클리닉 기록', '성적'],
 };
 
 const EXAM_TYPE_LABELS = {
@@ -379,7 +381,7 @@ export default function AcademyStudentDetailPage() {
     academyTeachers, academyExamResults = [],
     deleteAcademyStudent, goBackFromAcademyStudent, showToast,
     updateAcademyPayment, addAcademyPayment, deleteAcademyPayment,
-    setPaymentServerId,
+    setPaymentServerId, academyProfile,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const authUserId = useAuthStore((s) => s.user?.id);
@@ -432,6 +434,40 @@ export default function AcademyStudentDetailPage() {
     () => !student ? [] : classGroups.filter((g) => g.studentIds?.includes(student.id)),
     [classGroups, student]
   );
+
+  const currentTuition = useMemo(() => resolveStudentBaseTuition({
+    student,
+    groups: classGroups,
+    tuitionRates: currentAcademy?.tuition_rates
+      || academyProfile?.tuitionRates
+      || DEFAULT_ACADEMY_SETTINGS.tuitionRates,
+    tuitionPolicy: currentAcademy?.tuition_policy
+      || academyProfile?.tuitionPolicy
+      || DEFAULT_ACADEMY_SETTINGS.tuitionPolicy,
+    month: today().slice(0, 7),
+  }), [
+    student,
+    classGroups,
+    currentAcademy?.tuition_rates,
+    currentAcademy?.tuition_policy,
+    academyProfile?.tuitionRates,
+    academyProfile?.tuitionPolicy,
+  ]);
+
+  const tuitionIssueLabels = useMemo(() => {
+    const labels = {
+      school_type: '학교 구분',
+      grade: '학년',
+      subjects: '수강 과목',
+      rate: '가격표',
+    };
+    return (currentTuition.issues || []).map((issue) => labels[issue]).filter(Boolean);
+  }, [currentTuition.issues]);
+
+  const tuitionSubjectLabel = useMemo(() => currentTuition.subjectIds
+    .map((subjectId) => ACADEMY_SUBJECT_OPTIONS.find((option) => option.id === subjectId)?.label)
+    .filter(Boolean)
+    .join(' · '), [currentTuition.subjectIds]);
 
   const dailyRecords = useMemo(
     () => !student ? [] : getStudentDailyLessonRecords({
@@ -659,12 +695,53 @@ export default function AcademyStudentDetailPage() {
           {student.phone && <InfoRowFull label="연락처" value={student.phone} phone={student.phone} />}
           {student.parentName && <InfoRowFull label="학부모" value={student.parentName} />}
           {student.parentPhone && <InfoRowFull label="학부모 연락처" value={student.parentPhone} phone={student.parentPhone} />}
-          <InfoRowFull label="기본 수강료" value={formatCurrency(student.baseTuition || 0)} />
           {canManageStudents && showCheckinPin && student.checkinPin && (
             <InfoRowFull label="등하원 PIN" value={student.checkinPin} />
           )}
           {student.memo && <InfoRowFull label="메모" value={student.memo} />}
         </div>
+      </div>
+
+      <div className="rounded-2xl bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold text-gray-400">이번 달 기본 학원비</p>
+            <p className="mt-1 text-2xl font-extrabold text-[#191F28]">
+              {formatCurrency(currentTuition.amount)}
+            </p>
+          </div>
+          <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+            currentTuition.source === 'custom'
+              ? 'bg-violet-50 text-violet-600'
+              : 'bg-blue-50 text-blue-600'
+          }`}>
+            {currentTuition.source === 'custom' ? '학생별 조정' : '가격표 자동'}
+          </span>
+        </div>
+        {tuitionSubjectLabel && (
+          <p className="mt-2 text-xs font-medium text-[#6B7684]">{tuitionSubjectLabel}</p>
+        )}
+        {['paused', 'inactive'].includes(student.status) && (
+          <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+            현재 재원 상태에서는 월 청구 대상에 포함되지 않아요.
+          </p>
+        )}
+        {tuitionIssueLabels.length > 0 && (
+          <button
+            type="button"
+            onClick={() => canManageStudents && setShowEdit(true)}
+            className="mt-3 flex w-full items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5 text-left"
+          >
+            <span className="h-2 w-2 flex-shrink-0 rounded-full bg-red-500" />
+            <span className="min-w-0 flex-1 text-xs font-bold text-red-600">
+              학원비 확인 필요 · {tuitionIssueLabels.join(', ')}
+            </span>
+            {canManageStudents && <span className="text-[11px] font-bold text-red-600">수정</span>}
+          </button>
+        )}
+        <p className="mt-3 text-[11px] leading-5 text-[#8B95A1]">
+          추가 비용 수업은 이 금액과 별도로 계산돼요.
+        </p>
       </div>
       </div>
 

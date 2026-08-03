@@ -103,6 +103,81 @@ export function calculateSuggestedStudentTuition({
   }, 0);
 }
 
+export function isSubjectTuitionMode(tuitionRates = {}) {
+  const hasStoredSubjectRates = tuitionRates?.subject_mode === undefined
+    && tuitionRates?.subject_rates
+    && typeof tuitionRates.subject_rates === 'object';
+  return tuitionRates?.subject_mode === true || hasStoredSubjectRates;
+}
+
+// 학생에 저장된 과목을 우선 사용한다. 이전 버전 학생처럼 과목이 비어 있으면
+// 기본 수강료에 포함되는 반에서만 추론한다. 추가 비용 수업의 과목까지 기본
+// 학원비에 더하면 같은 수업이 두 번 청구되므로 제외한다.
+export function resolveStudentTuitionSubjects(student, groups = []) {
+  const explicit = Array.isArray(student?.tuitionSubjects)
+    ? student.tuitionSubjects.filter(Boolean)
+    : [];
+  if (explicit.length > 0) return [...new Set(explicit)];
+
+  const aliases = new Set([student?.id, student?.serverId].filter(Boolean));
+  return [...new Set(
+    (groups || [])
+      .filter((group) => (
+        group?.feePolicy !== 'additional'
+        && (group.studentIds || []).some((id) => aliases.has(id))
+      ))
+      .map((group) => ACADEMY_SUBJECT_OPTIONS.find(
+        (option) => option.id === group.subject || option.label === group.subject,
+      )?.id)
+      .filter(Boolean),
+  )];
+}
+
+export function resolveStudentBaseTuition({
+  student,
+  groups = [],
+  tuitionRates = {},
+  tuitionPolicy = 'school_level',
+  month = '',
+} = {}) {
+  if (!student) {
+    return { amount: 0, source: 'academy_rate', subjectIds: [], issues: ['student'] };
+  }
+
+  const subjectIds = resolveStudentTuitionSubjects(student, groups);
+  const customActive = isCustomTuitionActiveForMonth(student, month);
+  const amount = customActive
+    ? Math.max(0, Number(student.baseTuition) || 0)
+    : calculateSuggestedStudentTuition({
+        tuitionRates,
+        tuitionPolicy,
+        schoolType: student.schoolType,
+        grade: student.grade,
+        gradeReferenceYear: student.gradeReferenceYear,
+        targetMonth: month,
+        subjectIds,
+      });
+
+  const issues = [];
+  if (!student.schoolType) issues.push('school_type');
+  if (['elementary', 'middle', 'high'].includes(student.schoolType) && !student.grade) {
+    issues.push('grade');
+  }
+  if (!customActive && isSubjectTuitionMode(tuitionRates) && subjectIds.length === 0) {
+    issues.push('subjects');
+  }
+  // 학생별 0원 조정은 장학/면제처럼 의도적인 값일 수 있다. 자동 가격표에서
+  // 0원이 나온 경우에만 설정 누락으로 판단한다.
+  if (!customActive && amount <= 0) issues.push('rate');
+
+  return {
+    amount,
+    source: customActive ? 'custom' : 'academy_rate',
+    subjectIds,
+    issues: [...new Set(issues)],
+  };
+}
+
 function monthRange(month) {
   const [year, monthNumber] = String(month || '').split('-').map(Number);
   if (!year || !monthNumber) return null;

@@ -377,8 +377,10 @@ export default function SettlementPage({ operationsOnly = false }) {
   };
 
   const handleAutoGeneratePayments = async () => {
-    const newPayments = generateAcademyPaymentsForMonth(selectedMonth) || [];
-    if (newPayments.length === 0) return;
+    const generated = generateAcademyPaymentsForMonth(selectedMonth) || {};
+    const newPayments = generated.created || [];
+    const updatedPayments = generated.updated || [];
+    if (newPayments.length === 0 && updatedPayments.length === 0) return;
     if (!canSyncServer) return;
 
     // server payload 변환 — student.serverId 있는 행만 서버 동기화 대상
@@ -393,13 +395,13 @@ export default function SettlementPage({ operationsOnly = false }) {
       })
       .filter(Boolean);
 
-    if (eligible.length === 0) return;
-
     try {
-      const inserted = await createAcademyPaymentsBulk({
-        academyId: currentAcademyId,
-        payments: eligible.map((e) => e.server),
-      });
+      const inserted = eligible.length > 0
+        ? await createAcademyPaymentsBulk({
+            academyId: currentAcademyId,
+            payments: eligible.map((e) => e.server),
+          })
+        : [];
       // (student_id, class_group_id, month) 키 기준으로 local newPayment ↔ server row 매핑
       const byKey = new Map(
         (inserted || []).map((row) => [
@@ -412,13 +414,26 @@ export default function SettlementPage({ operationsOnly = false }) {
         const serverId = byKey.get(key);
         if (serverId) setPaymentServerId(e.local.id, serverId);
       }
+      await Promise.all(
+        updatedPayments
+          .filter((payment) => payment.serverId)
+          .map((payment) => updateServerPayment(payment.serverId, {
+            amount: Number(payment.amount) || 0,
+            due_date: payment.dueDate || null,
+            memo: payment.memo || null,
+            billing_snapshot: payment.billingSnapshot || {},
+          })),
+      );
       await loadServerPayments();
     } catch (err) {
       console.error('[supabase] createAcademyPaymentsBulk failed', err);
+      // 서버 저장에 실패한 자동 청구를 이 기기에만 남기지 않는다.
+      // 서버 목록으로 되돌려 다음 재시도 결과가 모든 기기에서 같게 보이게 한다.
+      await loadServerPayments().catch(() => {});
       showToast(
         err?.message
-          ? `자동 수납 서버 동기화 실패: ${err.message}`
-          : '자동 생성된 수납 중 일부는 서버 동기화에 실패했어요.',
+          ? `자동 수납을 저장하지 못해 이전 상태로 되돌렸어요: ${err.message}`
+          : '자동 수납을 저장하지 못해 이전 상태로 되돌렸어요.',
         'error',
       );
     }

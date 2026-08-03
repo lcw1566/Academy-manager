@@ -864,8 +864,36 @@ export async function createAcademyPaymentsBulk({ academyId, payments } = {}) {
     .from('payments')
     .insert(rows)
     .select();
-  if (error) throw error;
-  return data ?? [];
+  if (!error) return data ?? [];
+  if (error.code !== '23505') throw error;
+
+  // 두 기기가 같은 달 자동 수납을 거의 동시에 생성하면 묶음 INSERT 전체가
+  // unique 충돌로 취소될 수 있다. 그 경우에만 행별로 재시도하고, 이미 생긴
+  // 학생 월 청구는 기존 row를 반환해 한 기기만 저장된 것처럼 보이지 않게 한다.
+  const resolved = [];
+  for (const row of rows) {
+    const inserted = await supabase.from('payments').insert(row).select().maybeSingle();
+    if (!inserted.error) {
+      if (inserted.data) resolved.push(inserted.data);
+      continue;
+    }
+    if (inserted.error.code !== '23505') throw inserted.error;
+
+    let existingQuery = supabase
+      .from('payments')
+      .select('*')
+      .eq('academy_id', academyId)
+      .eq('student_id', row.student_id)
+      .eq('month', row.month);
+    existingQuery = row.class_group_id
+      ? existingQuery.eq('class_group_id', row.class_group_id)
+      : existingQuery.is('class_group_id', null);
+    if (row.payment_kind) existingQuery = existingQuery.eq('payment_kind', row.payment_kind);
+    const existing = await existingQuery.maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data) resolved.push(existing.data);
+  }
+  return resolved;
 }
 
 export async function updatePayment(id, patch = {}) {

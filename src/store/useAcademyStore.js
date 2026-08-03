@@ -16,10 +16,8 @@ import {
 import { generatePaymentForMonth, groupHasPayment, resolveStudentBilling } from '../utils/billing';
 import {
   calculateStudentMonthlyCharge,
-  calculateSuggestedStudentTuition,
-  isCustomTuitionActiveForMonth,
+  resolveStudentBaseTuition,
 } from '../utils/studentBilling';
-import { ACADEMY_SUBJECT_OPTIONS } from '../constants/academySettings';
 import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../constants/aiPrompts';
 import {
   mapServerStudentToLocal,
@@ -1962,8 +1960,9 @@ const useAcademyStore = create(
       academyStudents, classGroups, classSessions, academyPayments, academyProfile,
     } = get();
     const newPayments = [];
+    const updatedPayments = [];
     const [year, monthNumber] = String(month || '').split('-').map(Number);
-    if (!year || !monthNumber) return [];
+    if (!year || !monthNumber) return { created: [], updated: [] };
     const dueDay = Math.max(1, Number(academyProfile?.tuitionDueDay) || 1);
     const lastDay = getDaysInMonth(year, monthNumber);
     const dueDate = `${month}-${String(Math.min(dueDay, lastDay)).padStart(2, '0')}`;
@@ -1988,42 +1987,37 @@ const useAcademyStore = create(
 
     for (const student of academyStudents) {
       const aliases = new Set([student.id, student.serverId].filter(Boolean));
-      // 전환 전에 만든 반별 수납이 하나라도 있으면 같은 달 통합 청구를 추가하지 않는다.
-      const exists = academyPayments.some(
+      const existingMonthly = academyPayments.find(
         (payment) => (
           payment.month === month
           && aliases.has(payment.studentId)
+          && payment.paymentKind === 'student_monthly'
         ),
       );
-      if (exists) continue;
+      // 전환 전 반별 청구는 중복 청구 방지를 위해 유지한다. 직접 추가한 수납은
+      // 별도 비용이므로 학생 기본 학원비 생성을 막지 않는다.
+      const hasLegacyClassPayment = academyPayments.some(
+        (payment) => (
+          payment.month === month
+          && aliases.has(payment.studentId)
+          && payment.paymentKind === 'legacy_class'
+        ),
+      );
+      if (!existingMonthly && hasLegacyClassPayment) continue;
 
-      const inferredSubjectIds = [...new Set(
-        classGroups
-          .filter((group) => (group.studentIds || []).some((id) => aliases.has(id)))
-          .map((group) => ACADEMY_SUBJECT_OPTIONS.find(
-            (option) => option.id === group.subject || option.label === group.subject,
-          )?.id)
-          .filter(Boolean),
-      )];
-      const effectiveSubjectIds = student.tuitionSubjects?.length
-        ? student.tuitionSubjects
-        : inferredSubjectIds;
-      const automaticBaseTuition = calculateSuggestedStudentTuition({
-          tuitionRates: academyProfile?.tuitionRates,
-          tuitionPolicy: academyProfile?.tuitionPolicy,
-          schoolType: student.schoolType,
-          grade: student.grade,
-          gradeReferenceYear: student.gradeReferenceYear,
-          targetMonth: month,
-          subjectIds: effectiveSubjectIds,
+      const resolvedBaseTuition = resolveStudentBaseTuition({
+        student,
+        groups: classGroups,
+        tuitionRates: academyProfile?.tuitionRates,
+        tuitionPolicy: academyProfile?.tuitionPolicy,
+        month,
       });
-      const customTuitionApplies = isCustomTuitionActiveForMonth(student, month);
       const charge = calculateStudentMonthlyCharge({
         student: {
           ...student,
           // 가격표 학생은 저장 당시 금액이 아니라 청구 월의 학년/가격표로 계산한다.
           // 학생별 조정 기간이 끝나면 같은 방식으로 학원 가격표에 자동 복귀한다.
-          baseTuition: customTuitionApplies ? student.baseTuition : automaticBaseTuition,
+          baseTuition: resolvedBaseTuition.amount,
           tuitionEffectiveFrom: student.enrollmentDate || student.tuitionEffectiveFrom,
           tuitionEffectiveTo: '',
         },
@@ -2033,6 +2027,34 @@ const useAcademyStore = create(
       });
       if (charge.amount <= 0) continue;
       const additionsLabel = charge.additions.map((item) => item.name).join(', ');
+      const memo = additionsLabel
+        ? `기본 수강료 + ${additionsLabel}`
+        : '기본 수강료';
+
+      if (existingMonthly) {
+        // 납부가 시작된 금액은 자동으로 바꾸지 않는다. 아직 미납인 자동 항목만
+        // 현재 학생 정보와 가격표로 안전하게 다시 계산한다.
+        if (
+          ['unpaid', 'overdue'].includes(existingMonthly.status)
+          && (
+            Number(existingMonthly.amount) !== charge.amount
+            || existingMonthly.dueDate !== dueDate
+            || existingMonthly.memo !== memo
+            || JSON.stringify(existingMonthly.billingSnapshot || {}) !== JSON.stringify(charge)
+          )
+        ) {
+          updatedPayments.push({
+            ...existingMonthly,
+            amount: charge.amount,
+            dueDate,
+            billingSnapshot: charge,
+            memo,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        continue;
+      }
+
       newPayments.push({
         id: `ap${Date.now()}_${student.id}`,
         studentId: student.id,
@@ -2043,19 +2065,25 @@ const useAcademyStore = create(
         status: 'unpaid',
         paymentKind: 'student_monthly',
         billingSnapshot: charge,
-        memo: additionsLabel
-          ? `기본 수강료 + ${additionsLabel}`
-          : '기본 수강료',
+        memo,
         createdAt: new Date().toISOString(),
       });
     }
-    if (newPayments.length > 0) {
-      set((s) => ({ academyPayments: [...s.academyPayments, ...newPayments] }));
-      get().showToast(`수납 항목 ${newPayments.length}건이 생성되었습니다.`);
+    if (newPayments.length > 0 || updatedPayments.length > 0) {
+      const updatedById = new Map(updatedPayments.map((payment) => [payment.id, payment]));
+      set((s) => ({
+        academyPayments: [
+          ...s.academyPayments.map((payment) => updatedById.get(payment.id) || payment),
+          ...newPayments,
+        ],
+      }));
+      get().showToast(
+        `수납 항목 ${newPayments.length}건 생성 · ${updatedPayments.length}건 재계산`,
+      );
     } else {
       get().showToast('생성할 수납 항목이 없습니다. (이미 존재하거나 수강료 미설정)');
     }
-    return newPayments;
+    return { created: newPayments, updated: updatedPayments };
   },
 
   // ─── Academy Student Events ───────────────────────
