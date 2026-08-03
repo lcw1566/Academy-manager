@@ -523,7 +523,7 @@ function OwnerStaffView({
               mobileDetailOpen ? 'hidden md:block' : 'block'
             }`}
           >
-            <div className="staff-roster-panel md:bg-white md:rounded-2xl md:p-3 md:shadow-sm">
+            <div className="staff-roster-panel md:rounded-2xl md:border md:border-[#E5E8EB] md:bg-white md:p-3 md:shadow-sm">
               {canInviteStaff && <button
                 type="button"
                 onClick={openInvitationStatus}

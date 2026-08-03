@@ -492,6 +492,7 @@ html.dark .bg-rose-50 {
   /* 직원 목록 패널은 반응형 유틸리티 변환 여부와 무관하게 확실히 테마를 따른다. */
   html.dark .staff-roster-panel {
     background-color: var(--seenit-dark-surface) !important;
+    border-color: var(--seenit-dark-border) !important;
   }
 
   html.dark .md\:bg-white .bg-\[\#F2F4F6\],
