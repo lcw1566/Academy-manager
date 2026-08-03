@@ -144,7 +144,76 @@ function mountSafeHangulHtml(container, html) {
   return true;
 }
 
-function safeRhwpSvgMarkup(markup) {
+function repairRhwpTableCellFills(parsed, rhwpDocument, pageIndex) {
+  try {
+    const layout = JSON.parse(rhwpDocument.getPageControlLayout(pageIndex));
+    const tables = (layout?.controls || []).filter((control) => control?.type === 'table');
+    if (!tables.length) return 0;
+
+    const clips = [...parsed.querySelectorAll('clipPath[id] > rect')].map((rect) => ({
+      id: rect.parentElement?.getAttribute('id') || '',
+      x: Number(rect.getAttribute('x')),
+      y: Number(rect.getAttribute('y')),
+      width: Number(rect.getAttribute('width')),
+      height: Number(rect.getAttribute('height')),
+    })).filter((clip) => clip.id.startsWith('cell-clip-')
+      && [clip.x, clip.y, clip.width, clip.height].every(Number.isFinite));
+    const clipGroups = new Map();
+    parsed.querySelectorAll('g[clip-path]').forEach((group) => {
+      const match = group.getAttribute('clip-path')?.match(/^url\(#(.+)\)$/);
+      if (match) clipGroups.set(match[1], group);
+    });
+
+    const closeEnough = (left, right) => Math.abs(left - right) <= 0.25;
+    let repaired = 0;
+    tables.forEach((table) => {
+      (table.cells || []).forEach((cell) => {
+        const properties = JSON.parse(rhwpDocument.getCellProperties(
+          table.secIdx,
+          table.paraIdx,
+          table.controlIdx,
+          cell.cellIdx,
+        ));
+        const fillColor = String(properties?.fillColor || '').trim();
+        if (properties?.fillType !== 'solid'
+          || !/^#[0-9a-f]{6}$/i.test(fillColor)
+          || fillColor.toLowerCase() === '#ffffff') return;
+
+        const clip = clips.find((candidate) => closeEnough(candidate.x, cell.x)
+          && closeEnough(candidate.y, cell.y)
+          && closeEnough(candidate.width, cell.w)
+          && closeEnough(candidate.height, cell.h));
+        const group = clip ? clipGroups.get(clip.id) : null;
+        if (!group) return;
+
+        const alreadyPainted = [...group.children].some((child) => {
+          if (child.tagName?.toLowerCase() !== 'rect') return false;
+          return closeEnough(Number(child.getAttribute('x')), cell.x)
+            && closeEnough(Number(child.getAttribute('y')), cell.y)
+            && closeEnough(Number(child.getAttribute('width')), cell.w)
+            && closeEnough(Number(child.getAttribute('height')), cell.h);
+        });
+        if (alreadyPainted) return;
+
+        const fill = parsed.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        fill.setAttribute('x', String(cell.x));
+        fill.setAttribute('y', String(cell.y));
+        fill.setAttribute('width', String(cell.w));
+        fill.setAttribute('height', String(cell.h));
+        fill.setAttribute('fill', fillColor);
+        fill.setAttribute('pointer-events', 'none');
+        group.insertBefore(fill, group.firstChild);
+        repaired += 1;
+      });
+    });
+    return repaired;
+  } catch (error) {
+    console.warn('[drive] rHWP table fill repair skipped', error);
+    return 0;
+  }
+}
+
+function safeRhwpSvgMarkup(markup, rhwpDocument, pageIndex) {
   const parsed = new DOMParser().parseFromString(String(markup || ''), 'image/svg+xml');
   if (parsed.querySelector('parsererror')) return '';
   const root = parsed.documentElement;
@@ -172,6 +241,7 @@ function safeRhwpSvgMarkup(markup) {
       }
     });
   });
+  repairRhwpTableCellFills(parsed, rhwpDocument, pageIndex);
   root.setAttribute('aria-hidden', 'true');
   root.setAttribute('focusable', 'false');
   return root.outerHTML;
@@ -1119,7 +1189,11 @@ function DocumentPreview({ url, kind, onReady, onError }) {
             const renderedPages = Array(pageCount).fill('');
             for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
               if (cancelled) return;
-              const svg = safeRhwpSvgMarkup(rhwpDocument.renderPageSvg(pageIndex));
+              const svg = safeRhwpSvgMarkup(
+                rhwpDocument.renderPageSvg(pageIndex),
+                rhwpDocument,
+                pageIndex,
+              );
               if (!svg) throw new Error(`${pageIndex + 1}쪽을 표시하지 못했어요.`);
               renderedPages[pageIndex] = svg;
               if (pageIndex === 0 || (pageIndex + 1) % 3 === 0 || pageIndex === pageCount - 1) {
