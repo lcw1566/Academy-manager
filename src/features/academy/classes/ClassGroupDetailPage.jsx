@@ -636,10 +636,10 @@ function ClassGroupScheduleCalendar({
 
   return (
     <div className="px-4 mb-5">
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-4 md:px-5 py-3 border-b border-[#F2F4F6] flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+      <div className="overflow-hidden rounded-3xl bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-[#F2F4F6] px-4 py-4 md:px-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <p className="text-sm font-bold text-[#191F28]">{calendarMode === 'month' ? '월간 수업표' : '주간 수업표'}</p>
+            <p className="text-base font-black text-[#191F28]">{calendarMode === 'month' ? '월간 수업표' : '주간 수업표'}</p>
             <p className="text-[11px] text-[#8B95A1] mt-0.5 truncate">
               {calendarMode === 'month'
                 ? `${formatMonth(selectedMonth)} · ${monthCount}회`
@@ -666,8 +666,8 @@ function ClassGroupScheduleCalendar({
             </button>
             <div className="flex rounded-xl bg-[#F2F4F6] p-1">
               {[
-                { id: 'month', label: '월간' },
                 { id: 'week', label: '주간' },
+                { id: 'month', label: '월간' },
               ].map((item) => (
                 <button
                   key={item.id}

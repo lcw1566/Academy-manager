@@ -11,12 +11,11 @@ import {
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
-import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import { ListSearchFilterBar, ListFilterChips } from '../../../components/filters/ListFilters';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { formatDateShort } from '../../../utils/date';
+import { addDaysYMD, formatDateShort } from '../../../utils/date';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getRoomTagClassName } from '../../../utils/roomTags';
 import {
@@ -478,15 +477,8 @@ export default function StudentAttendancePage() {
       console.warn('[attendance] 데이터 다시 불러오기 실패', error);
     });
   };
-  const calendarSchedules = useMemo(() => {
-    const classDots = classSessions
-      .filter((session) => session?.date && session.status !== 'canceled')
-      .map((session) => ({ date: session.date, type: 'class' }));
-    const attendanceDots = studentCheckEvents
-      .map((event) => ({ date: getAcademyYmd(event.event_time), type: 'performance' }))
-      .filter((event) => event.date);
-    return [...classDots, ...attendanceDots];
-  }, [classSessions, studentCheckEvents]);
+  const yesterdayYmd = addDaysYMD(todayYmd, -1);
+  const isYesterday = selectedDate === yesterdayYmd;
 
   return (
     <div>
@@ -505,31 +497,52 @@ export default function StudentAttendancePage() {
       />
 
       <div className="pt-14 pb-6 md:pt-0">
-        <div className="pt-4">
-          <WeeklyExpandableCalendar
-            selectedDate={selectedDate}
-            onSelectDate={setSelectedDate}
-            schedules={calendarSchedules}
-          />
-        </div>
-
         <div className="px-4 pt-4">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <p className="text-base font-black text-[#191F28]">
-                {isToday ? '오늘' : formatDateShort(selectedDate)}
-              </p>
-              <p className="mt-0.5 text-[11px] font-medium text-[#8B95A1]">{selectedDate}</p>
-            </div>
-            {!isToday && (
-              <button
-                type="button"
-                onClick={() => setSelectedDate(todayYmd)}
-                className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700"
-              >
-                오늘
-              </button>
-            )}
+          <div className="mb-4 flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedDate(todayYmd)}
+              aria-pressed={isToday}
+              className={`h-11 flex-shrink-0 rounded-2xl px-4 text-sm font-bold transition-colors active:scale-[0.98] ${
+                isToday
+                  ? 'bg-[#0064FF] text-white shadow-sm'
+                  : 'border border-[#E5E8EB] bg-white text-[#4E5968] shadow-sm'
+              }`}
+            >
+              오늘
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedDate(yesterdayYmd)}
+              aria-pressed={isYesterday}
+              className={`h-11 flex-shrink-0 rounded-2xl px-4 text-sm font-bold transition-colors active:scale-[0.98] ${
+                isYesterday
+                  ? 'bg-[#0064FF] text-white shadow-sm'
+                  : 'border border-[#E5E8EB] bg-white text-[#4E5968] shadow-sm'
+              }`}
+            >
+              어제
+            </button>
+            <label
+              className={`relative flex h-11 min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 rounded-2xl border px-3 text-sm font-bold shadow-sm transition-colors active:scale-[0.99] ${
+                !isToday && !isYesterday
+                  ? 'border-[#3182F6] bg-[#F2F7FF] text-[#0064FF]'
+                  : 'border-[#E5E8EB] bg-white text-[#4E5968]'
+              }`}
+            >
+              <CalendarDays size={16} className="flex-shrink-0" />
+              <span className="truncate">{formatDateShort(selectedDate)}</span>
+              <ChevronDown size={14} className="flex-shrink-0 text-[#8B95A1]" />
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(event) => {
+                  if (event.target.value) setSelectedDate(event.target.value);
+                }}
+                aria-label="등하원 날짜 선택"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </label>
           </div>
 
           <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">

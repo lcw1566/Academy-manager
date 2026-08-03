@@ -17,7 +17,7 @@ import {
   getKoreaMinutes,
   greetingByTime,
 } from '../../../utils/date';
-import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
+import ScheduleCalendar from '../../../components/calendar/ScheduleCalendar';
 import {
   classifyShiftStatus,
   getAcademyYmd,
@@ -133,8 +133,9 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   // Phase 44.6 / Phase B — 향후 60일 윈도우 안에서 룰+예외로 planned 세션 산출 후
   // 기존 classSessions 와 머지. 14일 너머에도 자연스럽게 예정 세션이 노출됨.
   const mergedClassSessions = useMemo(() => {
-    const from = todayStr;
-    const to = addDaysYMD(todayStr, 60);
+    const from = [addDaysYMD(todayStr, -31), addDaysYMD(selectedDate, -45)].sort()[0];
+    const toCandidates = [addDaysYMD(todayStr, 90), addDaysYMD(selectedDate, 75)].sort();
+    const to = toCandidates[toCandidates.length - 1];
     const plannedRaw = buildPlannedClassSessions({
       rules: classScheduleRules,
       exceptions: classSessionExceptions,
@@ -143,7 +144,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
     });
     const plannedShaped = plannedToClassSessionShape(plannedRaw, classGroups);
     return mergePlannedAndActualClassSessions(plannedShaped, classSessions);
-  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr]);
+  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr, selectedDate]);
 
   const todaySessions = useMemo(
     () => mergedClassSessions.filter((s) => s.date === todayStr && s.status !== 'canceled'),
@@ -352,12 +353,13 @@ export default function OwnerDashboard({ operationsOnly = false }) {
 
       {/* 주간 캘린더 */}
       <div className="mb-5">
-        <WeeklyExpandableCalendar
+        <ScheduleCalendar
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
           schedules={schedules}
-          showAgenda
-          emptyAgendaText="수업 일정이 없어요"
+          title="학원 수업 일정"
+          emptyText="수업 일정이 없어요"
+          compact
         />
       </div>
 

@@ -10,7 +10,7 @@ import {
   getKoreaMinutes,
   greetingByTime,
 } from '../../../utils/date';
-import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
+import ScheduleCalendar from '../../../components/calendar/ScheduleCalendar';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
@@ -136,8 +136,9 @@ export default function TeacherDashboard() {
   // Phase 44.6 / Phase B — 룰 기반 planned 세션 + 기존 classSessions 머지.
   // 향후 60일 윈도우. teacher_user_id 매칭이 있는 rule 도 자동으로 포함된다.
   const mergedClassSessions = useMemo(() => {
-    const from = todayStr;
-    const to = addDaysYMD(todayStr, 60);
+    const from = [addDaysYMD(todayStr, -31), addDaysYMD(selectedDate, -45)].sort()[0];
+    const toCandidates = [addDaysYMD(todayStr, 90), addDaysYMD(selectedDate, 75)].sort();
+    const to = toCandidates[toCandidates.length - 1];
     const plannedRaw = buildPlannedClassSessions({
       rules: classScheduleRules,
       exceptions: classSessionExceptions,
@@ -146,7 +147,7 @@ export default function TeacherDashboard() {
     });
     const plannedShaped = plannedToClassSessionShape(plannedRaw, classGroups);
     return mergePlannedAndActualClassSessions(plannedShaped, classSessions);
-  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr]);
+  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr, selectedDate]);
 
   // 본인 담당 세션 — teacherId / teacherUserId / 본인 담당 반 / Phase 30 대체 강사.
   // 대체 강사로 배정된 세션은 원래 강사 대신 본인이 담당이므로 그대로 노출한다.
@@ -348,12 +349,13 @@ export default function TeacherDashboard() {
       <HomeActionList items={homeActions} />
 
       <div className="mb-5">
-        <WeeklyExpandableCalendar
+        <ScheduleCalendar
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
           schedules={schedules}
-          showAgenda
-          emptyAgendaText="내 수업 일정이 없어요"
+          title="내 수업 일정"
+          emptyText="내 수업 일정이 없어요"
+          compact
         />
       </div>
 

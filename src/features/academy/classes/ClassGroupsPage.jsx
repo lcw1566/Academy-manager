@@ -6,7 +6,7 @@ import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
-import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
+import ScheduleCalendar from '../../../components/calendar/ScheduleCalendar';
 import {
   ListSearchFilterBar,
   ListFilterChips,
@@ -79,8 +79,9 @@ export default function ClassGroupsPage() {
   const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
   const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
   const mergedClassSessions = useMemo(() => {
-    const from = addDaysYMD(todayStr, -31);
-    const to = addDaysYMD(todayStr, 90);
+    const from = [addDaysYMD(todayStr, -31), addDaysYMD(selectedDate, -45)].sort()[0];
+    const toCandidates = [addDaysYMD(todayStr, 90), addDaysYMD(selectedDate, 75)].sort();
+    const to = toCandidates[toCandidates.length - 1];
     const plannedRaw = buildPlannedClassSessions({
       rules: classScheduleRules,
       exceptions: classSessionExceptions,
@@ -89,7 +90,7 @@ export default function ClassGroupsPage() {
     });
     const plannedShaped = plannedToClassSessionShape(plannedRaw, classGroups);
     return mergePlannedAndActualClassSessions(plannedShaped, classSessions);
-  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr]);
+  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr, selectedDate]);
 
   const enriched = useMemo(() =>
     classGroups
@@ -258,12 +259,12 @@ export default function ClassGroupsPage() {
         </div>
 
         <div className="mb-4">
-          <WeeklyExpandableCalendar
+          <ScheduleCalendar
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
             schedules={calendarSchedules}
-            showAgenda
-            emptyAgendaText="수업 일정이 없어요"
+            title="전체 수업 일정"
+            emptyText="수업 일정이 없어요"
           />
         </div>
 
