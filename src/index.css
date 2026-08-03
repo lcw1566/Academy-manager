@@ -215,12 +215,27 @@ input[type="month"].input {
 }
 
 /* ── 앱 다크 모드 ──────────────────────────────────────────────
-   기존 화면의 Tailwind 색상 토큰을 공통 표면/텍스트 토큰으로 재매핑한다.
-   문서 미리보기는 원본 종이 색을 유지한다. */
+   밝은 화면의 "흰 카드 / 회색 바탕" 관계를 다크 모드에서도 유지한다.
+   캔버스보다 카드가 한 단계 밝고, 입력·선택 영역은 다시 한 단계 밝다. */
+html.dark {
+  --seenit-dark-canvas: #17191f;
+  --seenit-dark-surface: #22252d;
+  --seenit-dark-surface-raised: #282c35;
+  --seenit-dark-control: #2d323c;
+  --seenit-dark-border: #363c47;
+  --seenit-dark-border-soft: #2d323b;
+  --seenit-dark-text: #f3f5f7;
+  --seenit-dark-text-secondary: #c4cbd4;
+  --seenit-dark-text-tertiary: #929ca9;
+  --seenit-dark-blue-surface: #1b304a;
+  --seenit-dark-blue-surface-soft: #1c2939;
+  --seenit-dark-blue: #65aaff;
+}
+
 html.dark body,
 html.dark #root {
-  background-color: #0f1115;
-  color: #f2f4f6;
+  background-color: var(--seenit-dark-canvas);
+  color: var(--seenit-dark-text);
 }
 
 html.dark body {
@@ -230,12 +245,20 @@ html.dark body {
 html.dark .bg-white,
 html.dark .bg-white\/95,
 html.dark .bg-white\/90,
-html.dark .bg-white\/80,
-html.dark .bg-white\/70 {
-  background-color: #191c22 !important;
+html.dark .bg-white\/80 {
+  background-color: var(--seenit-dark-surface) !important;
 }
 
-html.dark .bg-\[\#F2F4F6\],
+html.dark .bg-white\/70,
+html.dark .bg-white\/60,
+html.dark .bg-white\/55 {
+  background-color: rgba(34, 37, 45, 0.92) !important;
+}
+
+html.dark .bg-\[\#F2F4F6\] {
+  background-color: var(--seenit-dark-canvas) !important;
+}
+
 html.dark .bg-\[\#F7F8FA\],
 html.dark .bg-\[\#F8F9FA\],
 html.dark .bg-\[\#F8FAFC\],
@@ -243,14 +266,23 @@ html.dark .bg-\[\#FBFCFD\],
 html.dark .bg-\[\#F9FAFB\],
 html.dark .bg-gray-50,
 html.dark .bg-gray-50\/70 {
-  background-color: #20242b !important;
+  background-color: #1d2027 !important;
+}
+
+/* 카드 안의 보조 영역은 페이지 바탕과 구분되도록 한 단계 올린다. */
+html.dark .bg-white .bg-\[\#F2F4F6\],
+html.dark .bg-white .bg-gray-50,
+html.dark .bg-white .bg-\[\#F7F8FA\],
+html.dark .bg-white .bg-\[\#F8F9FA\],
+html.dark .bg-white .bg-\[\#F8FAFC\] {
+  background-color: var(--seenit-dark-surface-raised) !important;
 }
 
 html.dark .bg-gray-100,
 html.dark .bg-gray-200,
 html.dark .bg-\[\#E5E8EB\],
 html.dark .bg-\[\#D1D6DB\] {
-  background-color: #2a2f38 !important;
+  background-color: var(--seenit-dark-control) !important;
 }
 
 html.dark .text-black,
@@ -259,46 +291,56 @@ html.dark .text-gray-900,
 html.dark .text-gray-800,
 html.dark .text-\[\#191F28\],
 html.dark .text-\[\#333D4B\] {
-  color: #f2f4f6 !important;
+  color: var(--seenit-dark-text) !important;
 }
 
 html.dark .text-gray-700,
 html.dark .text-\[\#4E5968\] {
-  color: #d1d6db !important;
+  color: var(--seenit-dark-text-secondary) !important;
 }
 
 html.dark .text-gray-600,
 html.dark .text-\[\#6B7684\] {
-  color: #b8c0ca !important;
+  color: #adb6c2 !important;
 }
 
 html.dark .text-gray-500,
 html.dark .text-\[\#8B95A1\] {
-  color: #a2abb7 !important;
+  color: var(--seenit-dark-text-tertiary) !important;
 }
 
 html.dark .text-gray-400,
 html.dark .text-\[\#B0B8C1\] {
-  color: #858f9c !important;
+  color: #7f8996 !important;
 }
 
 html.dark .text-gray-300,
 html.dark .text-\[\#D1D6DB\] {
-  color: #697481 !important;
+  color: #687380 !important;
 }
 
 html.dark .border-gray-50,
 html.dark .border-gray-100,
 html.dark .border-\[\#F2F4F6\],
 html.dark .border-\[\#E5E8EB\] {
-  border-color: #2a2f38 !important;
+  border-color: var(--seenit-dark-border-soft) !important;
 }
 
 html.dark .border-gray-200,
 html.dark .border-gray-300,
 html.dark .border-\[\#D1D6DB\],
 html.dark .border-\[\#B0B8C1\] {
-  border-color: #3a414c !important;
+  border-color: var(--seenit-dark-border) !important;
+}
+
+html.dark .divide-gray-50 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--seenit-dark-border-soft) !important;
+}
+
+html.dark .ring-gray-100,
+html.dark .ring-gray-200 {
+  --tw-ring-color: var(--seenit-dark-border) !important;
 }
 
 html.dark .bg-blue-50,
@@ -306,13 +348,61 @@ html.dark .bg-blue-100,
 html.dark .bg-\[\#E8F3FF\],
 html.dark .bg-\[\#EDF5FF\],
 html.dark .bg-\[\#F2F7FF\] {
-  background-color: #152a46 !important;
+  background-color: var(--seenit-dark-blue-surface) !important;
+}
+
+html.dark .bg-blue-50\/20,
+html.dark .bg-blue-50\/30,
+html.dark .bg-blue-50\/40,
+html.dark .bg-blue-50\/60,
+html.dark .bg-blue-50\/70,
+html.dark .bg-blue-50\/80,
+html.dark .hover\:bg-blue-50\/40:hover {
+  background-color: var(--seenit-dark-blue-surface-soft) !important;
+}
+
+html.dark .border-blue-100,
+html.dark .border-blue-200 {
+  border-color: #355574 !important;
+}
+
+html.dark .ring-blue-50,
+html.dark .ring-blue-100,
+html.dark .ring-blue-200 {
+  --tw-ring-color: #355574 !important;
+}
+
+html.dark .text-blue-400,
+html.dark .text-blue-500,
+html.dark .text-blue-600,
+html.dark .text-blue-700,
+html.dark .text-blue-800,
+html.dark .text-blue-900,
+html.dark .text-\[\#0064FF\],
+html.dark .text-\[\#0050CC\],
+html.dark .text-\[\#1B64DA\],
+html.dark .text-\[\#3182F6\] {
+  color: var(--seenit-dark-blue) !important;
 }
 
 html.dark .bg-red-50,
 html.dark .bg-red-100,
 html.dark .bg-\[\#FFF1F2\] {
-  background-color: #3a2026 !important;
+  background-color: #3b242a !important;
+}
+
+html.dark .border-red-100,
+html.dark .border-red-200,
+html.dark .border-red-300 {
+  border-color: #683b43 !important;
+}
+
+html.dark .text-red-300,
+html.dark .text-red-400,
+html.dark .text-red-500,
+html.dark .text-red-600,
+html.dark .text-red-700 {
+  color: #ff858d !important;
 }
 
 html.dark .bg-green-50,
@@ -320,7 +410,27 @@ html.dark .bg-green-100,
 html.dark .bg-emerald-50,
 html.dark .bg-emerald-100,
 html.dark .bg-\[\#ECFDF5\] {
-  background-color: #16352c !important;
+  background-color: #1d3a31 !important;
+}
+
+html.dark .border-green-100,
+html.dark .border-green-200,
+html.dark .border-emerald-200 {
+  border-color: #315e50 !important;
+}
+
+html.dark .text-green-400,
+html.dark .text-green-500,
+html.dark .text-green-600,
+html.dark .text-green-700,
+html.dark .text-green-800,
+html.dark .text-green-900,
+html.dark .text-emerald-500,
+html.dark .text-emerald-600,
+html.dark .text-emerald-700,
+html.dark .text-emerald-800,
+html.dark .text-emerald-900 {
+  color: #57d7a4 !important;
 }
 
 html.dark .bg-orange-50,
@@ -328,18 +438,61 @@ html.dark .bg-orange-100,
 html.dark .bg-amber-50,
 html.dark .bg-amber-100,
 html.dark .bg-yellow-50 {
-  background-color: #3a2d18 !important;
+  background-color: #3b3020 !important;
+}
+
+html.dark .border-amber-100,
+html.dark .border-amber-200,
+html.dark .border-orange-100,
+html.dark .border-orange-200 {
+  border-color: #69512b !important;
+}
+
+html.dark .text-amber-500,
+html.dark .text-amber-600,
+html.dark .text-amber-700,
+html.dark .text-amber-800,
+html.dark .text-amber-900,
+html.dark .text-orange-400,
+html.dark .text-orange-500,
+html.dark .text-orange-600,
+html.dark .text-orange-700 {
+  color: #f3b55e !important;
 }
 
 html.dark .bg-violet-50,
 html.dark .bg-violet-100,
 html.dark .bg-indigo-50 {
-  background-color: #292342 !important;
+  background-color: #302a45 !important;
+}
+
+html.dark .border-violet-100,
+html.dark .border-violet-200 {
+  border-color: #554a76 !important;
+}
+
+html.dark .text-violet-400,
+html.dark .text-violet-500,
+html.dark .text-violet-600,
+html.dark .text-violet-700,
+html.dark .text-violet-900 {
+  color: #b8a2ff !important;
 }
 
 html.dark .bg-sky-50,
 html.dark .bg-rose-50 {
-  background-color: #1c3040 !important;
+  background-color: #20333e !important;
+}
+
+@media (min-width: 768px) {
+  html.dark .md\:bg-white {
+    background-color: var(--seenit-dark-surface) !important;
+  }
+
+  html.dark .md\:bg-white .bg-\[\#F2F4F6\],
+  html.dark .md\:bg-white .bg-\[\#F8FAFC\] {
+    background-color: var(--seenit-dark-surface-raised) !important;
+  }
 }
 
 html.dark input,
@@ -360,8 +513,8 @@ html.dark textarea::placeholder {
 }
 
 html.dark .input {
-  border-color: #3a414c;
-  background-color: #191c22;
+  border-color: var(--seenit-dark-border);
+  background-color: #1d2027;
   color: #f2f4f6;
 }
 
@@ -369,7 +522,7 @@ html.dark input:-webkit-autofill,
 html.dark input:-webkit-autofill:hover,
 html.dark input:-webkit-autofill:focus {
   -webkit-text-fill-color: #f2f4f6;
-  -webkit-box-shadow: 0 0 0 1000px #191c22 inset;
+  -webkit-box-shadow: 0 0 0 1000px #1d2027 inset;
   caret-color: #f2f4f6;
 }
 

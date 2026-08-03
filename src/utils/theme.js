@@ -30,7 +30,7 @@ export function applyTheme(preference = getThemePreference()) {
   root.dataset.themePreference = preference;
   root.style.colorScheme = resolved;
   const themeColor = document.querySelector('meta[name="theme-color"]');
-  themeColor?.setAttribute('content', resolved === 'dark' ? '#0F1115' : '#0064FF');
+  themeColor?.setAttribute('content', resolved === 'dark' ? '#17191F' : '#0064FF');
   return resolved;
 }
 
