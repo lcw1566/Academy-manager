@@ -8,7 +8,7 @@ import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
 import {
-  ListSearchField,
+  ListSearchFilterBar,
   ListFilterChips,
   ListFilterSelect,
   ListFilterSelectGrid,
@@ -50,6 +50,7 @@ export default function ClassGroupsPage() {
   const [levelFilter, setLevelFilter] = useState('all');
   const [teacherFilter, setTeacherFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Phase 30 — canManageClasses 권한이 있으면 owner 가 아닌 staff 도 + 버튼 노출.
   // owner 는 항상 true. teacher/assistant 는 default false 이지만 owner 가 명시적으로
@@ -201,68 +202,59 @@ export default function ClassGroupsPage() {
           <p className="text-sm text-gray-400">반 단위로 수업을 관리해요.</p>
         </div>
 
-        <div className="px-4 mb-4 space-y-2">
-          <ListSearchField
-            value={search}
-            onChange={setSearch}
+        <div className="px-4 mb-4">
+          <ListSearchFilterBar
+            searchValue={search}
+            onSearchChange={setSearch}
             placeholder="반·학생·선생님 검색"
-          />
-          <ListFilterChips
-            value={statusFilter}
-            onChange={setStatusFilter}
-            ariaLabel="수업 상태 필터"
-            options={[
-              { value: 'all', label: '전체' },
-              { value: 'active', label: '운영 중' },
-              { value: 'pending', label: '대기' },
-              { value: 'inactive', label: '종료' },
-            ]}
-          />
-          <ListFilterSelectGrid columns={3}>
-            <ListFilterSelect
-              value={subjectFilter}
-              onChange={setSubjectFilter}
-              ariaLabel="과목 필터"
+            filterCount={activeFilterCount}
+            filtersOpen={filtersOpen}
+            onToggleFilters={() => setFiltersOpen((open) => !open)}
+            onResetFilters={resetFilters}
+            resultText={`${filteredGroups.length}개 반`}
+          >
+            <ListFilterChips
+              value={statusFilter}
+              onChange={setStatusFilter}
+              ariaLabel="수업 상태 필터"
               options={[
-                { value: 'all', label: '과목 전체' },
-                ...filterOptions.subjects.map((value) => ({ value, label: value })),
+                { value: 'all', label: '전체' },
+                { value: 'active', label: '운영 중' },
+                { value: 'pending', label: '대기' },
+                { value: 'inactive', label: '종료' },
               ]}
             />
-            <ListFilterSelect
-              value={levelFilter}
-              onChange={setLevelFilter}
-              ariaLabel="학년 또는 레벨 필터"
-              options={[
-                { value: 'all', label: '학년/레벨 전체' },
-                ...filterOptions.levels.map((value) => ({ value, label: value })),
-              ]}
-            />
-            <ListFilterSelect
-              value={teacherFilter}
-              onChange={setTeacherFilter}
-              ariaLabel="담당 선생님 필터"
-              options={[
-                { value: 'all', label: '선생님 전체' },
-                ...filterOptions.teachers.map((value) => ({ value, label: value })),
-              ]}
-              className="col-span-2 md:col-span-1"
-            />
-          </ListFilterSelectGrid>
-          <div className="flex items-center justify-between px-1">
-            <p className="text-[11px] font-semibold text-[#8B95A1]">{filteredGroups.length}개 반</p>
-            {(activeFilterCount > 0 || search.trim()) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearch('');
-                  resetFilters();
-                }}
-                className="text-xs font-bold text-[#4E5968]"
-              >
-                초기화
-              </button>
-            )}
-          </div>
+            <ListFilterSelectGrid columns={3}>
+              <ListFilterSelect
+                value={subjectFilter}
+                onChange={setSubjectFilter}
+                ariaLabel="과목 필터"
+                options={[
+                  { value: 'all', label: '과목 전체' },
+                  ...filterOptions.subjects.map((value) => ({ value, label: value })),
+                ]}
+              />
+              <ListFilterSelect
+                value={levelFilter}
+                onChange={setLevelFilter}
+                ariaLabel="학년 또는 레벨 필터"
+                options={[
+                  { value: 'all', label: '학년/레벨 전체' },
+                  ...filterOptions.levels.map((value) => ({ value, label: value })),
+                ]}
+              />
+              <ListFilterSelect
+                value={teacherFilter}
+                onChange={setTeacherFilter}
+                ariaLabel="담당 선생님 필터"
+                options={[
+                  { value: 'all', label: '선생님 전체' },
+                  ...filterOptions.teachers.map((value) => ({ value, label: value })),
+                ]}
+                className="col-span-2 md:col-span-1"
+              />
+            </ListFilterSelectGrid>
+          </ListSearchFilterBar>
         </div>
 
         <div className="mb-4">

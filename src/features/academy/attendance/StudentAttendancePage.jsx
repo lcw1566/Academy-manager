@@ -12,7 +12,7 @@ import {
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
 import WeeklyExpandableCalendar from '../../../components/calendar/WeeklyExpandableCalendar';
-import { ListSearchField, ListFilterChips } from '../../../components/filters/ListFilters';
+import { ListSearchFilterBar, ListFilterChips } from '../../../components/filters/ListFilters';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -118,6 +118,7 @@ export default function StudentAttendancePage() {
   const [selectedDate, setSelectedDate] = useState(todayYmd);
   const [viewFilter, setViewFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [expandedGroupIds, setExpandedGroupIds] = useState(() => new Set());
   const [savingStudentId, setSavingStudentId] = useState(null);
   const [manualEntryTarget, setManualEntryTarget] = useState(null);
@@ -549,21 +550,27 @@ export default function StudentAttendancePage() {
             </div>
           )}
 
-          <div className="mb-4 space-y-2">
-            <ListSearchField
-              value={search}
-              onChange={setSearch}
+          <div className="mb-4">
+            <ListSearchFilterBar
+              searchValue={search}
+              onSearchChange={setSearch}
               placeholder="학생 이름, 학교, 학년 검색"
-            />
-            <ListFilterChips
-              value={viewFilter}
-              onChange={setViewFilter}
-              ariaLabel="등하원 상태 필터"
-              options={VIEW_FILTERS.map((filter) => ({
-                value: filter.id,
-                label: filter.label,
-              }))}
-            />
+              filterCount={viewFilter === 'all' ? 0 : 1}
+              filtersOpen={filtersOpen}
+              onToggleFilters={() => setFiltersOpen((open) => !open)}
+              onResetFilters={() => setViewFilter('all')}
+              resultText={`${rows.length}명`}
+            >
+              <ListFilterChips
+                value={viewFilter}
+                onChange={setViewFilter}
+                ariaLabel="등하원 상태 필터"
+                options={VIEW_FILTERS.map((filter) => ({
+                  value: filter.id,
+                  label: filter.label,
+                }))}
+              />
+            </ListSearchFilterBar>
           </div>
 
           {attendanceDataError && (

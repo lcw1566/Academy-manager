@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
-import { ListSearchField, ListFilterChips } from '../../../components/filters/ListFilters';
+import { ListSearchFilterBar, ListFilterChips } from '../../../components/filters/ListFilters';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -285,6 +285,7 @@ function OwnerStaffView({
 
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all'); // all | owner | title:{직책}
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedKey, setSelectedKey] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [invitationStatusOpen, setInvitationStatusOpen] = useState(false);
@@ -542,26 +543,31 @@ function OwnerStaffView({
                 <ChevronRight size={15} className="flex-shrink-0 text-[#B0B8C1]" />
               </button>}
 
-              <ListSearchField
-                value={search}
-                onChange={setSearch}
+              <ListSearchFilterBar
+                searchValue={search}
+                onSearchChange={setSearch}
                 placeholder="이름 또는 이메일 검색"
+                filterCount={filter === 'all' ? 0 : 1}
+                filtersOpen={filtersOpen}
+                onToggleFilters={() => setFiltersOpen((open) => !open)}
+                onResetFilters={() => setFilter('all')}
+                resultText={`${visibleItems.length}명`}
                 className="mb-3"
-              />
-              <ListFilterChips
-                value={filter}
-                onChange={setFilter}
-                ariaLabel="직원 직책 필터"
-                className="mb-3"
-                options={[
-                  { value: 'all', label: '전체' },
-                  { value: 'owner', label: '원장' },
-                  ...jobTitleFilters.map((title) => ({
-                    value: `title:${title}`,
-                    label: title,
-                  })),
-                ]}
-              />
+              >
+                <ListFilterChips
+                  value={filter}
+                  onChange={setFilter}
+                  ariaLabel="직원 직책 필터"
+                  options={[
+                    { value: 'all', label: '전체' },
+                    { value: 'owner', label: '원장' },
+                    ...jobTitleFilters.map((title) => ({
+                      value: `title:${title}`,
+                      label: title,
+                    })),
+                  ]}
+                />
+              </ListSearchFilterBar>
 
               {canInviteStaff && <button
                 type="button"

@@ -8,7 +8,7 @@ import { currentUserCan } from '../../../utils/staffPermissions';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import {
-  ListSearchField,
+  ListSearchFilterBar,
   ListFilterChips,
   ListFilterSelect,
   ListFilterSelectGrid,
@@ -37,6 +37,7 @@ export default function AcademyStudentsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [schoolFilter, setSchoolFilter] = useState('all');
   const [gradeFilter, setGradeFilter] = useState('all');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const currentAcademy = memberships.find(
     (membership) => membership.academy_id === currentAcademyId,
@@ -69,6 +70,8 @@ export default function AcademyStudentsPage() {
     || statusFilter !== 'all'
     || schoolFilter !== 'all'
     || gradeFilter !== 'all';
+  const activeFilterCount = [statusFilter, schoolFilter, gradeFilter]
+    .filter((value) => value !== 'all').length;
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -107,43 +110,51 @@ export default function AcademyStudentsPage() {
       />
 
       <div className="pt-14 md:pt-0 pb-6">
-        <div className="px-4 pt-4 mb-3 space-y-2">
-          <ListSearchField
-            value={search}
-            onChange={setSearch}
+        <div className="px-4 pt-4 mb-3">
+          <ListSearchFilterBar
+            searchValue={search}
+            onSearchChange={setSearch}
             placeholder="이름 또는 학교 검색"
-          />
-
-          {academyStudents.length > 0 && (
+            filterCount={activeFilterCount}
+            filtersOpen={filtersOpen}
+            onToggleFilters={() => setFiltersOpen((open) => !open)}
+            onResetFilters={() => {
+              setStatusFilter('all');
+              setSchoolFilter('all');
+              setGradeFilter('all');
+            }}
+            resultText={`${filtered.length}명`}
+            showFilterButton={academyStudents.length > 0}
+          >
             <ListFilterChips
               value={statusFilter}
               onChange={setStatusFilter}
               ariaLabel="재원 상태 필터"
               options={[{ value: 'all', label: '전체' }, ...STUDENT_STATUS_OPTIONS]}
             />
-          )}
-          {academyStudents.length > 0 && (schoolOptions.length > 0 || gradeOptions.length > 0) && (
-            <ListFilterSelectGrid>
-              <ListFilterSelect
-                value={schoolFilter}
-                onChange={setSchoolFilter}
-                ariaLabel="학교 필터"
-                options={[
-                  { value: 'all', label: '학교 전체' },
-                  ...schoolOptions.map((value) => ({ value, label: value })),
-                ]}
-              />
-              <ListFilterSelect
-                value={gradeFilter}
-                onChange={setGradeFilter}
-                ariaLabel="학년 필터"
-                options={[
-                  { value: 'all', label: '학년 전체' },
-                  ...gradeOptions.map((value) => ({ value, label: value })),
-                ]}
-              />
-            </ListFilterSelectGrid>
-          )}
+            {(schoolOptions.length > 0 || gradeOptions.length > 0) && (
+              <ListFilterSelectGrid>
+                <ListFilterSelect
+                  value={schoolFilter}
+                  onChange={setSchoolFilter}
+                  ariaLabel="학교 필터"
+                  options={[
+                    { value: 'all', label: '학교 전체' },
+                    ...schoolOptions.map((value) => ({ value, label: value })),
+                  ]}
+                />
+                <ListFilterSelect
+                  value={gradeFilter}
+                  onChange={setGradeFilter}
+                  ariaLabel="학년 필터"
+                  options={[
+                    { value: 'all', label: '학년 전체' },
+                    ...gradeOptions.map((value) => ({ value, label: value })),
+                  ]}
+                />
+              </ListFilterSelectGrid>
+            )}
+          </ListSearchFilterBar>
         </div>
 
         {/* 학생 수 */}

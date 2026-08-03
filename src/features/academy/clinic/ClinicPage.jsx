@@ -10,7 +10,7 @@ import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { deleteClinicRecord as deleteServerClinicRecord } from '../../../services/supabase/domainApi';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
-import { ListFilterChips } from '../../../components/filters/ListFilters';
+import { ListSearchFilterBar, ListFilterChips } from '../../../components/filters/ListFilters';
 import ClinicRecordFormModal from './ClinicRecordFormModal';
 import ClinicInlineWorksheet from './ClinicInlineWorksheet';
 import ClinicEventFormModal from './ClinicEventFormModal';
@@ -110,6 +110,8 @@ export default function ClinicPage() {
 
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showEventForm, setShowEventForm] = useState(false);
   const [editEvent, setEditEvent] = useState(null);
@@ -173,7 +175,24 @@ export default function ClinicPage() {
   const [showClinicFromSupport, setShowClinicFromSupport] = useState(null);
 
   const filtered = useMemo(() => {
-    let list = clinicRecords;
+    let list = clinicRecords.slice();
+    const query = search.trim().toLowerCase();
+    if (query) {
+      list = list.filter((record) => {
+        const student = academyStudents.find((item) => item.id === record.studentId);
+        const group = classGroups.find((item) => (
+          item.id === record.classGroupId || item.serverId === record.classGroupId
+        ));
+        const searchText = [
+          student?.name,
+          student?.school,
+          group?.name,
+          record.subject,
+          record.activityName,
+        ].filter(Boolean).join(' ').toLowerCase();
+        return searchText.includes(query);
+      });
+    }
     if (subjectFilter !== 'all') {
       if (subjectFilter === 'other') {
         list = list.filter((r) => !['국어', '수학', '영어'].includes(r.subject));
@@ -183,7 +202,7 @@ export default function ClinicPage() {
     }
     list = list.filter((r) => isInDateRange(r.date, dateFilter));
     return list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  }, [clinicRecords, subjectFilter, dateFilter]);
+  }, [clinicRecords, academyStudents, classGroups, search, subjectFilter, dateFilter]);
 
   const todayCount = useMemo(() => clinicRecords.filter((r) => r.date === todayStr).length, [clinicRecords, todayStr]);
   const weekCount = useMemo(() => clinicRecords.filter((r) => isInDateRange(r.date, 'week')).length, [clinicRecords]);
@@ -356,6 +375,7 @@ export default function ClinicPage() {
   }), [temporaryClinicSubject]);
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
+  const hasRecordQuery = !!search.trim() || dateFilter !== 'all' || subjectFilter !== 'all';
   const toggleExpectedGroup = (sessionId) => {
     setExpandedExpectedIds((current) => {
       const next = new Set(current);
@@ -832,24 +852,44 @@ export default function ClinicPage() {
           </div>
         )}
 
-        <div className="px-4 mb-4 space-y-2">
-          <ListFilterChips
-            value={dateFilter}
-            onChange={setDateFilter}
-            ariaLabel="클리닉 날짜 필터"
-            options={DATE_FILTER_OPTIONS.map(({ id, label }) => ({ value: id, label }))}
-          />
-          <ListFilterChips
-            value={subjectFilter}
-            onChange={setSubjectFilter}
-            ariaLabel="클리닉 과목 필터"
-            options={CLINIC_SUBJECT_FILTERS.map(({ id, label }) => ({ value: id, label }))}
-          />
+        <div className="px-4 mb-4">
+          <ListSearchFilterBar
+            searchValue={search}
+            onSearchChange={setSearch}
+            placeholder="학생·반·과목 검색"
+            filterCount={(dateFilter === 'all' ? 0 : 1) + (subjectFilter === 'all' ? 0 : 1)}
+            filtersOpen={filtersOpen}
+            onToggleFilters={() => setFiltersOpen((open) => !open)}
+            onResetFilters={() => {
+              setDateFilter('all');
+              setSubjectFilter('all');
+            }}
+            resultText={`${filtered.length}건`}
+          >
+            <ListFilterChips
+              value={dateFilter}
+              onChange={setDateFilter}
+              ariaLabel="클리닉 날짜 필터"
+              options={DATE_FILTER_OPTIONS.map(({ id, label }) => ({ value: id, label }))}
+            />
+            <ListFilterChips
+              value={subjectFilter}
+              onChange={setSubjectFilter}
+              ariaLabel="클리닉 과목 필터"
+              options={CLINIC_SUBJECT_FILTERS.map(({ id, label }) => ({ value: id, label }))}
+            />
+          </ListSearchFilterBar>
         </div>
 
         {/* 클리닉 목록 */}
         {grouped.length === 0 ? (
-          todayClinicEventGroups.length === 0
+          hasRecordQuery ? (
+            <EmptyState
+              icon="🔍"
+              title="조건에 맞는 기록이 없어요"
+              description="검색어나 필터를 다시 확인해주세요."
+            />
+          ) : todayClinicEventGroups.length === 0
           && upcomingClinicEvents.length === 0
           && unlinkedTodayExpectedGroups.length === 0
           && temporaryClinicStudents.length === 0
