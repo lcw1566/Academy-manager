@@ -488,12 +488,14 @@ export default function ClassSessionPage() {
     () => (session ? classGroups.find((g) => g.id === session.classGroupId) : null) ?? null,
     [classGroups, session]
   );
+  const isCanceledSession = ['canceled', 'cancelled'].includes(session?.status);
   const previousSession = useMemo(() => {
     if (!session) return null;
     return classSessions
       .filter((candidate) => (
         candidate.classGroupId === session.classGroupId
         && candidate.id !== session.id
+        && !['canceled', 'cancelled'].includes(candidate.status)
         && `${candidate.date || ''} ${candidate.startTime || ''}`
           < `${session.date || ''} ${session.startTime || ''}`
       ))
@@ -726,7 +728,8 @@ export default function ClassSessionPage() {
     currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
     && (hasAcademyWideClassAccess || isMyAssignedSession)
   );
-  const canEditAttendance = attendanceSettings.studentCheckMethod !== 'disabled' && (
+  const canEditAttendance = !isCanceledSession
+    && attendanceSettings.studentCheckMethod !== 'disabled' && (
     role === 'owner' || (
       currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance')
       && (
@@ -737,7 +740,7 @@ export default function ClassSessionPage() {
     )
   );
   // 기존 canEdit (lesson record 입력/저장) → 권한 기반.
-  const canEdit = canEditLessonRecords;
+  const canEdit = canEditLessonRecords && !isCanceledSession;
   const isOwnerRole = role === 'owner';
   const canManageSession = role === 'owner' || hasAcademyWideClassAccess;
 
@@ -769,6 +772,10 @@ export default function ClassSessionPage() {
 
   const handleSave = useCallback(async () => {
     if (!session || isSaving) return false;
+    if (isCanceledSession) {
+      showToast('휴강된 수업은 기록하거나 완료 처리할 수 없어요.', 'error');
+      return false;
+    }
     setIsSaving(true);
     const draftStudentRecords = { ...(studentRecDraftRef.current || {}) };
     const sessionStudentIds = (session.studentIds || []).filter(Boolean);
@@ -901,7 +908,7 @@ export default function ClassSessionPage() {
       setIsSaving(false);
     }
   }, [
-    session, group, isSaving, commonRec, academyStudents, attendanceByStudentId,
+    session, group, isSaving, isCanceledSession, commonRec, academyStudents, attendanceByStudentId,
     attendanceHintByStudentId, attendanceSettings.studentCheckMethod,
     batchSaveSessionRecords, canEdit, canEditAttendance,
     isAuthenticated, currentAcademyId,
@@ -954,8 +961,18 @@ export default function ClassSessionPage() {
       />
 
       <div className="pt-14 md:pt-0 pb-28">
+        {isCanceledSession && (
+          <div className="px-4 pt-4">
+            <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3">
+              <p className="text-sm font-extrabold text-red-700">휴강된 회차예요</p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-red-600">
+                기록과 출석을 수정하거나 수업 완료 처리할 수 없어요. 회차 변경에서 휴강을 취소할 수 있어요.
+              </p>
+            </div>
+          </div>
+        )}
         {/* 수업 정보 카드 */}
-        <div className="px-4 pt-4 mb-4">
+        <div className={`px-4 mb-4 ${isCanceledSession ? 'pt-3' : 'pt-4'}`}>
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <div className="grid grid-cols-3 gap-3 mb-3">
               <SummaryCell label="수강생" value={students.length} />
@@ -971,7 +988,7 @@ export default function ClassSessionPage() {
             </div>
 
             {/* Phase 30 — 대체 강사 */}
-            {(substituteTeacher || canManageSession) && (
+            {!isCanceledSession && (substituteTeacher || canManageSession) && (
               <div className="mt-3 pt-3 border-t border-gray-50">
                 {substituteTeacher ? (
                   <div className="flex items-center gap-2">
@@ -1011,7 +1028,7 @@ export default function ClassSessionPage() {
 
             {/* Phase 44.7 / Phase C — 회차 변경 (휴강/시간변경/보강) */}
             {canManageSession && (
-              <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className={`mt-2 grid gap-2 ${isCanceledSession ? 'grid-cols-1' : 'grid-cols-2'}`}>
                 <button
                   type="button"
                   onClick={() => setExceptionSheetOpen(true)}
@@ -1019,14 +1036,16 @@ export default function ClassSessionPage() {
                 >
                   회차 변경
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setRecordTemplateOpen(true)}
-                  className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-50 py-2 text-xs font-bold text-blue-700 active:bg-blue-100"
-                >
-                  <SlidersHorizontal size={12} />
-                  기록 구성
-                </button>
+                {!isCanceledSession && (
+                  <button
+                    type="button"
+                    onClick={() => setRecordTemplateOpen(true)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-blue-50 py-2 text-xs font-bold text-blue-700 active:bg-blue-100"
+                  >
+                    <SlidersHorizontal size={12} />
+                    기록 구성
+                  </button>
+                )}
               </div>
             )}
           </div>

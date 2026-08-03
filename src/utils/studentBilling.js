@@ -272,15 +272,13 @@ export function calculateStudentMonthlyCharge({
     if (feeType === 'per_session') {
       amount = amountPerUnit * monthSessions.length;
     } else if (feeType === 'one_time') {
-      // 과거 회차를 아직 불러오지 않은 상태에서도 다음 달에 일회성 비용이
-      // 다시 붙지 않도록 반/학생 적용 시작일을 함께 기준으로 삼는다.
+      // 실제로 진행할 첫 회차가 있는 달에 한 번만 붙인다. 반 시작 월의 모든
+      // 회차가 휴강이면 비용을 잃지 않고 다음 정상 회차가 있는 달로 넘긴다.
       const billingStartDate = [group.startDate, effectiveFrom]
         .filter(Boolean)
         .sort()
         .at(-1) || '';
-      const firstDate = billingStartDate < range.start
-        ? billingStartDate
-        : (studentSessions[0]?.date || billingStartDate);
+      const firstDate = studentSessions[0]?.date || billingStartDate;
       if (firstDate >= range.start && firstDate <= range.end) amount = amountPerUnit;
     } else {
       amount = amountPerUnit;

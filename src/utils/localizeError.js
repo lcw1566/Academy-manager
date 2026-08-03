@@ -5,6 +5,7 @@ const ERROR_TRANSLATIONS = [
   [/user is disabled|account is disabled/gi, '이 계정은 현재 비활성화되어 있어요. 관리자에게 문의해주세요.'],
   [/login request.*timed out|request timeout/gi, '로그인 요청 시간이 초과됐어요. 네트워크를 확인하고 다시 시도해주세요.'],
   [/user already registered/gi, '이미 가입된 이메일이에요.'],
+  [/email address already in use|email already registered|email already exists|user already exists/gi, '이미 사용 중인 이메일이에요.'],
   [/email address .* invalid|invalid email/gi, '올바른 이메일 주소를 입력해주세요.'],
   [/password should be at least (\d+) characters/gi, '비밀번호는 최소 $1자 이상이어야 해요.'],
   [/signup is disabled/gi, '현재 회원가입을 이용할 수 없어요.'],

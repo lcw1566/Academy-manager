@@ -85,7 +85,10 @@ function getStudentDailyLessonRecords({ studentId, classSessions, classGroups, a
   const todayYMD = today();
   const currentHHMM = nowHHMM();
   const records = classSessions
-    .filter((s) => (s.studentIds || []).includes(studentId))
+    .filter((s) => (
+      !['canceled', 'cancelled'].includes(s.status)
+      && (s.studentIds || []).includes(studentId)
+    ))
     .map((session) => {
       const group = classGroups.find((g) => g.id === session.classGroupId) || {};
       const attendance = academyAttendanceRecords.find((a) => (
@@ -526,7 +529,9 @@ export default function AcademyStudentDetailPage() {
           time: formatAttendanceTime(event.event_time),
           sortTime: formatAttendanceTime(event.event_time),
           title: event.event_type === 'check_out' ? '하원' : '등원',
-          detail: event.source === 'qr' ? 'QR 기록' : '선생님 기록',
+          detail: event.source === 'qr'
+            ? 'QR 기록'
+            : event.source === 'system_auto' ? '22시 자동 하원' : '선생님 기록',
         });
       });
 
@@ -534,7 +539,7 @@ export default function AcademyStudentDetailPage() {
       .filter((session) => (
         session.date
         && session.date <= todayYmd
-        && session.status !== 'canceled'
+        && !['canceled', 'cancelled'].includes(session.status)
         && (session.studentIds || []).includes(student.id)
       ))
       .map((session) => {

@@ -66,6 +66,8 @@ import {
   createStaffAttendanceLog,
   updateStaffAttendanceLog,
   createClassSessionException,
+  updateClassSessionException,
+  deleteClassSessionException,
   ensureClassSessionsForRange as ensureClassSessionsForRangeRpc,
 } from '../services/supabase/scheduleRulesApi';
 import useAuthStore from './useAuthStore';
@@ -2216,6 +2218,32 @@ const useWorkspaceStore = create(
           }));
         }
         return created;
+      },
+
+      updateClassSessionExceptionLocal: async (id, patch = {}) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        if (!id) throw new Error('수업 변경 정보를 찾지 못했어요.');
+        const updated = await updateClassSessionException(id, patch);
+        if (updated) {
+          set((state) => ({
+            classSessionExceptions: (state.classSessionExceptions || []).map(
+              (item) => (item.id === id ? updated : item),
+            ),
+          }));
+        }
+        return updated;
+      },
+
+      deleteClassSessionExceptionLocal: async (id) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        if (!id) throw new Error('수업 변경 정보를 찾지 못했어요.');
+        await deleteClassSessionException(id);
+        set((state) => ({
+          classSessionExceptions: (state.classSessionExceptions || []).filter(
+            (item) => item.id !== id,
+          ),
+        }));
+        return true;
       },
 
       // 학생 등·하원 이벤트 목록. 날짜가 있으면 한국 시간 기준 해당 하루,

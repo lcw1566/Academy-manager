@@ -135,11 +135,19 @@ export function buildPlannedStaffSchedule({ rules = [], exceptions = [], fromDat
     for (const rule of filteredRules) {
       if (rule.day_of_week !== dow) continue;
       if (!isRuleActiveOnDate(rule, ymd)) continue;
-      const relatedExc = filteredExceptions.find(
-        (e) => e.staff_user_id === rule.staff_user_id
+      // 같은 날 변경과 취소가 모두 있으면 취소를 우선한다. 배열 수신 순서에
+      // 따라 기기마다 다른 근무표가 보이지 않도록 최근 행까지 결정적으로 고른다.
+      const relatedExc = filteredExceptions
+        .filter((e) => (
+          e.staff_user_id === rule.staff_user_id
           && e.date === ymd
-          && (e.type === 'cancel' || e.type === 'change'),
-      );
+          && (e.type === 'cancel' || e.type === 'change')
+        ))
+        .sort((left, right) => (
+          (left.type === 'cancel' ? 0 : 1) - (right.type === 'cancel' ? 0 : 1)
+          || String(right.created_at || '').localeCompare(String(left.created_at || ''))
+          || String(right.id || '').localeCompare(String(left.id || ''))
+        ))[0];
       if (relatedExc?.type === 'cancel') continue;
       const startTime = relatedExc?.start_time || rule.start_time || '';
       const endTime = relatedExc?.end_time || rule.end_time || '';

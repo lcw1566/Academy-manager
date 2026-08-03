@@ -125,12 +125,55 @@ export async function updateCurrentUserPassword({ currentPassword, newPassword }
   if (next.length < 8) throw new Error('새 비밀번호는 8자 이상 입력해주세요.');
   if (current === next) throw new Error('새 비밀번호는 현재 비밀번호와 다르게 입력해주세요.');
 
-  const { data, error } = await supabase.auth.updateUser({
-    password: next,
-    current_password: current,
-  });
+  await reauthenticateWithPassword(current);
+  const { data, error } = await supabase.auth.updateUser({ password: next });
   if (error) throw error;
   return data;
+}
+
+async function reauthenticateWithPassword(currentPassword) {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+  const email = String(userData?.user?.email || '').trim().toLowerCase();
+  if (!email) throw new Error('현재 로그인 이메일을 확인하지 못했어요.');
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password: String(currentPassword || ''),
+  });
+  if (error) {
+    if (/invalid login credentials/i.test(error.message || '')) {
+      throw new Error('현재 비밀번호가 올바르지 않아요.');
+    }
+    throw error;
+  }
+  if (!data?.session?.user) throw new Error('현재 비밀번호를 확인하지 못했어요.');
+  return data;
+}
+
+export async function updateCurrentUserEmail({ currentPassword, newEmail } = {}) {
+  assertSupabaseConfigured();
+  const password = String(currentPassword || '');
+  const normalizedEmail = String(newEmail || '').trim().toLowerCase();
+  if (!password) throw new Error('현재 비밀번호를 입력해주세요.');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    throw new Error('올바른 이메일 주소를 입력해주세요.');
+  }
+
+  const { data: currentUserData, error: currentUserError } = await supabase.auth.getUser();
+  if (currentUserError) throw currentUserError;
+  if (String(currentUserData?.user?.email || '').toLowerCase() === normalizedEmail) {
+    throw new Error('현재 이메일과 다른 이메일을 입력해주세요.');
+  }
+
+  await reauthenticateWithPassword(password);
+  const { data, error } = await supabase.auth.updateUser({ email: normalizedEmail });
+  if (error) throw error;
+  if (!data?.user) throw new Error('변경된 계정 정보를 확인하지 못했어요.');
+  return {
+    ...data,
+    requestedEmail: normalizedEmail,
+    emailChangePending: String(data.user.email || '').toLowerCase() !== normalizedEmail,
+  };
 }
 
 async function readFunctionError(error, fallback) {

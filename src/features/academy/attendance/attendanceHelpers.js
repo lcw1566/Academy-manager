@@ -283,5 +283,6 @@ function evtTimeToHHmm(ts) {
 export const ATTENDANCE_SOURCE_LABELS = {
   qr:             'QR 등원',
   teacher_manual: '선생님 수정',
+  system_auto:    '22시 자동 하원',
   manual:         '직접 체크',
 };

@@ -66,7 +66,9 @@ function getPresenceMeta(state) {
   }
   return {
     label: '하원',
-    detail: `${formatEventTime(state.latest.event_time)} 하원`,
+    detail: state.latest.source === 'system_auto'
+      ? `${formatEventTime(state.latest.event_time)} 자동 하원`
+      : `${formatEventTime(state.latest.event_time)} 하원`,
     badge: 'bg-blue-50 text-blue-700',
     icon: LogOut,
   };

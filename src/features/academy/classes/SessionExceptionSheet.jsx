@@ -11,17 +11,19 @@
 // 대체 강사 (substitute) 는 ClassSessionPage 의 기존 SubstituteTeacherModal 이
 // 담당하므로 여기에는 포함하지 않는다 (UI 중복 회피).
 //
-// 저장은 useWorkspaceStore.createClassSessionExceptionLocal 호출.
-// 기존 class_sessions / lesson_records / attendance_records 는 건드리지 않음.
+// 저장 뒤 해당 날짜를 즉시 다시 실체화해 모든 화면에서 같은 회차를 사용한다.
 
 import { useState } from 'react';
-import { CalendarX, Clock, PlusCircle, Loader2 } from 'lucide-react';
+import { CalendarX, Clock, PlusCircle, Loader2, RotateCcw } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import useAcademyStore from '../../../store/useAcademyStore';
 
 export default function SessionExceptionSheet({ session, group, onClose }) {
   const createException = useWorkspaceStore((s) => s.createClassSessionExceptionLocal);
+  const updateException = useWorkspaceStore((s) => s.updateClassSessionExceptionLocal);
+  const deleteException = useWorkspaceStore((s) => s.deleteClassSessionExceptionLocal);
+  const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
   const ensureClassSessionsForRangeLocal = useWorkspaceStore(
     (s) => s.ensureClassSessionsForRangeLocal,
   );
@@ -42,6 +44,22 @@ export default function SessionExceptionSheet({ session, group, onClose }) {
   if (!session || !group) return null;
 
   const groupServerId = group.serverId;
+  const matchingExceptions = classSessionExceptions.filter((exception) => (
+    exception.class_group_id === groupServerId
+    && exception.session_date === session.date
+  ));
+  const calendarCancellation = matchingExceptions.find((exception) => (
+    exception.type === 'cancel' && Boolean(exception.calendar_event_id)
+  )) || null;
+  const manualCancellations = matchingExceptions.filter((exception) => (
+    exception.type === 'cancel' && !exception.calendar_event_id
+  ));
+  const manualReschedules = matchingExceptions.filter((exception) => (
+    exception.type === 'reschedule' && !exception.calendar_event_id
+  ));
+  const activeReschedule = manualReschedules[0] || null;
+  const isCanceled = ['canceled', 'cancelled'].includes(session.status);
+  const isCompleted = session.status === 'completed';
   if (!groupServerId) {
     return (
       <Modal isOpen onClose={onClose} title="회차 변경">
@@ -55,6 +73,22 @@ export default function SessionExceptionSheet({ session, group, onClose }) {
 
   const handleSave = async () => {
     if (saving) return;
+    if (isCompleted && mode !== 'extra') {
+      showToast('완료된 수업은 휴강하거나 시간을 변경할 수 없어요.', 'error');
+      return;
+    }
+    if ((mode === 'reschedule' || mode === 'extra') && start >= end) {
+      showToast('종료 시간은 시작 시간보다 늦어야 해요.', 'error');
+      return;
+    }
+    if (mode === 'extra' && classSessionExceptions.some((exception) => (
+      exception.class_group_id === groupServerId
+      && exception.session_date === extraDate
+      && exception.type === 'cancel'
+    ))) {
+      showToast('휴강된 날짜에는 같은 반의 추가 수업을 만들 수 없어요.', 'error');
+      return;
+    }
     setSaving(true);
     try {
       let successMessage = '';
@@ -69,15 +103,22 @@ export default function SessionExceptionSheet({ session, group, onClose }) {
         });
         successMessage = '휴강으로 처리됐어요.';
       } else if (mode === 'reschedule') {
-        await createException({
-          class_group_id: groupServerId,
-          session_date: session.date,
-          type: 'reschedule',
+        const payload = {
           start_time: start || null,
           end_time: end || null,
           reason: reason || null,
           memo: memo || null,
-        });
+        };
+        if (activeReschedule) {
+          await updateException(activeReschedule.id, payload);
+        } else {
+          await createException({
+            class_group_id: groupServerId,
+            session_date: session.date,
+            type: 'reschedule',
+            ...payload,
+          });
+        }
         successMessage = '시간이 변경됐어요.';
       } else if (mode === 'extra') {
         await createException({
@@ -119,6 +160,31 @@ export default function SessionExceptionSheet({ session, group, onClose }) {
     }
   };
 
+  const clearExceptions = async (exceptions, successMessage) => {
+    if (saving || exceptions.length === 0) return;
+    setSaving(true);
+    try {
+      for (const exception of exceptions) {
+        await deleteException(exception.id);
+      }
+      await ensureClassSessionsForRangeLocal({
+        fromDate: session.date,
+        toDate: session.date,
+        classGroupId: groupServerId,
+      });
+      await Promise.all([
+        loadServerClassSessions(),
+        loadClassSessionExceptions({ fromDate: session.date, toDate: session.date }),
+      ]);
+      showToast(successMessage);
+      onClose?.();
+    } catch (error) {
+      showToast(error?.message || '회차 변경을 취소하지 못했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const canSave = (() => {
     if (mode === 'cancel') return true;
     if (mode === 'reschedule') return !!start && !!end;
@@ -147,20 +213,65 @@ export default function SessionExceptionSheet({ session, group, onClose }) {
     >
       {!mode && (
         <div className="flex flex-col gap-2">
-          <ActionRow
-            icon={CalendarX}
-            tone="red"
-            title="휴강 처리"
-            subtitle="이 날 수업을 진행하지 않아요."
-            onClick={() => setMode('cancel')}
-          />
-          <ActionRow
-            icon={Clock}
-            tone="blue"
-            title="시간 변경"
-            subtitle="이 회차만 시작/종료 시간을 바꿔요."
-            onClick={() => setMode('reschedule')}
-          />
+          {isCompleted && (
+            <div className="rounded-2xl bg-[#F2F4F6] px-4 py-3 text-xs font-semibold leading-5 text-[#6B7684]">
+              완료된 수업의 기록과 시간은 보존돼요. 필요한 경우 보강/추가 수업을 만들어주세요.
+            </div>
+          )}
+          {isCanceled && calendarCancellation && (
+            <div className="rounded-2xl bg-red-50 px-4 py-3 text-xs font-semibold leading-5 text-red-700">
+              학원 일정에서 휴강된 회차예요. 학원 캘린더에서 해당 일정을 수정하거나 삭제해주세요.
+            </div>
+          )}
+          {isCanceled && !calendarCancellation && manualCancellations.length > 0 && (
+            <ActionRow
+              icon={RotateCcw}
+              tone="blue"
+              title="휴강 취소"
+              subtitle="원래 수업 일정으로 되돌려요."
+              onClick={() => clearExceptions(manualCancellations, '휴강을 취소하고 원래 수업으로 되돌렸어요.')}
+            />
+          )}
+          {isCanceled && !calendarCancellation && manualCancellations.length === 0 && (
+            <div className="rounded-2xl bg-[#F2F4F6] px-4 py-3 text-xs font-semibold leading-5 text-[#6B7684]">
+              반 일정 변경으로 취소된 회차예요. 반 수정에서 진행 일정을 확인해주세요.
+            </div>
+          )}
+          {!isCanceled && !isCompleted && (
+            <>
+              <ActionRow
+                icon={CalendarX}
+                tone="red"
+                title="휴강 처리"
+                subtitle="이 날 수업을 진행하지 않아요."
+                onClick={() => setMode('cancel')}
+              />
+              <ActionRow
+                icon={Clock}
+                tone="blue"
+                title={activeReschedule ? '시간 다시 변경' : '시간 변경'}
+                subtitle="이 회차만 시작/종료 시간을 바꿔요."
+                onClick={() => {
+                  if (activeReschedule) {
+                    setStart(String(activeReschedule.start_time || session.startTime || '').slice(0, 5));
+                    setEnd(String(activeReschedule.end_time || session.endTime || '').slice(0, 5));
+                    setReason(activeReschedule.reason || '');
+                    setMemo(activeReschedule.memo || '');
+                  }
+                  setMode('reschedule');
+                }}
+              />
+              {activeReschedule && (
+                <ActionRow
+                  icon={RotateCcw}
+                  tone="blue"
+                  title="시간 변경 취소"
+                  subtitle="반의 원래 수업 시간으로 되돌려요."
+                  onClick={() => clearExceptions(manualReschedules, '원래 수업 시간으로 되돌렸어요.')}
+                />
+              )}
+            </>
+          )}
           <ActionRow
             icon={PlusCircle}
             tone="emerald"

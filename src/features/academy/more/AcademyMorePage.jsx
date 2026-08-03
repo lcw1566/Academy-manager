@@ -54,6 +54,7 @@ export default function AcademyMorePage({
   const [showProfileEdit, setShowProfileEdit]         = useState(false);
   const [showUserProfileEdit, setShowUserProfileEdit] = useState(false);
   const [showAttendanceSettings, setShowAttendanceSettings] = useState(false);
+  const [showEmailChange, setShowEmailChange] = useState(false);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [exitAction, setExitAction] = useState(null); // leave | withdraw
 
@@ -262,6 +263,7 @@ export default function AcademyMorePage({
             <OwnerEmptyState
               displayName={userProfile?.display_name || authUserEmail}
               onEditMyProfile={() => setShowUserProfileEdit(true)}
+              onChangeEmail={() => setShowEmailChange(true)}
               onChangePassword={() => setShowPasswordChange(true)}
               onWithdraw={() => setExitAction('withdraw')}
             />
@@ -277,6 +279,7 @@ export default function AcademyMorePage({
               lastSyncedLabel={lastSyncedLabel}
               onEditAcademy={() => setShowProfileEdit(true)}
               onEditMyProfile={() => setShowUserProfileEdit(true)}
+              onChangeEmail={() => setShowEmailChange(true)}
               onChangePassword={() => setShowPasswordChange(true)}
               onSwitchAcademy={handleSwitchAcademy}
               onWithdraw={() => setExitAction('withdraw')}
@@ -292,6 +295,7 @@ export default function AcademyMorePage({
             memberships={memberships}
             showSwitchAcademy={showSwitchAcademy}
             onEditMyProfile={() => setShowUserProfileEdit(true)}
+            onChangeEmail={() => setShowEmailChange(true)}
             onChangePassword={() => setShowPasswordChange(true)}
             onSwitchAcademy={handleSwitchAcademy}
             onLeave={() => setExitAction('leave')}
@@ -326,6 +330,13 @@ export default function AcademyMorePage({
 
       {showPasswordChange && (
         <PasswordChangeModal onClose={() => setShowPasswordChange(false)} />
+      )}
+
+      {showEmailChange && (
+        <EmailChangeModal
+          currentEmail={authUserEmail}
+          onClose={() => setShowEmailChange(false)}
+        />
       )}
 
       {/* 직원 출퇴근·학생 등하원 설정 (owner 만) */}
@@ -513,7 +524,7 @@ function AcademyOwnerInfoCard({
 }
 
 // ─── Owner: 학원 없는 신규 가입 상태 ──────────────────────────────
-function OwnerEmptyState({ displayName, onEditMyProfile, onChangePassword, onWithdraw }) {
+function OwnerEmptyState({ displayName, onEditMyProfile, onChangeEmail, onChangePassword, onWithdraw }) {
   return (
     <>
       <div className="mx-4 mt-4 bg-white rounded-2xl p-5 shadow-sm">
@@ -530,6 +541,13 @@ function OwnerEmptyState({ displayName, onEditMyProfile, onChangePassword, onWit
           title={displayName || '내 프로필'}
           subtitle="이름·연락처 수정"
           onClick={onEditMyProfile}
+        />
+        <SettingsRow
+          icon={Mail}
+          tone="blue"
+          title="로그인 이메일 변경"
+          subtitle="오타가 있는 이메일을 바로 수정"
+          onClick={onChangeEmail}
         />
         <SettingsRow
           icon={KeyRound}
@@ -555,7 +573,7 @@ function OwnerEmptyState({ displayName, onEditMyProfile, onChangePassword, onWit
 function OwnerMoreSections({
   academyProfile, academyName, displayName, email, phone, memberships = [], showSwitchAcademy,
   lastSyncedLabel,
-  onEditAcademy, onEditMyProfile, onChangePassword, onSwitchAcademy, onWithdraw,
+  onEditAcademy, onEditMyProfile, onChangeEmail, onChangePassword, onSwitchAcademy, onWithdraw,
 }) {
   const showToast = useAcademyStore((s) => s.showToast);
   const [refreshing, setRefreshing] = useState(false);
@@ -632,6 +650,13 @@ function OwnerMoreSections({
       <SectionTitle>계정</SectionTitle>
       <div className="mx-4 flex flex-col gap-2">
         <SettingsRow
+          icon={Mail}
+          tone="blue"
+          title="로그인 이메일 변경"
+          subtitle={email || '현재 이메일 확인'}
+          onClick={onChangeEmail}
+        />
+        <SettingsRow
           icon={KeyRound}
           tone="blue"
           title="비밀번호 변경"
@@ -658,7 +683,7 @@ function OwnerMoreSections({
 // ─── Staff (teacher / assistant) 메인 layout ────────────────────
 function StaffMoreSections({
   role, academyProfile, displayName, email, phone, memberships = [], showSwitchAcademy,
-  onEditMyProfile, onChangePassword, onSwitchAcademy, onLeave, onWithdraw,
+  onEditMyProfile, onChangeEmail, onChangePassword, onSwitchAcademy, onLeave, onWithdraw,
 }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
@@ -770,6 +795,13 @@ function StaffMoreSections({
 
       <SectionTitle>계정</SectionTitle>
       <div className="mx-4 flex flex-col gap-2">
+        <SettingsRow
+          icon={Mail}
+          tone="blue"
+          title="로그인 이메일 변경"
+          subtitle={email || '현재 이메일 확인'}
+          onClick={onChangeEmail}
+        />
         <SettingsRow
           icon={KeyRound}
           tone="blue"
@@ -887,6 +919,129 @@ function AccountExitModal({
             />
           </div>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+function EmailChangeModal({ currentEmail, onClose }) {
+  const changeEmail = useAuthStore((state) => state.changeEmail);
+  const syncProfile = useWorkspaceStore((state) => state.syncProfile);
+  const showToast = useAcademyStore((state) => state.showToast);
+  const [form, setForm] = useState({
+    newEmail: '',
+    confirmEmail: '',
+    currentPassword: '',
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const normalizedEmail = form.newEmail.trim().toLowerCase();
+  const canSubmit = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
+    && form.confirmEmail.trim().toLowerCase() === normalizedEmail
+    && Boolean(form.currentPassword);
+
+  const updateField = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleSave = async () => {
+    if (!canSubmit || saving) return;
+    if (normalizedEmail === String(currentEmail || '').trim().toLowerCase()) {
+      showToast('현재 이메일과 다른 이메일을 입력해주세요.', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await changeEmail({
+        currentPassword: form.currentPassword,
+        newEmail: normalizedEmail,
+      });
+      await syncProfile?.({ reportError: false });
+      if (result?.emailChangePending) {
+        showToast('이메일 변경 확인이 필요해요. Supabase 이메일 설정을 확인해주세요.', 'info');
+      } else {
+        showToast('로그인 이메일을 변경했어요. 다음 로그인부터 새 이메일을 사용해주세요.');
+      }
+      onClose();
+    } catch (error) {
+      showToast(error?.message || '이메일을 변경하지 못했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      isOpen
+      onClose={saving ? undefined : onClose}
+      title="로그인 이메일 변경"
+      footer={(
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!canSubmit || saving}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0064FF] py-3.5 text-sm font-bold text-white disabled:bg-blue-300"
+        >
+          {saving && <Loader2 size={15} className="animate-spin" />}
+          {saving ? '변경 중…' : '이메일 변경'}
+        </button>
+      )}
+    >
+      <div className="flex flex-col gap-4">
+        <div className="rounded-2xl bg-[#F2F4F6] px-4 py-3">
+          <p className="text-xs font-bold text-[#8B95A1]">현재 로그인 이메일</p>
+          <p className="mt-1 break-all text-sm font-extrabold text-[#191F28]">{currentEmail || '확인되지 않음'}</p>
+        </div>
+        <p className="text-sm leading-6 text-[#6B7684]">
+          이메일 인증을 사용하지 않으므로 새 주소를 두 번 확인해요. 변경 후에는 새 이메일로 로그인해야 해요.
+        </p>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#4E5968]">새 이메일</label>
+          <input
+            type="email"
+            value={form.newEmail}
+            onChange={(event) => updateField('newEmail', event.target.value)}
+            autoComplete="email"
+            inputMode="email"
+            placeholder="new@example.com"
+            className="input"
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#4E5968]">새 이메일 확인</label>
+          <input
+            type="email"
+            value={form.confirmEmail}
+            onChange={(event) => updateField('confirmEmail', event.target.value)}
+            inputMode="email"
+            placeholder="한 번 더 입력"
+            className={`input ${form.confirmEmail && form.confirmEmail.trim().toLowerCase() !== normalizedEmail ? 'border-red-300 focus:border-red-400' : ''}`}
+          />
+          {form.confirmEmail && form.confirmEmail.trim().toLowerCase() !== normalizedEmail && (
+            <p className="mt-1.5 text-xs font-bold text-red-500">새 이메일이 서로 다릅니다.</p>
+          )}
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#4E5968]">현재 비밀번호</label>
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={form.currentPassword}
+              onChange={(event) => updateField('currentPassword', event.target.value)}
+              autoComplete="current-password"
+              placeholder="본인 확인을 위해 입력"
+              className="input pr-12"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((visible) => !visible)}
+              className="absolute right-1 top-1 flex h-10 w-10 items-center justify-center rounded-xl text-[#8B95A1] active:bg-[#F2F4F6]"
+              aria-label={showPassword ? '비밀번호 숨기기' : '비밀번호 보기'}
+            >
+              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </div>
+        </div>
       </div>
     </Modal>
   );

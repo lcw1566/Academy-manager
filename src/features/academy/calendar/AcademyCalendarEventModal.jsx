@@ -198,6 +198,7 @@ export default function AcademyCalendarEventModal({
     const selectedIds = new Set(form.impactClassGroupIds);
     return classSchedules.filter((schedule) => {
       if (!schedule.date || schedule.date < form.startDate || schedule.date > form.endDate) return false;
+      if (['completed', 'canceled', 'cancelled'].includes(schedule.status)) return false;
       if (selectedIds.size === 0) return true;
       return selectedIds.has(schedule.classGroupId) || selectedIds.has(schedule.classGroupServerId);
     });
@@ -229,6 +230,7 @@ export default function AcademyCalendarEventModal({
     if (form.targetType === 'school' && form.schoolNames.length === 0 && form.grades.length === 0) return '학교 또는 학년을 골라주세요.';
     if (form.targetType === 'class' && form.classGroupIds.length === 0) return '반을 한 개 이상 골라주세요.';
     if (form.targetType === 'student' && form.studentIds.length === 0) return '학생을 한 명 이상 골라주세요.';
+    if (!form.allDay && form.affectsClasses) return '시간 지정 일정은 수업 휴강과 연결할 수 없어요.';
     if (form.affectsClasses && !canManageClasses) return '수업을 휴강 처리할 권한이 없어요.';
     return null;
   };
@@ -266,8 +268,10 @@ export default function AcademyCalendarEventModal({
           student_ids: form.targetType === 'student' ? form.studentIds : [],
           memo: form.memo.trim() || null,
           visibility: 'internal',
-          affects_classes: form.affectsClasses,
-          impact_class_group_ids: form.affectsClasses ? form.impactClassGroupIds : [],
+          // 현재 회차 예외는 반+날짜 단위다. 시간 일정까지 연결하면 같은 날의
+          // 다른 수업도 함께 휴강될 수 있으므로 종일 일정만 안전하게 연결한다.
+          affects_classes: form.allDay && form.affectsClasses,
+          impact_class_group_ids: form.allDay && form.affectsClasses ? form.impactClassGroupIds : [],
           source: 'manual',
         },
       });
@@ -354,7 +358,15 @@ export default function AcademyCalendarEventModal({
         <section>
           <div className="mb-2 flex items-center justify-between">
             <p className="text-xs font-extrabold text-[#6B7684]">언제인가요?</p>
-            <button type="button" disabled={!canEdit} onClick={() => setField('allDay', !form.allDay)} className={`rounded-full px-3 py-1.5 text-xs font-extrabold ${form.allDay ? 'bg-[#E8F3FF] text-[#0064FF]' : 'bg-[#F2F4F6] text-[#6B7684]'}`}>{form.allDay ? '종일' : '시간 지정'}</button>
+            <button type="button" disabled={!canEdit} onClick={() => {
+              const nextAllDay = !form.allDay;
+              setForm((current) => ({
+                ...current,
+                allDay: nextAllDay,
+                affectsClasses: nextAllDay ? current.affectsClasses : false,
+              }));
+              setConfirmAction(null);
+            }} className={`rounded-full px-3 py-1.5 text-xs font-extrabold ${form.allDay ? 'bg-[#E8F3FF] text-[#0064FF]' : 'bg-[#F2F4F6] text-[#6B7684]'}`}>{form.allDay ? '종일' : '시간 지정'}</button>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <input disabled={!canEdit} type="date" value={form.startDate} onChange={(e) => { setField('startDate', e.target.value); if (e.target.value > form.endDate) setField('endDate', e.target.value); }} className="h-12 rounded-2xl border border-[#D1D6DB] px-3 text-sm font-bold outline-none focus:border-[#3182F6]" />
@@ -413,7 +425,7 @@ export default function AcademyCalendarEventModal({
           )}
         </section>
 
-        {canManageClasses && (
+        {canManageClasses && form.allDay && (
           <section className={`rounded-3xl border p-4 ${form.affectsClasses ? 'border-red-200 bg-red-50' : 'border-[#E5E8EB] bg-white'}`}>
             <button type="button" disabled={!canEdit} onClick={() => { setField('affectsClasses', !form.affectsClasses); setConfirmAction(null); }} className="flex w-full items-center justify-between text-left">
               <span><strong className="block text-sm text-[#191F28]">이 기간에는 수업도 쉬어요</strong><small className="mt-1 block text-[#8B95A1]">해당 회차를 휴강으로 연결해요.</small></span>
@@ -430,9 +442,19 @@ export default function AcademyCalendarEventModal({
                   })}
                 </div>
                 <p className="mt-3 text-xs font-bold text-red-600">현재 화면 기준 {affectedSchedules.length}개 수업이 휴강돼요. 저장 직전 한 번 더 확인합니다.</p>
+                {form.category === 'academy_break' && (
+                  <p className="mt-2 text-[11px] font-semibold leading-5 text-[#8B95A1]">
+                    수업에서 이어지는 클리닉은 함께 쉬어요. 별도로 만든 클리닉 일정과 직원 근무는 각각의 일정에서 관리해요.
+                  </p>
+                )}
               </div>
             )}
           </section>
+        )}
+        {canManageClasses && !form.allDay && (
+          <div className="rounded-2xl bg-[#F2F4F6] px-4 py-3 text-xs font-semibold leading-5 text-[#6B7684]">
+            시간 지정 일정은 일정표에만 표시돼요. 현재 회차 구조상 휴강은 종일 일정에서만 안전하게 연결할 수 있어요.
+          </div>
         )}
 
         <label className="block">
