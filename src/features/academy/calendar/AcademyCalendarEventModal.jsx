@@ -24,6 +24,107 @@ function toggleItem(items, value) {
   return items.includes(value) ? items.filter((item) => item !== value) : [...items, value];
 }
 
+function normalizedText(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ko');
+}
+
+function canonicalItems(values) {
+  return [...new Set(arrayOf(values).map(String))].sort((left, right) => left.localeCompare(right));
+}
+
+function sameItems(left, right) {
+  const a = canonicalItems(left);
+  const b = canonicalItems(right);
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function normalizedEvent(value) {
+  return {
+    category: value.category,
+    title: normalizedText(value.title),
+    startDate: value.startDate || value.start_date,
+    endDate: value.endDate || value.end_date,
+    allDay: value.allDay ?? value.all_day ?? true,
+    startTime: String(value.startTime || value.start_time || '').slice(0, 5),
+    endTime: String(value.endTime || value.end_time || '').slice(0, 5),
+    targetType: value.targetType || value.target_type || 'all',
+    schoolNames: value.schoolNames || value.school_names || [],
+    grades: value.grades || [],
+    classGroupIds: value.classGroupIds || value.class_group_ids || [],
+    studentIds: value.studentIds || value.student_ids || [],
+  };
+}
+
+function isExactDuplicate(leftValue, rightValue) {
+  const left = normalizedEvent(leftValue);
+  const right = normalizedEvent(rightValue);
+  return left.category === right.category
+    && left.title === right.title
+    && left.startDate === right.startDate
+    && left.endDate === right.endDate
+    && left.allDay === right.allDay
+    && (left.allDay || (left.startTime === right.startTime && left.endTime === right.endTime))
+    && left.targetType === right.targetType
+    && sameItems(left.schoolNames, right.schoolNames)
+    && sameItems(left.grades, right.grades)
+    && sameItems(left.classGroupIds, right.classGroupIds)
+    && sameItems(left.studentIds, right.studentIds);
+}
+
+function audienceOf(value, students, groups) {
+  const event = normalizedEvent(value);
+  if (event.targetType === 'all') return { all: true, ids: new Set() };
+  if (event.targetType === 'student') return { all: false, ids: new Set(event.studentIds) };
+  if (event.targetType === 'class') {
+    const groupIds = new Set(event.classGroupIds);
+    return {
+      all: false,
+      ids: new Set(groups
+        .filter((group) => groupIds.has(group.serverId || group.id))
+        .flatMap((group) => group.studentIds || [])),
+    };
+  }
+  const schoolNames = new Set(event.schoolNames);
+  const grades = new Set(event.grades);
+  return {
+    all: false,
+    ids: new Set(students
+      .filter((student) => (
+        (schoolNames.size === 0 || schoolNames.has(student.school))
+        && (grades.size === 0 || grades.has(student.grade))
+      ))
+      .map((student) => student.serverId || student.id)),
+  };
+}
+
+function targetsOverlap(leftValue, rightValue, students, groups) {
+  const left = normalizedEvent(leftValue);
+  const right = normalizedEvent(rightValue);
+  if (left.targetType === 'all' || right.targetType === 'all') return true;
+  const leftAudience = audienceOf(left, students, groups);
+  const rightAudience = audienceOf(right, students, groups);
+  if ([...leftAudience.ids].some((id) => rightAudience.ids.has(id))) return true;
+
+  // 학생 정보가 아직 없는 초기 학원에서도 동일 선택값은 정확하게 겹침으로 본다.
+  if (left.targetType !== right.targetType) return false;
+  if (left.targetType === 'school') {
+    const schoolCompatible = left.schoolNames.length === 0 || right.schoolNames.length === 0
+      || left.schoolNames.some((name) => right.schoolNames.includes(name));
+    const gradeCompatible = left.grades.length === 0 || right.grades.length === 0
+      || left.grades.some((grade) => right.grades.includes(grade));
+    return schoolCompatible && gradeCompatible;
+  }
+  if (left.targetType === 'class') return left.classGroupIds.some((id) => right.classGroupIds.includes(id));
+  return left.studentIds.some((id) => right.studentIds.includes(id));
+}
+
+function timesOverlap(leftValue, rightValue) {
+  const left = normalizedEvent(leftValue);
+  const right = normalizedEvent(rightValue);
+  if (left.allDay || right.allDay) return true;
+  return left.startTime < right.endTime && right.startTime < left.endTime;
+}
+
 function targetLabel(type, form, students, groups) {
   if (type === 'school') {
     const values = [...form.schoolNames, ...form.grades];
@@ -101,12 +202,21 @@ export default function AcademyCalendarEventModal({
       return selectedIds.has(schedule.classGroupId) || selectedIds.has(schedule.classGroupServerId);
     });
   }, [classSchedules, form.affectsClasses, form.endDate, form.impactClassGroupIds, form.startDate]);
-  const overlappingEvents = useMemo(() => existingEvents.filter((item) => (
-    item.id !== event?.id
-    && item.category === form.category
-    && item.start_date <= form.endDate
-    && item.end_date >= form.startDate
-  )), [event?.id, existingEvents, form.category, form.endDate, form.startDate]);
+  const eventConflicts = useMemo(() => existingEvents
+    .filter((item) => item.id !== event?.id && item.category === form.category)
+    .map((item) => {
+      if (isExactDuplicate(form, item)) return { event: item, kind: 'exact' };
+      const datesOverlap = item.start_date <= form.endDate && item.end_date >= form.startDate;
+      if (datesOverlap
+        && timesOverlap(form, item)
+        && targetsOverlap(form, item, activeStudents, activeGroups)) {
+        return { event: item, kind: 'overlap' };
+      }
+      return null;
+    })
+    .filter(Boolean), [activeGroups, activeStudents, event?.id, existingEvents, form]);
+  const exactDuplicate = eventConflicts.find((conflict) => conflict.kind === 'exact') || null;
+  const partialConflicts = eventConflicts.filter((conflict) => conflict.kind === 'overlap');
 
   const setField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const category = getAcademyCalendarCategory(form.category);
@@ -127,6 +237,10 @@ export default function AcademyCalendarEventModal({
     const message = validate();
     if (message) {
       showToast(message, 'error');
+      return;
+    }
+    if (exactDuplicate) {
+      showToast('이미 같은 일정이 있어요. 기존 일정을 확인해주세요.', 'error');
       return;
     }
     if (form.affectsClasses && confirmAction !== 'save') {
@@ -224,10 +338,16 @@ export default function AcademyCalendarEventModal({
           <input disabled={!canEdit} value={form.title} onChange={(e) => setField('title', e.target.value)} placeholder={`예: ${category.label}`} className="h-12 w-full rounded-2xl border border-[#D1D6DB] px-4 text-base font-bold text-[#191F28] outline-none focus:border-[#3182F6] disabled:bg-[#F7F8FA]" />
         </label>
 
-        {overlappingEvents.length > 0 && (
+        {exactDuplicate && (
+          <div className="rounded-2xl bg-red-50 px-4 py-3">
+            <p className="text-xs font-extrabold text-red-700">이미 완전히 같은 일정이 있어요.</p>
+            <p className="mt-1 truncate text-xs font-semibold text-red-600">{exactDuplicate.event.title} · 중복 저장할 수 없어요.</p>
+          </div>
+        )}
+        {!exactDuplicate && partialConflicts.length > 0 && (
           <div className="rounded-2xl bg-amber-50 px-4 py-3">
-            <p className="text-xs font-extrabold text-amber-800">같은 기간에 {category.label} 일정이 {overlappingEvents.length}개 있어요.</p>
-            <p className="mt-1 truncate text-xs font-semibold text-amber-700">{overlappingEvents.slice(0, 2).map((item) => item.title).join(' · ')}</p>
+            <p className="text-xs font-extrabold text-amber-800">같은 대상과 기간이 겹치는 {category.label} 일정이 {partialConflicts.length}개 있어요.</p>
+            <p className="mt-1 truncate text-xs font-semibold text-amber-700">{partialConflicts.slice(0, 2).map((conflict) => conflict.event.title).join(' · ')}</p>
           </div>
         )}
 

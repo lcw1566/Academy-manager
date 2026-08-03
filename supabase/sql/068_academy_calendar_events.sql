@@ -144,8 +144,15 @@ declare
   v_start_date date := nullif(p_event ->> 'start_date', '')::date;
   v_end_date date := coalesce(nullif(p_event ->> 'end_date', '')::date, nullif(p_event ->> 'start_date', '')::date);
   v_all_day boolean := coalesce((p_event ->> 'all_day')::boolean, true);
+  v_start_time time := case when coalesce((p_event ->> 'all_day')::boolean, true) then null else nullif(p_event ->> 'start_time', '')::time end;
+  v_end_time time := case when coalesce((p_event ->> 'all_day')::boolean, true) then null else nullif(p_event ->> 'end_time', '')::time end;
+  v_target_type text := coalesce(nullif(p_event ->> 'target_type', ''), 'all');
+  v_school_names jsonb := '[]'::jsonb;
+  v_grades jsonb := '[]'::jsonb;
+  v_class_group_ids jsonb := '[]'::jsonb;
+  v_student_ids jsonb := '[]'::jsonb;
   v_affects_classes boolean := coalesce((p_event ->> 'affects_classes')::boolean, false);
-  v_impact_ids jsonb := coalesce(p_event -> 'impact_class_group_ids', '[]'::jsonb);
+  v_impact_ids jsonb := '[]'::jsonb;
   v_old_from date;
   v_old_to date;
 begin
@@ -163,6 +170,100 @@ begin
   end if;
   if v_affects_classes and not public.has_academy_permission(p_academy_id, 'canManageClasses') then
     raise exception '수업을 휴강 처리할 권한이 없어요.' using errcode = '42501';
+  end if;
+  if not v_all_day and (v_start_time is null or v_end_time is null or v_end_time <= v_start_time) then
+    raise exception '종료 시간은 시작 시간보다 늦어야 해요.';
+  end if;
+
+  -- 배열의 순서나 중복 선택과 무관하게 같은 대상을 같은 값으로 저장한다.
+  if v_target_type = 'school' then
+    select coalesce(jsonb_agg(value order by value), '[]'::jsonb) into v_school_names
+    from (
+      select distinct value
+      from jsonb_array_elements_text(
+        case when jsonb_typeof(p_event -> 'school_names') = 'array'
+          then p_event -> 'school_names' else '[]'::jsonb end
+      )
+    ) normalized;
+    select coalesce(jsonb_agg(value order by value), '[]'::jsonb) into v_grades
+    from (
+      select distinct value
+      from jsonb_array_elements_text(
+        case when jsonb_typeof(p_event -> 'grades') = 'array'
+          then p_event -> 'grades' else '[]'::jsonb end
+      )
+    ) normalized;
+  elsif v_target_type = 'class' then
+    select coalesce(jsonb_agg(value order by value), '[]'::jsonb) into v_class_group_ids
+    from (
+      select distinct value
+      from jsonb_array_elements_text(
+        case when jsonb_typeof(p_event -> 'class_group_ids') = 'array'
+          then p_event -> 'class_group_ids' else '[]'::jsonb end
+      )
+    ) normalized;
+  elsif v_target_type = 'student' then
+    select coalesce(jsonb_agg(value order by value), '[]'::jsonb) into v_student_ids
+    from (
+      select distinct value
+      from jsonb_array_elements_text(
+        case when jsonb_typeof(p_event -> 'student_ids') = 'array'
+          then p_event -> 'student_ids' else '[]'::jsonb end
+      )
+    ) normalized;
+  end if;
+
+  if v_affects_classes then
+    select coalesce(jsonb_agg(value order by value), '[]'::jsonb) into v_impact_ids
+    from (
+      select distinct value
+      from jsonb_array_elements_text(
+        case when jsonb_typeof(p_event -> 'impact_class_group_ids') = 'array'
+          then p_event -> 'impact_class_group_ids' else '[]'::jsonb end
+      )
+    ) normalized;
+  end if;
+
+  -- 같은 학원에서 두 기기가 동시에 저장해도 검사와 insert 사이에 끼어들지 못한다.
+  perform pg_advisory_xact_lock(hashtextextended(p_academy_id::text, 0));
+
+  if exists (
+    select 1
+    from public.academy_calendar_events duplicate_event
+    where duplicate_event.academy_id = p_academy_id
+      and duplicate_event.deleted_at is null
+      and duplicate_event.id <> v_id
+      and duplicate_event.category = v_category
+      and lower(regexp_replace(btrim(duplicate_event.title), '[[:space:]]+', ' ', 'g'))
+          = lower(regexp_replace(v_title, '[[:space:]]+', ' ', 'g'))
+      and duplicate_event.start_date = v_start_date
+      and duplicate_event.end_date = v_end_date
+      and duplicate_event.all_day = v_all_day
+      and duplicate_event.start_time is not distinct from v_start_time
+      and duplicate_event.end_time is not distinct from v_end_time
+      and duplicate_event.target_type = v_target_type
+      and (
+        v_target_type = 'all'
+        or (
+          v_target_type = 'school'
+          and duplicate_event.school_names @> v_school_names
+          and v_school_names @> duplicate_event.school_names
+          and duplicate_event.grades @> v_grades
+          and v_grades @> duplicate_event.grades
+        )
+        or (
+          v_target_type = 'class'
+          and duplicate_event.class_group_ids @> v_class_group_ids
+          and v_class_group_ids @> duplicate_event.class_group_ids
+        )
+        or (
+          v_target_type = 'student'
+          and duplicate_event.student_ids @> v_student_ids
+          and v_student_ids @> duplicate_event.student_ids
+        )
+      )
+  ) then
+    raise exception '이미 같은 일정이 등록되어 있어요. 기존 일정을 확인해주세요.';
   end if;
 
   if p_event_id is not null then
@@ -223,13 +324,8 @@ begin
     affects_classes, impact_class_group_ids, source, external_id, created_by, updated_by
   ) values (
     v_id, p_academy_id, v_category, v_title, v_start_date, v_end_date, v_all_day,
-    case when v_all_day then null else nullif(p_event ->> 'start_time', '')::time end,
-    case when v_all_day then null else nullif(p_event ->> 'end_time', '')::time end,
-    coalesce(nullif(p_event ->> 'target_type', ''), 'all'),
-    coalesce(p_event -> 'school_names', '[]'::jsonb),
-    coalesce(p_event -> 'grades', '[]'::jsonb),
-    coalesce(p_event -> 'class_group_ids', '[]'::jsonb),
-    coalesce(p_event -> 'student_ids', '[]'::jsonb),
+    v_start_time, v_end_time, v_target_type,
+    v_school_names, v_grades, v_class_group_ids, v_student_ids,
     nullif(btrim(p_event ->> 'memo'), ''),
     coalesce(nullif(p_event ->> 'visibility', ''), 'internal'),
     v_affects_classes, v_impact_ids,
