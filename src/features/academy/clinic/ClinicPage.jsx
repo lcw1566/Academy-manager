@@ -430,9 +430,13 @@ export default function ClinicPage() {
     { role, staffProfile: myStaffProfile },
     'canEditClinicRecords',
   );
+  const canManageStudents = currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageStudents',
+  );
   const canEditRecord = () => canEditClinic;
-  // 삭제도 역할명이 아니라 현재 유효 권한을 따른다. 서버 RLS가 담당 범위를 재검증한다.
-  const canDeleteRecord = (record) => role === 'owner' || canEditRecord(record);
+  // 서버 RLS와 동일하게 학생 관리 권한이 있어야 삭제할 수 있다.
+  const canDeleteRecord = () => role === 'owner' || canManageStudents;
 
   const buildSupportRelayTarget = (item) => ({
     studentId: item.studentId,

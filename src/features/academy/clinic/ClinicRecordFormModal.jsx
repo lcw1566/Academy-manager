@@ -598,6 +598,7 @@ export default function ClinicRecordFormModal({
             serverRecord = await updateServerClinicRecord(
               editRecord.serverId,
               buildServerPayload(),
+              { expectedUpdatedAt: editRecord.updatedAt || undefined },
             );
           } else {
             serverRecord = await createAcademyClinicRecord({

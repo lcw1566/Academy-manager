@@ -632,12 +632,17 @@ export default function ClassSessionPage() {
 
   const [commonRec, setCommonRec] = useState(() => buildCommonRecord(savedCommonLr));
   const [savedCommon, setSavedCommon] = useState(() => buildCommonRecord(savedCommonLr));
+  const lessonRecordVersionRef = useRef(savedCommonLr?.updatedAt || null);
+  const [recordConflict, setRecordConflict] = useState(false);
+  const [recordReloadVersion, setRecordReloadVersion] = useState(0);
 
   // session이 바뀌면 공통 기록 초기화
   useEffect(() => {
     const init = buildCommonRecord(savedCommonLr);
     setCommonRec(init);
     setSavedCommon(init);
+    lessonRecordVersionRef.current = savedCommonLr?.updatedAt || null;
+    setRecordConflict(false);
   }, [selectedClassSessionId]); // eslint-disable-line
 
   // 학생별 기록 dirty state 관리. 입력 중에는 부모 리렌더를 최소화하고,
@@ -719,10 +724,6 @@ export default function ClassSessionPage() {
     { role, staffProfile: myStaffProfile },
     'canManageClasses',
   );
-  const hasAcademyWideStudentAccess = currentUserCan(
-    { role, staffProfile: myStaffProfile },
-    'canManageStudents',
-  );
   // 직책/개인 권한을 기준으로 판단한다. 담당 범위 직원은 본인 회차만 편집한다.
   const canEditLessonRecords = role === 'owner' || (
     currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditLessonRecords')
@@ -734,7 +735,6 @@ export default function ClassSessionPage() {
       currentUserCan({ role, staffProfile: myStaffProfile }, 'canEditAttendance')
       && (
         hasAcademyWideClassAccess
-        || hasAcademyWideStudentAccess
         || isMyAssignedSession
       )
     )
@@ -772,6 +772,10 @@ export default function ClassSessionPage() {
 
   const handleSave = useCallback(async () => {
     if (!session || isSaving) return false;
+    if (recordConflict) {
+      showToast('다른 기기에서 변경된 최신 기록을 먼저 불러와주세요.', 'error');
+      return false;
+    }
     if (isCanceledSession) {
       showToast('휴강된 수업은 기록하거나 완료 처리할 수 없어요.', 'error');
       return false;
@@ -779,6 +783,7 @@ export default function ClassSessionPage() {
     setIsSaving(true);
     const draftStudentRecords = { ...(studentRecDraftRef.current || {}) };
     const sessionStudentIds = (session.studentIds || []).filter(Boolean);
+    let savedLessonRecordUpdatedAt = null;
 
     try {
       // 로그인된 학원에서는 서버가 source of truth다. 수업 기록과 출석이 모두
@@ -813,8 +818,9 @@ export default function ClassSessionPage() {
               serverStudentRecords[student.serverId] = rec;
             }
           }
-          await upsertAcademyLessonRecord({
+          const savedServerLessonRecord = await upsertAcademyLessonRecord({
             academyId: currentAcademyId,
+            expectedUpdatedAt: lessonRecordVersionRef.current,
             class_group_id: group.serverId,
             class_session_id: session.serverId,
             date: session.date,
@@ -827,6 +833,9 @@ export default function ClassSessionPage() {
             common_custom_values: commonRec.customValues || {},
             student_records: serverStudentRecords,
           });
+          lessonRecordVersionRef.current = savedServerLessonRecord?.updated_at
+            || lessonRecordVersionRef.current;
+          savedLessonRecordUpdatedAt = savedServerLessonRecord?.updated_at || null;
         }
 
         if (canEditAttendance && attendanceSettings.studentCheckMethod !== 'disabled') {
@@ -887,6 +896,7 @@ export default function ClassSessionPage() {
           date: session.date,
           commonRecord: commonRec,
           studentRecords: draftStudentRecords,
+          serverUpdatedAt: savedLessonRecordUpdatedAt,
         });
         setSavedCommon({ ...commonRec });
         studentDirtyRef.current = {};
@@ -897,6 +907,12 @@ export default function ClassSessionPage() {
       return true;
     } catch (error) {
       console.error('[class-session] save failed', error);
+      if (error?.code === 'DATA_CONFLICT') {
+        await loadServerLessonRecords();
+        setRecordConflict(true);
+        showToast('다른 기기에서 이 수업 기록을 먼저 수정했어요. 최신 기록을 불러와 확인해주세요.', 'error');
+        return false;
+      }
       showToast(
         error?.message
           ? `저장하지 못했어요: ${error.message}`
@@ -908,11 +924,40 @@ export default function ClassSessionPage() {
       setIsSaving(false);
     }
   }, [
-    session, group, isSaving, isCanceledSession, commonRec, academyStudents, attendanceByStudentId,
+    session, group, isSaving, isCanceledSession, recordConflict, commonRec, academyStudents, attendanceByStudentId,
     attendanceHintByStudentId, attendanceSettings.studentCheckMethod,
     batchSaveSessionRecords, canEdit, canEditAttendance,
     isAuthenticated, currentAcademyId,
     loadServerLessonRecords, loadServerAttendanceRecords, showToast, authUserId,
+  ]);
+
+  const applyLatestLessonRecord = useCallback(async () => {
+    if (isAuthenticated && currentAcademyId) await loadServerLessonRecords();
+    const latest = (useAcademyStore.getState().academyLessonRecords || []).find((record) => (
+      record.sessionId === selectedClassSessionId && record.studentId === '_common_'
+    )) || null;
+    if (recordConflict && latest?.updatedAt === lessonRecordVersionRef.current) {
+      showToast('최신 기록을 아직 불러오지 못했어요. 연결 상태를 확인한 뒤 다시 시도해주세요.', 'error');
+      return;
+    }
+    const latestCommon = buildCommonRecord(latest);
+    setCommonRec(latestCommon);
+    setSavedCommon(latestCommon);
+    lessonRecordVersionRef.current = latest?.updatedAt || null;
+    studentRecDraftRef.current = {};
+    studentDirtyRef.current = {};
+    setAttendanceDirty(false);
+    setDirtyRevision((value) => value + 1);
+    setRecordReloadVersion((value) => value + 1);
+    setRecordConflict(false);
+    showToast('최신 수업 기록을 불러왔어요.');
+  }, [
+    isAuthenticated,
+    currentAcademyId,
+    loadServerLessonRecords,
+    selectedClassSessionId,
+    recordConflict,
+    showToast,
   ]);
 
   const setCommonField = (k, v) => setCommonRec((r) => ({ ...r, [k]: v }));
@@ -961,6 +1006,23 @@ export default function ClassSessionPage() {
       />
 
       <div className="pt-14 md:pt-0 pb-28">
+        {recordConflict && (
+          <div className="px-4 pt-4">
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-orange-800">다른 기기에서 기록이 변경됐어요</p>
+                <p className="mt-0.5 text-xs font-semibold text-orange-600">최신 기록을 확인한 뒤 다시 입력해주세요.</p>
+              </div>
+              <button
+                type="button"
+                onClick={applyLatestLessonRecord}
+                className="flex-shrink-0 rounded-xl bg-orange-600 px-3 py-2 text-xs font-bold text-white"
+              >
+                최신 기록 불러오기
+              </button>
+            </div>
+          </div>
+        )}
         {isCanceledSession && (
           <div className="px-4 pt-4">
             <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3">
@@ -1143,7 +1205,7 @@ export default function ClassSessionPage() {
                 const attendanceHint = attendanceHintByStudentId.get(student.id) || null;
                 return (
                   <StudentCard
-                    key={student.id}
+                    key={`${student.id}:${recordReloadVersion}`}
                     student={student}
                     sessionId={selectedClassSessionId}
                     canEdit={canEdit}
@@ -1199,13 +1261,11 @@ export default function ClassSessionPage() {
                 }
               }
             }
-            updateClassSession(session.id, {
-              substituteTeacherId: substituteTeacherId || null,
-              substituteReason: substituteReason || null,
-            });
-            // Supabase write-through — 안전을 위해 best-effort.
-            if (session.serverId && isAuthenticated && currentAcademyId) {
-              try {
+            try {
+              if (isAuthenticated && currentAcademyId) {
+                if (!session.serverId) {
+                  throw new Error('수업 서버 정보를 확인하지 못했어요. 일정을 새로고침해주세요.');
+                }
                 const subStaff = substituteTeacherId
                   ? instructors.find((t) => t.id === substituteTeacherId)
                   : null;
@@ -1213,12 +1273,18 @@ export default function ClassSessionPage() {
                   substitute_teacher_user_id: subStaff?.serverUserId || null,
                   substitute_reason: substituteReason || null,
                 });
-              } catch (err) {
-                console.warn('[supabase] substitute teacher write failed', err);
+                await loadServerClassSessions();
               }
+              updateClassSession(session.id, {
+                substituteTeacherId: substituteTeacherId || null,
+                substituteReason: substituteReason || null,
+              });
+              setSubstituteModalOpen(false);
+              showToast(substituteTeacherId ? '대체 강사를 지정했어요.' : '대체 강사 지정을 해제했어요.');
+            } catch (error) {
+              console.error('[class-session] substitute teacher save failed', error);
+              showToast(error?.message || '대체 강사 정보를 저장하지 못했어요.', 'error');
             }
-            setSubstituteModalOpen(false);
-            showToast(substituteTeacherId ? '대체 강사를 지정했어요.' : '대체 강사 지정을 해제했어요.');
           }}
         />
       )}
@@ -1233,11 +1299,14 @@ export default function ClassSessionPage() {
           onSave={async (nextSchema) => {
             setRecordTemplateSaving(true);
             try {
-              updateClassSession(session.id, { recordSchema: nextSchema });
-              if (session.serverId && isAuthenticated && currentAcademyId) {
+              if (isAuthenticated && currentAcademyId) {
+                if (!session.serverId) {
+                  throw new Error('수업 서버 정보를 확인하지 못했어요. 일정을 새로고침해주세요.');
+                }
                 await updateServerClassSession(session.serverId, { record_schema: nextSchema });
                 await loadServerClassSessions();
               }
+              updateClassSession(session.id, { recordSchema: nextSchema });
               setRecordTemplateOpen(false);
             } catch (error) {
               showToast(error?.message || '기록 구성을 저장하지 못했어요.', 'error');

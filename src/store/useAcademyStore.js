@@ -1491,8 +1491,8 @@ const useAcademyStore = create(
   },
 
   // 공통 기록 + 학생별 평가를 한 번에 저장 (toast 1회)
-  batchSaveSessionRecords: ({ sessionId, date, commonRecord, studentRecords }) => {
-    const ts = new Date().toISOString();
+  batchSaveSessionRecords: ({ sessionId, date, commonRecord, studentRecords, serverUpdatedAt }) => {
+    const ts = serverUpdatedAt || new Date().toISOString();
     const existing = get().academyLessonRecords;
     const updated = [...existing];
 

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen, Clock3, Pin, X, CheckSquare } from 'lucide-react';
+import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen, Clock3, Pin, X, CheckSquare, RefreshCw } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -304,6 +304,40 @@ export default function AcademyAppLayout() {
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
+  const workspaceRealtimeStatus = useWorkspaceStore((s) => s.workspaceRealtimeStatus);
+  const serverStudentsError = useWorkspaceStore((s) => s.serverStudentsError);
+  const serverClassGroupsError = useWorkspaceStore((s) => s.serverClassGroupsError);
+  const serverClassSessionsError = useWorkspaceStore((s) => s.serverClassSessionsError);
+  const serverLessonRecordsError = useWorkspaceStore((s) => s.serverLessonRecordsError);
+  const serverAttendanceRecordsError = useWorkspaceStore((s) => s.serverAttendanceRecordsError);
+  const serverClinicRecordsError = useWorkspaceStore((s) => s.serverClinicRecordsError);
+  const studentCheckEventsError = useWorkspaceStore((s) => s.studentCheckEventsError);
+  const refreshWorkspaceCollaborationState = useWorkspaceStore(
+    (s) => s.refreshWorkspaceCollaborationState,
+  );
+  const startWorkspaceRealtime = useWorkspaceStore((s) => s.startWorkspaceRealtime);
+  const [syncRetrying, setSyncRetrying] = useState(false);
+  const hasCoreSyncError = Boolean(
+    serverStudentsError
+    || serverClassGroupsError
+    || serverClassSessionsError
+    || serverLessonRecordsError
+    || serverAttendanceRecordsError
+    || serverClinicRecordsError
+    || studentCheckEventsError,
+  );
+  const isRealtimeReconnecting = workspaceRealtimeStatus === 'reconnecting';
+
+  const retryWorkspaceSync = async () => {
+    if (syncRetrying) return;
+    setSyncRetrying(true);
+    try {
+      startWorkspaceRealtime();
+      await refreshWorkspaceCollaborationState({ reason: 'manual-sync-retry' });
+    } finally {
+      setSyncRetrying(false);
+    }
+  };
   const currentAcademy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
   const clinicEnabled = academyProfile?.clinicRequired
     ?? (currentAcademy?.clinic_required !== false);
@@ -522,6 +556,27 @@ export default function AcademyAppLayout() {
 
       <main className="min-w-0 flex-1">
         <div className="main-content mx-auto w-full max-w-md pb-24 md:max-w-none md:px-8 md:py-6 md:pb-8">
+          {currentAcademyId && (hasCoreSyncError || isRealtimeReconnecting) && (
+            <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 md:mx-0">
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-orange-800">
+                  {hasCoreSyncError ? '일부 데이터를 동기화하지 못했어요' : '서버와 다시 연결하고 있어요'}
+                </p>
+                <p className="mt-0.5 text-xs font-semibold text-orange-600">
+                  화면의 오래된 정보로 작업하지 않도록 다시 연결해주세요.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={retryWorkspaceSync}
+                disabled={syncRetrying}
+                className="flex h-9 flex-shrink-0 items-center gap-1.5 rounded-xl bg-orange-600 px-3 text-xs font-bold text-white disabled:opacity-60"
+              >
+                <RefreshCw size={13} className={syncRetrying ? 'animate-spin' : ''} />
+                다시 연결
+              </button>
+            </div>
+          )}
           <Suspense fallback={<div className="h-[60vh]" />}>
             <div
               key={pageKey}

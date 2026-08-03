@@ -1386,7 +1386,10 @@ const useWorkspaceStore = create(
         }
         set({ isServerLessonRecordsLoading: true, serverLessonRecordsError: null });
         try {
-          const list = await listAcademyLessonRecords(academyId);
+          const list = await retryAsync(
+            () => listAcademyLessonRecords(academyId),
+            { attempts: 3, delays: [300, 900] },
+          );
           if (!isCurrentAcademy(get, academyId)) return list;
           set({
             serverLessonRecords: list,

@@ -395,7 +395,13 @@ export async function getLessonRecordBySession(classSessionServerId) {
   return data;
 }
 
-export async function upsertAcademyLessonRecord({ academyId, ...payload } = {}) {
+function createDataConflictError(message) {
+  const error = new Error(message || '다른 기기에서 먼저 수정한 내용이 있어요. 최신 데이터를 불러온 뒤 다시 저장해주세요.');
+  error.code = 'DATA_CONFLICT';
+  return error;
+}
+
+export async function upsertAcademyLessonRecord({ academyId, expectedUpdatedAt, ...payload } = {}) {
   const user = await getCurrentUserOrThrow();
   if (!academyId) throw new Error('academyId가 필요해요.');
   if (!payload.class_session_id) throw new Error('class_session_id가 필요해요.');
@@ -405,6 +411,30 @@ export async function upsertAcademyLessonRecord({ academyId, ...payload } = {}) 
     academy_id: academyId,
     user_id: user.id,
   });
+  if (expectedUpdatedAt === null) {
+    const { data, error } = await supabase
+      .from('lesson_records')
+      .insert(row)
+      .select()
+      .single();
+    if (error?.code === '23505') throw createDataConflictError();
+    if (error) throw error;
+    return data;
+  }
+
+  if (typeof expectedUpdatedAt === 'string' && expectedUpdatedAt) {
+    const { data, error } = await supabase
+      .from('lesson_records')
+      .update(row)
+      .eq('class_session_id', payload.class_session_id)
+      .eq('updated_at', expectedUpdatedAt)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw createDataConflictError();
+    return data;
+  }
+
   const { data, error } = await supabase
     .from('lesson_records')
     .upsert(row, { onConflict: 'class_session_id' })
@@ -614,7 +644,7 @@ export async function createAcademyClinicRecord({ academyId, ...payload } = {}) 
   return data;
 }
 
-export async function updateClinicRecord(id, patch = {}) {
+export async function updateClinicRecord(id, patch = {}, { expectedUpdatedAt } = {}) {
   assertSupabaseConfigured();
   if (!id) throw new Error('id가 필요해요.');
   const safe = sanitizeClinicRecordPayload(patch, {
@@ -623,21 +653,29 @@ export async function updateClinicRecord(id, patch = {}) {
   if (Object.keys(safe).length === 0) {
     throw new Error('변경할 항목이 없어요.');
   }
-  const { data, error } = await supabase
+  let query = supabase
     .from('clinic_records')
     .update(safe)
-    .eq('id', id)
-    .select()
-    .single();
+    .eq('id', id);
+  if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
+  const { data, error } = await query.select().maybeSingle();
   if (error) throw error;
+  if (!data) throw createDataConflictError('다른 기기에서 이 클리닉 기록을 먼저 수정했어요. 최신 기록을 다시 열어주세요.');
   return data;
 }
 
 export async function deleteClinicRecord(id) {
   assertSupabaseConfigured();
   if (!id) throw new Error('id가 필요해요.');
-  const { error } = await supabase.from('clinic_records').delete().eq('id', id);
+  const { data, error } = await supabase
+    .from('clinic_records')
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .maybeSingle();
   if (error) throw error;
+  if (!data) throw new Error('삭제 권한이 없거나 이미 삭제된 기록이에요. 목록을 새로고침해주세요.');
+  return data;
 }
 
 // ────────────────────────────────────────────────────────────────

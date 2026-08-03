@@ -101,6 +101,7 @@ function buildStudentDraft({
   return {
     recordId: currentRecord?.id || null,
     serverId: currentRecord?.serverId || null,
+    expectedUpdatedAt: currentRecord?.updatedAt || null,
     requestId: currentRecord?.serverId || createClientUuid(),
     subject: currentRecord?.subject || student.clinicSubject || subject || '',
     items,
@@ -270,6 +271,7 @@ export default function ClinicInlineWorksheet({
     const targetStudents = students.filter((student) => dirtyStudentIds.has(student.id));
     setSaving(true);
     const failedStudentIds = new Set();
+    const conflictedStudentIds = new Set();
     let savedCount = 0;
 
     try {
@@ -343,7 +345,11 @@ export default function ClinicInlineWorksheet({
               created_by_id: payload.createdById || null,
             };
             if (existing?.serverId) {
-              serverRecord = await updateServerClinicRecord(existing.serverId, serverPayload);
+              serverRecord = await updateServerClinicRecord(
+                existing.serverId,
+                serverPayload,
+                { expectedUpdatedAt: draft.expectedUpdatedAt || existing.updatedAt || undefined },
+              );
             } else {
               serverRecord = await createAcademyClinicRecord({
                 academyId: currentAcademyId,
@@ -353,20 +359,34 @@ export default function ClinicInlineWorksheet({
             }
           }
 
+          let localRecord = existing;
           if (existing) {
             updateClinicRecord(existing.id, {
               ...payload,
               serverId: serverRecord?.id || existing.serverId || null,
             }, { silent: true });
           } else {
-            addClinicRecord({
+            localRecord = addClinicRecord({
               ...payload,
               serverId: serverRecord?.id || null,
             }, { silent: true });
           }
+          setDrafts((current) => ({
+            ...current,
+            [student.id]: {
+              ...current[student.id],
+              recordId: localRecord?.id || current[student.id]?.recordId || null,
+              serverId: serverRecord?.id || existing?.serverId || current[student.id]?.serverId || null,
+              expectedUpdatedAt: serverRecord?.updated_at
+                || existing?.updatedAt
+                || current[student.id]?.expectedUpdatedAt
+                || null,
+            },
+          }));
           savedCount += 1;
         } catch (error) {
-          failedStudentIds.add(student.id);
+          if (error?.code === 'DATA_CONFLICT') conflictedStudentIds.add(student.id);
+          else failedStudentIds.add(student.id);
           console.error('[supabase] inline clinic record sync failed', error);
         }
       }
@@ -378,12 +398,45 @@ export default function ClinicInlineWorksheet({
           console.error('[supabase] clinic records refresh failed', error);
         }
       }
+      if (conflictedStudentIds.size > 0) {
+        const latestRecords = useAcademyStore.getState().clinicRecords || [];
+        const latestDrafts = {};
+        for (const student of targetStudents) {
+          if (!conflictedStudentIds.has(student.id)) continue;
+          const currentDraft = drafts[student.id];
+          const latest = latestRecords.find((record) => (
+            (currentDraft?.serverId && record.serverId === currentDraft.serverId)
+            || (currentDraft?.recordId && record.id === currentDraft.recordId)
+          ));
+          if (!latest || latest.updatedAt === currentDraft?.expectedUpdatedAt) {
+            failedStudentIds.add(student.id);
+            continue;
+          }
+          latestDrafts[student.id] = buildStudentDraft({
+            student,
+            currentRecord: latest,
+            previousRecord: findPreviousRecord(
+              latestRecords,
+              student.id,
+              latest.subject || currentDraft?.subject || subject,
+              date,
+            ),
+            academyProfile,
+            subject: latest.subject || currentDraft?.subject || subject,
+          });
+        }
+        if (Object.keys(latestDrafts).length > 0) {
+          setDrafts((current) => ({ ...current, ...latestDrafts }));
+        }
+      }
       setDirtyStudentIds(failedStudentIds);
       showToast(
-        failedStudentIds.size > 0
+        conflictedStudentIds.size > 0 && failedStudentIds.size === 0
+          ? `${conflictedStudentIds.size}명은 다른 기기에서 먼저 수정되어 최신 기록으로 다시 불러왔어요.`
+          : failedStudentIds.size > 0
           ? `${savedCount}명 저장, ${failedStudentIds.size}명은 저장하지 못했어요. 다시 시도해주세요.`
           : `${savedCount}명의 클리닉 기록을 저장했어요.`,
-        failedStudentIds.size > 0 ? 'error' : 'success',
+        failedStudentIds.size > 0 || conflictedStudentIds.size > 0 ? 'error' : 'success',
       );
     } catch (error) {
       console.error('[clinic] inline clinic record save failed', error);
