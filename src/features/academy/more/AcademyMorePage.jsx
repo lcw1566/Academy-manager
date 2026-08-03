@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronRight, RefreshCw, LogOut, Loader2, Inbox, UserCog, Building2, Mail, Phone,
   Check, CheckSquare, QrCode, Settings, KeyRound, Eye, EyeOff,
-  DoorOpen, UserX, AlertTriangle,
+  DoorOpen, UserX, AlertTriangle, Monitor, Sun, Moon,
 } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
@@ -40,6 +40,7 @@ import JobTitlePermissionEditor from './JobTitlePermissionEditor';
 import { normalizeJobTitlePermissions } from '../../../utils/staffPermissions';
 import { leaveAcademy } from '../../../services/supabase/workspaceApi';
 import { withdrawCurrentAccount } from '../../../services/supabase/authApi';
+import { getThemePreference, setThemePreference } from '../../../utils/theme';
 
 export default function AcademyMorePage({
   mobileNavigationItems = [],
@@ -57,6 +58,7 @@ export default function AcademyMorePage({
   const [showEmailChange, setShowEmailChange] = useState(false);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [exitAction, setExitAction] = useState(null); // leave | withdraw
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const authUserEmail = useAuthStore((s) => s.user?.email);
   const userProfile = useWorkspaceStore((s) => s.profile);
@@ -249,51 +251,21 @@ export default function AcademyMorePage({
 
   return (
     <div>
-      <Header title="더보기" />
+      <Header
+        title={settingsOpen ? '설정' : '더보기'}
+        onBack={settingsOpen ? () => setSettingsOpen(false) : undefined}
+      />
       <div className="pt-14 md:pt-0 pb-6">
-        {mobileNavigationItems.length > 0 && (
-          <MobileExtraMenu
-            items={mobileNavigationItems}
-            badges={navigationBadges}
-            onNavigate={onNavigate}
-          />
-        )}
-        {isOwner ? (
-          ownerHasNoAcademy ? (
-            <OwnerEmptyState
-              displayName={userProfile?.display_name || authUserEmail}
-              onEditMyProfile={() => setShowUserProfileEdit(true)}
-              onChangeEmail={() => setShowEmailChange(true)}
-              onChangePassword={() => setShowPasswordChange(true)}
-              onWithdraw={() => setExitAction('withdraw')}
-            />
-          ) : (
-            <OwnerMoreSections
-              academyProfile={academyProfile}
-              academyName={currentAcademyName}
-              displayName={userProfile?.display_name}
-              email={authUserEmail}
-              phone={userProfile?.phone}
-              memberships={memberships}
-              showSwitchAcademy={showSwitchAcademy}
-              lastSyncedLabel={lastSyncedLabel}
-              onEditAcademy={() => setShowProfileEdit(true)}
-              onEditMyProfile={() => setShowUserProfileEdit(true)}
-              onChangeEmail={() => setShowEmailChange(true)}
-              onChangePassword={() => setShowPasswordChange(true)}
-              onSwitchAcademy={handleSwitchAcademy}
-              onWithdraw={() => setExitAction('withdraw')}
-            />
-          )
-        ) : (
-          <StaffMoreSections
-            role={role}
+        {settingsOpen ? (
+          <SettingsHome
+            isOwner={isOwner}
+            hasAcademy={!ownerHasNoAcademy && Boolean(currentAcademyId)}
             academyProfile={academyProfile}
-            displayName={userProfile?.display_name}
             email={authUserEmail}
-            phone={userProfile?.phone}
             memberships={memberships}
             showSwitchAcademy={showSwitchAcademy}
+            lastSyncedLabel={lastSyncedLabel}
+            onEditAcademy={() => setShowProfileEdit(true)}
             onEditMyProfile={() => setShowUserProfileEdit(true)}
             onChangeEmail={() => setShowEmailChange(true)}
             onChangePassword={() => setShowPasswordChange(true)}
@@ -301,6 +273,44 @@ export default function AcademyMorePage({
             onLeave={() => setExitAction('leave')}
             onWithdraw={() => setExitAction('withdraw')}
           />
+        ) : (
+          <>
+            {mobileNavigationItems.length > 0 && (
+              <MobileExtraMenu
+                items={mobileNavigationItems}
+                badges={navigationBadges}
+                onNavigate={onNavigate}
+              />
+            )}
+            {isOwner ? (
+              ownerHasNoAcademy ? (
+                <OwnerEmptyState
+                  onOpenSettings={() => setSettingsOpen(true)}
+                />
+              ) : (
+                <OwnerMoreSections
+                  academyProfile={academyProfile}
+                  academyName={currentAcademyName}
+                  displayName={userProfile?.display_name}
+                  email={authUserEmail}
+                  phone={userProfile?.phone}
+                  onEditMyProfile={() => setShowUserProfileEdit(true)}
+                  onOpenSettings={() => setSettingsOpen(true)}
+                />
+              )
+            ) : (
+              <StaffMoreSections
+                role={role}
+                academyProfile={academyProfile}
+                displayName={userProfile?.display_name}
+                email={authUserEmail}
+                phone={userProfile?.phone}
+                memberships={memberships}
+                onEditMyProfile={() => setShowUserProfileEdit(true)}
+                onOpenSettings={() => setSettingsOpen(true)}
+              />
+            )}
+          </>
         )}
       </div>
 
@@ -485,6 +495,208 @@ function InlineLogoutButton() {
   );
 }
 
+function SettingsHome({
+  isOwner,
+  hasAcademy,
+  academyProfile,
+  email,
+  memberships = [],
+  showSwitchAcademy,
+  lastSyncedLabel,
+  onEditAcademy,
+  onEditMyProfile,
+  onChangeEmail,
+  onChangePassword,
+  onSwitchAcademy,
+  onLeave,
+  onWithdraw,
+}) {
+  const showToast = useAcademyStore((state) => state.showToast);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    const workspace = useWorkspaceStore.getState();
+    try {
+      await Promise.all([
+        workspace.loadServerStudents?.(),
+        workspace.loadServerExamResults?.(),
+        workspace.loadServerClassGroups?.(),
+        workspace.loadServerClassSessions?.(),
+        workspace.loadServerLessonRecords?.(),
+        workspace.loadServerAttendanceRecords?.(),
+        workspace.loadServerClinicRecords?.(),
+        workspace.loadServerClinicEvents?.(),
+        workspace.loadAcademyCalendarEvents?.(),
+        workspace.loadAcademyMemberProfiles?.(),
+        workspace.loadAcademyStaffProfiles?.(),
+        workspace.loadAcademyInvitations?.(),
+        workspace.loadServerStaffShifts?.(),
+        workspace.loadStaffWorkRules?.(),
+        workspace.loadStaffWorkExceptions?.(),
+        workspace.loadClassScheduleRules?.(),
+        workspace.loadClassSessionExceptions?.(),
+      ]);
+      showToast('최신 정보로 새로고침했어요.');
+    } catch (error) {
+      console.warn('[settings] refresh failed', error);
+      showToast('일부 정보를 불러오지 못했어요. 다시 시도해주세요.', 'error');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  return (
+    <>
+      <SectionTitle className="mt-4">화면 설정</SectionTitle>
+      <div className="mx-4">
+        <ThemePreferenceCard />
+      </div>
+
+      {isOwner && hasAcademy && (
+        <>
+          <SectionTitle>학원 설정</SectionTitle>
+          <div className="mx-4">
+            <SettingsRow
+              icon={Building2}
+              tone="blue"
+              title="학원 운영 설정"
+              subtitle={`${getAcademySubjectsLabel(academyProfile?.academySubjects)} · 수강료·클리닉·등하원·직책 권한`}
+              onClick={onEditAcademy}
+            />
+          </div>
+        </>
+      )}
+
+      {hasAcademy && (
+        <>
+          <SectionTitle>워크스페이스</SectionTitle>
+          <div className="mx-4 flex flex-col gap-2">
+            <SettingsRow
+              icon={RefreshCw}
+              title="데이터 새로고침"
+              subtitle={lastSyncedLabel ? `마지막 동기화 ${lastSyncedLabel}` : '서버의 최신 정보를 다시 불러와요'}
+              onClick={handleRefresh}
+              rightAdornment={refreshing
+                ? <Loader2 size={14} className="animate-spin text-gray-400" />
+                : undefined}
+            />
+            {showSwitchAcademy && (
+              <SettingsRow
+                icon={Building2}
+                tone="blue"
+                title="학원 전환"
+                subtitle={`다른 학원으로 이동 (${memberships.length}개)`}
+                onClick={onSwitchAcademy}
+              />
+            )}
+            {!isOwner && (
+              <SettingsRow
+                icon={DoorOpen}
+                title="이 학원 나가기"
+                subtitle="현재 학원에 대한 접근 권한을 종료해요"
+                danger
+                onClick={onLeave}
+              />
+            )}
+          </div>
+        </>
+      )}
+
+      <SectionTitle>계정 설정</SectionTitle>
+      <div className="mx-4 flex flex-col gap-2">
+        <SettingsRow
+          icon={UserCog}
+          title="내 프로필"
+          subtitle="이름과 연락처를 수정해요"
+          onClick={onEditMyProfile}
+        />
+        <SettingsRow
+          icon={Mail}
+          tone="blue"
+          title="로그인 이메일 변경"
+          subtitle={email || '현재 이메일 확인'}
+          onClick={onChangeEmail}
+        />
+        <SettingsRow
+          icon={KeyRound}
+          tone="blue"
+          title="비밀번호 변경"
+          subtitle="현재 비밀번호 확인 후 변경"
+          onClick={onChangePassword}
+        />
+        <InlineLogoutButton />
+      </div>
+
+      <SectionTitle>계정 관리</SectionTitle>
+      <div className="mx-4">
+        <SettingsRow
+          icon={UserX}
+          title="씨닛 탈퇴"
+          subtitle={isOwner && hasAcademy
+            ? '소유권 이전 또는 학원 삭제 후 가능해요'
+            : '계정과 개인정보를 정리해요'}
+          danger
+          onClick={onWithdraw}
+        />
+      </div>
+    </>
+  );
+}
+
+function ThemePreferenceCard() {
+  const [preference, setPreference] = useState(() => getThemePreference());
+  const options = [
+    { id: 'system', label: '기기 설정', Icon: Monitor },
+    { id: 'light', label: '라이트', Icon: Sun },
+    { id: 'dark', label: '다크', Icon: Moon },
+  ];
+
+  useEffect(() => {
+    const handleThemeChange = (event) => {
+      if (event.detail?.preference) setPreference(event.detail.preference);
+    };
+    window.addEventListener('seenit-theme-change', handleThemeChange);
+    return () => window.removeEventListener('seenit-theme-change', handleThemeChange);
+  }, []);
+
+  const selectTheme = (nextPreference) => {
+    setThemePreference(nextPreference);
+    setPreference(nextPreference);
+  };
+
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <div>
+        <p className="text-sm font-bold text-gray-900">화면 모드</p>
+        <p className="mt-0.5 text-xs text-gray-400">이 기기에서 사용할 화면 밝기를 선택해요.</p>
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {options.map(({ id, label, Icon }) => {
+          const selected = preference === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => selectTheme(id)}
+              aria-pressed={selected}
+              className={`flex min-h-[72px] flex-col items-center justify-center gap-2 rounded-2xl border text-xs font-bold transition active:scale-[0.98] ${
+                selected
+                  ? 'border-[#3182F6] bg-blue-50 text-[#0064FF]'
+                  : 'border-gray-100 bg-gray-50 text-gray-600'
+              }`}
+            >
+              <Icon size={19} strokeWidth={selected ? 2.4 : 1.9} />
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── 학원 정보 + 원장 프로필 통합 카드 ─────────────────────────────
 function AcademyOwnerInfoCard({
   academyProfile, academyName, displayName, email, phone, onEditMyProfile,
@@ -524,7 +736,7 @@ function AcademyOwnerInfoCard({
 }
 
 // ─── Owner: 학원 없는 신규 가입 상태 ──────────────────────────────
-function OwnerEmptyState({ displayName, onEditMyProfile, onChangeEmail, onChangePassword, onWithdraw }) {
+function OwnerEmptyState({ onOpenSettings }) {
   return (
     <>
       <div className="mx-4 mt-4 bg-white rounded-2xl p-5 shadow-sm">
@@ -534,35 +746,14 @@ function OwnerEmptyState({ displayName, onEditMyProfile, onChangeEmail, onChange
         </p>
       </div>
       <WorkspaceSection />
-      <SectionTitle>계정</SectionTitle>
-      <div className="mx-4 flex flex-col gap-2">
+      <SectionTitle>관리</SectionTitle>
+      <div className="mx-4">
         <SettingsRow
-          icon={UserCog}
-          title={displayName || '내 프로필'}
-          subtitle="이름·연락처 수정"
-          onClick={onEditMyProfile}
-        />
-        <SettingsRow
-          icon={Mail}
+          icon={Settings}
           tone="blue"
-          title="로그인 이메일 변경"
-          subtitle="오타가 있는 이메일을 바로 수정"
-          onClick={onChangeEmail}
-        />
-        <SettingsRow
-          icon={KeyRound}
-          tone="blue"
-          title="비밀번호 변경"
-          subtitle="현재 비밀번호 확인 후 변경"
-          onClick={onChangePassword}
-        />
-        <InlineLogoutButton />
-        <SettingsRow
-          icon={UserX}
-          title="씨닛 탈퇴"
-          subtitle="계정과 개인정보를 정리해요"
-          danger
-          onClick={onWithdraw}
+          title="설정"
+          subtitle="화면·프로필·로그인·계정 관리"
+          onClick={onOpenSettings}
         />
       </div>
     </>
@@ -571,42 +762,9 @@ function OwnerEmptyState({ displayName, onEditMyProfile, onChangeEmail, onChange
 
 // ─── Owner 메인 layout ────────────────────────────────────────────
 function OwnerMoreSections({
-  academyProfile, academyName, displayName, email, phone, memberships = [], showSwitchAcademy,
-  lastSyncedLabel,
-  onEditAcademy, onEditMyProfile, onChangeEmail, onChangePassword, onSwitchAcademy, onWithdraw,
+  academyProfile, academyName, displayName, email, phone,
+  onEditMyProfile, onOpenSettings,
 }) {
-  const showToast = useAcademyStore((s) => s.showToast);
-  const [refreshing, setRefreshing] = useState(false);
-  const academySettingsSubtitle = `${getAcademySubjectsLabel(academyProfile?.academySubjects)} · 수강료 설정`;
-
-  const handleRefresh = async () => {
-    if (refreshing) return;
-    setRefreshing(true);
-    const ws = useWorkspaceStore.getState();
-    try {
-      await Promise.all([
-        ws.loadServerStudents?.(),
-        ws.loadServerClassGroups?.(),
-        ws.loadServerClassSessions?.(),
-        ws.loadServerLessonRecords?.(),
-        ws.loadServerAttendanceRecords?.(),
-        ws.loadServerClinicRecords?.(),
-        ws.loadServerPayments?.(),
-        ws.loadServerPayrolls?.(),
-        ws.loadAcademyMemberProfiles?.(),
-        ws.loadAcademyStaffProfiles?.(),
-        ws.loadAcademyInvitations?.(),
-        ws.loadServerStaffShifts?.(),
-      ]);
-      showToast('새로고침했어요.');
-    } catch (err) {
-      console.warn('[refresh-all] failed', err);
-      showToast('일부 데이터를 불러오지 못했어요.', 'error');
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   return (
     <>
       <AcademyOwnerInfoCard
@@ -618,58 +776,14 @@ function OwnerMoreSections({
         onEditMyProfile={onEditMyProfile}
       />
 
-      <SectionTitle>설정</SectionTitle>
-      <div className="mx-4 flex flex-col gap-2">
+      <SectionTitle>관리</SectionTitle>
+      <div className="mx-4">
         <SettingsRow
           icon={Settings}
           tone="blue"
-          title="학원 설정"
-          subtitle={academySettingsSubtitle}
-          onClick={onEditAcademy}
-        />
-        <SettingsRow
-          icon={RefreshCw}
-          title="데이터 새로고침"
-          subtitle={lastSyncedLabel ? `마지막 동기화 ${lastSyncedLabel}` : '최신 정보를 다시 불러와요'}
-          onClick={handleRefresh}
-          rightAdornment={
-            refreshing ? <Loader2 size={14} className="animate-spin text-gray-400" /> : undefined
-          }
-        />
-        {showSwitchAcademy && (
-          <SettingsRow
-            icon={Building2}
-            tone="blue"
-            title="학원 전환"
-            subtitle={`다른 학원으로 이동 (${memberships.length}개 보유)`}
-            onClick={onSwitchAcademy}
-          />
-        )}
-      </div>
-
-      <SectionTitle>계정</SectionTitle>
-      <div className="mx-4 flex flex-col gap-2">
-        <SettingsRow
-          icon={Mail}
-          tone="blue"
-          title="로그인 이메일 변경"
-          subtitle={email || '현재 이메일 확인'}
-          onClick={onChangeEmail}
-        />
-        <SettingsRow
-          icon={KeyRound}
-          tone="blue"
-          title="비밀번호 변경"
-          subtitle="현재 비밀번호 확인 후 변경"
-          onClick={onChangePassword}
-        />
-        <InlineLogoutButton />
-        <SettingsRow
-          icon={UserX}
-          title="씨닛 탈퇴"
-          subtitle="소유권 이전 또는 학원 삭제 후 가능해요"
-          danger
-          onClick={onWithdraw}
+          title="설정"
+          subtitle="학원·화면·워크스페이스·계정 설정"
+          onClick={onOpenSettings}
         />
       </div>
 
@@ -682,8 +796,8 @@ function OwnerMoreSections({
 
 // ─── Staff (teacher / assistant) 메인 layout ────────────────────
 function StaffMoreSections({
-  role, academyProfile, displayName, email, phone, memberships = [], showSwitchAcademy,
-  onEditMyProfile, onChangeEmail, onChangePassword, onSwitchAcademy, onLeave, onWithdraw,
+  role, academyProfile, displayName, email, phone, memberships = [],
+  onEditMyProfile, onOpenSettings,
 }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
@@ -745,24 +859,6 @@ function StaffMoreSections({
           </div>
         </div>
 
-        {showSwitchAcademy && (
-          <SettingsRow
-            icon={Building2}
-            tone="blue"
-            title="학원 전환"
-            subtitle={`다른 학원으로 이동 (${memberships.length}개 소속)`}
-            onClick={onSwitchAcademy}
-          />
-        )}
-
-        <SettingsRow
-          icon={DoorOpen}
-          title="이 학원 나가기"
-          subtitle="이 학원에 대한 접근 권한을 종료해요"
-          danger
-          onClick={onLeave}
-        />
-
         {myPendingInvitations.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-4 py-2 border-b border-gray-50 flex items-center gap-2">
@@ -793,29 +889,14 @@ function StaffMoreSections({
         )}
       </div>
 
-      <SectionTitle>계정</SectionTitle>
-      <div className="mx-4 flex flex-col gap-2">
+      <SectionTitle>관리</SectionTitle>
+      <div className="mx-4">
         <SettingsRow
-          icon={Mail}
+          icon={Settings}
           tone="blue"
-          title="로그인 이메일 변경"
-          subtitle={email || '현재 이메일 확인'}
-          onClick={onChangeEmail}
-        />
-        <SettingsRow
-          icon={KeyRound}
-          tone="blue"
-          title="비밀번호 변경"
-          subtitle="현재 비밀번호 확인 후 변경"
-          onClick={onChangePassword}
-        />
-        <InlineLogoutButton />
-        <SettingsRow
-          icon={UserX}
-          title="씨닛 탈퇴"
-          subtitle="모든 학원 소속과 계정을 정리해요"
-          danger
-          onClick={onWithdraw}
+          title="설정"
+          subtitle="화면·워크스페이스·로그인·계정 관리"
+          onClick={onOpenSettings}
         />
       </div>
     </>

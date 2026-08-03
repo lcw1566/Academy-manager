@@ -214,6 +214,188 @@ input[type="month"].input {
   background: #eef0f3;
 }
 
+/* ── 앱 다크 모드 ──────────────────────────────────────────────
+   기존 화면의 Tailwind 색상 토큰을 공통 표면/텍스트 토큰으로 재매핑한다.
+   문서 미리보기는 원본 종이 색을 유지한다. */
+html.dark body,
+html.dark #root {
+  background-color: #0f1115;
+  color: #f2f4f6;
+}
+
+html.dark body {
+  color-scheme: dark;
+}
+
+html.dark .bg-white,
+html.dark .bg-white\/95,
+html.dark .bg-white\/90,
+html.dark .bg-white\/80,
+html.dark .bg-white\/70 {
+  background-color: #191c22 !important;
+}
+
+html.dark .bg-\[\#F2F4F6\],
+html.dark .bg-\[\#F7F8FA\],
+html.dark .bg-\[\#F8F9FA\],
+html.dark .bg-\[\#F8FAFC\],
+html.dark .bg-\[\#FBFCFD\],
+html.dark .bg-\[\#F9FAFB\],
+html.dark .bg-gray-50,
+html.dark .bg-gray-50\/70 {
+  background-color: #20242b !important;
+}
+
+html.dark .bg-gray-100,
+html.dark .bg-gray-200,
+html.dark .bg-\[\#E5E8EB\],
+html.dark .bg-\[\#D1D6DB\] {
+  background-color: #2a2f38 !important;
+}
+
+html.dark .text-black,
+html.dark .text-gray-950,
+html.dark .text-gray-900,
+html.dark .text-gray-800,
+html.dark .text-\[\#191F28\],
+html.dark .text-\[\#333D4B\] {
+  color: #f2f4f6 !important;
+}
+
+html.dark .text-gray-700,
+html.dark .text-\[\#4E5968\] {
+  color: #d1d6db !important;
+}
+
+html.dark .text-gray-600,
+html.dark .text-\[\#6B7684\] {
+  color: #b8c0ca !important;
+}
+
+html.dark .text-gray-500,
+html.dark .text-\[\#8B95A1\] {
+  color: #a2abb7 !important;
+}
+
+html.dark .text-gray-400,
+html.dark .text-\[\#B0B8C1\] {
+  color: #858f9c !important;
+}
+
+html.dark .text-gray-300,
+html.dark .text-\[\#D1D6DB\] {
+  color: #697481 !important;
+}
+
+html.dark .border-gray-50,
+html.dark .border-gray-100,
+html.dark .border-\[\#F2F4F6\],
+html.dark .border-\[\#E5E8EB\] {
+  border-color: #2a2f38 !important;
+}
+
+html.dark .border-gray-200,
+html.dark .border-gray-300,
+html.dark .border-\[\#D1D6DB\],
+html.dark .border-\[\#B0B8C1\] {
+  border-color: #3a414c !important;
+}
+
+html.dark .bg-blue-50,
+html.dark .bg-blue-100,
+html.dark .bg-\[\#E8F3FF\],
+html.dark .bg-\[\#EDF5FF\],
+html.dark .bg-\[\#F2F7FF\] {
+  background-color: #152a46 !important;
+}
+
+html.dark .bg-red-50,
+html.dark .bg-red-100,
+html.dark .bg-\[\#FFF1F2\] {
+  background-color: #3a2026 !important;
+}
+
+html.dark .bg-green-50,
+html.dark .bg-green-100,
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-100,
+html.dark .bg-\[\#ECFDF5\] {
+  background-color: #16352c !important;
+}
+
+html.dark .bg-orange-50,
+html.dark .bg-orange-100,
+html.dark .bg-amber-50,
+html.dark .bg-amber-100,
+html.dark .bg-yellow-50 {
+  background-color: #3a2d18 !important;
+}
+
+html.dark .bg-violet-50,
+html.dark .bg-violet-100,
+html.dark .bg-indigo-50 {
+  background-color: #292342 !important;
+}
+
+html.dark .bg-sky-50,
+html.dark .bg-rose-50 {
+  background-color: #1c3040 !important;
+}
+
+html.dark input,
+html.dark textarea,
+html.dark select {
+  color: #f2f4f6;
+}
+
+html.dark input[type="date"].input,
+html.dark input[type="time"].input,
+html.dark input[type="month"].input {
+  color: #f2f4f6;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #737e8b;
+}
+
+html.dark .input {
+  border-color: #3a414c;
+  background-color: #191c22;
+  color: #f2f4f6;
+}
+
+html.dark input:-webkit-autofill,
+html.dark input:-webkit-autofill:hover,
+html.dark input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f2f4f6;
+  -webkit-box-shadow: 0 0 0 1000px #191c22 inset;
+  caret-color: #f2f4f6;
+}
+
+html.dark .active\:bg-gray-50:active,
+html.dark .hover\:bg-gray-50:hover,
+html.dark .md\:hover\:bg-gray-100:hover {
+  background-color: #252a32 !important;
+}
+
+html.dark .shadow-sm,
+html.dark .shadow-lg,
+html.dark .shadow-xl,
+html.dark .shadow-2xl {
+  --tw-shadow-color: rgba(0, 0, 0, 0.32);
+}
+
+/* 업로드 문서는 앱 테마와 무관하게 흰 종이로 보여야 한다. */
+html.dark .drive-hangul-page,
+html.dark .drive-rhwp-page,
+html.dark .drive-rhwp-page svg,
+html.dark .drive-docx-host .drive-docx-preview {
+  background: #fff !important;
+  color: #191f28 !important;
+  color-scheme: light;
+}
+
 @media print {
   body * {
     visibility: hidden !important;
