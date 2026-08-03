@@ -1630,6 +1630,20 @@ const useAcademyStore = create(
     set((s) => ({ academyManagers: s.academyManagers.filter((m) => m.id !== managerId) }));
     get().showToast('운영 매니저가 삭제되었습니다.');
   },
+  // 서버 멤버십을 inactive로 전환한 직원을 현재 기기의 목록에서도 즉시 숨긴다.
+  // 과거 기록이 참조하는 로컬 ID는 유지하고 상태만 바꾼다.
+  deactivateLocalStaff: (staffId, role) => {
+    const collectionKey = role === 'manager'
+      ? 'academyManagers'
+      : role === 'assistant'
+        ? 'academyAssistants'
+        : 'academyTeachers';
+    set((state) => ({
+      [collectionKey]: (state[collectionKey] || []).map((staff) => (
+        staff.id === staffId ? { ...staff, status: 'inactive' } : staff
+      )),
+    }));
+  },
   changeLocalStaffRole: (staffId, fromRole, toRole, updates = {}) => {
     if (!staffId || fromRole === toRole) return null;
     const collectionKey = (staffRole) => (

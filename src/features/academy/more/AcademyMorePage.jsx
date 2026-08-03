@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ChevronRight, RefreshCw, LogOut, Loader2, Inbox, UserCog, Building2, Mail, Phone,
   Check, CheckSquare, QrCode, Settings, KeyRound, Eye, EyeOff,
+  DoorOpen, UserX, AlertTriangle,
 } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import Header from '../../../components/Header';
@@ -37,6 +38,8 @@ import {
 import ClinicDefaultItemsEditor from '../clinic/ClinicDefaultItemsEditor';
 import JobTitlePermissionEditor from './JobTitlePermissionEditor';
 import { normalizeJobTitlePermissions } from '../../../utils/staffPermissions';
+import { leaveAcademy } from '../../../services/supabase/workspaceApi';
+import { withdrawCurrentAccount } from '../../../services/supabase/authApi';
 
 export default function AcademyMorePage({
   mobileNavigationItems = [],
@@ -52,12 +55,16 @@ export default function AcademyMorePage({
   const [showUserProfileEdit, setShowUserProfileEdit] = useState(false);
   const [showAttendanceSettings, setShowAttendanceSettings] = useState(false);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [exitAction, setExitAction] = useState(null); // leave | withdraw
 
   const authUserEmail = useAuthStore((s) => s.user?.email);
   const userProfile = useWorkspaceStore((s) => s.profile);
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const updateAcademyProfileSettings = useWorkspaceStore((s) => s.updateAcademyProfileSettings);
+  const loadMemberships = useWorkspaceStore((s) => s.loadMemberships);
+  const clearWorkspace = useWorkspaceStore((s) => s.clearWorkspace);
+  const signOutUser = useAuthStore((s) => s.signOutUser);
 
   // 실제 학원 이름은 memberships 의 academy.name 우선 (academyProfile.name 의 기본값 '우리 학원'
   // 이 노출되지 않도록).
@@ -218,6 +225,27 @@ export default function AcademyMorePage({
     if (typeof window !== 'undefined') window.location.reload();
   };
 
+  const handleLeaveAcademy = async () => {
+    await leaveAcademy(currentAcademyId);
+    await loadMemberships?.({ throwOnError: true });
+    clearWorkspacePicked();
+    setExitAction(null);
+    showToast('학원에서 나왔어요.');
+    if (typeof window !== 'undefined') window.location.reload();
+  };
+
+  const handleWithdrawAccount = async () => {
+    await withdrawCurrentAccount();
+    clearWorkspace?.();
+    setExitAction(null);
+    try {
+      await signOutUser?.();
+    } finally {
+      clearWorkspacePicked();
+      if (typeof window !== 'undefined') window.location.reload();
+    }
+  };
+
   return (
     <div>
       <Header title="더보기" />
@@ -235,6 +263,7 @@ export default function AcademyMorePage({
               displayName={userProfile?.display_name || authUserEmail}
               onEditMyProfile={() => setShowUserProfileEdit(true)}
               onChangePassword={() => setShowPasswordChange(true)}
+              onWithdraw={() => setExitAction('withdraw')}
             />
           ) : (
             <OwnerMoreSections
@@ -250,6 +279,7 @@ export default function AcademyMorePage({
               onEditMyProfile={() => setShowUserProfileEdit(true)}
               onChangePassword={() => setShowPasswordChange(true)}
               onSwitchAcademy={handleSwitchAcademy}
+              onWithdraw={() => setExitAction('withdraw')}
             />
           )
         ) : (
@@ -264,6 +294,8 @@ export default function AcademyMorePage({
             onEditMyProfile={() => setShowUserProfileEdit(true)}
             onChangePassword={() => setShowPasswordChange(true)}
             onSwitchAcademy={handleSwitchAcademy}
+            onLeave={() => setExitAction('leave')}
+            onWithdraw={() => setExitAction('withdraw')}
           />
         )}
       </div>
@@ -301,6 +333,16 @@ export default function AcademyMorePage({
         <AttendanceSettingsSheet
           kind="settings"
           onClose={() => setShowAttendanceSettings(false)}
+        />
+      )}
+
+      {exitAction && (
+        <AccountExitModal
+          action={exitAction}
+          academyName={currentAcademyName || academyProfile?.name || '학원'}
+          ownerBlocked={isOwner && memberships.length > 0}
+          onClose={() => setExitAction(null)}
+          onConfirm={exitAction === 'leave' ? handleLeaveAcademy : handleWithdrawAccount}
         />
       )}
 
@@ -471,7 +513,7 @@ function AcademyOwnerInfoCard({
 }
 
 // ─── Owner: 학원 없는 신규 가입 상태 ──────────────────────────────
-function OwnerEmptyState({ displayName, onEditMyProfile, onChangePassword }) {
+function OwnerEmptyState({ displayName, onEditMyProfile, onChangePassword, onWithdraw }) {
   return (
     <>
       <div className="mx-4 mt-4 bg-white rounded-2xl p-5 shadow-sm">
@@ -497,6 +539,13 @@ function OwnerEmptyState({ displayName, onEditMyProfile, onChangePassword }) {
           onClick={onChangePassword}
         />
         <InlineLogoutButton />
+        <SettingsRow
+          icon={UserX}
+          title="씨닛 탈퇴"
+          subtitle="계정과 개인정보를 정리해요"
+          danger
+          onClick={onWithdraw}
+        />
       </div>
     </>
   );
@@ -506,7 +555,7 @@ function OwnerEmptyState({ displayName, onEditMyProfile, onChangePassword }) {
 function OwnerMoreSections({
   academyProfile, academyName, displayName, email, phone, memberships = [], showSwitchAcademy,
   lastSyncedLabel,
-  onEditAcademy, onEditMyProfile, onChangePassword, onSwitchAcademy,
+  onEditAcademy, onEditMyProfile, onChangePassword, onSwitchAcademy, onWithdraw,
 }) {
   const showToast = useAcademyStore((s) => s.showToast);
   const [refreshing, setRefreshing] = useState(false);
@@ -590,6 +639,13 @@ function OwnerMoreSections({
           onClick={onChangePassword}
         />
         <InlineLogoutButton />
+        <SettingsRow
+          icon={UserX}
+          title="씨닛 탈퇴"
+          subtitle="소유권 이전 또는 학원 삭제 후 가능해요"
+          danger
+          onClick={onWithdraw}
+        />
       </div>
 
       <p className="text-[11px] text-gray-400 leading-relaxed mt-4 px-5">
@@ -602,7 +658,7 @@ function OwnerMoreSections({
 // ─── Staff (teacher / assistant) 메인 layout ────────────────────
 function StaffMoreSections({
   role, academyProfile, displayName, email, phone, memberships = [], showSwitchAcademy,
-  onEditMyProfile, onChangePassword, onSwitchAcademy,
+  onEditMyProfile, onChangePassword, onSwitchAcademy, onLeave, onWithdraw,
 }) {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const myPendingInvitations = useWorkspaceStore((s) => s.myPendingInvitations) ?? [];
@@ -674,6 +730,14 @@ function StaffMoreSections({
           />
         )}
 
+        <SettingsRow
+          icon={DoorOpen}
+          title="이 학원 나가기"
+          subtitle="이 학원에 대한 접근 권한을 종료해요"
+          danger
+          onClick={onLeave}
+        />
+
         {myPendingInvitations.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-4 py-2 border-b border-gray-50 flex items-center gap-2">
@@ -714,8 +778,117 @@ function StaffMoreSections({
           onClick={onChangePassword}
         />
         <InlineLogoutButton />
+        <SettingsRow
+          icon={UserX}
+          title="씨닛 탈퇴"
+          subtitle="모든 학원 소속과 계정을 정리해요"
+          danger
+          onClick={onWithdraw}
+        />
       </div>
     </>
+  );
+}
+
+function AccountExitModal({
+  action,
+  academyName,
+  ownerBlocked = false,
+  onClose,
+  onConfirm,
+}) {
+  const showToast = useAcademyStore((s) => s.showToast);
+  const [confirmText, setConfirmText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const isWithdrawal = action === 'withdraw';
+  const canSubmit = !ownerBlocked && (!isWithdrawal || confirmText.trim() === '탈퇴');
+
+  const handleConfirm = async () => {
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+    try {
+      await onConfirm?.();
+    } catch (error) {
+      showToast(error?.message || (isWithdrawal
+        ? '탈퇴 요청을 처리하지 못했어요.'
+        : '학원에서 나가지 못했어요.'), 'error');
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal
+      isOpen
+      onClose={submitting ? undefined : onClose}
+      title={isWithdrawal ? '씨닛을 탈퇴할까요?' : '학원에서 나갈까요?'}
+      footer={ownerBlocked ? (
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full rounded-2xl bg-[#0064FF] py-3.5 text-sm font-bold text-white"
+        >
+          확인
+        </button>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-2xl bg-[#F2F4F6] py-3.5 text-sm font-bold text-[#4E5968] disabled:opacity-60"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={!canSubmit || submitting}
+            className="flex items-center justify-center gap-2 rounded-2xl bg-red-500 py-3.5 text-sm font-bold text-white disabled:bg-red-200"
+          >
+            {submitting && <Loader2 size={15} className="animate-spin" />}
+            {isWithdrawal ? '탈퇴하기' : '나가기'}
+          </button>
+        </div>
+      )}
+    >
+      <div className="space-y-4">
+        <div className={`flex gap-3 rounded-2xl p-4 ${ownerBlocked ? 'bg-amber-50' : 'bg-red-50'}`}>
+          <AlertTriangle
+            size={19}
+            className={`mt-0.5 flex-shrink-0 ${ownerBlocked ? 'text-amber-600' : 'text-red-500'}`}
+          />
+          <div>
+            <p className="text-sm font-extrabold text-[#191F28]">
+              {ownerBlocked
+                ? '원장은 바로 탈퇴할 수 없어요'
+                : isWithdrawal ? '이 작업은 되돌릴 수 없어요' : `${academyName} 소속이 종료돼요`}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[#6B7684]">
+              {ownerBlocked
+                ? '학생과 직원 데이터의 소유자가 사라지지 않도록 먼저 학원 소유권을 이전하거나 학원을 삭제해야 해요.'
+                : isWithdrawal
+                  ? '모든 학원 접근 권한이 종료되고 개인정보가 익명화돼요. 과거 운영 기록은 학원에 보존돼요.'
+                  : '과거 기록은 보존되지만 더 이상 이 학원의 학생·수업·클리닉 정보를 볼 수 없어요.'}
+            </p>
+          </div>
+        </div>
+
+        {isWithdrawal && !ownerBlocked && (
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-[#4E5968]">
+              계속하려면 ‘탈퇴’를 입력해주세요
+            </label>
+            <input
+              value={confirmText}
+              onChange={(event) => setConfirmText(event.target.value)}
+              disabled={submitting}
+              placeholder="탈퇴"
+              className="input"
+            />
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 

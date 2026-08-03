@@ -869,6 +869,31 @@ export async function deactivateAcademyStaffProfile({ academyId, userId }) {
   return data;
 }
 
+// 원장이 직원을 학원에서 내보낸다. 실제 row 삭제 대신 membership을 inactive로
+// 전환하므로 과거 수업·클리닉·근퇴 기록의 사용자 연결은 보존된다.
+export async function removeAcademyMember({ academyId, userId }) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!userId) throw new Error('직원 계정 정보가 필요해요.');
+  const { data, error } = await supabase.rpc('remove_academy_member', {
+    p_academy_id: academyId,
+    p_user_id: userId,
+  });
+  if (error) throw new Error(error.message || '직원을 내보내지 못했어요.');
+  return data;
+}
+
+// 직원 본인이 현재 학원에서 나간다. 원장은 소유권 이전 없이는 실행할 수 없다.
+export async function leaveAcademy(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const { data, error } = await supabase.rpc('leave_academy', {
+    p_academy_id: academyId,
+  });
+  if (error) throw new Error(error.message || '학원에서 나가지 못했어요.');
+  return data;
+}
+
 
 // ────────────────────────────────────────────────────────────────
 // Phase 41 — 출결·등하원 설정 (academies columns)

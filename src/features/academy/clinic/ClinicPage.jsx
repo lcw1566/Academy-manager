@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Plus, ChevronDown, ChevronUp, Pencil, Trash2, Clock3, CheckCircle2,
+  Plus, ChevronDown, ChevronUp, Pencil, Trash2, Clock3, CheckCircle2, MapPin,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -12,6 +12,7 @@ import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
 import ClinicRecordFormModal from './ClinicRecordFormModal';
 import ClinicInlineWorksheet from './ClinicInlineWorksheet';
+import ClinicEventFormModal from './ClinicEventFormModal';
 import {
   today,
   formatDateShort,
@@ -83,6 +84,8 @@ export default function ClinicPage() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerClinicRecords = useWorkspaceStore((s) => s.loadServerClinicRecords);
+  const loadServerClinicEvents = useWorkspaceStore((s) => s.loadServerClinicEvents);
+  const clinicEvents = useWorkspaceStore((s) => s.serverClinicEvents) ?? [];
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const loadClassScheduleRules = useWorkspaceStore((s) => s.loadClassScheduleRules);
@@ -107,6 +110,8 @@ export default function ClinicPage() {
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
+  const [showEventForm, setShowEventForm] = useState(false);
+  const [editEvent, setEditEvent] = useState(null);
   const [editRecord, setEditRecord] = useState(null);
   const [quickTarget, setQuickTarget] = useState(null);
   const [expandedExpectedIds, setExpandedExpectedIds] = useState(() => new Set());
@@ -114,6 +119,11 @@ export default function ClinicPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
   const todayStr = today();
+
+  useEffect(() => {
+    if (!currentAcademyId) return;
+    void loadServerClinicEvents();
+  }, [currentAcademyId, loadServerClinicEvents]);
 
   useEffect(() => {
     if (!currentAcademyId || !todayStr) return;
@@ -244,6 +254,74 @@ export default function ClinicPage() {
     clinicRecords,
     todayStr,
   ]);
+  const todayClinicEventGroups = useMemo(() => clinicEvents
+    .filter((event) => event.event_date === todayStr && event.status !== 'cancelled')
+    .slice()
+    .sort((left, right) => (
+      String(left.start_time || '99:99').localeCompare(String(right.start_time || '99:99'))
+      || String(left.name || '').localeCompare(String(right.name || ''), 'ko')
+    ))
+    .map((event) => {
+      const linkedGroup = classGroups.find((group) => (
+        group.id === event.class_group_id || group.serverId === event.class_group_id
+      )) || null;
+      const participantRows = Array.isArray(event.clinic_event_students)
+        ? event.clinic_event_students.slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+        : [];
+      const recordedStudentIds = clinicRecords
+        .filter((record) => record.clinicEventId === event.id)
+        .map((record) => record.studentId);
+      const participantIds = [...new Set([
+        ...participantRows.map((participant) => participant.student_id),
+        ...recordedStudentIds,
+      ])];
+      const students = participantIds
+        .map((studentId) => academyStudents.find((student) => student.id === studentId))
+        .filter(Boolean)
+        .map((student) => ({
+          ...student,
+          clinicSubject: participantRows.find((row) => row.student_id === student.id)?.subject_override || '',
+          clinicRecord: clinicRecords.find((record) => (
+            record.clinicEventId === event.id && record.studentId === student.id
+          )) || null,
+        }));
+      return {
+        event,
+        session: {
+          id: event.id,
+          serverId: event.id,
+          date: event.event_date,
+          startTime: event.start_time?.slice(0, 5) || '',
+          endTime: event.end_time?.slice(0, 5) || '',
+          isClinicEvent: true,
+        },
+        group: linkedGroup || {
+          id: '',
+          serverId: '',
+          name: event.name,
+          subject: event.subject || '',
+          room: event.room || '',
+          isClinicEvent: true,
+        },
+        students,
+      };
+    }), [clinicEvents, todayStr, classGroups, clinicRecords, academyStudents]);
+  const unlinkedTodayExpectedGroups = useMemo(() => {
+    const linkedGroupIds = new Set(todayClinicEventGroups
+      .map(({ event }) => event.class_group_id)
+      .filter(Boolean));
+    return todayExpectedGroups.filter(({ group }) => (
+      !group || (!linkedGroupIds.has(group.id) && !linkedGroupIds.has(group.serverId))
+    ));
+  }, [todayClinicEventGroups, todayExpectedGroups]);
+  const upcomingClinicEvents = useMemo(() => clinicEvents
+    .filter((event) => event.event_date > todayStr && event.status !== 'cancelled')
+    .slice()
+    .sort((left, right) => (
+      String(left.event_date).localeCompare(String(right.event_date))
+      || String(left.start_time || '99:99').localeCompare(String(right.start_time || '99:99'))
+    ))
+    .slice(0, 12), [clinicEvents, todayStr]);
   const temporaryClinicSubject = useMemo(() => {
     const subjects = Array.isArray(academyProfile?.academySubjects)
       ? academyProfile.academySubjects
@@ -311,6 +389,21 @@ export default function ClinicPage() {
     }
   };
 
+  const openClinicEventStudentRecord = ({ student, event, group }) => {
+    if (student.clinicRecord) {
+      setEditRecord(student.clinicRecord);
+      return;
+    }
+    setQuickTarget({
+      studentId: student.id,
+      date: event.event_date,
+      subject: student.clinicSubject || event.subject || group?.subject || '',
+      classGroupId: group?.isClinicEvent ? '' : (group?.id || ''),
+      classSessionId: '',
+      clinicEventId: event.id,
+    });
+  };
+
   // Phase 31 — 권한 게이팅. 클리닉 작성 권한이 있어야 + 버튼 노출.
   const canEditClinic = currentUserCan(
     { role, staffProfile: myStaffProfile },
@@ -361,11 +454,11 @@ export default function ClinicPage() {
           canEditClinic ? (
             <motion.button
               whileTap={{ scale: 0.97 }}
-              onClick={() => setShowForm(true)}
+              onClick={() => setShowEventForm(true)}
               className="h-9 w-9 md:w-auto md:px-4 flex items-center justify-center gap-1.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold shadow-sm active:bg-[#0050CC]"
             >
               <Plus size={14} />
-              <span className="hidden md:inline">기록 추가</span>
+              <span className="hidden md:inline">일정 만들기</span>
             </motion.button>
           ) : null
         }
@@ -384,11 +477,124 @@ export default function ClinicPage() {
           </div>
         </div>
 
-        {todayExpectedGroups.length > 0 && (
+        {todayClinicEventGroups.length > 0 && (
+          <section className="px-4 mb-5">
+            <div className="mb-2">
+              <p className="text-sm font-bold text-gray-900">오늘 클리닉</p>
+              <p className="mt-0.5 text-[11px] text-gray-400">일정별로 펼치고 학생마다 한 행에서 기록하세요.</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              {todayClinicEventGroups.map(({ event, session, group, students }) => {
+                const expansionKey = `event-${event.id}`;
+                const expanded = expandedExpectedIds.has(expansionKey);
+                return (
+                  <div key={event.id} className="overflow-hidden rounded-2xl bg-white shadow-sm">
+                    <div className="flex items-center gap-2 px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpectedGroup(expansionKey)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left transition-colors active:bg-gray-50"
+                        aria-expanded={expanded}
+                      >
+                        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                          <Clock3 size={15} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-bold text-gray-900">{event.name}</span>
+                          <span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-gray-400">
+                            {[session.startTime, event.subject].filter(Boolean).join(' · ') || '시간·과목 자유'}
+                            {event.room && <><MapPin size={10} />{event.room}</>}
+                          </span>
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-400">
+                          {students.filter((student) => student.clinicRecord).length}/{students.length}
+                        </span>
+                        <ChevronDown
+                          size={16}
+                          className={`flex-shrink-0 text-gray-400 transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
+                        />
+                      </button>
+                      {canEditClinic && (
+                        <button
+                          type="button"
+                          onClick={() => setEditEvent(event)}
+                          aria-label={`${event.name} 수정`}
+                          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-gray-50 text-gray-500"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                      )}
+                    </div>
+                    <div
+                      className="grid transition-[grid-template-rows] duration-200 ease-out"
+                      style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
+                    >
+                      <div className="overflow-hidden">
+                        {canEditClinic ? (
+                          <ClinicInlineWorksheet
+                            session={session}
+                            group={group}
+                            clinicEvent={event}
+                            students={students}
+                            academyProfile={academyProfile}
+                            onOpenRecord={(student) => openClinicEventStudentRecord({ student, event, group })}
+                          />
+                        ) : (
+                          <div className="divide-y divide-gray-50 border-t border-gray-50">
+                            {students.map((student) => (
+                              <div key={student.id} className="flex items-center gap-3 px-4 py-3">
+                                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-50 text-xs font-bold text-gray-500">
+                                  {student.name?.slice(0, 1) || '학'}
+                                </span>
+                                <span className="min-w-0 flex-1 truncate text-sm font-bold text-gray-900">{student.name}</span>
+                                {student.clinicRecord && <CheckCircle2 size={15} className="text-emerald-500" />}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {upcomingClinicEvents.length > 0 && (
+          <section className="px-4 mb-5">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm font-bold text-gray-900">예정 일정</p>
+              <span className="text-[11px] font-semibold text-gray-400">{upcomingClinicEvents.length}개</span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              {upcomingClinicEvents.map((event) => (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => { if (canEditClinic) setEditEvent(event); }}
+                  disabled={!canEditClinic}
+                  className="min-w-[210px] flex-shrink-0 rounded-2xl bg-white p-3.5 text-left shadow-sm"
+                >
+                  <span className="block text-[11px] font-bold text-[#3182F6]">
+                    {formatDateShort(event.event_date)}
+                    {event.start_time ? ` · ${event.start_time.slice(0, 5)}` : ''}
+                  </span>
+                  <span className="mt-1.5 block truncate text-sm font-extrabold text-[#191F28]">{event.name}</span>
+                  <span className="mt-1 block truncate text-[11px] font-medium text-[#8B95A1]">
+                    {[event.subject, event.room, `${event.clinic_event_students?.length || 0}명`].filter(Boolean).join(' · ')}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {unlinkedTodayExpectedGroups.length > 0 && (
           <section className="px-4 mb-5">
             <div className="mb-2 flex items-end justify-between">
               <div>
-                <p className="text-sm font-bold text-gray-900">오늘 예정</p>
+                <p className="text-sm font-bold text-gray-900">수업에서 바로 기록</p>
                 <p className="mt-0.5 text-[11px] text-gray-400">
                   {academyProfile?.clinicRequired === false
                     ? '필요한 학생을 눌러 기록하세요.'
@@ -397,7 +603,7 @@ export default function ClinicPage() {
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              {todayExpectedGroups.map(({ session, group, students }) => (
+              {unlinkedTodayExpectedGroups.map(({ session, group, students }) => (
                 <div key={session.id} className="overflow-hidden rounded-2xl bg-white shadow-sm">
                   <button
                     type="button"
@@ -663,11 +869,18 @@ export default function ClinicPage() {
 
         {/* 클리닉 목록 */}
         {grouped.length === 0 ? (
-          <EmptyState
-            icon="📋"
-            title="활동 기록이 없어요"
-            description="+ 버튼을 눌러 학생별 활동 기록을 추가해보세요."
-          />
+          todayClinicEventGroups.length === 0
+          && upcomingClinicEvents.length === 0
+          && unlinkedTodayExpectedGroups.length === 0
+          && temporaryClinicStudents.length === 0
+            ? (
+              <EmptyState
+                icon="📋"
+                title="클리닉 일정이 없어요"
+                description="+ 버튼을 눌러 학생을 배정하고 바로 기록해보세요."
+              />
+            )
+            : null
         ) : (
           <div className="px-4 flex flex-col gap-5">
             {grouped.map(([dateStr, records]) => (
@@ -704,7 +917,15 @@ export default function ClinicPage() {
           presetSubject={quickTarget?.subject}
           presetClassGroupId={quickTarget?.classGroupId}
           presetClassSessionId={quickTarget?.classSessionId}
+          presetClinicEventId={quickTarget?.clinicEventId}
           onClose={() => { setShowForm(false); setEditRecord(null); setQuickTarget(null); }}
+        />
+      )}
+
+      {(showEventForm || editEvent) && (
+        <ClinicEventFormModal
+          event={editEvent}
+          onClose={() => { setShowEventForm(false); setEditEvent(null); }}
         />
       )}
 

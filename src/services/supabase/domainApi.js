@@ -641,6 +641,76 @@ export async function deleteClinicRecord(id) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// clinic_events / clinic_event_students
+// 반은 선택적인 학생 불러오기 수단일 뿐이며, 실제 참여 명단은 일정별로 저장한다.
+// ────────────────────────────────────────────────────────────────
+
+export async function listAcademyClinicEvents(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const { data, error } = await supabase
+    .from('clinic_events')
+    .select(`
+      *,
+      clinic_event_students (
+        student_id,
+        subject_override,
+        sort_order
+      )
+    `)
+    .eq('academy_id', academyId)
+    .neq('status', 'cancelled')
+    .order('event_date', { ascending: false })
+    .order('start_time', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function saveAcademyClinicEvent({
+  id = null,
+  academyId,
+  name,
+  date,
+  startTime = null,
+  endTime = null,
+  subject = null,
+  room = null,
+  classGroupId = null,
+  memo = null,
+  participants = [],
+} = {}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!String(name || '').trim()) throw new Error('클리닉 이름을 입력해주세요.');
+  if (!date) throw new Error('클리닉 날짜를 선택해주세요.');
+  const { data, error } = await supabase.rpc('save_academy_clinic_event', {
+    p_event_id: id || null,
+    p_academy_id: academyId,
+    p_name: String(name).trim(),
+    p_event_date: date,
+    p_start_time: startTime || null,
+    p_end_time: endTime || null,
+    p_subject: subject || null,
+    p_room: room || null,
+    p_class_group_id: classGroupId || null,
+    p_memo: memo || null,
+    p_participants: participants.map((participant) => ({
+      student_id: participant.studentId,
+      subject: participant.subject || null,
+    })),
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteAcademyClinicEvent(id) {
+  assertSupabaseConfigured();
+  if (!id) throw new Error('클리닉 일정 id가 필요해요.');
+  const { error } = await supabase.from('clinic_events').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ────────────────────────────────────────────────────────────────
 // exam_results
 // ────────────────────────────────────────────────────────────────
 
@@ -1172,7 +1242,7 @@ function sanitizeAttendancePayload(input, { strip = [] } = {}) {
 
 const CLINIC_RECORD_ALLOWED_FIELDS = new Set([
   'id', 'academy_id', 'user_id', 'mode',
-  'student_id', 'class_group_id', 'class_session_id',
+  'student_id', 'class_group_id', 'class_session_id', 'clinic_event_id',
   'date', 'subject', 'teacher_id', 'assistant_id',
   'activity_type', 'activity_name',
   'source_lesson_record_id', 'source_support_tags', 'source_support_memo',

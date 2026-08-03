@@ -242,6 +242,7 @@ export function mapServerClinicRecordToLocal(c) {
     studentId: c.student_id,
     classGroupId: c.class_group_id ?? '',
     classSessionId: c.class_session_id ?? '',
+    clinicEventId: c.clinic_event_id ?? '',
     date: c.date,
     subject: c.subject ?? '',
     activityType: c.activity_type ?? 'clinic',

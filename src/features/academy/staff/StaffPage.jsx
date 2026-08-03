@@ -20,6 +20,7 @@ import {
   Clock, Search, Users as UsersIcon, GraduationCap, Mail, X as XIcon,
   Loader2, Check, BookOpen, Coffee,
   LogIn, LogOut as LogOutIcon, ShieldCheck,
+  UserMinus,
 } from 'lucide-react';
 import Header from '../../../components/Header';
 import Modal from '../../../components/Modal';
@@ -47,7 +48,7 @@ import {
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
 import {
-  updateAcademyMemberRole,
+  removeAcademyMember, updateAcademyMemberRole,
 } from '../../../services/supabase/workspaceApi';
 import {
   buildRecurringStaffWorkPreview,
@@ -359,6 +360,7 @@ function OwnerStaffView({ canInviteManagers = false }) {
       // 로컬 배열 로딩이 늦을 때는 현재 로그인 사용자도 같은 방식으로 보강한다.
       ...importantMembers,
     ].filter((staff) => {
+      if (staff.status === 'inactive') return false;
       const key = staff.serverUserId || staff.academyMemberId
         || String(staff.email || '').trim().toLowerCase()
         || `${staff._sourceRole}_${staff.id}`;
@@ -606,6 +608,11 @@ function OwnerStaffView({ canInviteManagers = false }) {
                   summary={staffSummaries.get(selectedItem.staff.id)}
                   onBack={handleBackToList}
                   canManageManager={canInviteManagers}
+                  canRemoveMember={canInviteManagers}
+                  onRemoved={() => {
+                    setSelectedKey(null);
+                    setMobileDetailOpen(false);
+                  }}
                 />
               )
             ) : (
@@ -884,7 +891,7 @@ function EmptyDetailPanel({ onAdd }) {
 // 직원 상세 패널 (sub-tabs: 근무/계약/권한)
 // ═══════════════════════════════════════════════════════════════════
 function StaffDetailPanel({
-  staff, summary, onBack, canManageManager = false,
+  staff, summary, onBack, canManageManager = false, canRemoveMember = false, onRemoved,
 }) {
   const [subTab, setSubTab] = useState('shift');
   const isAssistant = false;
@@ -912,6 +919,9 @@ function StaffDetailPanel({
   );
   const [jobTitleSaving, setJobTitleSaving] = useState(false);
   const canEditJobTitle = canManageManager;
+  const deactivateLocalStaff = useAcademyStore((s) => s.deactivateLocalStaff);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
     setJobTitleDraft(serverProfile?.job_title || getStaffJobTitle(staff));
@@ -994,6 +1004,32 @@ function StaffDetailPanel({
       showToast(err?.message ?? '직책 저장에 실패했어요.', 'error');
     } finally {
       setJobTitleSaving(false);
+    }
+  };
+
+  const handleRemoveMember = async () => {
+    if (removing || !canRemoveMember || !staff.serverUserId) return;
+    setRemoving(true);
+    try {
+      const result = await removeAcademyMember({
+        academyId: currentAcademyId,
+        userId: staff.serverUserId,
+      });
+      deactivateLocalStaff?.(staff.id, staff._sourceRole || staff._role);
+      await Promise.all([
+        loadAcademyMemberProfiles?.(),
+        loadAcademyStaffProfiles?.(),
+      ]);
+      const assignedCount = Number(result?.assigned_class_count) || 0;
+      showToast(assignedCount > 0
+        ? `직원을 내보냈어요. 담당 반 ${assignedCount}개는 새 선생님을 지정해주세요.`
+        : '직원을 학원에서 내보냈어요.');
+      setRemoveConfirmOpen(false);
+      onRemoved?.();
+    } catch (error) {
+      showToast(error?.message || '직원을 내보내지 못했어요.', 'error');
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -1115,6 +1151,59 @@ function StaffDetailPanel({
         staff={staff}
         canEdit={canManageManager}
       />}
+
+      {canRemoveMember && !staff._isCurrentUser && (
+        <div className="rounded-2xl border border-red-100 bg-white p-4 shadow-sm md:p-5">
+          <p className="text-sm font-bold text-[#191F28]">직원 관리</p>
+          <p className="mt-1 text-xs leading-5 text-[#8B95A1]">
+            내보내면 이 학원의 데이터 접근 권한과 반복 근무 일정이 즉시 종료돼요.
+          </p>
+          <button
+            type="button"
+            onClick={() => setRemoveConfirmOpen(true)}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 py-3 text-sm font-bold text-red-600 active:bg-red-100"
+          >
+            <UserMinus size={16} /> 학원에서 내보내기
+          </button>
+        </div>
+      )}
+
+      {removeConfirmOpen && (
+        <Modal
+          isOpen
+          onClose={removing ? undefined : () => setRemoveConfirmOpen(false)}
+          title="직원을 내보낼까요?"
+          footer={(
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRemoveConfirmOpen(false)}
+                disabled={removing}
+                className="rounded-2xl bg-[#F2F4F6] py-3.5 text-sm font-bold text-[#4E5968] disabled:opacity-60"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleRemoveMember}
+                disabled={removing}
+                className="flex items-center justify-center gap-2 rounded-2xl bg-red-500 py-3.5 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {removing && <Loader2 size={15} className="animate-spin" />}
+                내보내기
+              </button>
+            </div>
+          )}
+        >
+          <div className="space-y-3">
+            <p className="text-base font-extrabold text-[#191F28]">{staff.name || '이 직원'}</p>
+            <p className="text-sm leading-6 text-[#6B7684]">
+              과거 수업·클리닉·근무 기록은 그대로 보존돼요. 현재 담당 반은 자동으로
+              다른 선생님에게 넘어가지 않으니 내보낸 뒤 담당자를 확인해주세요.
+            </p>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

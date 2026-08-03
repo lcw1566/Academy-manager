@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, PencilLine, Save, Search } from 'lucide-react';
+import { CheckCircle2, ChevronDown, PencilLine, Save, Search, X } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -9,6 +9,7 @@ import {
 } from '../../../services/supabase/domainApi';
 import { DEFAULT_ACADEMY_SETTINGS } from '../../../constants/academySettings';
 import { getClinicOptions, subjectToKey } from '../../../constants/clinicOptions';
+import { ACADEMY_SUBJECT_OPTIONS } from '../../../constants/academySettings';
 import { normalizeClinicDefaultItems } from './ClinicDefaultItemsEditor';
 import { createClientUuid } from '../../../utils/uuid';
 
@@ -101,6 +102,7 @@ function buildStudentDraft({
     recordId: currentRecord?.id || null,
     serverId: currentRecord?.serverId || null,
     requestId: currentRecord?.serverId || createClientUuid(),
+    subject: currentRecord?.subject || student.clinicSubject || subject || '',
     items,
   };
 }
@@ -108,6 +110,7 @@ function buildStudentDraft({
 export default function ClinicInlineWorksheet({
   session,
   group,
+  clinicEvent = null,
   students,
   academyProfile,
   onOpenRecord,
@@ -123,7 +126,7 @@ export default function ClinicInlineWorksheet({
   const materializePlannedClassSession = useWorkspaceStore(
     (state) => state.materializePlannedClassSession,
   );
-  const subject = group?.subject || '';
+  const subject = clinicEvent?.subject || group?.subject || '';
   const date = session?.date || '';
   const configuredFields = useMemo(
     () => new Set(
@@ -136,13 +139,14 @@ export default function ClinicInlineWorksheet({
 
   const buildDrafts = () => Object.fromEntries(students.map((student) => {
     const currentRecord = student.clinicRecord || null;
-    const previousRecord = findPreviousRecord(clinicRecords, student.id, subject, date);
+    const studentSubject = currentRecord?.subject || student.clinicSubject || subject;
+    const previousRecord = findPreviousRecord(clinicRecords, student.id, studentSubject, date);
     return [student.id, buildStudentDraft({
       student,
       currentRecord,
       previousRecord,
       academyProfile,
-      subject,
+      subject: studentSubject,
     })];
   }));
 
@@ -151,7 +155,9 @@ export default function ClinicInlineWorksheet({
   const [expandedStudentIds, setExpandedStudentIds] = useState(() => new Set());
   const [studentSearch, setStudentSearch] = useState('');
   const [saving, setSaving] = useState(false);
-  const studentKey = students.map((student) => student.id).join('|');
+  const studentKey = students
+    .map((student) => `${student.id}:${student.clinicSubject || ''}`)
+    .join('|');
   const visibleStudents = useMemo(() => {
     const query = studentSearch.trim().toLowerCase();
     if (!query) return students;
@@ -196,6 +202,69 @@ export default function ClinicInlineWorksheet({
     });
   };
 
+  const updateStudentSubject = (student, nextSubject) => {
+    setDrafts((current) => {
+      const draft = current[student.id];
+      if (!draft) return current;
+      const hasWrittenContent = draft.items.some((item) => (
+        item.materialsText.trim() || item.description.trim() || item.result.trim() || item.memo?.trim()
+      ));
+      const nextItems = hasWrittenContent
+        ? draft.items
+        : buildStudentDraft({
+          student: { ...student, clinicSubject: nextSubject },
+          currentRecord: null,
+          previousRecord: findPreviousRecord(clinicRecords, student.id, nextSubject, date),
+          academyProfile,
+          subject: nextSubject,
+        }).items;
+      return {
+        ...current,
+        [student.id]: { ...draft, subject: nextSubject, items: nextItems },
+      };
+    });
+    setDirtyStudentIds((current) => new Set(current).add(student.id));
+  };
+
+  const addStudentItem = (studentId, optionKey) => {
+    if (!optionKey) return;
+    setDrafts((current) => {
+      const draft = current[studentId];
+      const option = getClinicOptions(draft?.subject).find((item) => item.key === optionKey);
+      if (!draft || !option || draft.items.some((item) => item.categoryKey === option.key)) return current;
+      return {
+        ...current,
+        [studentId]: {
+          ...draft,
+          items: [...draft.items, {
+            id: `inline_${studentId}_${option.key}_${Date.now()}`,
+            categoryKey: option.key,
+            activityType: option.title,
+            title: option.title,
+            materialsText: '',
+            description: '',
+            result: '',
+            memo: '',
+            previousDescription: '',
+            previousResult: '',
+          }],
+        },
+      };
+    });
+    setDirtyStudentIds((current) => new Set(current).add(studentId));
+  };
+
+  const removeStudentItem = (studentId, itemId) => {
+    setDrafts((current) => ({
+      ...current,
+      [studentId]: {
+        ...current[studentId],
+        items: current[studentId].items.filter((item) => item.id !== itemId),
+      },
+    }));
+    setDirtyStudentIds((current) => new Set(current).add(studentId));
+  };
+
   const saveAll = async () => {
     if (saving || dirtyStudentIds.size === 0) return;
     const targetStudents = students.filter((student) => dirtyStudentIds.has(student.id));
@@ -207,7 +276,7 @@ export default function ClinicInlineWorksheet({
       const resolvedSession = session?.isPlanned
         ? await materializePlannedClassSession(session)
         : session;
-      if (!session?.isTemporary && !resolvedSession?.id) {
+      if (!session?.isTemporary && !clinicEvent && !resolvedSession?.id) {
         throw new Error('오늘 수업 회차를 준비하지 못했어요.');
       }
 
@@ -230,11 +299,12 @@ export default function ClinicInlineWorksheet({
           const payload = {
             studentId: student.id,
             date,
-            subject,
+            subject: draft.subject || subject,
             activityType: existing?.activityType || academyProfile?.clinicDefaultActivityType || 'clinic',
             activityName: existing?.activityName || '',
-            classGroupId: group?.id || '',
-            classSessionId: session?.isTemporary ? '' : (resolvedSession?.id || ''),
+            classGroupId: group?.isClinicEvent ? '' : (group?.id || ''),
+            classSessionId: session?.isTemporary || clinicEvent ? '' : (resolvedSession?.id || ''),
+            clinicEventId: clinicEvent?.id || '',
             sourceLessonRecordId: existing?.sourceLessonRecordId || null,
             sourceSupportTags: existing?.sourceSupportTags || [],
             sourceSupportMemo: existing?.sourceSupportMemo || '',
@@ -249,18 +319,19 @@ export default function ClinicInlineWorksheet({
             if (!student.serverId) {
               throw new Error(`${student.name} 학생의 서버 정보를 확인하지 못했어요.`);
             }
-            if (group && !group.serverId) {
+            if (group?.id && !group?.isClinicEvent && !group.serverId) {
               throw new Error('반 서버 정보를 확인하지 못했어요.');
             }
-            if (!session?.isTemporary && resolvedSession && !resolvedSession.serverId) {
+            if (!session?.isTemporary && !clinicEvent && resolvedSession && !resolvedSession.serverId) {
               throw new Error('수업 회차를 준비하지 못했어요.');
             }
             const serverPayload = {
               student_id: student.serverId,
-              class_group_id: group?.serverId || null,
-              class_session_id: resolvedSession?.serverId || null,
+              class_group_id: group?.isClinicEvent ? null : (group?.serverId || null),
+              class_session_id: clinicEvent ? null : (resolvedSession?.serverId || null),
+              clinic_event_id: clinicEvent?.id || null,
               date,
-              subject: subject || null,
+              subject: draft.subject || subject || null,
               activity_type: payload.activityType,
               activity_name: payload.activityName || null,
               source_lesson_record_id: null,
@@ -410,10 +481,43 @@ export default function ClinicInlineWorksheet({
                 style={{ gridTemplateRows: isExpanded ? '1fr' : '0fr' }}
               >
                 <div className="overflow-hidden">
-                  <div className="grid gap-2 border-t border-[#F2F4F6] px-3 pb-3 pt-3 lg:grid-cols-2">
+                  <div className="border-t border-[#F2F4F6] px-3 pt-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[10px] font-bold text-[#8B95A1]">과목</span>
+                      <select
+                        value={draft.subject}
+                        onChange={(event) => updateStudentSubject(student, event.target.value)}
+                        className="h-8 rounded-lg border border-[#E5E8EB] bg-white px-2 text-[11px] font-bold text-[#333D4B] outline-none focus:border-[#3182F6]"
+                      >
+                        <option value="">과목 없음</option>
+                        {ACADEMY_SUBJECT_OPTIONS.map((option) => (
+                          <option key={option.id} value={option.label}>{option.label}</option>
+                        ))}
+                      </select>
+                      {draft.subject !== subject && (
+                        <span className="text-[10px] font-bold text-violet-600">학생별 설정</span>
+                      )}
+                      <select
+                        value=""
+                        onChange={(event) => addStudentItem(student.id, event.target.value)}
+                        className="ml-auto h-8 rounded-lg border border-dashed border-[#B0B8C1] bg-white px-2 text-[11px] font-bold text-[#4E5968] outline-none"
+                      >
+                        <option value="">+ 활동 추가</option>
+                        {getClinicOptions(draft.subject)
+                          .filter((option) => !draft.items.some((item) => item.categoryKey === option.key))
+                          .map((option) => <option key={option.key} value={option.key}>{option.title}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 px-3 pb-3 pt-2 lg:grid-cols-2">
                     {draft.items.map((item) => (
                       <div key={item.id} className="rounded-xl bg-[#F8FAFC] p-2.5">
-                        <p className="mb-2 text-xs font-extrabold text-[#333D4B]">{item.title}</p>
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-xs font-extrabold text-[#333D4B]">{item.title}</p>
+                          <button type="button" onClick={() => removeStudentItem(student.id, item.id)} className="flex h-6 w-6 items-center justify-center rounded-lg text-[#B0B8C1] hover:bg-white hover:text-red-500" aria-label={`${item.title} 삭제`}>
+                            <X size={12} />
+                          </button>
+                        </div>
                         <div className="grid gap-2 sm:grid-cols-3">
                           {configuredFields.has('materials') && (
                             <label className="min-w-0">

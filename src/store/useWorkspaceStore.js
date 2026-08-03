@@ -43,6 +43,7 @@ import {
   listAcademyLessonRecords,
   listAcademyAttendanceRecords,
   listAcademyClinicRecords,
+  listAcademyClinicEvents,
   listAcademyExamResults,
   listAcademyPayments,
   listAcademyPayrolls,
@@ -216,6 +217,12 @@ const initialState = {
   isServerClinicRecordsLoading: false,
   serverClinicRecordsError: null,
   serverClinicRecordsLoadedAt: null,
+
+  // 서버 클리닉 일정 + 참여 학생
+  serverClinicEvents: [],
+  isServerClinicEventsLoading: false,
+  serverClinicEventsError: null,
+  serverClinicEventsLoadedAt: null,
 
   // 서버 수납 기록 (read-only)
   serverPayments: [],
@@ -486,6 +493,10 @@ const useWorkspaceStore = create(
             case 'clinic_records':
               queue('clinicRecords', () => get().loadServerClinicRecords());
               break;
+            case 'clinic_events':
+            case 'clinic_event_students':
+              queue('clinicEvents', () => get().loadServerClinicEvents());
+              break;
             case 'payments':
               queue('payments', () => get().loadServerPayments());
               break;
@@ -553,6 +564,7 @@ const useWorkspaceStore = create(
               get().loadServerLessonRecords(),
               get().loadServerAttendanceRecords(),
               get().loadServerClinicRecords(),
+              get().loadServerClinicEvents(),
               get().loadServerPayments(),
               get().loadServerPayrolls(),
             ]);
@@ -653,6 +665,16 @@ const useWorkspaceStore = create(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'clinic_records' },
             () => get().scheduleWorkspaceRealtimeRefresh('clinic_records'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'clinic_events' },
+            () => get().scheduleWorkspaceRealtimeRefresh('clinic_events'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'clinic_event_students' },
+            () => get().scheduleWorkspaceRealtimeRefresh('clinic_event_students'),
           )
           .on(
             'postgres_changes',
@@ -957,6 +979,7 @@ const useWorkspaceStore = create(
             get().loadServerLessonRecords(),
             get().loadServerAttendanceRecords(),
             get().loadServerClinicRecords(),
+            get().loadServerClinicEvents(),
             get().loadServerPayments(),
             get().loadServerPayrolls(),
             get().loadAcademyMemberProfiles(),
@@ -1041,6 +1064,7 @@ const useWorkspaceStore = create(
         get().loadServerLessonRecords();
         get().loadServerAttendanceRecords();
         get().loadServerClinicRecords();
+        get().loadServerClinicEvents();
         get().loadServerPayments();
         get().loadServerPayrolls();
         get().loadAcademyMemberProfiles();
@@ -1498,6 +1522,40 @@ const useWorkspaceStore = create(
         }
       },
 
+      loadServerClinicEvents: async () => {
+        if (!isSupabaseConfigured) {
+          set({ serverClinicEvents: [] });
+          return [];
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) {
+          set({ serverClinicEvents: [], serverClinicEventsError: null });
+          return [];
+        }
+        set({ isServerClinicEventsLoading: true, serverClinicEventsError: null });
+        try {
+          const list = await retryAsync(
+            () => listAcademyClinicEvents(academyId),
+            { attempts: 3, delays: [300, 900] },
+          );
+          if (!isCurrentAcademy(get, academyId)) return list;
+          set({
+            serverClinicEvents: list,
+            serverClinicEventsLoadedAt: new Date().toISOString(),
+          });
+          return list;
+        } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
+          set({
+            serverClinicEventsError:
+              err?.message ?? '클리닉 일정을 불러오지 못했어요.',
+          });
+          return [];
+        } finally {
+          if (isCurrentAcademy(get, academyId)) set({ isServerClinicEventsLoading: false });
+        }
+      },
+
       // 서버 출결 목록 조회 (read-only).
       loadServerAttendanceRecords: async () => {
         if (!isSupabaseConfigured) {
@@ -1842,6 +1900,7 @@ const useWorkspaceStore = create(
           get().loadServerLessonRecords(),
           get().loadServerAttendanceRecords(),
           get().loadServerClinicRecords(),
+          get().loadServerClinicEvents(),
           get().loadServerPayments(),
           get().loadServerPayrolls(),
           get().loadAcademyMemberProfiles(),
@@ -2293,6 +2352,7 @@ const useWorkspaceStore = create(
               get().loadServerLessonRecords(),
               get().loadServerAttendanceRecords(),
               get().loadServerClinicRecords(),
+              get().loadServerClinicEvents(),
               get().loadServerPayments(),
               get().loadServerPayrolls(),
               get().loadMyPendingInvitations(),

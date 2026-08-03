@@ -133,6 +133,44 @@ export async function updateCurrentUserPassword({ currentPassword, newPassword }
   return data;
 }
 
+async function readFunctionError(error, fallback) {
+  const response = error?.context;
+  if (response && typeof response.clone === 'function') {
+    try {
+      const payload = await response.clone().json();
+      if (typeof payload?.error === 'string' && payload.error.trim()) {
+        return payload.error.trim();
+      }
+    } catch {
+      // JSON 응답이 아니면 아래 상태별 기본 문구를 사용한다.
+    }
+  }
+  if (response?.status === 401) return '로그인 정보가 만료됐어요. 다시 로그인해주세요.';
+  if (response?.status === 409) return '원장 계정은 학원 소유권을 정리한 뒤 탈퇴할 수 있어요.';
+  return fallback;
+}
+
+export async function withdrawCurrentAccount() {
+  assertSupabaseConfigured();
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) throw new Error('로그인이 필요해요.');
+
+  const { data, error } = await supabase.functions.invoke('withdraw-account', {
+    body: {},
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (error) {
+    throw new Error(await readFunctionError(
+      error,
+      '탈퇴 요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요.',
+    ));
+  }
+  if (!data?.withdrawn) throw new Error('탈퇴 처리 결과를 확인하지 못했어요.');
+  return data;
+}
+
 export async function signOut() {
   assertSupabaseConfigured();
   // 일반 로그아웃은 현재 기기의 세션만 종료한다. 기본 global scope는 사용자의

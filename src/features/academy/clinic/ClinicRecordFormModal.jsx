@@ -108,6 +108,7 @@ function normalizeRelayTarget(target = {}) {
     studentId: target.studentId || '',
     classGroupId: target.classGroupId || '',
     classSessionId: target.classSessionId || '',
+    clinicEventId: target.clinicEventId || '',
     date: target.date || today(),
     subject: target.subject || '',
     sourceSupportTags: Array.isArray(target.sourceSupportTags) ? target.sourceSupportTags : [],
@@ -166,6 +167,7 @@ export default function ClinicRecordFormModal({
   presetSubject,
   presetClassGroupId,
   presetClassSessionId,
+  presetClinicEventId,
   presetSourceSupportTags,
   presetSourceSupportMemo,
   presetSourceLessonRecordId,
@@ -200,6 +202,7 @@ export default function ClinicRecordFormModal({
   const initialDate = editRecord?.date || activeRelayTarget?.date || presetDate || today();
   const initialClassGroupId = editRecord?.classGroupId || activeRelayTarget?.classGroupId || presetClassGroupId || '';
   const initialClassSessionId = editRecord?.classSessionId || activeRelayTarget?.classSessionId || presetClassSessionId || '';
+  const initialClinicEventId = editRecord?.clinicEventId || activeRelayTarget?.clinicEventId || presetClinicEventId || '';
   const initialSubject =
     editRecord?.subject ||
     deriveSubjectFromClass({
@@ -536,8 +539,9 @@ export default function ClinicRecordFormModal({
         subject: finalSubject,
         activityType,
         activityName: activityType === 'other' ? activityName.trim() : '',
-        classGroupId: classGroupId || '',
-        classSessionId: classSessionId || '',
+      classGroupId: classGroupId || '',
+      classSessionId: classSessionId || '',
+      clinicEventId: initialClinicEventId,
         sourceLessonRecordId,
         sourceSupportTags: currentSourceSupportTags,
         sourceSupportMemo: currentSourceSupportMemo,
@@ -562,6 +566,7 @@ export default function ClinicRecordFormModal({
         student_id: student?.serverId,
         class_group_id: groupForServer?.serverId || null,
         class_session_id: sessionForServer?.serverId || null,
+        clinic_event_id: initialClinicEventId || null,
         date,
         subject: finalSubject || null,
         activity_type: activityType,
