@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Plus, ChevronRight, Users, Clock } from 'lucide-react';
+import {
+  Plus, ChevronRight, Users, Clock, Search, SlidersHorizontal, RotateCcw,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -39,7 +41,12 @@ export default function ClassGroupsPage() {
   const [showForm, setShowForm] = useState(false);
   const todayStr = today();
   const [selectedDate, setSelectedDate] = useState(todayStr);
-  const isOwner = role === 'owner';
+  const [search, setSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [subjectFilter, setSubjectFilter] = useState('all');
+  const [levelFilter, setLevelFilter] = useState('all');
+  const [teacherFilter, setTeacherFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   // Phase 30 — canManageClasses 권한이 있으면 owner 가 아닌 staff 도 + 버튼 노출.
   // owner 는 항상 true. teacher/assistant 는 default false 이지만 owner 가 명시적으로
@@ -97,23 +104,60 @@ export default function ClassGroupsPage() {
       const teacherName = (group.teacherId || group.teacherUserId)
         ? getTeacherDisplayName(group.teacherId, instructors, academyProfile, group.teacherUserId)
         : null;
-      return { ...group, sessions, nextSession, studentCount, teacherName };
+      const studentNames = (group.studentIds || [])
+        .map((studentId) => academyStudents.find((student) => student.id === studentId)?.name)
+        .filter(Boolean);
+      return { ...group, sessions, nextSession, studentCount, teacherName, studentNames };
     }).sort((a, b) => {
       const ad = a.nextSession?.date || '9999';
       const bd = b.nextSession?.date || '9999';
       return ad.localeCompare(bd);
     }),
-    [classGroups, mergedClassSessions, instructors, academyProfile, todayStr, canManage, role, authUserId, myInstructorIds]
+    [classGroups, mergedClassSessions, instructors, academyProfile, academyStudents, todayStr, canManage, authUserId, myInstructorIds]
   );
+  const filterOptions = useMemo(() => ({
+    subjects: [...new Set(enriched.map((group) => group.subject).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'ko')),
+    levels: [...new Set(enriched.map((group) => group.level).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true })),
+    teachers: [...new Set(enriched.map((group) => group.teacherName).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'ko')),
+  }), [enriched]);
+  const activeFilterCount = [subjectFilter, levelFilter, teacherFilter]
+    .filter((value) => value !== 'all').length + (statusFilter !== 'all' ? 1 : 0);
+  const filteredGroups = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+    return enriched.filter((group) => {
+      const searchText = [
+        group.name,
+        group.subject,
+        group.level,
+        group.teacherName,
+        group.room,
+        ...(group.studentNames || []),
+      ].filter(Boolean).join(' ').toLowerCase();
+      return (!keyword || searchText.includes(keyword))
+        && (subjectFilter === 'all' || group.subject === subjectFilter)
+        && (levelFilter === 'all' || group.level === levelFilter)
+        && (teacherFilter === 'all' || group.teacherName === teacherFilter)
+        && (statusFilter === 'all' || (group.status || 'active') === statusFilter);
+    });
+  }, [enriched, search, subjectFilter, levelFilter, teacherFilter, statusFilter]);
+  const resetFilters = () => {
+    setSubjectFilter('all');
+    setLevelFilter('all');
+    setTeacherFilter('all');
+    setStatusFilter('all');
+  };
   const calendarSchedules = useMemo(() => {
-    const visibleGroupIds = new Set(enriched.map((group) => group.id));
+    const visibleGroupIds = new Set(filteredGroups.map((group) => group.id));
     return mergedClassSessions
       .filter((session) => (
         session.status !== 'canceled'
         && visibleGroupIds.has(session.classGroupId)
       ))
       .map((session) => {
-        const group = enriched.find((item) => item.id === session.classGroupId);
+        const group = filteredGroups.find((item) => item.id === session.classGroupId);
         return {
           id: session.id,
           date: session.date,
@@ -129,7 +173,7 @@ export default function ClassGroupsPage() {
           onClick: () => navigateToClassGroup(session.classGroupId),
         };
       });
-  }, [mergedClassSessions, enriched, navigateToClassGroup]);
+  }, [mergedClassSessions, filteredGroups, navigateToClassGroup]);
 
   return (
     <div>
@@ -154,7 +198,96 @@ export default function ClassGroupsPage() {
           <p className="text-sm text-gray-400">반 단위로 수업을 관리해요.</p>
         </div>
 
-        <div className="mb-5">
+        <div className="px-4 mb-4">
+          <div className="flex items-center gap-2">
+            <label className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-2xl border border-[#E5E8EB] bg-white px-3.5 shadow-sm focus-within:border-[#3182F6] focus-within:ring-2 focus-within:ring-blue-50">
+              <Search size={16} className="flex-shrink-0 text-[#8B95A1]" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="반·학생·선생님 검색"
+                className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#191F28] placeholder:text-[#B0B8C1] focus:outline-none"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((open) => !open)}
+              aria-expanded={filtersOpen}
+              className={`relative flex h-11 flex-shrink-0 items-center gap-1.5 rounded-2xl border px-3.5 text-sm font-bold transition-colors ${
+                filtersOpen || activeFilterCount > 0
+                  ? 'border-[#3182F6] bg-blue-50 text-[#1B64DA]'
+                  : 'border-[#E5E8EB] bg-white text-[#4E5968]'
+              }`}
+            >
+              <SlidersHorizontal size={15} /> 필터
+              {activeFilterCount > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#3182F6] px-1 text-[10px] text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {filtersOpen && (
+            <div className="mt-2 rounded-2xl border border-[#E5E8EB] bg-white p-3 shadow-sm">
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                <FilterSelect
+                  label="상태"
+                  value={statusFilter}
+                  onChange={setStatusFilter}
+                  options={[
+                    { value: 'all', label: '상태 전체' },
+                    { value: 'active', label: '운영 중' },
+                    { value: 'pending', label: '대기' },
+                    { value: 'inactive', label: '종료' },
+                  ]}
+                />
+                <FilterSelect
+                  label="과목"
+                  value={subjectFilter}
+                  onChange={setSubjectFilter}
+                  options={[
+                    { value: 'all', label: '과목 전체' },
+                    ...filterOptions.subjects.map((value) => ({ value, label: value })),
+                  ]}
+                />
+                <FilterSelect
+                  label="학년/레벨"
+                  value={levelFilter}
+                  onChange={setLevelFilter}
+                  options={[
+                    { value: 'all', label: '학년/레벨 전체' },
+                    ...filterOptions.levels.map((value) => ({ value, label: value })),
+                  ]}
+                />
+                <FilterSelect
+                  label="담당 선생님"
+                  value={teacherFilter}
+                  onChange={setTeacherFilter}
+                  options={[
+                    { value: 'all', label: '선생님 전체' },
+                    ...filterOptions.teachers.map((value) => ({ value, label: value })),
+                  ]}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between px-1">
+                <p className="text-[11px] font-semibold text-[#8B95A1]">
+                  {filteredGroups.length}개 반
+                </p>
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  disabled={activeFilterCount === 0}
+                  className="flex items-center gap-1 text-xs font-bold text-[#4E5968] disabled:opacity-35"
+                >
+                  <RotateCcw size={12} /> 초기화
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mb-4">
           <WeeklyExpandableCalendar
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
@@ -180,9 +313,23 @@ export default function ClassGroupsPage() {
               ) : null
             }
           />
+        ) : filteredGroups.length === 0 ? (
+          <div className="mx-4 rounded-2xl bg-white px-5 py-10 text-center shadow-sm">
+            <p className="text-sm font-bold text-[#333D4B]">조건에 맞는 반이 없어요.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                resetFilters();
+              }}
+              className="mt-3 rounded-xl bg-[#F2F4F6] px-4 py-2 text-xs font-bold text-[#4E5968]"
+            >
+              검색·필터 초기화
+            </button>
+          </div>
         ) : (
-          <div className="px-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
-            {enriched.map((group) => {
+          <div className="px-4 grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+            {filteredGroups.map((group) => {
               const statusInfo = STATUS_MAP[group.status] || STATUS_MAP.active;
               const activityLabel = getActivityLabel(
                 CLASS_ACTIVITY_TYPES,
@@ -194,61 +341,53 @@ export default function ClassGroupsPage() {
                   key={group.id}
                   whileTap={{ scale: 0.97 }}
                   onClick={() => navigateToClassGroup(group.id)}
-                  className="bg-white rounded-2xl p-3.5 md:p-4 shadow-sm cursor-pointer select-none min-h-[190px] flex flex-col"
+                  className="flex min-h-[142px] cursor-pointer select-none flex-col rounded-2xl bg-white p-3 shadow-sm transition-shadow hover:shadow-md md:min-h-[150px]"
                 >
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 mb-3">
-                    <span className={`text-[10px] md:text-xs px-2 py-1 rounded-full font-semibold whitespace-nowrap ${statusInfo.color}`}>
-                      {statusInfo.label}
-                    </span>
-                    <span className="text-[10px] md:text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-semibold truncate min-w-0">
+                  <div className="mb-2 flex min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 truncate rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700 md:text-[11px]">
                       {group.subject || '과목'}
                     </span>
                     {group.activityType && group.activityType !== 'regular_class' && (
-                      <span className="truncate rounded-full bg-violet-50 px-2 py-1 text-[10px] font-semibold text-violet-600 md:text-xs">
+                      <span className="hidden truncate rounded-lg bg-violet-50 px-2 py-1 text-[10px] font-bold text-violet-600 sm:inline-flex">
                         {activityLabel}
                       </span>
                     )}
+                    <span className={`ml-auto flex-shrink-0 rounded-lg px-1.5 py-1 text-[9px] font-bold md:text-[10px] ${statusInfo.color}`}>
+                      {statusInfo.label}
+                    </span>
                   </div>
 
-                  <p className="font-extrabold text-gray-900 text-base md:text-lg leading-snug line-clamp-2 min-h-[42px]">
+                  <p className="truncate text-sm font-extrabold leading-snug text-[#191F28] md:text-base">
                     {group.name}
                   </p>
-                  {group.level && <p className="text-xs text-gray-400 mt-1 truncate">{group.level}</p>}
+                  {group.level && <p className="mt-0.5 truncate text-[11px] font-semibold text-[#8B95A1]">{group.level}</p>}
 
-                  <div className="mt-3 flex flex-col gap-1.5">
-                    <div className="flex items-center gap-1.5 text-xs text-gray-500 min-w-0">
-                      <span className="flex items-center gap-1 min-w-0">
-                        <Users size={12} className="flex-shrink-0" />
-                        {group.studentCount}명
-                      </span>
-                    </div>
-                    <div className="flex items-start gap-1.5 text-xs text-gray-500 min-w-0">
-                      <Clock size={12} className="flex-shrink-0 mt-0.5" />
-                      <span className="leading-relaxed line-clamp-2">
+                  <div className="mt-2 flex min-w-0 items-center gap-2 text-[11px] font-medium text-[#6B7684]">
+                    <span className="flex flex-shrink-0 items-center gap-1">
+                      <Users size={11} /> {group.studentCount}명
+                    </span>
+                    <span className="flex min-w-0 items-center gap-1 truncate">
+                      <Clock size={11} className="flex-shrink-0" />
+                      <span className="truncate">
                         {group.weekdays?.join('·') || '요일 미정'}요일{' '}
                         {group.weekdayTimes && Object.keys(group.weekdayTimes).length > 0
                           ? '요일별 시간'
                           : group.startTime || ''}
                       </span>
-                    </div>
-                    {group.room && (
-                      <span className={`inline-flex w-fit max-w-full rounded-lg border px-2 py-1 text-[11px] font-bold ${getRoomTagClassName(group.room)}`}>
-                        <span className="truncate">{group.room}</span>
-                      </span>
-                    )}
-                    {group.teacherName && (
-                      <p className="text-xs text-gray-400 truncate">담당: {group.teacherName}</p>
-                    )}
+                    </span>
                   </div>
 
-                  {group.nextSession && (
-                    <p className="text-xs text-blue-600 font-bold mt-auto pt-3">
-                      다음 수업 {formatDateShort(group.nextSession.date)}
-                    </p>
-                  )}
-
-                  <div className={`${group.nextSession ? 'mt-2.5' : 'mt-auto'} flex items-center justify-between pt-2.5 border-t border-gray-50`}>
-                    <span className="text-[11px] text-gray-400">총 {group.sessions.length}회차</span>
+                  <div className="mt-auto flex min-w-0 items-center gap-1.5 border-t border-[#F2F4F6] pt-2">
+                    {group.room && (
+                      <span className={`inline-flex max-w-[38%] truncate rounded-md border px-1.5 py-0.5 text-[9px] font-bold ${getRoomTagClassName(group.room)}`}>
+                        {group.room}
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-[10px] font-semibold text-[#8B95A1]">
+                      {group.nextSession
+                        ? `${formatDateShort(group.nextSession.date)} · ${group.teacherName || '담당 미정'}`
+                        : group.teacherName || '다음 수업 미정'}
+                    </span>
                     <ChevronRight size={14} className="text-gray-300" />
                   </div>
                 </motion.div>
@@ -262,5 +401,22 @@ export default function ClassGroupsPage() {
         <ClassGroupFormModal onClose={() => setShowForm(false)} />
       )}
     </div>
+  );
+}
+
+function FilterSelect({ label, value, onChange, options }) {
+  return (
+    <label className="min-w-0">
+      <span className="sr-only">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 w-full rounded-xl border border-[#E5E8EB] bg-[#F8F9FA] px-3 text-xs font-bold text-[#333D4B] focus:border-[#3182F6] focus:bg-white focus:outline-none"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
