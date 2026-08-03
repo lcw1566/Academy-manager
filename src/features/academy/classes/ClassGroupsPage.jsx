@@ -6,7 +6,7 @@ import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
-import ScheduleCalendar from '../../../components/calendar/ScheduleCalendar';
+import AcademyScheduleCalendar from '../calendar/AcademyScheduleCalendar';
 import {
   ListSearchFilterBar,
   ListFilterChips,
@@ -165,6 +165,8 @@ export default function ClassGroupsPage() {
         const group = filteredGroups.find((item) => item.id === session.classGroupId);
         return {
           id: session.id,
+          classGroupId: session.classGroupId,
+          classGroupServerId: group?.serverId || group?.id,
           date: session.date,
           type: 'class',
           startTime: session.startTime,
@@ -259,7 +261,7 @@ export default function ClassGroupsPage() {
         </div>
 
         <div className="mb-4">
-          <ScheduleCalendar
+          <AcademyScheduleCalendar
             selectedDate={selectedDate}
             onSelectDate={setSelectedDate}
             schedules={calendarSchedules}

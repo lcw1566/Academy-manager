@@ -10,7 +10,7 @@ import {
   getKoreaMinutes,
   greetingByTime,
 } from '../../../utils/date';
-import ScheduleCalendar from '../../../components/calendar/ScheduleCalendar';
+import AcademyScheduleCalendar from '../calendar/AcademyScheduleCalendar';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
@@ -187,6 +187,8 @@ export default function TeacherDashboard() {
       )).length;
       return {
         id: session.id,
+        classGroupId: session.classGroupId,
+        classGroupServerId: group?.serverId || group?.id,
         date: session.date,
         type: 'class',
         startTime: session.startTime,
@@ -349,7 +351,7 @@ export default function TeacherDashboard() {
       <HomeActionList items={homeActions} />
 
       <div className="mb-5">
-        <ScheduleCalendar
+        <AcademyScheduleCalendar
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
           schedules={schedules}

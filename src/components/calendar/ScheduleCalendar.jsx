@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import {
   addDaysYMD,
   formatDateShort,
@@ -38,6 +38,7 @@ function formatTimeRange(schedule) {
 }
 
 function scheduleTone(schedule) {
+  if (schedule.tone) return schedule.tone;
   if (schedule.badge?.includes('보강') || schedule.sessionKind === 'makeup') {
     return {
       card: 'border-violet-200 bg-violet-50',
@@ -115,6 +116,55 @@ function getTimelineRange(dates, schedules) {
   return { startMin, endMin, ticks };
 }
 
+function isAllDaySchedule(schedule) {
+  return schedule.allDay === true || toMinutes(schedule.startTime || schedule.time) == null;
+}
+
+function AllDayLane({ dates, schedules }) {
+  const eventsByDate = useMemo(() => {
+    const map = new Map();
+    dates.forEach((date) => map.set(date, []));
+    schedules.forEach((schedule) => {
+      if (!map.has(schedule.date) || !isAllDaySchedule(schedule)) return;
+      map.get(schedule.date).push(schedule);
+    });
+    return map;
+  }, [dates, schedules]);
+  const total = [...eventsByDate.values()].reduce((sum, items) => sum + items.length, 0);
+  if (total === 0) return null;
+  const gridColumns = `52px repeat(${dates.length}, minmax(0, 1fr))`;
+
+  return (
+    <div className="grid border-b border-[#F2F4F6] bg-white" style={{ gridTemplateColumns: gridColumns }}>
+      <div className="px-2 py-2 text-[9px] font-extrabold text-[#8B95A1]">종일</div>
+      {dates.map((date) => {
+        const events = eventsByDate.get(date) || [];
+        return (
+          <div key={date} className="min-w-0 space-y-1 border-l border-[#F2F4F6] px-1 py-1.5">
+            {events.slice(0, 2).map((schedule, index) => {
+              const tone = scheduleTone(schedule);
+              return (
+                <button
+                  key={schedule.id || index}
+                  type="button"
+                  onClick={schedule.onClick}
+                  disabled={typeof schedule.onClick !== 'function'}
+                  className={`block w-full truncate rounded-lg border px-1.5 py-1 text-left text-[9px] font-extrabold active:scale-[0.99] md:text-[10px] ${tone.card} ${tone.title}`}
+                >
+                  {schedule.title || '일정'}
+                </button>
+              );
+            })}
+            {events.length > 2 && (
+              <p className="px-1 text-[8px] font-extrabold text-[#8B95A1]">+{events.length - 2}개</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function TimelineEvent({ item, range, pixelsPerMinute }) {
   const { schedule, start, end, column, columnCount } = item;
   const tone = scheduleTone(schedule);
@@ -160,7 +210,10 @@ function TimelineEvent({ item, range, pixelsPerMinute }) {
   );
 }
 
-function TimeGrid({ dates, schedules, today, compact = false, showHeaders = true, emptyText }) {
+function TimeGrid({
+  dates, schedules, today, compact = false, showHeaders = true, emptyText,
+  hasSupplementalEvents = false,
+}) {
   const nowMinutes = getKoreaMinutes();
   const visibleSchedules = useMemo(
     () => schedules.filter((schedule) => dates.includes(schedule.date)),
@@ -182,6 +235,7 @@ function TimeGrid({ dates, schedules, today, compact = false, showHeaders = true
   }, [dates, visibleSchedules]);
 
   if (!range) {
+    if (hasSupplementalEvents) return null;
     return (
       <div className="flex min-h-[150px] flex-col items-center justify-center px-4 py-8 text-center">
         <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F2F7FF] text-[#3182F6]">
@@ -380,6 +434,7 @@ export default function ScheduleCalendar({
   emptyText = '수업 일정이 없어요',
   defaultMode = 'week',
   compact = false,
+  onAddEvent,
   className = '',
 }) {
   const today = getTodayYMD();
@@ -437,6 +492,16 @@ export default function ScheduleCalendar({
           <p className="mt-1 truncate text-[11px] font-semibold text-[#8B95A1]">{periodLabel}</p>
         </div>
         <div className="mt-3 flex items-center justify-between gap-2 md:mt-0 md:justify-end">
+          {onAddEvent && (
+            <button
+              type="button"
+              onClick={() => onAddEvent(activeDate)}
+              className="flex h-9 items-center gap-1 rounded-xl bg-[#0064FF] px-3 text-xs font-extrabold text-white shadow-sm active:bg-[#0050CC]"
+            >
+              <Plus size={14} />
+              <span className="hidden sm:inline">일정</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => selectDate(today)}
@@ -489,6 +554,7 @@ export default function ScheduleCalendar({
                 {activeDate === today ? '오늘' : formatDateShort(activeDate)}
               </p>
             </div>
+            <AllDayLane dates={[activeDate]} schedules={schedules} />
             <TimeGrid
               dates={[activeDate]}
               schedules={schedules}
@@ -496,15 +562,20 @@ export default function ScheduleCalendar({
               compact={compact}
               showHeaders={false}
               emptyText={emptyText}
+              hasSupplementalEvents={selectedDaySchedules.some(isAllDaySchedule)}
             />
           </div>
           <div className="hidden md:block">
+            <AllDayLane dates={weekDates} schedules={schedules} />
             <TimeGrid
               dates={weekDates}
               schedules={schedules}
               today={today}
               compact={compact}
               emptyText={emptyText}
+              hasSupplementalEvents={schedules.some((schedule) => (
+                weekDates.includes(schedule.date) && isAllDaySchedule(schedule)
+              ))}
             />
           </div>
         </>
@@ -525,6 +596,7 @@ export default function ScheduleCalendar({
                 <span className="ml-2 text-[11px] text-[#8B95A1]">{selectedDaySchedules.length}개</span>
               </p>
             </div>
+            <AllDayLane dates={[activeDate]} schedules={schedules} />
             <TimeGrid
               dates={[activeDate]}
               schedules={schedules}
@@ -532,6 +604,7 @@ export default function ScheduleCalendar({
               compact
               showHeaders={false}
               emptyText={emptyText}
+              hasSupplementalEvents={selectedDaySchedules.some(isAllDaySchedule)}
             />
           </div>
         </>

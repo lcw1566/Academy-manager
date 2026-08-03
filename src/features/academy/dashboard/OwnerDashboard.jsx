@@ -17,7 +17,7 @@ import {
   getKoreaMinutes,
   greetingByTime,
 } from '../../../utils/date';
-import ScheduleCalendar from '../../../components/calendar/ScheduleCalendar';
+import AcademyScheduleCalendar from '../calendar/AcademyScheduleCalendar';
 import {
   classifyShiftStatus,
   getAcademyYmd,
@@ -158,6 +158,8 @@ export default function OwnerDashboard({ operationsOnly = false }) {
         const group = classGroups.find((item) => item.id === session.classGroupId);
         return {
           id: session.id,
+          classGroupId: session.classGroupId,
+          classGroupServerId: group?.serverId || group?.id,
           date: session.date,
           type: 'class',
           startTime: session.startTime,
@@ -353,7 +355,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
 
       {/* 주간 캘린더 */}
       <div className="mb-5">
-        <ScheduleCalendar
+        <AcademyScheduleCalendar
           selectedDate={selectedDate}
           onSelectDate={setSelectedDate}
           schedules={schedules}

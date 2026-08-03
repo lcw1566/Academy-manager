@@ -44,6 +44,9 @@ import {
   listAcademyAttendanceRecords,
   listAcademyClinicRecords,
   listAcademyClinicEvents,
+  listAcademyCalendarEvents,
+  saveAcademyCalendarEvent,
+  deleteAcademyCalendarEvent,
   listAcademyExamResults,
   listAcademyPayments,
   listAcademyPayrolls,
@@ -223,6 +226,12 @@ const initialState = {
   isServerClinicEventsLoading: false,
   serverClinicEventsError: null,
   serverClinicEventsLoadedAt: null,
+
+  // 학원 공통 일정(방학/학교 시험/행사 등)
+  academyCalendarEvents: [],
+  isAcademyCalendarEventsLoading: false,
+  academyCalendarEventsError: null,
+  academyCalendarEventsLoadedAt: null,
 
   // 서버 수납 기록 (read-only)
   serverPayments: [],
@@ -497,6 +506,9 @@ const useWorkspaceStore = create(
             case 'clinic_event_students':
               queue('clinicEvents', () => get().loadServerClinicEvents());
               break;
+            case 'academy_calendar_events':
+              queue('academyCalendarEvents', () => get().loadAcademyCalendarEvents());
+              break;
             case 'payments':
               queue('payments', () => get().loadServerPayments());
               break;
@@ -565,6 +577,7 @@ const useWorkspaceStore = create(
               get().loadServerAttendanceRecords(),
               get().loadServerClinicRecords(),
               get().loadServerClinicEvents(),
+              get().loadAcademyCalendarEvents(),
               get().loadServerPayments(),
               get().loadServerPayrolls(),
             ]);
@@ -675,6 +688,11 @@ const useWorkspaceStore = create(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'clinic_event_students' },
             () => get().scheduleWorkspaceRealtimeRefresh('clinic_event_students'),
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'academy_calendar_events' },
+            () => get().scheduleWorkspaceRealtimeRefresh('academy_calendar_events'),
           )
           .on(
             'postgres_changes',
@@ -980,6 +998,7 @@ const useWorkspaceStore = create(
             get().loadServerAttendanceRecords(),
             get().loadServerClinicRecords(),
             get().loadServerClinicEvents(),
+            get().loadAcademyCalendarEvents(),
             get().loadServerPayments(),
             get().loadServerPayrolls(),
             get().loadAcademyMemberProfiles(),
@@ -1065,6 +1084,7 @@ const useWorkspaceStore = create(
         get().loadServerAttendanceRecords();
         get().loadServerClinicRecords();
         get().loadServerClinicEvents();
+        get().loadAcademyCalendarEvents();
         get().loadServerPayments();
         get().loadServerPayrolls();
         get().loadAcademyMemberProfiles();
@@ -1556,6 +1576,65 @@ const useWorkspaceStore = create(
         }
       },
 
+      loadAcademyCalendarEvents: async () => {
+        if (!isSupabaseConfigured) {
+          set({ academyCalendarEvents: [] });
+          return [];
+        }
+        const academyId = get().currentAcademyId;
+        if (!academyId) {
+          set({ academyCalendarEvents: [], academyCalendarEventsError: null });
+          return [];
+        }
+        set({ isAcademyCalendarEventsLoading: true, academyCalendarEventsError: null });
+        try {
+          const list = await retryAsync(
+            () => listAcademyCalendarEvents(academyId),
+            { attempts: 3, delays: [300, 900] },
+          );
+          if (!isCurrentAcademy(get, academyId)) return list;
+          set({
+            academyCalendarEvents: list,
+            academyCalendarEventsLoadedAt: new Date().toISOString(),
+          });
+          return list;
+        } catch (err) {
+          if (!isCurrentAcademy(get, academyId)) return [];
+          set({
+            academyCalendarEventsError:
+              err?.message ?? '학원 일정을 불러오지 못했어요.',
+          });
+          return [];
+        } finally {
+          if (isCurrentAcademy(get, academyId)) set({ isAcademyCalendarEventsLoading: false });
+        }
+      },
+
+      saveAcademyCalendarEventLocal: async ({ id = null, event } = {}) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        const academyId = get().currentAcademyId;
+        if (!academyId) throw new Error('학원을 먼저 선택해주세요.');
+        const saved = await saveAcademyCalendarEvent({ academyId, id, event });
+        await Promise.all([
+          get().loadAcademyCalendarEvents(),
+          get().loadClassSessionExceptions({ fromDate: event.start_date, toDate: event.end_date }),
+          get().loadServerClassSessions(),
+        ]);
+        return saved;
+      },
+
+      deleteAcademyCalendarEventLocal: async (id) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        if (!id) throw new Error('일정 id가 필요해요.');
+        await deleteAcademyCalendarEvent(id);
+        await Promise.all([
+          get().loadAcademyCalendarEvents(),
+          get().loadClassSessionExceptions(),
+          get().loadServerClassSessions(),
+        ]);
+        return true;
+      },
+
       // 서버 출결 목록 조회 (read-only).
       loadServerAttendanceRecords: async () => {
         if (!isSupabaseConfigured) {
@@ -1901,6 +1980,7 @@ const useWorkspaceStore = create(
           get().loadServerAttendanceRecords(),
           get().loadServerClinicRecords(),
           get().loadServerClinicEvents(),
+          get().loadAcademyCalendarEvents(),
           get().loadServerPayments(),
           get().loadServerPayrolls(),
           get().loadAcademyMemberProfiles(),
@@ -2353,6 +2433,7 @@ const useWorkspaceStore = create(
               get().loadServerAttendanceRecords(),
               get().loadServerClinicRecords(),
               get().loadServerClinicEvents(),
+              get().loadAcademyCalendarEvents(),
               get().loadServerPayments(),
               get().loadServerPayrolls(),
               get().loadMyPendingInvitations(),

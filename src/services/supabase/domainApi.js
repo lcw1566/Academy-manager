@@ -711,6 +711,60 @@ export async function deleteAcademyClinicEvent(id) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// academy_calendar_events
+// 학원 방학, 학교 시험, 학교 일정처럼 수업과 나란히 보이는 공통 일정.
+// 저장/삭제 RPC가 휴원 일정과 class_session_exceptions를 한 트랜잭션으로 묶는다.
+// ────────────────────────────────────────────────────────────────
+
+export async function listAcademyCalendarEvents(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  const { data, error } = await supabase
+    .from('academy_calendar_events')
+    .select('*')
+    .eq('academy_id', academyId)
+    .is('deleted_at', null)
+    .order('start_date', { ascending: true })
+    .order('created_at', { ascending: true })
+    .limit(1000);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function saveAcademyCalendarEvent({ academyId, id = null, event } = {}) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!event || typeof event !== 'object') throw new Error('일정 정보가 필요해요.');
+  const { data, error } = await supabase.rpc('save_academy_calendar_event', {
+    p_academy_id: academyId,
+    p_event: event,
+    p_event_id: id || null,
+  });
+  if (error) {
+    if (['42883', 'PGRST202', '42P01'].includes(error.code)) {
+      throw new Error('학원 일정 기능이 아직 서버에 적용되지 않았어요. SQL 068을 먼저 실행해주세요.');
+    }
+    throw error;
+  }
+  return data ?? null;
+}
+
+export async function deleteAcademyCalendarEvent(id) {
+  assertSupabaseConfigured();
+  if (!id) throw new Error('일정 id가 필요해요.');
+  const { data, error } = await supabase.rpc('delete_academy_calendar_event', {
+    p_event_id: id,
+  });
+  if (error) {
+    if (['42883', 'PGRST202', '42P01'].includes(error.code)) {
+      throw new Error('학원 일정 기능이 아직 서버에 적용되지 않았어요. SQL 068을 먼저 실행해주세요.');
+    }
+    throw error;
+  }
+  return data;
+}
+
+// ────────────────────────────────────────────────────────────────
 // exam_results
 // ────────────────────────────────────────────────────────────────
 
