@@ -31,6 +31,7 @@ import {
   mapServerPayrollToLocal,
 } from '../services/supabase/hydrateMappers';
 import { computeLessonHoursForMonth } from '../utils/shiftCoverage';
+import { sumStaffAttendanceHours } from '../utils/staffAttendance';
 import { normalizeRecordSchema } from '../constants/learningActivitySettings';
 import { DEFAULT_JOB_TITLE_PERMISSIONS } from '../utils/staffPermissions';
 
@@ -2120,12 +2121,12 @@ const useAcademyStore = create(
 
   // ─── Academy Payrolls ─────────────────────────────
   // Phase 30 — 급여 자동 계산.
-  //   hourly          : 승인된 실제 근퇴 기록 합계로 계산
+  //   hourly          : 퇴근까지 완료된 실제 근퇴 기록 합계로 계산
   //   teacher lessons : 급여에는 영향 없이 업무 참고 정보로 유지
   //   assistant clinic: 급여에는 영향 없이 업무 참고 정보로 유지
   //   monthly         : monthlySalary 그대로
   // 클리닉 카운트(completedClinicCount) 는 보조강사 카드에 참고 정보로만 남는다.
-  // Phase 44.7 / Phase C — staff_attendance_logs 의 approved 실제 시간만 시급제 금액에 반영.
+  // SQL 072 — 퇴근까지 완료된 completed/approved 근퇴만 시급제 금액에 반영.
   generatePayrollsForMonth: (month, opts = {}) => {
     const { academyTeachers, academyAssistants, academyManagers, classSessions, clinicTasks } = get();
     const computeActualShiftHours = get().computeStaffActualHoursForMonth;
@@ -2142,7 +2143,7 @@ const useAcademyStore = create(
     const keepLockedFields = (draft) => {
       const existing = existingByKey.get(`${draft.staffType}__${draft.staffId}`);
       if (!existing) return draft;
-      if (existing.status === 'completed') {
+      if (existing.status === 'completed' || existing.isExitSettlement) {
         return {
           ...existing,
           staffUserId: existing.staffUserId || draft.staffUserId || null,
@@ -2162,8 +2163,8 @@ const useAcademyStore = create(
       };
     };
 
-    academyTeachers.forEach((teacher, i) => {
-      // 시급제 급여는 승인된 실제 근퇴 기록만 기준으로 한다.
+    academyTeachers.filter((teacher) => teacher.status !== 'inactive').forEach((teacher, i) => {
+      // 시급제 급여는 퇴근까지 완료된 실제 근퇴 기록만 기준으로 한다.
       const approvedLogHours = computeFromLogs(teacher.serverUserId, month, attendanceLogs, { approvedOnly: true });
       const pendingLogHours = computeFromLogs(teacher.serverUserId, month, attendanceLogs, { approvedOnly: false });
       const localActualHours = teacher.serverUserId ? 0 : computeActualShiftHours(teacher.id, month);
@@ -2197,7 +2198,7 @@ const useAcademyStore = create(
       }));
     });
 
-    academyAssistants.forEach((assistant, i) => {
+    academyAssistants.filter((assistant) => assistant.status !== 'inactive').forEach((assistant, i) => {
       const completed = clinicTasks.filter(
         (t) => t.assignedToId === assistant.id && t.status === 'completed' && t.completedAt?.startsWith(month)
       );
@@ -2227,7 +2228,7 @@ const useAcademyStore = create(
       }));
     });
 
-    academyManagers.forEach((manager, i) => {
+    academyManagers.filter((manager) => manager.status !== 'inactive').forEach((manager, i) => {
       const approvedLogHours = computeFromLogs(manager.serverUserId, month, attendanceLogs, { approvedOnly: true });
       const pendingLogHours = computeFromLogs(manager.serverUserId, month, attendanceLogs, { approvedOnly: false });
       const localActualHours = manager.serverUserId ? 0 : computeActualShiftHours(manager.id, month);
@@ -2249,7 +2250,9 @@ const useAcademyStore = create(
 
     const payrollKeys = new Set(payrolls.map((p) => `${p.staffType}__${p.staffId}`));
     const lockedPayrollsToKeep = (get().academyPayrolls || []).filter(
-      (p) => p.month === month && p.status === 'completed' && !payrollKeys.has(`${p.staffType}__${p.staffId}`),
+      (p) => p.month === month
+        && (p.status === 'completed' || p.isExitSettlement)
+        && !payrollKeys.has(`${p.staffType}__${p.staffId}`),
     );
 
     set((s) => ({
@@ -2575,28 +2578,15 @@ const useAcademyStore = create(
     return totalMinutes / 60;
   },
 
-  // Phase 44.7 / Phase C — staff_attendance_logs 기반 시간 계산.
-  // logs 배열은 호출처가 주입 (useWorkspaceStore.getState().staffAttendanceLogs).
-  // approvedOnly=true 면 approved 만 합산. false 면 아직 정산 반영 전인 pending/completed 만 합산.
+  // staff_attendance_logs 기반 시간 계산.
+  // 정상적으로 퇴근까지 기록된 completed와 기존 approved는 급여 시간으로 합산한다.
+  // pending은 출근만 있고 퇴근이 없는 예외이므로 별도로 표시하되 급여에는 넣지 않는다.
   computeStaffHoursFromLogs: (staffUserId, month, logs = [], { approvedOnly = true } = {}) => {
-    if (!staffUserId || !month) return 0;
-    let totalMinutes = 0;
-    for (const log of logs) {
-      if (!log) continue;
-      if (log.staff_user_id !== staffUserId) continue;
-      if (!log.work_date?.startsWith(month)) continue;
-      if (approvedOnly && log.status !== 'approved') continue;
-      if (!approvedOnly && !['pending', 'completed'].includes(log.status)) continue;
-      const start = log.actual_start_time;
-      const end = log.actual_end_time;
-      if (!start || !end) continue;
-      const [sh1, sm1] = String(start).slice(0, 5).split(':').map(Number);
-      const [sh2, sm2] = String(end).slice(0, 5).split(':').map(Number);
-      if (Number.isNaN(sh1) || Number.isNaN(sh2)) continue;
-      const minutes = (sh2 * 60 + sm2) - (sh1 * 60 + sm1) - (log.break_minutes || 0);
-      if (minutes > 0) totalMinutes += minutes;
-    }
-    return totalMinutes / 60;
+    return sumStaffAttendanceHours(logs, {
+      staffUserId,
+      month,
+      mode: approvedOnly ? 'payable' : 'pending',
+    });
   },
 
   // ─── Account / academy scoping ───────────────────────

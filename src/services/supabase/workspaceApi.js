@@ -905,15 +905,22 @@ export async function deactivateAcademyStaffProfile({ academyId, userId }) {
 
 // 원장이 직원을 학원에서 내보낸다. 실제 row 삭제 대신 membership을 inactive로
 // 전환하므로 과거 수업·클리닉·근퇴 기록의 사용자 연결은 보존된다.
-export async function removeAcademyMember({ academyId, userId }) {
+export async function removeAcademyMember({ academyId, userId, lastWorkDate }) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
   if (!userId) throw new Error('직원 계정 정보가 필요해요.');
+  if (!lastWorkDate) throw new Error('마지막 근무일을 선택해주세요.');
   const { data, error } = await supabase.rpc('remove_academy_member', {
     p_academy_id: academyId,
     p_user_id: userId,
+    p_last_work_date: lastWorkDate,
   });
-  if (error) throw new Error(error.message || '직원을 내보내지 못했어요.');
+  if (error) {
+    if (['42883', 'PGRST202'].includes(error.code)) {
+      throw new Error('퇴사 정산 안전 기능이 아직 서버에 적용되지 않았어요. SQL 072를 먼저 실행해주세요.');
+    }
+    throw new Error(error.message || '직원을 내보내지 못했어요.');
+  }
   return data;
 }
 

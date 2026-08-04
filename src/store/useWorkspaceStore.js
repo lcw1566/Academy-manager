@@ -65,6 +65,7 @@ import {
   listStaffAttendanceLogs,
   createStaffAttendanceLog,
   updateStaffAttendanceLog,
+  recordStaffAttendance,
   createClassSessionException,
   updateClassSessionException,
   deleteClassSessionException,
@@ -2207,6 +2208,27 @@ const useWorkspaceStore = create(
           }));
         }
         return updated;
+      },
+
+      // SQL 072 — 같은 직원/날짜 출퇴근을 서버 트랜잭션 한 번으로 저장한다.
+      // 여러 기기가 동시에 눌러도 한 활성 행만 남고 동일 동작은 멱등 처리된다.
+      recordStaffAttendanceLocal: async (payload = {}) => {
+        if (!isSupabaseConfigured) throw new Error('Supabase가 설정되지 않았어요.');
+        const academyId = get().currentAcademyId;
+        if (!academyId) throw new Error('학원을 먼저 선택해주세요.');
+        const saved = await recordStaffAttendance({ academyId, ...payload });
+        if (saved?.id) {
+          set((state) => {
+            const others = (state.staffAttendanceLogs || []).filter(
+              (log) => log.id !== saved.id && !(
+                log.staff_user_id === saved.staff_user_id
+                && log.work_date === saved.work_date
+              ),
+            );
+            return { staffAttendanceLogs: [saved, ...others] };
+          });
+        }
+        return saved;
       },
 
       // Phase 44.7 / Phase C — class_session_exceptions INSERT.

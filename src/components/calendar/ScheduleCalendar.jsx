@@ -505,7 +505,12 @@ export default function ScheduleCalendar({
           <button
             type="button"
             onClick={() => selectDate(today)}
-            className="h-9 rounded-xl bg-seenit-control px-3 text-xs font-extrabold text-seenit-secondary active:bg-seenit-border"
+            aria-pressed={activeDate === today}
+            className={`h-9 rounded-xl border px-3 text-xs font-extrabold transition-colors active:scale-[0.98] ${
+              activeDate === today
+                ? 'border-seenit-brand bg-seenit-brand-muted text-seenit-brand shadow-sm'
+                : 'border-transparent bg-seenit-control text-seenit-secondary active:bg-seenit-border'
+            }`}
           >
             오늘
           </button>

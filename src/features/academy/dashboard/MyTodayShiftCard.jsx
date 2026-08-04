@@ -56,8 +56,7 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
   const staffWorkExceptions = useWorkspaceStore((s) => s.staffWorkExceptions) ?? [];
   // Phase 44.7 / Phase C — 실제 출근 로그.
   const staffAttendanceLogs = useWorkspaceStore((s) => s.staffAttendanceLogs) ?? [];
-  const createStaffAttendanceLogLocal = useWorkspaceStore((s) => s.createStaffAttendanceLogLocal);
-  const updateStaffAttendanceLogLocal = useWorkspaceStore((s) => s.updateStaffAttendanceLogLocal);
+  const recordStaffAttendanceLocal = useWorkspaceStore((s) => s.recordStaffAttendanceLocal);
   const [busy, setBusy] = useState(false);
 
   const todayStr = todayDate();
@@ -111,81 +110,89 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
     attendanceSettings.staffCheckMethod === 'manual'
     && attendanceSettings.staffManualOverrideEnabled;
 
-  // 공용 helper — 오늘 로그 upsert.
-  const upsertTodayLog = async (fields, { source = 'manual' } = {}) => {
-    if (!canUseLogs) return null;
-    try {
-      const confirmedFields = {
-        ...fields,
-        status: 'approved',
-        approved_at: new Date().toISOString(),
-      };
-      if (myTodayLog?.id) {
-        return await updateStaffAttendanceLogLocal(myTodayLog.id, confirmedFields);
-      }
-      return await createStaffAttendanceLogLocal({
-        staff_user_id: staff.serverUserId,
-        staff_role: staffRole || staff._role || 'teacher',
-        work_date: todayStr,
-        scheduled_start_time: myTodayShift.scheduledStartTime || null,
-        scheduled_end_time: myTodayShift.scheduledEndTime || null,
-        break_minutes: myTodayShift.breakMinutes ?? 0,
-        source,
-        ...confirmedFields,
-      });
-    } catch (err) {
-      console.warn('[supabase] upsert attendance log failed', err);
-      return null;
-    }
+  const recordToday = (action, time, source = 'manual') => {
+    if (!canUseLogs) throw new Error('직원 계정 연결을 확인해주세요.');
+    return recordStaffAttendanceLocal({
+      staffUserId: staff.serverUserId,
+      staffRole: staffRole || staff._role || 'teacher',
+      workDate: todayStr,
+      action,
+      time,
+      scheduledStartTime: myTodayShift.scheduledStartTime || null,
+      scheduledEndTime: myTodayShift.scheduledEndTime || null,
+      breakMinutes: myTodayShift.breakMinutes ?? 0,
+      source,
+    });
   };
 
   const handleClockIn = async () => {
     if (busy) return;
     setBusy(true);
     const time = nowHHmm();
-    // 1) staff_attendance_logs upsert — Phase C 의 새 source of truth.
-    await upsertTodayLog({ actual_start_time: time }, { source: 'manual' });
-    // 2) legacy academy_staff_shifts update (있을 때만). 호환을 위해 유지.
-    if (myTodayShift && !myTodayShift.isPlanned) {
-      const patch = { actualStartTime: time };
-      updateAcademyStaffShift(myTodayShift.id, patch);
-      if (myTodayShift.serverId && isAuthenticated && currentAcademyId) {
-        try {
-          await updateServerStaffShift(myTodayShift.serverId, {
-            actual_start_time: patch.actualStartTime,
-          });
-          loadServerStaffShifts();
-        } catch (err) {
-          console.warn('[supabase] legacy clock-in failed', err);
+    try {
+      const saved = await recordToday('clock_in', time);
+      if (!saved?.id) throw new Error('서버에서 출근 기록을 확인하지 못했어요.');
+      if (saved._attendance_action === 'none') {
+        showToast('이미 저장된 출근 기록을 확인했어요.');
+        return;
+      }
+      // legacy academy_staff_shifts update (있을 때만). 호환을 위해 유지.
+      if (myTodayShift && !myTodayShift.isPlanned) {
+        const patch = { actualStartTime: saved.actual_start_time || time };
+        updateAcademyStaffShift(myTodayShift.id, patch);
+        if (myTodayShift.serverId && isAuthenticated && currentAcademyId) {
+          try {
+            await updateServerStaffShift(myTodayShift.serverId, {
+              actual_start_time: patch.actualStartTime,
+            });
+            loadServerStaffShifts();
+          } catch (err) {
+            console.warn('[supabase] legacy clock-in failed', err);
+          }
         }
       }
+      showToast('출근 시간이 바로 저장됐어요.');
+    } catch (err) {
+      console.warn('[staff attendance] clock-in failed', err);
+      showToast(err?.message || '출근 시간을 저장하지 못했어요.', 'error');
+    } finally {
+      setBusy(false);
     }
-    showToast('출근 시간이 바로 저장됐어요.');
-    setBusy(false);
   };
 
   const handleClockOut = async () => {
     if (busy) return;
     setBusy(true);
     const time = nowHHmm();
-    await upsertTodayLog({ actual_end_time: time }, { source: 'manual' });
-    if (myTodayShift && !myTodayShift.isPlanned) {
-      const patch = { actualEndTime: time, status: 'completed' };
-      updateAcademyStaffShift(myTodayShift.id, patch);
-      if (myTodayShift.serverId && isAuthenticated && currentAcademyId) {
-        try {
-          await updateServerStaffShift(myTodayShift.serverId, {
-            actual_end_time: patch.actualEndTime,
-            status: 'completed',
-          });
-          loadServerStaffShifts();
-        } catch (err) {
-          console.warn('[supabase] legacy clock-out failed', err);
+    try {
+      const saved = await recordToday('clock_out', time);
+      if (!saved?.id) throw new Error('서버에서 퇴근 기록을 확인하지 못했어요.');
+      if (saved._attendance_action === 'none') {
+        showToast('이미 저장된 퇴근 기록을 확인했어요.');
+        return;
+      }
+      if (myTodayShift && !myTodayShift.isPlanned) {
+        const patch = { actualEndTime: saved.actual_end_time || time, status: 'completed' };
+        updateAcademyStaffShift(myTodayShift.id, patch);
+        if (myTodayShift.serverId && isAuthenticated && currentAcademyId) {
+          try {
+            await updateServerStaffShift(myTodayShift.serverId, {
+              actual_end_time: patch.actualEndTime,
+              status: 'completed',
+            });
+            loadServerStaffShifts();
+          } catch (err) {
+            console.warn('[supabase] legacy clock-out failed', err);
+          }
         }
       }
+      showToast('퇴근 시간이 바로 저장됐어요.');
+    } catch (err) {
+      console.warn('[staff attendance] clock-out failed', err);
+      showToast(err?.message || '퇴근 시간을 저장하지 못했어요.', 'error');
+    } finally {
+      setBusy(false);
     }
-    showToast('퇴근 시간이 바로 저장됐어요.');
-    setBusy(false);
   };
 
   const toneByRole = staffRole === 'assistant'

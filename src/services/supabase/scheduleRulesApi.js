@@ -214,13 +214,55 @@ export async function listStaffAttendanceLogs(academyId, { fromDate, toDate, lim
   let query = supabase
     .from('staff_attendance_logs')
     .select('*')
-    .eq('academy_id', academyId);
+    .eq('academy_id', academyId)
+    .eq('is_void', false);
   if (fromDate) query = query.gte('work_date', fromDate);
   if (toDate) query = query.lte('work_date', toDate);
   query = query.order('work_date', { ascending: false }).limit(limit);
   const { data, error } = await query;
   if (error) throw error;
   return data ?? [];
+}
+
+export async function recordStaffAttendance({
+  academyId,
+  staffUserId,
+  staffRole,
+  workDate,
+  action,
+  time,
+  scheduledStartTime = null,
+  scheduledEndTime = null,
+  breakMinutes = 0,
+  source = 'manual',
+} = {}) {
+  assertSupabaseConfigured();
+  if (!academyId || !staffUserId || !workDate) {
+    throw new Error('학원·직원·근무일 정보가 필요해요.');
+  }
+  const { data, error } = await supabase.rpc('record_staff_attendance', {
+    p_academy_id: academyId,
+    p_staff_user_id: staffUserId,
+    p_staff_role: staffRole || 'teacher',
+    p_work_date: workDate,
+    p_action: action,
+    p_time: time,
+    p_scheduled_start_time: scheduledStartTime,
+    p_scheduled_end_time: scheduledEndTime,
+    p_break_minutes: Math.max(0, Number(breakMinutes) || 0),
+    p_source: source,
+  });
+  if (error) {
+    if (['42883', 'PGRST202'].includes(error.code)) {
+      const migrationError = new Error(
+        '근퇴 안전 저장 기능이 아직 서버에 적용되지 않았어요. SQL 072를 먼저 실행해주세요.',
+      );
+      migrationError.code = 'STAFF_ATTENDANCE_SAFETY_NOT_INSTALLED';
+      throw migrationError;
+    }
+    throw error;
+  }
+  return data ?? null;
 }
 
 export async function createStaffAttendanceLog({ academyId, ...payload } = {}) {

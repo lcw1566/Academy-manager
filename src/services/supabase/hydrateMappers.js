@@ -306,6 +306,14 @@ export function mapServerPayrollToLocal(p) {
     status: p.status ?? 'scheduled',
     paidDate: p.paid_date ?? '',
     memo: p.memo ?? '',
+    isExitSettlement: p.is_exit_settlement === true,
+    requiresReview: p.requires_review === true,
+    periodStart: p.period_start ?? '',
+    periodEnd: p.period_end ?? '',
+    calculationSnapshot:
+      p.calculation_snapshot && typeof p.calculation_snapshot === 'object'
+        ? p.calculation_snapshot
+        : {},
     createdAt: p.created_at,
     updatedAt: p.updated_at,
   };

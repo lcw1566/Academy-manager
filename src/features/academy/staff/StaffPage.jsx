@@ -963,10 +963,12 @@ function StaffDetailPanel({
   const deactivateLocalStaff = useAcademyStore((s) => s.deactivateLocalStaff);
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [removeLastWorkDate, setRemoveLastWorkDate] = useState(todayDate());
 
   useEffect(() => {
     setJobTitleDraft(serverProfile?.job_title || getStaffJobTitle(staff));
     setJobTitleEditing(false);
+    setRemoveLastWorkDate(todayDate());
   }, [staff?.id, staff?._role, staff?.jobTitle, serverProfile?.job_title]);
 
   useEffect(() => {
@@ -1034,6 +1036,7 @@ function StaffDetailPanel({
       const result = await removeAcademyMember({
         academyId: currentAcademyId,
         userId: staff.serverUserId,
+        lastWorkDate: removeLastWorkDate,
       });
       deactivateLocalStaff?.(staff.id, staff._sourceRole || staff._role);
       await Promise.all([
@@ -1041,9 +1044,12 @@ function StaffDetailPanel({
         loadAcademyStaffProfiles?.(),
       ]);
       const assignedCount = Number(result?.assigned_class_count) || 0;
-      showToast(assignedCount > 0
-        ? `직원을 내보냈어요. 담당 반 ${assignedCount}개는 새 선생님을 지정해주세요.`
-        : '직원을 학원에서 내보냈어요.');
+      const openLogCount = Number(result?.exit_payroll?.open_log_count) || 0;
+      showToast(openLogCount > 0
+        ? `직원을 내보냈어요. 미퇴근 기록 ${openLogCount}건은 최종 급여 전에 확인이 필요해요.`
+        : assignedCount > 0
+          ? `직원을 내보냈어요. 담당 반 ${assignedCount}개는 새 선생님을 지정해주세요.`
+          : '직원을 내보냈고 퇴사 월 급여 초안을 보존했어요.');
       setRemoveConfirmOpen(false);
       onRemoved?.();
     } catch (error) {
@@ -1222,6 +1228,19 @@ function StaffDetailPanel({
               과거 수업·클리닉·근무 기록은 그대로 보존돼요. 현재 담당 반은 자동으로
               다른 선생님에게 넘어가지 않으니 내보낸 뒤 담당자를 확인해주세요.
             </p>
+            <label className="block rounded-2xl bg-[#F7F8FA] p-4">
+              <span className="mb-2 block text-xs font-bold text-[#4E5968]">마지막 근무일</span>
+              <input
+                type="date"
+                value={removeLastWorkDate}
+                max={todayDate()}
+                onChange={(event) => setRemoveLastWorkDate(event.target.value)}
+                className="h-11 w-full rounded-xl border border-[#D1D6DB] bg-white px-3 text-sm font-bold text-[#191F28] outline-none focus:border-[#3182F6]"
+              />
+              <span className="mt-2 block text-[11px] leading-5 text-[#8B95A1]">
+                이 날짜까지의 근퇴 기록으로 검토 대기 상태의 최종 급여 초안을 남겨요.
+              </span>
+            </label>
           </div>
         </Modal>
       )}

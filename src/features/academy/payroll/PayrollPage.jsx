@@ -21,6 +21,11 @@ import {
 } from '../../../utils/date';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import { currentUserCan } from '../../../utils/staffPermissions';
+import {
+  isPayableStaffAttendance,
+  isPendingStaffAttendance,
+  staffAttendanceMinutes,
+} from '../../../utils/staffAttendance';
 
 const MONTHS_BACK = 5;
 
@@ -53,19 +58,8 @@ function getMonthRange(month) {
   };
 }
 
-function timeToMinutes(value) {
-  if (!value) return null;
-  const [hh, mm] = String(value).slice(0, 5).split(':').map(Number);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  return (hh * 60) + mm;
-}
-
 function minutesFromLog(log) {
-  const start = timeToMinutes(log?.actual_start_time);
-  const end = timeToMinutes(log?.actual_end_time);
-  if (start === null || end === null) return 0;
-  const minutes = end - start - (Number(log?.break_minutes) || 0);
-  return Math.max(0, minutes);
+  return staffAttendanceMinutes(log);
 }
 
 function formatTime(value) {
@@ -73,9 +67,10 @@ function formatTime(value) {
 }
 
 function getStatusMeta(status) {
-  if (status === 'approved') return { label: '저장 완료', className: 'bg-emerald-50 text-emerald-700' };
-  if (status === 'completed') return { label: '확인 대기', className: 'bg-blue-50 text-blue-700' };
-  if (status === 'pending') return { label: '확인 대기', className: 'bg-amber-50 text-amber-700' };
+  if (status === 'approved') return { label: '확정', className: 'bg-emerald-50 text-emerald-700' };
+  if (status === 'completed') return { label: '급여 반영', className: 'bg-blue-50 text-blue-700' };
+  if (status === 'pending') return { label: '퇴근 필요', className: 'bg-amber-50 text-amber-700' };
+  if (status === 'rejected') return { label: '제외', className: 'bg-red-50 text-red-600' };
   return { label: '기록중', className: 'bg-gray-100 text-gray-600' };
 }
 
@@ -179,20 +174,18 @@ export default function PayrollPage() {
   );
 
   const logSummary = useMemo(() => {
-    let totalMinutes = 0;
-    let approvedMinutes = 0;
+    let payableMinutes = 0;
     let pendingMinutes = 0;
     let openCount = 0;
     monthLogs.forEach((log) => {
       const minutes = minutesFromLog(log);
-      if (!log.actual_end_time) openCount += 1;
-      totalMinutes += minutes;
-      if (log.status === 'approved') approvedMinutes += minutes;
-      else if (['pending', 'completed'].includes(log.status)) pendingMinutes += minutes;
+      if (!log.actual_end_time && log.status !== 'rejected' && log.is_void !== true) openCount += 1;
+      if (isPayableStaffAttendance(log)) payableMinutes += minutes;
+      else if (isPendingStaffAttendance(log)) pendingMinutes += minutes;
     });
     return {
-      totalHours: totalMinutes / 60,
-      approvedHours: approvedMinutes / 60,
+      totalHours: payableMinutes / 60,
+      payableHours: payableMinutes / 60,
       pendingHours: pendingMinutes / 60,
       openCount,
       completedCount: monthLogs.filter((log) => log.actual_start_time && log.actual_end_time).length,
@@ -216,7 +209,7 @@ export default function PayrollPage() {
       monthlySalary: Number(staffInfo.monthlySalary) || 0,
       totalHours,
       shiftHours: totalHours,
-      approvedLogHours: logSummary.approvedHours,
+      approvedLogHours: logSummary.payableHours,
       pendingLogHours: logSummary.pendingHours,
       amount,
       status: 'estimated',
@@ -340,7 +333,7 @@ export default function PayrollPage() {
 
         <section className="px-4 mb-4 grid grid-cols-3 gap-2">
           <MetricCard label="근무시간" value={`${formatHours(logSummary.totalHours)}시간`} />
-          <MetricCard label="저장 완료" value={`${formatHours(logSummary.approvedHours)}시간`} tone="green" />
+          <MetricCard label="급여 반영" value={`${formatHours(logSummary.payableHours)}시간`} tone="green" />
           <MetricCard label="미확정" value={`${formatHours(logSummary.pendingHours)}시간`} tone="amber" />
         </section>
 

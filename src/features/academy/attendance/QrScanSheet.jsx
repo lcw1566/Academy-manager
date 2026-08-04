@@ -263,58 +263,22 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
     const todayShift = todaysShifts[0] || null;
     const time = nowHHmm();
 
-    // Phase 44.7 / Phase C — 오늘 본인 attendance log SoT.
-    // legacy shift 가 있으면 함께 갱신, 없으면 log 만 사용.
-    const staffAttendanceLogs = useWorkspaceStore.getState().staffAttendanceLogs || [];
-    const existingLog = staffUserId
-      ? staffAttendanceLogs.find(
-          (l) => l.staff_user_id === staffUserId && l.work_date === todayStr,
-        )
-      : null;
-
-    // 상태 결정 — log 우선, legacy shift 보조.
-    const hasStart = !!(existingLog?.actual_start_time || todayShift?.actualStartTime);
-    const hasEnd = !!(existingLog?.actual_end_time || todayShift?.actualEndTime);
-
-    if (hasEnd) {
-      setResult({
-        ok: true,
-        title: '이미 출퇴근이 모두 기록됐어요.',
-        detail: `${existingLog?.actual_start_time || todayShift?.actualStartTime || ''} 출근, ${existingLog?.actual_end_time || todayShift?.actualEndTime || ''} 퇴근.`,
-      });
-      return;
-    }
-
-    const fieldKey = hasStart ? 'actual_end_time' : 'actual_start_time';
-    const writePatch = {};
-    if (fieldKey === 'actual_start_time') writePatch.actualStartTime = time;
-    else { writePatch.actualEndTime = time; writePatch.status = 'completed'; }
-
     // 1) staff_attendance_logs가 서버 기준 원본이다. 이 저장이 실패하면 로컬
-    // 근무표만 바꾸거나 성공 메시지를 표시하지 않는다.
+    // 근무표만 바꾸거나 성공 메시지를 표시하지 않는다. QR 토글 동작도 서버가
+    // 잠근 최신 행을 기준으로 결정하므로 다른 기기의 오래된 캐시에 의존하지 않는다.
+    let savedLog = null;
     try {
-      const confirmedPatch = {
-        [fieldKey]: time,
-        status: 'approved',
-        approved_at: new Date().toISOString(),
-      };
-      const savedLog = existingLog?.id
-        ? await useWorkspaceStore.getState().updateStaffAttendanceLogLocal(
-            existingLog.id,
-            confirmedPatch,
-          )
-        : await useWorkspaceStore.getState().createStaffAttendanceLogLocal({
-            staff_user_id: staffUserId,
-            staff_role: staffRoleForLog,
-            work_date: todayStr,
-            scheduled_start_time: todayShift?.scheduledStartTime || null,
-            scheduled_end_time: todayShift?.scheduledEndTime || null,
-            break_minutes: todayShift?.breakMinutes ?? 0,
-            [fieldKey]: time,
-            source: 'qr',
-            status: 'approved',
-            approved_at: confirmedPatch.approved_at,
-          });
+      savedLog = await useWorkspaceStore.getState().recordStaffAttendanceLocal({
+        staffUserId,
+        staffRole: staffRoleForLog,
+        workDate: todayStr,
+        action: 'toggle',
+        time,
+        scheduledStartTime: todayShift?.scheduledStartTime || null,
+        scheduledEndTime: todayShift?.scheduledEndTime || null,
+        breakMinutes: todayShift?.breakMinutes ?? 0,
+        source: 'qr',
+      });
       if (!savedLog?.id) {
         throw new Error('서버에서 근태 저장 결과를 확인하지 못했어요.');
       }
@@ -329,6 +293,29 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
       });
       return;
     }
+
+    const savedAction = savedLog?._attendance_action;
+    if (savedAction === 'already_clocked_in') {
+      setResult({
+        ok: true,
+        title: '이미 출근 처리됐어요.',
+        detail: `${savedLog?.actual_start_time || time} 출근 · 중복 스캔은 반영하지 않았어요.`,
+      });
+      return;
+    }
+    if (savedAction === 'none') {
+      setResult({
+        ok: true,
+        title: '이미 출퇴근이 모두 기록됐어요.',
+        detail: `${savedLog?.actual_start_time || ''} 출근, ${savedLog?.actual_end_time || ''} 퇴근.`,
+      });
+      return;
+    }
+    const isClockOut = savedAction === 'clock_out';
+    const savedTime = isClockOut ? savedLog.actual_end_time : savedLog.actual_start_time;
+    const writePatch = isClockOut
+      ? { actualEndTime: savedLog.actual_end_time, status: 'completed' }
+      : { actualStartTime: savedLog.actual_start_time };
 
     // 2) legacy academy_staff_shifts (best-effort 호환).
     if (todayShift) {
@@ -348,12 +335,12 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
     }
 
     const status = classifyShiftStatus({ ...(todayShift || {}), ...writePatch });
-    const successMessage = writePatch.actualEndTime ? '퇴근됐어요' : '출근되었어요';
+    const successMessage = isClockOut ? '퇴근됐어요' : '출근되었어요';
     showToast(successMessage);
     setResult({
       ok: true,
-      title: writePatch.actualEndTime ? '퇴근 처리됐어요.' : '출근 처리됐어요.',
-      detail: `${SHIFT_STATUS_LABELS[status] || ''} · ${time} · 바로 저장됨`,
+      title: isClockOut ? '퇴근 처리됐어요.' : '출근 처리됐어요.',
+      detail: `${SHIFT_STATUS_LABELS[status] || ''} · ${savedTime || time} · 바로 저장됨`,
     });
     closeAfterSuccess();
   };

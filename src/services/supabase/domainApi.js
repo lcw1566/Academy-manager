@@ -1479,6 +1479,8 @@ const PAYROLL_ALLOWED_FIELDS = new Set([
   'wage_type', 'hourly_wage', 'monthly_salary',
   'total_hours', 'completed_session_count', 'completed_clinic_count',
   'amount', 'status', 'paid_date', 'memo',
+  'is_exit_settlement', 'requires_review', 'period_start', 'period_end',
+  'calculation_snapshot',
 ]);
 
 function sanitizePayrollPayload(input, { strip = [] } = {}) {
