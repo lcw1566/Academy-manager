@@ -109,17 +109,17 @@ export default function WeeklyExpandableCalendar({
   };
 
   return (
-    <div className="mx-4 bg-white rounded-3xl shadow-sm overflow-hidden">
+    <div className="mx-4 bg-seenit-surface rounded-3xl shadow-sm overflow-hidden">
       {/* 헤더 */}
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
         <button type="button" onClick={() => shift(-1)}
-          className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100 active:scale-95 transition-transform">
-          <ChevronLeft size={18} className="text-gray-500" />
+          className="w-8 h-8 flex items-center justify-center rounded-full active:bg-seenit-control active:scale-95 transition-transform">
+          <ChevronLeft size={18} className="text-seenit-muted" />
         </button>
-        <span className="text-sm font-bold text-gray-900">{monthLabel}</span>
+        <span className="text-sm font-bold text-seenit-ink">{monthLabel}</span>
         <button type="button" onClick={() => shift(1)}
-          className="w-8 h-8 flex items-center justify-center rounded-full active:bg-gray-100 active:scale-95 transition-transform">
-          <ChevronRight size={18} className="text-gray-500" />
+          className="w-8 h-8 flex items-center justify-center rounded-full active:bg-seenit-control active:scale-95 transition-transform">
+          <ChevronRight size={18} className="text-seenit-muted" />
         </button>
       </div>
 
@@ -164,7 +164,7 @@ export default function WeeklyExpandableCalendar({
                     ? 'text-red-400'
                     : dow === 6
                     ? 'text-blue-400'
-                    : 'text-gray-800'
+                    : 'text-seenit-ink'
                 }`}>
                   {Number(dateStr.slice(8))}
                 </div>
@@ -180,19 +180,19 @@ export default function WeeklyExpandableCalendar({
       </div>
 
       {showAgenda && (
-        <div className="mx-3 mt-2 border-t border-[#F2F4F6] px-1 pb-2 pt-3">
+        <div className="mx-3 mt-2 border-t border-seenit-border-soft px-1 pb-2 pt-3">
           <div className="mb-2 flex items-center justify-between gap-2 px-1">
-            <p className="text-xs font-extrabold text-[#333D4B]">
+            <p className="text-xs font-extrabold text-seenit-secondary">
               {selectedDate === todayStr ? '오늘 일정' : `${Number(selectedDate?.slice(5, 7)) || ''}월 ${Number(selectedDate?.slice(8, 10)) || ''}일 일정`}
             </p>
             {selectedSchedules.length > 0 && (
-              <span className="text-[11px] font-bold text-[#8B95A1]">
+              <span className="text-[11px] font-bold text-seenit-muted">
                 {selectedSchedules.length}개
               </span>
             )}
           </div>
           {selectedSchedules.length === 0 ? (
-            <div className="rounded-xl bg-[#F8F9FA] px-3 py-3 text-center text-xs font-medium text-[#8B95A1]">
+            <div className="rounded-xl bg-seenit-elevated px-3 py-3 text-center text-xs font-medium text-seenit-muted">
               {emptyAgendaText}
             </div>
           ) : (
@@ -207,18 +207,18 @@ export default function WeeklyExpandableCalendar({
                     type="button"
                     onClick={schedule.onClick}
                     disabled={!interactive}
-                    className="flex w-full items-center gap-3 rounded-xl bg-[#F8F9FA] px-3 py-2.5 text-left enabled:active:scale-[0.99] enabled:active:bg-[#F2F4F6]"
+                    className="flex w-full items-center gap-3 rounded-xl bg-seenit-elevated px-3 py-2.5 text-left enabled:active:scale-[0.99] enabled:active:bg-seenit-control"
                   >
                     <span className={`h-8 w-1 flex-shrink-0 rounded-full ${DOT_COLORS[schedule.type] || 'bg-gray-300'}`} />
-                    <span className="w-[76px] flex-shrink-0 text-xs font-extrabold text-[#333D4B]">
+                    <span className="w-[76px] flex-shrink-0 text-xs font-extrabold text-seenit-secondary">
                       {time || TYPE_LABELS[schedule.type] || '일정'}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-bold text-[#191F28]">
+                      <span className="block truncate text-sm font-bold text-seenit-ink">
                         {schedule.title || TYPE_LABELS[schedule.type] || '일정'}
                       </span>
                       {schedule.subtitle && (
-                        <span className="mt-0.5 block truncate text-[11px] font-medium text-[#8B95A1]">
+                        <span className="mt-0.5 block truncate text-[11px] font-medium text-seenit-muted">
                           {schedule.subtitle}
                         </span>
                       )}
@@ -232,7 +232,7 @@ export default function WeeklyExpandableCalendar({
                 );
               })}
               {selectedSchedules.length > 4 && (
-                <p className="px-2 py-1 text-center text-[11px] font-bold text-[#8B95A1]">
+                <p className="px-2 py-1 text-center text-[11px] font-bold text-seenit-muted">
                   일정 {selectedSchedules.length - 4}개 더 있어요
                 </p>
               )}
@@ -245,7 +245,7 @@ export default function WeeklyExpandableCalendar({
       <button
         type="button"
         onClick={handleToggle}
-        className="w-full flex items-center justify-center gap-1 py-2.5 mt-1 border-t border-gray-50 text-xs text-gray-400 font-medium active:scale-[0.99] transition-transform"
+        className="w-full flex items-center justify-center gap-1 py-2.5 mt-1 border-t border-seenit-border-soft text-xs text-seenit-muted font-medium active:scale-[0.99] transition-transform"
       >
         {isExpanded
           ? <><ChevronUp size={13} /> 접기</>

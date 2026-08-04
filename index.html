@@ -11,6 +11,23 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="씨닛" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
+    <script>
+      (() => {
+        try {
+          const preference = localStorage.getItem('seenit-theme-preference') || 'system';
+          const systemDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+          const resolved = preference === 'dark' || (preference === 'system' && systemDark)
+            ? 'dark'
+            : 'light';
+          document.documentElement.classList.toggle('dark', resolved === 'dark');
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.dataset.themePreference = preference;
+          document.documentElement.style.colorScheme = resolved;
+        } catch {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

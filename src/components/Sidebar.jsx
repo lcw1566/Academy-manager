@@ -32,11 +32,11 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
   const academyName = currentMembership?.academy?.name;
 
   return (
-    <aside className="hidden md:flex md:flex-col w-[260px] shrink-0 bg-white border-r border-gray-100 h-screen sticky top-0">
+    <aside className="hidden md:flex md:flex-col w-[260px] shrink-0 bg-seenit-surface border-r border-seenit-border-soft h-screen sticky top-0">
       {/* 브랜드 + 역할 */}
-      <div className="px-5 py-5 border-b border-gray-50">
-        <p className="text-base font-bold text-gray-900">씨닛</p>
-        <p className="text-xs text-gray-500 mt-1">{ROLE_LABEL[role] ?? role ?? ''}</p>
+      <div className="px-5 py-5 border-b border-seenit-border-soft">
+        <p className="text-base font-bold text-seenit-ink">씨닛</p>
+        <p className="text-xs text-seenit-muted mt-1">{ROLE_LABEL[role] ?? role ?? ''}</p>
       </div>
 
       {/* 탭 목록 */}
@@ -58,11 +58,11 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${
                 pilotLocked
                   ? active
-                    ? 'bg-gray-100 text-gray-500 opacity-70'
-                    : 'text-gray-400 opacity-55 hover:bg-gray-50'
+                    ? 'bg-seenit-control text-seenit-muted opacity-70'
+                    : 'text-seenit-subtle opacity-55 hover:bg-seenit-elevated'
                   : active
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'text-gray-600 hover:bg-gray-50'
+                  ? 'bg-seenit-brand-soft text-seenit-brand'
+                  : 'text-seenit-secondary hover:bg-seenit-elevated'
               }`}
             >
               {IconComponent && (
@@ -73,7 +73,7 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
               )}
               <span className="text-sm font-semibold">{tab.label}</span>
               {pilotLocked && (
-                <span className="ml-auto rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-400">
+                <span className="ml-auto rounded-full bg-seenit-control px-2 py-0.5 text-[10px] font-bold text-seenit-subtle">
                   준비 중
                 </span>
               )}
@@ -89,15 +89,15 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
 
       {/* 워크스페이스 / 계정 요약 */}
       {(academyName || userEmail) && (
-        <div className="px-4 py-4 border-t border-gray-50">
+        <div className="px-4 py-4 border-t border-seenit-border-soft">
           {academyName && (
             <div className="flex items-center gap-2 mb-1">
-              <Building2 size={13} className="text-gray-400 flex-shrink-0" />
-              <p className="text-xs font-semibold text-gray-700 truncate">{academyName}</p>
+              <Building2 size={13} className="text-seenit-subtle flex-shrink-0" />
+              <p className="text-xs font-semibold text-seenit-secondary truncate">{academyName}</p>
             </div>
           )}
           {userEmail && (
-            <p className="text-[11px] text-gray-400 truncate">{userEmail}</p>
+            <p className="text-[11px] text-seenit-subtle truncate">{userEmail}</p>
           )}
         </div>
       )}

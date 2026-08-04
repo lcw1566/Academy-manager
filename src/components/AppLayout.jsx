@@ -101,7 +101,7 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F2F4F6] md:flex">
+    <div className="min-h-screen bg-seenit-canvas text-seenit-ink md:flex">
       {/* PC 사이드바 — md 이상에서만 표시 */}
       <Sidebar tabs={PRIVATE_TABS} />
 

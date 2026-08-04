@@ -212,9 +212,9 @@ export default function AssistantDashboard() {
       <div className="px-5 mb-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-gray-500 text-sm">{greetingByTime()}</p>
-            <h2 className="text-xl font-bold text-gray-900 mt-0.5">클리닉 기록</h2>
-            <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
+            <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
+            <h2 className="text-xl font-bold text-seenit-ink mt-0.5">클리닉 기록</h2>
+            <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)}</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -236,9 +236,9 @@ export default function AssistantDashboard() {
 
       {!myAssistant && (
         <div className="mx-4 mb-5">
-          <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
+          <div className="bg-seenit-surface rounded-2xl p-6 shadow-sm text-center">
             <div className="text-4xl mb-3">📋</div>
-            <p className="font-bold text-gray-900 mb-1">계정이 아직 연결되지 않았어요</p>
+            <p className="font-bold text-seenit-ink mb-1">계정이 아직 연결되지 않았어요</p>
             <p className="text-xs text-gray-400 mt-1 leading-relaxed">
               계정과 연결된 보조강사 정보가 없어요.<br />
               원장이 보조강사로 등록하면 여기에 수업과 클리닉이 표시됩니다.
@@ -250,16 +250,16 @@ export default function AssistantDashboard() {
       {/* 방금 끝난 수업 — 클리닉 기록 우선 액션 (홈의 핵심) */}
       <div className="px-4 mb-5">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-sm font-bold text-gray-700">방금 끝난 수업</p>
+          <p className="text-sm font-bold text-seenit-secondary">방금 끝난 수업</p>
           {remainingTotal > 0 && (
             <span className="text-xs font-bold text-orange-500">기록 필요 {remainingTotal}명</span>
           )}
         </div>
 
         {justFinishedSessions.length === 0 ? (
-          <div className="bg-white rounded-2xl px-4 py-6 text-center shadow-sm">
+          <div className="bg-seenit-surface rounded-2xl px-4 py-6 text-center shadow-sm">
             <div className="text-3xl mb-2">✅</div>
-            <p className="text-sm font-semibold text-gray-700">기록할 수업이 없어요</p>
+            <p className="text-sm font-semibold text-seenit-secondary">기록할 수업이 없어요</p>
             <p className="text-xs text-gray-400 mt-1">수업이 끝나면 학생들이 여기에 떠요.</p>
           </div>
         ) : (
@@ -267,10 +267,10 @@ export default function AssistantDashboard() {
             {justFinishedSessions.map(({ session, minutesAgo, remaining }) => {
               const group = classGroups.find((g) => g.id === session.classGroupId);
               return (
-                <div key={session.id} className="bg-white rounded-2xl p-4 shadow-sm">
+                <div key={session.id} className="bg-seenit-surface rounded-2xl p-4 shadow-sm">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="w-2 h-2 rounded-full bg-[#0064FF] flex-shrink-0" />
-                    <span className="font-bold text-gray-900 text-sm flex-1 min-w-0 truncate">
+                    <span className="font-bold text-seenit-ink text-sm flex-1 min-w-0 truncate">
                       {group?.name || '수업'}
                     </span>
                     <span className="text-[11px] font-semibold text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full flex-shrink-0">
@@ -290,13 +290,13 @@ export default function AssistantDashboard() {
                           key={sid}
                           whileTap={{ scale: 0.98 }}
                           onClick={() => openClinicForStudent(sid, session, remaining)}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50 active:bg-blue-50 text-left transition-colors"
+                          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-seenit-elevated active:bg-seenit-brand-soft text-left transition-colors"
                         >
-                          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                          <div className="w-8 h-8 rounded-full bg-seenit-surface flex items-center justify-center flex-shrink-0 shadow-sm">
                             <ClipboardList size={14} className="text-[#0064FF]" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 truncate">
+                            <p className="text-sm font-semibold text-seenit-ink truncate">
                               {student?.name || '학생'}
                               {student?.grade ? <span className="text-xs text-gray-400 font-normal"> · {student.grade}</span> : null}
                             </p>
@@ -342,13 +342,13 @@ export default function AssistantDashboard() {
         <button
           type="button"
           onClick={() => setActiveTab('clinic')}
-          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white shadow-sm active:scale-[0.98] transition-transform"
+          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-seenit-surface shadow-sm active:scale-[0.98] transition-transform"
         >
           <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
             <Check size={15} className="text-[#0064FF]" />
           </div>
           <div className="flex-1 min-w-0 text-left">
-            <p className="text-sm font-bold text-gray-900">전체 클리닉 기록 보기</p>
+            <p className="text-sm font-bold text-seenit-ink">전체 클리닉 기록 보기</p>
             <p className="text-xs text-gray-400 mt-0.5">지난 기록 확인 · 직접 추가</p>
           </div>
           <ChevronRight size={18} className="text-gray-300 flex-shrink-0" />
@@ -367,10 +367,10 @@ export default function AssistantDashboard() {
   );
 }
 
-function SummaryCard({ label, value, color = 'text-gray-900', onClick }) {
+function SummaryCard({ label, value, color = 'text-seenit-ink', onClick }) {
   return (
-    <button onClick={onClick} className="bg-white rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-transform">
-      <p className="text-xs text-gray-500 mb-1 font-medium">{label}</p>
+    <button onClick={onClick} className="bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-transform">
+      <p className="text-xs text-seenit-muted mb-1 font-medium">{label}</p>
       <p className={`text-2xl font-bold leading-none ${color}`}>{value}</p>
     </button>
   );

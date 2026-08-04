@@ -157,14 +157,14 @@ function PilotLockedFeature({ featureId, onReturn }) {
   const feature = PILOT_LOCKED_FEATURES[featureId] || PILOT_LOCKED_FEATURES.drive;
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-5 py-16">
-      <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white px-6 py-8 text-center shadow-sm">
+      <div className="w-full max-w-md rounded-3xl border border-seenit-border bg-seenit-surface px-6 py-8 text-center shadow-sm">
         <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-400">
           <Clock3 size={26} strokeWidth={2} />
         </div>
         <span className="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-500">
           파일럿 이후 제공 예정
         </span>
-        <h1 className="mt-4 text-xl font-black text-gray-900">{feature.title} 기능을 준비하고 있어요</h1>
+        <h1 className="mt-4 text-xl font-black text-seenit-ink">{feature.title} 기능을 준비하고 있어요</h1>
         <p className="mt-2 text-sm font-medium leading-6 text-gray-500">{feature.description}</p>
         <div className="mt-6 rounded-2xl bg-blue-50 px-4 py-4 text-left">
           <p className="text-xs font-bold text-blue-600">이번 테스트 집중 기능</p>
@@ -201,12 +201,12 @@ function DesktopChatWindow({ pinned, onPinnedChange, onClose }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 18, scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-      className="fixed bottom-5 right-5 z-[60] hidden h-[min(720px,calc(100vh-40px))] w-[420px] flex-col overflow-hidden rounded-[24px] border border-gray-200 bg-[#F2F4F6] shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:flex"
+      className="fixed bottom-5 right-5 z-[60] hidden h-[min(720px,calc(100vh-40px))] w-[420px] flex-col overflow-hidden rounded-[24px] border border-seenit-border bg-seenit-canvas shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:flex"
       aria-label="PC 채팅 창"
     >
-      <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-4">
+      <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-seenit-border bg-seenit-surface px-4">
         <MessageCircle size={16} className="text-[#0064FF]" />
-        <p className="flex-1 text-sm font-extrabold text-gray-900">채팅</p>
+        <p className="flex-1 text-sm font-extrabold text-seenit-ink">채팅</p>
         <button
           type="button"
           onClick={() => onPinnedChange(!pinned)}
@@ -229,7 +229,7 @@ function DesktopChatWindow({ pinned, onPinnedChange, onClose }) {
         </button>
       </div>
       <div className="min-h-0 flex-1">
-        <Suspense fallback={<div className="h-full bg-[#F2F4F6]" />}>
+        <Suspense fallback={<div className="h-full bg-seenit-canvas" />}>
           <ChatPage displayMode="floating" />
         </Suspense>
       </div>
@@ -545,7 +545,7 @@ export default function AcademyAppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F2F4F6] md:flex">
+    <div className="min-h-screen bg-seenit-canvas text-seenit-ink md:flex">
       {/* PC 사이드바 — md 이상에서만 표시 */}
       <Sidebar
         tabs={tabs}
@@ -618,7 +618,7 @@ export default function AcademyAppLayout() {
 
       {/* Bottom Nav — 모바일 전용 (md 이상에서는 좌측 사이드바가 대체).
           Phase 39 — 6개 탭이 들어가도록 아이콘/너비 살짝 축소. */}
-      <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
+      <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-seenit-surface border-t border-seenit-border-soft shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
         <div className="max-w-md mx-auto flex pt-2">
           {mobileTabs.map(({ id, label, Icon, pilotLocked }) => {
             const active = mobileActiveTab === id;
@@ -639,11 +639,11 @@ export default function AcademyAppLayout() {
                 aria-label={pilotLocked ? `${label}, 추후 제공 예정` : label}
               >
                 <div className={`relative flex items-center justify-center w-9 h-7 rounded-2xl transition-colors ${
-                  active && !pilotLocked ? 'bg-blue-50' : active ? 'bg-gray-100' : ''
+                  active && !pilotLocked ? 'bg-seenit-brand-soft' : active ? 'bg-seenit-control' : ''
                 }`}>
                   <Icon
                     size={19}
-                    className={active && !pilotLocked ? 'text-blue-600' : 'text-gray-400'}
+                    className={active && !pilotLocked ? 'text-seenit-brand' : 'text-seenit-subtle'}
                     strokeWidth={active ? 2.5 : 1.8}
                   />
                   {badge > 0 && (
@@ -653,7 +653,7 @@ export default function AcademyAppLayout() {
                   )}
                 </div>
                 <span className={`text-[9.5px] font-medium ${
-                  active && !pilotLocked ? 'text-blue-600' : 'text-gray-400'
+                  active && !pilotLocked ? 'text-seenit-brand' : 'text-seenit-subtle'
                 }`}>{label}</span>
               </button>
             );

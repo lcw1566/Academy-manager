@@ -80,7 +80,7 @@ export default function Modal({
             onDragEnd={handleDragEnd}
             className={`${fitContent ? 'sheet-shell-auto' : 'sheet-shell'} absolute bottom-0 left-0 right-0 max-w-md ${
               size === 'wide' ? 'md:max-w-[760px]' : 'md:max-w-[560px]'
-            } mx-auto bg-white rounded-t-[28px] flex flex-col overflow-hidden shadow-2xl transform-gpu`}
+            } mx-auto bg-seenit-surface text-seenit-ink rounded-t-[28px] flex flex-col overflow-hidden shadow-2xl transform-gpu`}
             style={{
               willChange: 'transform',
               WebkitTapHighlightColor: 'transparent',
@@ -88,16 +88,16 @@ export default function Modal({
             }}
           >
             {/* Header — 항상 shrink-0, 제목 잘림 방지 */}
-            <header className="shrink-0 bg-white border-b border-gray-100">
+            <header className="shrink-0 bg-seenit-surface border-b border-seenit-border-soft">
               <div className="flex justify-center pt-3">
-                <div className="h-1.5 w-12 rounded-full bg-gray-200" />
+                <div className="h-1.5 w-12 rounded-full bg-seenit-control" />
               </div>
               <div className="flex items-center justify-between px-5 pb-4 pt-3">
-                <h2 className="text-xl font-bold text-gray-900 truncate pr-3">{title}</h2>
+                <h2 className="text-xl font-bold text-seenit-ink truncate pr-3">{title}</h2>
                 <button
                   type="button"
                   onClick={onClose}
-                  className="h-11 w-11 flex items-center justify-center rounded-full bg-gray-100 text-gray-500 active:bg-gray-200 flex-shrink-0"
+                  className="h-11 w-11 flex items-center justify-center rounded-full bg-seenit-control text-seenit-muted active:bg-seenit-elevated flex-shrink-0"
                   aria-label="닫기"
                 >
                   <X size={18} />
@@ -118,7 +118,7 @@ export default function Modal({
 
             {/* Footer — main scroll 영역 밖, safe-area 반영 */}
             {footer && (
-              <footer className="shrink-0 border-t border-gray-100 bg-white px-5 pt-3 sheet-footer-pad">
+              <footer className="shrink-0 border-t border-seenit-border-soft bg-seenit-surface px-5 pt-3 sheet-footer-pad">
                 {footer}
               </footer>
             )}
@@ -133,12 +133,12 @@ export default function Modal({
 function SheetLoadingState({ label }) {
   return (
     <div className="py-8">
-      <p className="text-sm font-bold text-[#191F28]">{label}</p>
-      <p className="text-xs text-[#8B95A1] mt-1">데이터가 도착하면 자연스럽게 자리를 잡아요.</p>
+      <p className="text-sm font-bold text-seenit-ink">{label}</p>
+      <p className="text-xs text-seenit-subtle mt-1">데이터가 도착하면 자연스럽게 자리를 잡아요.</p>
       <div className="mt-5 flex flex-col gap-3">
-        <div className="h-12 rounded-2xl bg-[#F2F4F6]" />
-        <div className="h-12 rounded-2xl bg-[#F2F4F6]" />
-        <div className="h-20 rounded-2xl bg-[#F2F4F6]" />
+        <div className="h-12 rounded-2xl bg-seenit-control" />
+        <div className="h-12 rounded-2xl bg-seenit-control" />
+        <div className="h-20 rounded-2xl bg-seenit-control" />
       </div>
     </div>
   );

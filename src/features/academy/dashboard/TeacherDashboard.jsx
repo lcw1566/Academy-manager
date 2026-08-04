@@ -338,9 +338,9 @@ export default function TeacherDashboard() {
       <div className="px-5 mb-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-gray-500 text-sm">{greetingByTime()}</p>
-            <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 내 수업</h2>
-            <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)}</p>
+            <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
+            <h2 className="text-xl font-bold text-seenit-ink mt-0.5">오늘 내 수업</h2>
+            <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)}</p>
           </div>
           <div className="flex items-center gap-2">
             <StaffHomeQrButton staff={myTeacher} staffRole="teacher" />
@@ -389,7 +389,7 @@ export default function TeacherDashboard() {
       {/* Phase 32 — 작성 필요한 수업 기록 (본인 담당 완료 세션 중 기록 없음) */}
       {unfinishedRecordSessions.length > 0 && (
         <div className="mx-4 mb-5">
-          <p className="text-sm font-bold text-gray-700 mb-2">작성 필요한 수업 기록</p>
+          <p className="text-sm font-bold text-seenit-secondary mb-2">작성 필요한 수업 기록</p>
           <div className="bg-amber-50 rounded-2xl border border-amber-100 overflow-hidden">
             {unfinishedRecordSessions.slice(0, 3).map((s) => {
               const group = classGroups.find((g) => g.id === s.classGroupId);
@@ -400,14 +400,14 @@ export default function TeacherDashboard() {
                   onClick={() => navigateToClassSession(s.id)}
                   className="w-full flex items-center gap-3 px-4 py-3 border-b border-amber-100 last:border-0 text-left active:bg-amber-100/40"
                 >
-                  <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center flex-shrink-0">
+                  <div className="w-9 h-9 rounded-full bg-seenit-surface flex items-center justify-center flex-shrink-0">
                     <FileText size={14} className="text-amber-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">
+                    <p className="text-sm font-semibold text-seenit-ink truncate">
                       {group?.name || '수업'}
                     </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
+                    <p className="text-xs text-seenit-muted mt-0.5">
                       {s.date} {formatTimeRange(s.startTime, s.endTime)}
                     </p>
                   </div>
@@ -434,8 +434,8 @@ export default function TeacherDashboard() {
       {/* 클리닉 현황 */}
       {academyProfile?.clinicRequired !== false && myClinics.length > 0 && (
         <div className="px-4">
-          <p className="text-sm font-bold text-gray-700 mb-3">클리닉 현황</p>
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <p className="text-sm font-bold text-seenit-secondary mb-3">클리닉 현황</p>
+          <div className="bg-seenit-surface rounded-2xl shadow-sm overflow-hidden">
             {myClinics.slice(0, 4).map((task) => {
               const student = academyStudents.find((s) => s.id === task.studentId);
               const statusColor = task.status === 'in_progress' ? 'text-blue-600' : 'text-orange-500';
@@ -449,7 +449,7 @@ export default function TeacherDashboard() {
                     {task.priority === 'urgent' ? '긴급' : '일반'}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">{student?.name} · {task.title}</p>
+                    <p className="text-sm font-medium text-seenit-ink truncate">{student?.name} · {task.title}</p>
                   </div>
                   <span className={`text-xs font-medium ${statusColor}`}>{statusLabel}</span>
                 </div>
@@ -461,10 +461,10 @@ export default function TeacherDashboard() {
 
       {mySessions.length === 0 && (
         <div className="mx-4">
-          <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
+          <div className="bg-seenit-surface rounded-2xl p-6 shadow-sm text-center">
             <div className="text-4xl mb-3">✏️</div>
-            <p className="font-bold text-gray-900 mb-1">아직 배정된 수업이 없어요</p>
-            <p className="text-sm text-gray-500">원장에게 배정을 요청해주세요.</p>
+            <p className="font-bold text-seenit-ink mb-1">아직 배정된 수업이 없어요</p>
+            <p className="text-sm text-seenit-muted">원장에게 배정을 요청해주세요.</p>
             {!myTeacher && (
               <p className="text-xs text-gray-400 mt-2 leading-relaxed">
                 계정과 연결된 강사 정보가 없어요.<br />
@@ -478,10 +478,10 @@ export default function TeacherDashboard() {
   );
 }
 
-function SummaryCard({ label, value, color = 'text-gray-900', onClick }) {
+function SummaryCard({ label, value, color = 'text-seenit-ink', onClick }) {
   return (
-    <button onClick={onClick} className="bg-white rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-transform">
-      <p className="text-xs text-gray-500 mb-1 font-medium">{label}</p>
+    <button onClick={onClick} className="bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-transform">
+      <p className="text-xs text-seenit-muted mb-1 font-medium">{label}</p>
       <p className={`text-2xl font-bold leading-none ${color}`}>{value}</p>
     </button>
   );

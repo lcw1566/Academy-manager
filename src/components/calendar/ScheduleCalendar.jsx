@@ -135,12 +135,12 @@ function AllDayLane({ dates, schedules }) {
   const gridColumns = `52px repeat(${dates.length}, minmax(0, 1fr))`;
 
   return (
-    <div className="grid border-b border-[#F2F4F6] bg-white" style={{ gridTemplateColumns: gridColumns }}>
-      <div className="px-2 py-2 text-[9px] font-extrabold text-[#8B95A1]">종일</div>
+    <div className="grid border-b border-seenit-border-soft bg-seenit-surface" style={{ gridTemplateColumns: gridColumns }}>
+      <div className="px-2 py-2 text-[9px] font-extrabold text-seenit-muted">종일</div>
       {dates.map((date) => {
         const events = eventsByDate.get(date) || [];
         return (
-          <div key={date} className="min-w-0 space-y-1 border-l border-[#F2F4F6] px-1 py-1.5">
+          <div key={date} className="min-w-0 space-y-1 border-l border-seenit-border-soft px-1 py-1.5">
             {events.slice(0, 2).map((schedule, index) => {
               const tone = scheduleTone(schedule);
               return (
@@ -156,7 +156,7 @@ function AllDayLane({ dates, schedules }) {
               );
             })}
             {events.length > 2 && (
-              <p className="px-1 text-[8px] font-extrabold text-[#8B95A1]">+{events.length - 2}개</p>
+              <p className="px-1 text-[8px] font-extrabold text-seenit-muted">+{events.length - 2}개</p>
             )}
           </div>
         );
@@ -241,7 +241,7 @@ function TimeGrid({
         <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F2F7FF] text-[#3182F6]">
           <CalendarDays size={19} />
         </span>
-        <p className="mt-3 text-sm font-bold text-[#4E5968]">{emptyText}</p>
+        <p className="mt-3 text-sm font-bold text-seenit-secondary">{emptyText}</p>
       </div>
     );
   }
@@ -253,24 +253,24 @@ function TimeGrid({
   return (
     <div className="overflow-hidden">
       {showHeaders && (
-        <div className="grid border-b border-[#F2F4F6] bg-[#FBFCFD]" style={{ gridTemplateColumns: gridColumns }}>
-          <div className="px-2 py-2.5 text-[10px] font-bold text-[#8B95A1]">시간</div>
+        <div className="grid border-b border-seenit-border-soft bg-seenit-elevated" style={{ gridTemplateColumns: gridColumns }}>
+          <div className="px-2 py-2.5 text-[10px] font-bold text-seenit-muted">시간</div>
           {dates.map((date) => (
-            <div key={date} className="border-l border-[#F2F4F6] px-1 py-2 text-center">
-              <p className={`text-[11px] font-extrabold ${date === today ? 'text-[#0064FF]' : 'text-[#333D4B]'}`}>
+            <div key={date} className="border-l border-seenit-border-soft px-1 py-2 text-center">
+              <p className={`text-[11px] font-extrabold ${date === today ? 'text-seenit-brand' : 'text-seenit-secondary'}`}>
                 {getKoreanWeekdayFromYMD(date)}
-                <span className="ml-1 text-[9px] font-bold text-[#8B95A1]">{date.slice(5).replace('-', '.')}</span>
+                <span className="ml-1 text-[9px] font-bold text-seenit-muted">{date.slice(5).replace('-', '.')}</span>
               </p>
             </div>
           ))}
         </div>
       )}
       <div className="grid" style={{ gridTemplateColumns: gridColumns }}>
-        <div className="relative border-r border-[#F2F4F6] bg-[#FBFCFD]" style={{ height }}>
+        <div className="relative border-r border-seenit-border-soft bg-seenit-elevated" style={{ height }}>
           {range.ticks.map((tick) => (
             <span
               key={tick}
-              className="absolute right-2 -translate-y-1/2 text-[9px] font-semibold text-[#8B95A1]"
+              className="absolute right-2 -translate-y-1/2 text-[9px] font-semibold text-seenit-muted"
               style={{ top: (tick - range.startMin) * pixelsPerMinute }}
             >
               {formatHour(tick)}
@@ -280,13 +280,13 @@ function TimeGrid({
         {dates.map((date) => (
           <div
             key={date}
-            className={`relative border-l border-[#F2F4F6] ${date === today ? 'bg-blue-50/30' : 'bg-white'}`}
+            className={`relative border-l border-seenit-border-soft ${date === today ? 'bg-seenit-brand-soft/40' : 'bg-seenit-surface'}`}
             style={{ height }}
           >
             {range.ticks.map((tick) => (
               <span
                 key={tick}
-                className="absolute inset-x-0 border-t border-[#F2F4F6]"
+                className="absolute inset-x-0 border-t border-seenit-border-soft"
                 style={{ top: (tick - range.startMin) * pixelsPerMinute }}
               />
             ))}
@@ -318,12 +318,12 @@ function TimeGrid({
 function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, today }) {
   return (
     <div>
-      <div className="grid grid-cols-7 border-b border-[#F2F4F6] bg-[#FBFCFD]">
+      <div className="grid grid-cols-7 border-b border-seenit-border-soft bg-seenit-elevated">
         {DAY_LABELS.map((label, index) => (
           <div
             key={label}
             className={`px-1 py-2 text-center text-[10px] font-extrabold md:px-3 md:text-left ${
-              index === 0 ? 'text-red-400' : index === 6 ? 'text-blue-400' : 'text-[#8B95A1]'
+              index === 0 ? 'text-red-400' : index === 6 ? 'text-blue-400' : 'text-seenit-muted'
             }`}
           >
             {label}
@@ -333,7 +333,7 @@ function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, t
       <div className="grid grid-cols-7">
         {dates.map((date, index) => {
           if (!date) {
-            return <div key={`blank-${index}`} className="min-h-[62px] border-b border-r border-[#F2F4F6] bg-[#FBFCFD] md:min-h-[118px]" />;
+            return <div key={`blank-${index}`} className="min-h-[62px] border-b border-r border-seenit-border-soft bg-seenit-elevated md:min-h-[118px]" />;
           }
           const daySchedules = schedules
             .filter((schedule) => schedule.date === date)
@@ -344,8 +344,8 @@ function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, t
           return (
             <div
               key={date}
-              className={`min-h-[62px] border-b border-r border-[#F2F4F6] p-1 md:min-h-[118px] md:p-2 ${
-                isSelected ? 'bg-[#F2F7FF]' : isToday ? 'bg-blue-50/30' : 'bg-white'
+              className={`min-h-[62px] border-b border-r border-seenit-border-soft p-1 md:min-h-[118px] md:p-2 ${
+                isSelected ? 'bg-seenit-brand-soft' : isToday ? 'bg-seenit-brand-soft/40' : 'bg-seenit-surface'
               }`}
             >
               <button
@@ -356,7 +356,7 @@ function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, t
                     ? 'bg-[#0064FF] text-white'
                     : isToday
                       ? 'bg-blue-50 text-[#0064FF]'
-                      : inMonth ? 'text-[#333D4B]' : 'text-[#B0B8C1]'
+                      : inMonth ? 'text-seenit-secondary' : 'text-seenit-subtle'
                 }`}
               >
                 {Number(date.slice(8))}
@@ -365,7 +365,7 @@ function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, t
                 {daySchedules.slice(0, 3).map((schedule, scheduleIndex) => (
                   <span key={schedule.id || scheduleIndex} className={`h-1.5 flex-1 rounded-full ${scheduleTone(schedule).dot}`} />
                 ))}
-                {daySchedules.length > 3 && <span className="text-[7px] font-black text-[#8B95A1]">+</span>}
+                {daySchedules.length > 3 && <span className="text-[7px] font-black text-seenit-muted">+</span>}
               </div>
               <div className="mt-1 hidden space-y-1 md:block">
                 {daySchedules.slice(0, 3).map((schedule, scheduleIndex) => {
@@ -384,7 +384,7 @@ function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, t
                   );
                 })}
                 {daySchedules.length > 3 && (
-                  <button type="button" onClick={() => onSelectDate(date)} className="px-1 text-[9px] font-extrabold text-[#8B95A1]">
+                  <button type="button" onClick={() => onSelectDate(date)} className="px-1 text-[9px] font-extrabold text-seenit-muted">
                     +{daySchedules.length - 3}개
                   </button>
                 )}
@@ -399,7 +399,7 @@ function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, t
 
 function WeekDateStrip({ dates, schedules, selectedDate, onSelectDate, today }) {
   return (
-    <div className="grid grid-cols-7 border-b border-[#F2F4F6] bg-[#FBFCFD] px-1 py-2 md:hidden">
+    <div className="grid grid-cols-7 border-b border-seenit-border-soft bg-seenit-elevated px-1 py-2 md:hidden">
       {dates.map((date) => {
         const count = schedules.filter((schedule) => schedule.date === date).length;
         const selected = date === selectedDate;
@@ -410,11 +410,11 @@ function WeekDateStrip({ dates, schedules, selectedDate, onSelectDate, today }) 
             onClick={() => onSelectDate(date)}
             className="flex flex-col items-center gap-1"
           >
-            <span className={`text-[9px] font-extrabold ${date === today ? 'text-[#0064FF]' : 'text-[#8B95A1]'}`}>
+            <span className={`text-[9px] font-extrabold ${date === today ? 'text-seenit-brand' : 'text-seenit-muted'}`}>
               {getKoreanWeekdayFromYMD(date)}
             </span>
             <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-extrabold ${
-              selected ? 'bg-[#0064FF] text-white' : 'text-[#333D4B]'
+              selected ? 'bg-[#0064FF] text-white' : 'text-seenit-secondary'
             }`}>
               {Number(date.slice(8))}
             </span>
@@ -480,16 +480,16 @@ export default function ScheduleCalendar({
   };
 
   return (
-    <section className={`mx-4 overflow-hidden rounded-3xl bg-white shadow-sm ${className}`}>
-      <div className="border-b border-[#F2F4F6] px-4 py-4 md:flex md:items-center md:justify-between md:gap-4">
+    <section className={`mx-4 overflow-hidden rounded-3xl bg-seenit-surface shadow-sm ${className}`}>
+      <div className="border-b border-seenit-border-soft px-4 py-4 md:flex md:items-center md:justify-between md:gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h3 className="text-base font-black text-[#191F28]">{title}</h3>
-            <span className="rounded-full bg-[#F2F4F6] px-2 py-0.5 text-[10px] font-extrabold text-[#6B7684]">
+            <h3 className="text-base font-black text-seenit-ink">{title}</h3>
+            <span className="rounded-full bg-seenit-control px-2 py-0.5 text-[10px] font-extrabold text-seenit-secondary">
               {visibleCount}개
             </span>
           </div>
-          <p className="mt-1 truncate text-[11px] font-semibold text-[#8B95A1]">{periodLabel}</p>
+          <p className="mt-1 truncate text-[11px] font-semibold text-seenit-muted">{periodLabel}</p>
         </div>
         <div className="mt-3 flex items-center justify-between gap-2 md:mt-0 md:justify-end">
           {onAddEvent && (
@@ -505,19 +505,19 @@ export default function ScheduleCalendar({
           <button
             type="button"
             onClick={() => selectDate(today)}
-            className="h-9 rounded-xl bg-[#F2F4F6] px-3 text-xs font-extrabold text-[#4E5968] active:bg-[#E5E8EB]"
+            className="h-9 rounded-xl bg-seenit-control px-3 text-xs font-extrabold text-seenit-secondary active:bg-seenit-border"
           >
             오늘
           </button>
           <div className="flex items-center gap-1">
-            <button type="button" onClick={() => shift(-1)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#F2F4F6] text-[#4E5968] active:bg-[#E5E8EB]" aria-label={mode === 'week' ? '이전 주' : '이전 달'}>
+            <button type="button" onClick={() => shift(-1)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-seenit-control text-seenit-secondary active:bg-seenit-border" aria-label={mode === 'week' ? '이전 주' : '이전 달'}>
               <ChevronLeft size={16} />
             </button>
-            <button type="button" onClick={() => shift(1)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#F2F4F6] text-[#4E5968] active:bg-[#E5E8EB]" aria-label={mode === 'week' ? '다음 주' : '다음 달'}>
+            <button type="button" onClick={() => shift(1)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-seenit-control text-seenit-secondary active:bg-seenit-border" aria-label={mode === 'week' ? '다음 주' : '다음 달'}>
               <ChevronRight size={16} />
             </button>
           </div>
-          <div className="flex rounded-xl bg-[#F2F4F6] p-1">
+          <div className="flex rounded-xl bg-seenit-control p-1">
             {[
               { id: 'week', label: '주간' },
               { id: 'month', label: '월간' },
@@ -528,8 +528,8 @@ export default function ScheduleCalendar({
                 onClick={() => changeMode(item.id)}
                 className={`h-8 rounded-lg px-3 text-xs font-extrabold transition-colors ${
                   mode === item.id
-                    ? 'bg-white text-[#0064FF] shadow-sm'
-                    : 'text-[#8B95A1]'
+                    ? 'bg-seenit-surface text-seenit-brand shadow-sm'
+                    : 'text-seenit-muted'
                 }`}
               >
                 {item.label}
@@ -549,8 +549,8 @@ export default function ScheduleCalendar({
             today={today}
           />
           <div className="md:hidden">
-            <div className="border-b border-[#F2F4F6] px-4 py-3">
-              <p className="text-sm font-extrabold text-[#333D4B]">
+            <div className="border-b border-seenit-border-soft px-4 py-3">
+              <p className="text-sm font-extrabold text-seenit-secondary">
                 {activeDate === today ? '오늘' : formatDateShort(activeDate)}
               </p>
             </div>
@@ -589,11 +589,11 @@ export default function ScheduleCalendar({
             anchorDate={anchorDate}
             today={today}
           />
-          <div className="border-t border-[#F2F4F6]">
-            <div className="border-b border-[#F2F4F6] px-4 py-3">
-              <p className="text-sm font-extrabold text-[#333D4B]">
+          <div className="border-t border-seenit-border-soft">
+            <div className="border-b border-seenit-border-soft px-4 py-3">
+              <p className="text-sm font-extrabold text-seenit-secondary">
                 {activeDate === today ? '오늘' : formatDateShort(activeDate)} 일정
-                <span className="ml-2 text-[11px] text-[#8B95A1]">{selectedDaySchedules.length}개</span>
+                <span className="ml-2 text-[11px] text-seenit-muted">{selectedDaySchedules.length}개</span>
               </p>
             </div>
             <AllDayLane dates={[activeDate]} schedules={schedules} />

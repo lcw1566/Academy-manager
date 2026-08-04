@@ -22,7 +22,7 @@ export default function BottomNav() {
     : tabs;
 
   return (
-    <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-gray-100 shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
+    <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-seenit-surface border-t border-seenit-border-soft shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
       <div className="max-w-md mx-auto flex pt-2">
         {visibleTabs.map(({ id, label, icon: Icon }) => {
           const active = activeTab === id;
@@ -35,15 +35,15 @@ export default function BottomNav() {
               className="flex-1 flex flex-col items-center gap-1 pb-1 active:scale-[0.98] transition-transform"
             >
               <div className={`flex items-center justify-center w-10 h-7 rounded-2xl transition-colors ${
-                active ? 'bg-blue-50' : ''
+                active ? 'bg-seenit-brand-soft' : ''
               }`}>
                 <Icon
                   size={21}
-                  className={active ? 'text-blue-600' : 'text-gray-400'}
+                  className={active ? 'text-seenit-brand' : 'text-seenit-subtle'}
                   strokeWidth={active ? 2.5 : 1.8}
                 />
               </div>
-              <span className={`text-[10px] font-medium ${active ? 'text-blue-600' : 'text-gray-400'}`}>
+              <span className={`text-[10px] font-medium ${active ? 'text-seenit-brand' : 'text-seenit-subtle'}`}>
                 {label}
               </span>
             </button>

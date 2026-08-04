@@ -332,9 +332,9 @@ export default function OwnerDashboard({ operationsOnly = false }) {
       <div className="px-5 mb-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-gray-500 text-sm">{greetingByTime()}</p>
-            <h2 className="text-xl font-bold text-gray-900 mt-0.5">오늘 학원 운영</h2>
-            <p className="text-sm text-gray-400 mt-0.5">{formatDateShort(todayStr)} · {academyProfile.name || '학원'}</p>
+            <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
+            <h2 className="text-xl font-bold text-seenit-ink mt-0.5">오늘 학원 운영</h2>
+            <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)} · {academyProfile.name || '학원'}</p>
           </div>
           {(attendance.staffCheckMethod === 'qr' || attendance.studentCheckMethod === 'qr') && (
             <button
@@ -397,9 +397,9 @@ export default function OwnerDashboard({ operationsOnly = false }) {
 
       {/* 오늘 직원 근무 요약 */}
       <div className="px-4 mb-5">
-        <div className="bg-white rounded-2xl p-4 shadow-sm">
+        <div className="bg-seenit-surface rounded-2xl p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-bold text-gray-900 flex items-center gap-1.5">
+            <p className="text-sm font-bold text-seenit-ink flex items-center gap-1.5">
               <CheckSquare size={14} className="text-emerald-600" />
               오늘 직원 근무
             </p>
@@ -443,13 +443,13 @@ export default function OwnerDashboard({ operationsOnly = false }) {
       {/* 강사별 수업 현황 */}
       {academyTeachers.length > 0 && (
         <div className="px-4 mb-4">
-          <p className="text-sm font-bold text-gray-700 mb-3">강사별 오늘 수업</p>
-          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <p className="text-sm font-bold text-seenit-secondary mb-3">강사별 오늘 수업</p>
+          <div className="bg-seenit-surface rounded-2xl shadow-sm overflow-hidden">
             {academyTeachers.map((teacher) => {
               const teacherSessions = todaySessions.filter((s) => s.teacherId === teacher.id);
               return (
-                <div key={teacher.id} className="flex items-center justify-between px-4 py-3 border-b border-gray-50 last:border-0">
-                  <span className="text-sm font-medium text-gray-800">{teacher.name}</span>
+                <div key={teacher.id} className="flex items-center justify-between px-4 py-3 border-b border-seenit-border-soft last:border-0">
+                  <span className="text-sm font-medium text-seenit-ink">{teacher.name}</span>
                   <span className={`text-sm font-bold ${teacherSessions.length > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
                     {teacherSessions.length}개
                   </span>
@@ -463,7 +463,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
       {/* 빈 상태 */}
       {classGroups.length === 0 && (
         <div className="mx-4">
-          <div className="bg-white rounded-2xl p-6 shadow-sm text-center">
+          <div className="bg-seenit-surface rounded-2xl p-6 shadow-sm text-center">
             <div className="text-4xl mb-3">🏫</div>
             <p className="font-bold text-gray-900 mb-1">아직 반이 없어요</p>
             <p className="text-sm text-gray-500 mb-5">반을 만들고 학원 운영을 시작해요</p>
@@ -497,25 +497,25 @@ function AttendanceChip({ label, value, tone = 'gray' }) {
   );
 }
 
-function SummaryCard({ label, value, color = 'text-gray-900', onClick, pilotLocked = false }) {
+function SummaryCard({ label, value, color = 'text-seenit-ink', onClick, pilotLocked = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={pilotLocked ? `${label}, 추후 제공 예정` : label}
-      className={`bg-white rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-all ${
+      className={`bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-all ${
         pilotLocked ? 'opacity-50 grayscale' : ''
       }`}
     >
       <div className="mb-1 flex items-center justify-between gap-2">
-        <p className="text-xs text-gray-500 font-medium">{label}</p>
+        <p className="text-xs text-seenit-muted font-medium">{label}</p>
         {pilotLocked && (
-          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-400">
+          <span className="rounded-full bg-seenit-control px-1.5 py-0.5 text-[9px] font-bold text-seenit-subtle">
             추후 제공
           </span>
         )}
       </div>
-      <p className={`${pilotLocked ? 'text-lg text-gray-500' : `text-2xl ${color}`} font-bold leading-none`}>
+      <p className={`${pilotLocked ? 'text-lg text-seenit-muted' : `text-2xl ${color}`} font-bold leading-none`}>
         {value}
       </p>
     </button>
@@ -525,11 +525,11 @@ function SummaryCard({ label, value, color = 'text-gray-900', onClick, pilotLock
 // Phase 30 — 운영 알림 카드.
 function OpsCard({ icon: Icon, tone = 'blue', title, detail, onClick }) {
   const tones = {
-    blue:   { bg: 'bg-blue-50',   text: 'text-blue-700',   iconColor: 'text-blue-600' },
-    green:  { bg: 'bg-emerald-50', text: 'text-emerald-700', iconColor: 'text-emerald-600' },
-    amber:  { bg: 'bg-amber-50',  text: 'text-amber-700',  iconColor: 'text-amber-600' },
-    purple: { bg: 'bg-purple-50', text: 'text-purple-700', iconColor: 'text-purple-600' },
-    red:    { bg: 'bg-red-50',    text: 'text-red-700',    iconColor: 'text-red-600' },
+    blue:   { bg: 'bg-seenit-brand-soft', text: 'text-seenit-brand', iconColor: 'text-seenit-brand' },
+    green:  { bg: 'bg-seenit-success-soft', text: 'text-seenit-success', iconColor: 'text-seenit-success' },
+    amber:  { bg: 'bg-seenit-warning-soft', text: 'text-seenit-warning', iconColor: 'text-seenit-warning' },
+    purple: { bg: 'bg-seenit-purple-soft', text: 'text-seenit-purple', iconColor: 'text-seenit-purple' },
+    red:    { bg: 'bg-seenit-danger-soft', text: 'text-seenit-danger', iconColor: 'text-seenit-danger' },
   };
   const t = tones[tone] || tones.blue;
   return (
@@ -538,14 +538,14 @@ function OpsCard({ icon: Icon, tone = 'blue', title, detail, onClick }) {
       onClick={onClick}
       className={`w-full flex items-center gap-3 rounded-2xl px-4 py-3 shadow-sm text-left active:scale-[0.98] transition-transform ${t.bg}`}
     >
-      <div className="w-9 h-9 rounded-full bg-white flex items-center justify-center flex-shrink-0">
+      <div className="w-9 h-9 rounded-full bg-seenit-surface flex items-center justify-center flex-shrink-0">
         <Icon size={16} className={t.iconColor} />
       </div>
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-bold ${t.text}`}>{title}</p>
-        {detail && <p className="text-xs text-gray-500 mt-0.5 truncate">{detail}</p>}
+        {detail && <p className="text-xs text-seenit-muted mt-0.5 truncate">{detail}</p>}
       </div>
-      <AlertCircle size={14} className="text-gray-300 flex-shrink-0" />
+      <AlertCircle size={14} className="text-seenit-subtle flex-shrink-0" />
     </button>
   );
 }
