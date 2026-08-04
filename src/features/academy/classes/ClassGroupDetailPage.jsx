@@ -489,7 +489,7 @@ export default function ClassGroupDetailPage() {
                 await updateServerClassGroup(group.serverId, {
                   record_schema: normalized,
                   record_blocks: recordSchemaToBlockIds(normalized),
-                });
+                }, { expectedUpdatedAt: group.updatedAt || undefined });
                 await updateFutureClassSessionRecordSchema({
                   academyId: currentAcademyId,
                   classGroupId: group.serverId,

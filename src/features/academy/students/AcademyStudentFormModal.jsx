@@ -7,8 +7,7 @@ import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import {
   createAcademyStudent,
   updateStudent,
-  updateClassGroup as updateServerClassGroup,
-  updateClassSession as updateServerClassSession,
+  assignStudentToClassGroupsGuarded,
 } from '../../../services/supabase/domainApi';
 import { formatKoreanCurrency, formatPhoneNumber } from '../../../utils/format';
 import { getDaysInMonth, getTodayYMD } from '../../../utils/date';
@@ -154,7 +153,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const {
     addAcademyStudent, updateAcademyStudent, setAcademyStudentServerId,
     assignAcademyStudentToClassGroups,
-    classGroups, classSessions, academyStudents, academyProfile,
+    classGroups, academyStudents, academyProfile,
     showToast,
   } = useAcademyStore();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -384,6 +383,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
             serverStudent = await updateStudent(
               editStudent.serverId,
               mapAcademyStudentFormToServerPayload(data),
+              { expectedUpdatedAt: editStudent.updatedAt || undefined },
             );
           } else {
             // 과거 로컬 전용 학생도 수정 순간 서버 레코드로 승격한다.
@@ -429,10 +429,14 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
         ...data,
         id: serverStudent?.id || localStudent.id,
         serverId: serverStudent?.id || null,
+        updatedAt: serverStudent?.updated_at || localStudent.updatedAt,
       });
       setPhase('assignment');
     } catch (err) {
       console.error('[student] save failed', err);
+      if (err?.code === 'DATA_CONFLICT_STUDENT') {
+        await loadServerStudents?.();
+      }
       showToast(
         err?.message || (isEdit
           ? '학생 정보를 수정하지 못했어요.'
@@ -504,60 +508,31 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
       if (serverGroupIds.length !== selectedGroups.length) {
         throw new Error('일부 반의 서버 정보를 확인하지 못했어요. 수업 목록을 새로고침해주세요.');
       }
-      await updateStudent(createdStudent.serverId, {
-        class_group_ids: serverGroupIds,
-        tuition_subjects: nextTuitionSubjects,
-        base_tuition: nextBaseTuition,
+      await assignStudentToClassGroupsGuarded({
+        academyId: currentAcademyId,
+        studentId: createdStudent.serverId,
+        classGroupIds: serverGroupIds,
+        effectiveFrom: effectiveFromDate,
+        tuitionSubjects: nextTuitionSubjects,
+        baseTuition: nextBaseTuition,
+        expectedUpdatedAt: createdStudent.updatedAt,
       });
-
-      const resolveServerStudentIds = (studentIds = []) => {
-        const resolved = studentIds.map((studentId) => {
-          const student = academyStudents.find(
-            (item) => item.id === studentId || item.serverId === studentId,
-          );
-          if (student?.serverId) return student.serverId;
-          return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(studentId)
-            ? studentId
-            : null;
-        }).filter(Boolean);
-        return [...new Set([...resolved, createdStudent.serverId])];
-      };
-
-      const groupUpdates = selectedGroups
-        .filter((group) => group.serverId)
-        .map((group) => updateServerClassGroup(group.serverId, {
-          student_ids: resolveServerStudentIds(group.studentIds),
-        }));
-
-      const sessionUpdates = classSessions
-        .filter((session) => (
-          selectedClassGroupIds.includes(session.classGroupId)
-          && session.serverId
-          && session.status !== 'canceled'
-          && (!session.date || session.date >= effectiveFromDate)
-        ))
-        .map((session) => updateServerClassSession(session.serverId, {
-          student_ids: resolveServerStudentIds(session.studentIds),
-        }));
-
-      await Promise.all([...groupUpdates, ...sessionUpdates]);
       await Promise.all([
         loadServerStudents?.(),
         loadServerClassGroups?.(),
         loadServerClassSessions?.(),
       ]);
-      assignAcademyStudentToClassGroups({
-        studentId: createdStudent.id,
-        classGroupIds: selectedClassGroupIds,
-        fromDate: effectiveFromDate,
-      });
-      updateAcademyStudent(localStudent?.id || createdStudent.id, {
-        tuitionSubjects: nextTuitionSubjects,
-        baseTuition: nextBaseTuition,
-      });
+      showToast(`${selectedClassGroupIds.length}개 수업에 학생을 배정했어요.`);
       onClose();
     } catch (err) {
       console.error('[supabase] assign student to class groups failed', err);
+      if (String(err?.code || '').startsWith('DATA_CONFLICT_')) {
+        await Promise.allSettled([
+          loadServerStudents?.(),
+          loadServerClassGroups?.(),
+          loadServerClassSessions?.(),
+        ]);
+      }
       showToast(
         err?.message
           ? `수업을 배정하지 못했어요: ${err.message}`

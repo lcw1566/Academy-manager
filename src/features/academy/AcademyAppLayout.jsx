@@ -305,35 +305,58 @@ export default function AcademyAppLayout() {
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
   const workspaceRealtimeStatus = useWorkspaceStore((s) => s.workspaceRealtimeStatus);
+  const chatRealtimeStatus = useChatStore((s) => s.realtimeStatus);
+  const startChatRealtime = useChatStore((s) => s.startChatRealtime);
   const serverStudentsError = useWorkspaceStore((s) => s.serverStudentsError);
   const serverClassGroupsError = useWorkspaceStore((s) => s.serverClassGroupsError);
   const serverClassSessionsError = useWorkspaceStore((s) => s.serverClassSessionsError);
   const serverLessonRecordsError = useWorkspaceStore((s) => s.serverLessonRecordsError);
   const serverAttendanceRecordsError = useWorkspaceStore((s) => s.serverAttendanceRecordsError);
   const serverClinicRecordsError = useWorkspaceStore((s) => s.serverClinicRecordsError);
+  const serverClinicEventsError = useWorkspaceStore((s) => s.serverClinicEventsError);
+  const academyCalendarEventsError = useWorkspaceStore((s) => s.academyCalendarEventsError);
+  const serverExamResultsError = useWorkspaceStore((s) => s.serverExamResultsError);
+  const academyMemberProfilesError = useWorkspaceStore((s) => s.academyMemberProfilesError);
+  const academyStaffProfilesError = useWorkspaceStore((s) => s.academyStaffProfilesError);
+  const staffWorkRulesError = useWorkspaceStore((s) => s.staffWorkRulesError);
+  const staffWorkExceptionsError = useWorkspaceStore((s) => s.staffWorkExceptionsError);
+  const classScheduleRulesError = useWorkspaceStore((s) => s.classScheduleRulesError);
+  const classSessionExceptionsError = useWorkspaceStore((s) => s.classSessionExceptionsError);
+  const staffAttendanceLogsError = useWorkspaceStore((s) => s.staffAttendanceLogsError);
+  const serverStaffShiftsError = useWorkspaceStore((s) => s.serverStaffShiftsError);
+  const academyInvitationsError = useWorkspaceStore((s) => s.academyInvitationsError);
   const studentCheckEventsError = useWorkspaceStore((s) => s.studentCheckEventsError);
   const refreshWorkspaceCollaborationState = useWorkspaceStore(
     (s) => s.refreshWorkspaceCollaborationState,
   );
   const startWorkspaceRealtime = useWorkspaceStore((s) => s.startWorkspaceRealtime);
   const [syncRetrying, setSyncRetrying] = useState(false);
-  const hasCoreSyncError = Boolean(
-    serverStudentsError
-    || serverClassGroupsError
-    || serverClassSessionsError
-    || serverLessonRecordsError
-    || serverAttendanceRecordsError
-    || serverClinicRecordsError
-    || studentCheckEventsError,
-  );
-  const isRealtimeReconnecting = workspaceRealtimeStatus === 'reconnecting';
+  const syncErrors = [
+    ['학생', serverStudentsError],
+    ['성적', serverExamResultsError],
+    ['반', serverClassGroupsError],
+    ['수업 일정', serverClassSessionsError || classScheduleRulesError || classSessionExceptionsError],
+    ['수업 기록', serverLessonRecordsError],
+    ['출석', serverAttendanceRecordsError],
+    ['등하원', studentCheckEventsError],
+    ['클리닉', serverClinicRecordsError || serverClinicEventsError],
+    ['학원 일정', academyCalendarEventsError],
+    ['직원 정보', academyMemberProfilesError || academyStaffProfilesError || academyInvitationsError],
+    ['직원 근무', staffWorkRulesError || staffWorkExceptionsError || staffAttendanceLogsError || serverStaffShiftsError],
+  ].filter(([, error]) => Boolean(error));
+  const hasSyncError = syncErrors.length > 0;
+  const syncErrorSummary = syncErrors.map(([label]) => label).join(' · ');
+  const isRealtimeReconnecting = workspaceRealtimeStatus === 'reconnecting'
+    || chatRealtimeStatus === 'reconnecting';
 
   const retryWorkspaceSync = async () => {
     if (syncRetrying) return;
     setSyncRetrying(true);
     try {
       startWorkspaceRealtime();
+      if (currentAcademyId) startChatRealtime(currentAcademyId);
       await refreshWorkspaceCollaborationState({ reason: 'manual-sync-retry' });
+      await useChatStore.getState().reloadThreadsAndMessages();
     } finally {
       setSyncRetrying(false);
     }
@@ -556,14 +579,16 @@ export default function AcademyAppLayout() {
 
       <main className="min-w-0 flex-1">
         <div className="main-content mx-auto w-full max-w-md pb-24 md:max-w-none md:px-8 md:py-6 md:pb-8">
-          {currentAcademyId && (hasCoreSyncError || isRealtimeReconnecting) && (
+          {currentAcademyId && (hasSyncError || isRealtimeReconnecting) && (
             <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 md:mx-0">
               <div className="min-w-0">
                 <p className="text-sm font-extrabold text-orange-800">
-                  {hasCoreSyncError ? '일부 데이터를 동기화하지 못했어요' : '서버와 다시 연결하고 있어요'}
+                  {hasSyncError ? '일부 데이터를 동기화하지 못했어요' : '서버와 다시 연결하고 있어요'}
                 </p>
                 <p className="mt-0.5 text-xs font-semibold text-orange-600">
-                  화면의 오래된 정보로 작업하지 않도록 다시 연결해주세요.
+                  {hasSyncError
+                    ? `${syncErrorSummary} 데이터를 다시 확인해주세요.`
+                    : '화면의 오래된 정보로 작업하지 않도록 다시 연결해주세요.'}
                 </p>
               </div>
               <button

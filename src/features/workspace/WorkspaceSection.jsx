@@ -106,9 +106,7 @@ export default function WorkspaceSection() {
       return;
     }
     const ok = window.confirm(
-      appRole === 'owner'
-        ? 'Supabase의 최신 데이터로 이 기기를 동기화합니다. 아직 서버에 저장되지 않은 원장 기기의 항목은 보존됩니다. 계속할까요?'
-        : 'Supabase의 최신 데이터와 권한을 기준으로 이 기기를 다시 맞춥니다. 서버에 없는 임시 항목은 정리됩니다. 계속할까요?'
+      'Supabase의 최신 데이터와 권한을 기준으로 이 기기를 다시 맞춥니다. 서버에 없는 과거 임시 항목은 정리됩니다. 계속할까요?'
     );
     if (!ok) return;
     setHydrating(true);
@@ -119,10 +117,10 @@ export default function WorkspaceSection() {
         showToast('학원이 변경되어 이전 학원의 동기화를 취소했어요.', 'error');
         return;
       }
-      // 2) localStorage 반영. 서버 저장 실패로 남은 local-only row는 유실 방지를 위해 보존한다.
+      // 2) localStorage 반영. 로그인된 워크스페이스는 서버 원본과 정확히 맞춘다.
       const counts = hydrateAcademyFromServerSnapshot(snapshot, {
         strategy: 'serverWins',
-        preserveLocalOnly: useAcademyStore.getState().role === 'owner',
+        preserveLocalOnly: false,
       });
       // 3) 서버 카운트도 재조회 (snapshot fetch 직후라 사실상 동일하지만 일관성 유지)
       await Promise.all([

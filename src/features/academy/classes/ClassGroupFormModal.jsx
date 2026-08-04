@@ -671,6 +671,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
             groupPatch,
             rules: rulePayloads,
             effectiveFrom: getTodayYMD(),
+            expectedUpdatedAt: editGroup.updatedAt,
           });
 
           // 서버 커밋 성공 이후에만 로컬을 갱신한다.
@@ -729,6 +730,7 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
               groupPatch: groupPayload,
               rules: rulePayloads,
               effectiveFrom: getTodayYMD(),
+              expectedUpdatedAt: serverGroup?.updated_at || transaction?.group?.updated_at,
             });
           }
           serverGroup = transaction?.group || null;
@@ -795,6 +797,13 @@ export default function ClassGroupFormModal({ editGroup, onClose }) {
       onClose();
     } catch (error) {
       console.error('[class-group] save failed', error);
+      if (error?.code === 'DATA_CONFLICT_CLASS_GROUP') {
+        await Promise.allSettled([
+          loadServerClassGroups(),
+          loadServerClassSessions(),
+          useWorkspaceStore.getState().loadClassScheduleRules?.(),
+        ]);
+      }
       showToast(
         error?.message || (editGroup
           ? '반 정보를 수정하지 못했어요.'

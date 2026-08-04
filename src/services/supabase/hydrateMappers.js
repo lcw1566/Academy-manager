@@ -230,6 +230,8 @@ export function mapServerAttendanceRecordToLocal(a) {
       ?? (a.source === 'qr' ? 'auto_inferred' : 'legacy_confirmed'),
     confirmedAt: a.confirmed_at ?? null,
     confirmedBy: a.confirmed_by ?? null,
+    createdAt: a.created_at,
+    updatedAt: a.updated_at,
   };
 }
 

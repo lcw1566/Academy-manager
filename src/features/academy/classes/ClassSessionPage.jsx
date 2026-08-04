@@ -841,6 +841,9 @@ export default function ClassSessionPage() {
         if (canEditAttendance && attendanceSettings.studentCheckMethod !== 'disabled') {
           const records = sessionStudents.map((student) => {
             const override = attendanceByStudentId.get(student.id);
+            const existingRecord = sessionAttendanceRecords.find(
+              (record) => record.studentId === student.id,
+            );
             const automatic = attendanceHintByStudentId.get(student.id);
             const isTeacherOverride = Boolean(override);
             const automaticSource = automatic?.checkInISO
@@ -869,6 +872,7 @@ export default function ClassSessionPage() {
               confirmed_by: isTeacherOverride
                 ? (override.confirmedBy || authUserId || null)
                 : null,
+              expectedUpdatedAt: existingRecord?.updatedAt ?? null,
             };
           });
 
@@ -907,10 +911,20 @@ export default function ClassSessionPage() {
       return true;
     } catch (error) {
       console.error('[class-session] save failed', error);
+      // 출석 버튼은 즉시 반응하도록 로컬 draft를 먼저 바꾸므로, 서버 저장이
+      // 실패하면 서버 원본으로 되돌려 다른 기기에만 없는 출석이 남지 않게 한다.
+      if (attendanceDirty) {
+        await loadServerAttendanceRecords();
+        setAttendanceDirty(false);
+      }
       if (error?.code === 'DATA_CONFLICT') {
         await loadServerLessonRecords();
         setRecordConflict(true);
         showToast('다른 기기에서 이 수업 기록을 먼저 수정했어요. 최신 기록을 불러와 확인해주세요.', 'error');
+        return false;
+      }
+      if (error?.code === 'DATA_CONFLICT_ATTENDANCE') {
+        showToast('다른 기기에서 출석을 먼저 수정했어요. 최신 출석을 불러왔으니 확인해주세요.', 'error');
         return false;
       }
       showToast(
@@ -925,6 +939,7 @@ export default function ClassSessionPage() {
     }
   }, [
     session, group, isSaving, isCanceledSession, recordConflict, commonRec, academyStudents, attendanceByStudentId,
+    sessionAttendanceRecords,
     attendanceHintByStudentId, attendanceSettings.studentCheckMethod,
     batchSaveSessionRecords, canEdit, canEditAttendance,
     isAuthenticated, currentAcademyId,

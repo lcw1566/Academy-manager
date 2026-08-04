@@ -332,7 +332,25 @@ export default function App() {
     if (!isAuthenticated || !isWorkspaceReady || !hasAcademyMembership) return undefined;
     loadChat(currentAcademyId);
     startChatRealtime(currentAcademyId);
-    return () => stopChatRealtime();
+    const refreshChat = () => {
+      void useChatStore.getState().reloadThreadsAndMessages();
+    };
+    const handleChatOnline = () => {
+      startChatRealtime(currentAcademyId);
+      refreshChat();
+    };
+    const handleChatVisibility = () => {
+      if (document.visibilityState === 'visible') refreshChat();
+    };
+    window.addEventListener('focus', refreshChat);
+    window.addEventListener('online', handleChatOnline);
+    document.addEventListener('visibilitychange', handleChatVisibility);
+    return () => {
+      window.removeEventListener('focus', refreshChat);
+      window.removeEventListener('online', handleChatOnline);
+      document.removeEventListener('visibilitychange', handleChatVisibility);
+      stopChatRealtime();
+    };
   }, [
     isPublicCheckin,
     isQrDisplay,
@@ -447,9 +465,9 @@ export default function App() {
         ) return;
         const counts = hydrateAcademyFromServerSnapshot(snapshot, {
           strategy: 'serverWins',
-          // RLS로 조회 권한이 회수된 직원 기기에 예전 학생/수납 캐시가 남지 않게
-          // local-only 보존은 전체 데이터 관리자인 원장에게만 허용한다.
-          preserveLocalOnly: useAcademyStore.getState().role === 'owner',
+          // 로그인된 앱에서는 Supabase가 단일 원본이다. 원장도 서버에 없는 과거
+          // local-only 행을 보존하지 않아 계정·기기별 유령 데이터가 남지 않게 한다.
+          preserveLocalOnly: false,
         });
         const total =
           (counts?.students || 0) + (counts?.classGroups || 0) +

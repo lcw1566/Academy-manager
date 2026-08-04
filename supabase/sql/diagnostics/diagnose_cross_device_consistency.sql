@@ -35,6 +35,22 @@ from (
          where tgname = 'sync_same_day_class_session_from_new_rule'
            and not tgisinternal
       )
+    ),
+    (
+      '출석 동시 수정 보호 RPC',
+      to_regprocedure('public.save_attendance_records_guarded(uuid,jsonb)') is not null
+    ),
+    (
+      '반 동시 수정 보호 RPC',
+      to_regprocedure(
+        'public.update_class_group_with_rules_guarded(uuid,uuid,jsonb,jsonb,date,timestamp with time zone)'
+      ) is not null
+    ),
+    (
+      '학생 반 배정 원자 저장 RPC',
+      to_regprocedure(
+        'public.assign_student_to_class_groups_guarded(uuid,uuid,uuid[],date,jsonb,integer,timestamp with time zone)'
+      ) is not null
     )
 ) as checks(item, installed)
 order by item;
@@ -52,13 +68,27 @@ select
 from (
   values
     ('academies'),
+    ('academy_invitations'),
+    ('academy_members'),
+    ('academy_staff_profiles'),
+    ('academy_staff_work_rules'),
+    ('academy_staff_work_exceptions'),
     ('students'),
+    ('exam_results'),
     ('student_check_events'),
     ('class_groups'),
     ('class_sessions'),
+    ('class_schedule_rules'),
+    ('class_session_exceptions'),
+    ('lesson_records'),
     ('attendance_records'),
     ('clinic_records'),
-    ('staff_attendance_logs')
+    ('clinic_events'),
+    ('clinic_event_students'),
+    ('academy_calendar_events'),
+    ('staff_attendance_logs'),
+    ('academy_staff_shifts'),
+    ('profiles')
 ) as expected(table_name)
 order by expected.table_name;
 

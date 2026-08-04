@@ -24,6 +24,8 @@ import {
 } from '../services/supabase/chatApi';
 import { requestChatPush } from '../services/supabase/pushApi';
 
+const CHAT_REALTIME_RETRY_DELAYS_MS = [800, 1_500, 3_000, 6_000, 12_000];
+
 function makeDmThread({ threadId, academyId, myUserId, otherUserId }) {
   const [dmUserA, dmUserB] = myUserId < otherUserId
     ? [myUserId, otherUserId]
@@ -68,6 +70,10 @@ const useChatStore = create((set, get) => ({
   loadedAt: null,
   realtimeChannel: null,
   realtimeTimer: null,
+  realtimeRetryTimer: null,
+  realtimeRetryCount: 0,
+  realtimeStatus: 'idle',
+  realtimeError: null,
   activeThreadId: null,
   requestedThreadId: null,
 
@@ -323,7 +329,8 @@ const useChatStore = create((set, get) => ({
   // ─── realtime ──────────────────────────────────────────────
   startChatRealtime: (academyId) => {
     if (!isSupabaseConfigured || !supabase || !academyId) return;
-    get().stopChatRealtime();
+    get().stopChatRealtime({ preserveRetry: true });
+    set({ realtimeStatus: 'connecting', realtimeError: null });
 
     const channel = supabase
       .channel(`academy-chat:${academyId}`)
@@ -360,8 +367,41 @@ const useChatStore = create((set, get) => ({
         () => get().scheduleThreadsReload(),
       );
 
-    channel.subscribe();
     set({ realtimeChannel: channel });
+    channel.subscribe((status) => {
+      if (get().realtimeChannel !== channel) return;
+      if (status === 'SUBSCRIBED') {
+        const retryTimer = get().realtimeRetryTimer;
+        if (retryTimer) clearTimeout(retryTimer);
+        set({
+          realtimeStatus: 'subscribed',
+          realtimeError: null,
+          realtimeRetryTimer: null,
+          realtimeRetryCount: 0,
+        });
+        void get().reloadThreadsAndMessages();
+        return;
+      }
+      if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) return;
+
+      const retryCount = get().realtimeRetryCount;
+      const delay = CHAT_REALTIME_RETRY_DELAYS_MS[
+        Math.min(retryCount, CHAT_REALTIME_RETRY_DELAYS_MS.length - 1)
+      ];
+      const previous = get().realtimeRetryTimer;
+      if (previous) clearTimeout(previous);
+      const retryTimer = setTimeout(() => {
+        if (get().academyId !== academyId) return;
+        get().startChatRealtime(academyId);
+      }, delay);
+      set({
+        realtimeStatus: 'reconnecting',
+        realtimeError: status,
+        realtimeRetryTimer: retryTimer,
+        realtimeRetryCount: retryCount + 1,
+      });
+      void get().reloadThreadsAndMessages();
+    });
   },
 
   scheduleThreadsReload: () => {
@@ -374,14 +414,25 @@ const useChatStore = create((set, get) => ({
     set({ realtimeTimer: t });
   },
 
-  stopChatRealtime: () => {
+  stopChatRealtime: ({ preserveRetry = false } = {}) => {
     const channel = get().realtimeChannel;
+    const retryTimer = get().realtimeRetryTimer;
+    if (retryTimer) clearTimeout(retryTimer);
+    set({
+      realtimeChannel: null,
+      realtimeRetryTimer: null,
+      ...(!preserveRetry ? {
+        realtimeRetryCount: 0,
+        realtimeStatus: 'idle',
+        realtimeError: null,
+      } : {}),
+    });
     if (channel && supabase) {
       try { supabase.removeChannel(channel); } catch { /* ignore */ }
     }
     const t = get().realtimeTimer;
     if (t) clearTimeout(t);
-    set({ realtimeChannel: null, realtimeTimer: null });
+    set({ realtimeTimer: null });
   },
 
   clearChat: () => {

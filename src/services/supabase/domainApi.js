@@ -110,20 +110,27 @@ export async function createPrivateStudent(payload = {}) {
 }
 
 // ownership 컬럼은 patch 로 변경 불가 — sanitize 에서 자동 제거.
-export async function updateStudent(id, patch = {}) {
+export async function updateStudent(id, patch = {}, { expectedUpdatedAt } = {}) {
   assertSupabaseConfigured();
   if (!id) throw new Error('id가 필요해요.');
   const safe = sanitizeStudentPayload(patch, { strip: ['id', 'mode', 'academy_id', 'user_id', 'created_at', 'updated_at'] });
   if (Object.keys(safe).length === 0) {
     throw new Error('변경할 항목이 없어요.');
   }
-  const { data, error } = await supabase
+  let query = supabase
     .from('students')
     .update(safe)
-    .eq('id', id)
-    .select()
-    .single();
+    .eq('id', id);
+  if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
+  const { data, error } = await query.select().maybeSingle();
   if (error) throw error;
+  if (!data) {
+    const conflict = createDataConflictError(
+      '다른 기기에서 이 학생 정보를 먼저 수정했어요. 최신 정보를 다시 열어주세요.',
+    );
+    conflict.code = 'DATA_CONFLICT_STUDENT';
+    throw conflict;
+  }
   return data;
 }
 
@@ -135,6 +142,49 @@ export async function deleteStudent(id) {
     .delete()
     .eq('id', id);
   if (error) throw error;
+}
+
+// 학생 생성 직후 반 배정. 학생/반/미래 회차의 중복 저장 필드를 서버 트랜잭션
+// 하나로 맞춘다. canManageStudents만 필요하며 반의 다른 설정은 수정할 수 없다.
+export async function assignStudentToClassGroupsGuarded({
+  academyId,
+  studentId,
+  classGroupIds = [],
+  effectiveFrom,
+  tuitionSubjects = [],
+  baseTuition = 0,
+  expectedUpdatedAt,
+} = {}) {
+  await getCurrentUserOrThrow();
+  if (!academyId || !studentId) throw new Error('학원과 학생 정보가 필요해요.');
+  if (!expectedUpdatedAt) throw new Error('학생의 최신 정보를 확인하지 못했어요. 다시 열어주세요.');
+  const { data, error } = await supabase.rpc('assign_student_to_class_groups_guarded', {
+    p_academy_id: academyId,
+    p_student_id: studentId,
+    p_class_group_ids: classGroupIds,
+    p_effective_from: effectiveFrom,
+    p_tuition_subjects: Array.isArray(tuitionSubjects) ? tuitionSubjects : [],
+    p_base_tuition: Math.max(0, Number(baseTuition) || 0),
+    p_expected_updated_at: expectedUpdatedAt,
+  });
+  if (error) {
+    if (['42883', 'PGRST202'].includes(error.code)) {
+      const migrationError = new Error(
+        '학생 반 배정 안전 저장 기능이 아직 서버에 적용되지 않았어요. SQL 071을 먼저 실행해주세요.',
+      );
+      migrationError.code = 'STUDENT_ASSIGNMENT_GUARD_NOT_INSTALLED';
+      throw migrationError;
+    }
+    if (error.code === '40001' || String(error.message || '').includes('다른 기기')) {
+      const conflict = createDataConflictError(
+        '다른 기기에서 이 학생 정보를 먼저 수정했어요. 최신 정보를 다시 확인해주세요.',
+      );
+      conflict.code = 'DATA_CONFLICT_STUDENT';
+      throw conflict;
+    }
+    throw error;
+  }
+  return data;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -172,7 +222,7 @@ export async function createAcademyClassGroup({ academyId, ...payload } = {}) {
   return data;
 }
 
-export async function updateClassGroup(id, patch = {}) {
+export async function updateClassGroup(id, patch = {}, { expectedUpdatedAt } = {}) {
   assertSupabaseConfigured();
   if (!id) throw new Error('id가 필요해요.');
   const safe = sanitizeClassGroupPayload(patch, {
@@ -181,13 +231,20 @@ export async function updateClassGroup(id, patch = {}) {
   if (Object.keys(safe).length === 0) {
     throw new Error('변경할 항목이 없어요.');
   }
-  const { data, error } = await supabase
+  let query = supabase
     .from('class_groups')
     .update(safe)
-    .eq('id', id)
-    .select()
-    .single();
+    .eq('id', id);
+  if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
+  const { data, error } = await query.select().maybeSingle();
   if (error) throw error;
+  if (!data) {
+    const conflict = createDataConflictError(
+      '다른 기기에서 이 반 정보를 먼저 수정했어요. 최신 정보를 다시 열어주세요.',
+    );
+    conflict.code = 'DATA_CONFLICT_CLASS_GROUP';
+    throw conflict;
+  }
   return data;
 }
 
@@ -524,27 +581,43 @@ export async function upsertAcademyAttendanceRecord({ academyId, ...payload } = 
 
 // records 빈 배열이면 skip. 모든 row 는 class_session_id + student_id 필수.
 export async function upsertAcademyAttendanceRecordsBulk({ academyId, records } = {}) {
-  const user = await getCurrentUserOrThrow();
+  await getCurrentUserOrThrow();
   if (!academyId) throw new Error('academyId가 필요해요.');
   if (!Array.isArray(records) || records.length === 0) return [];
-  const rows = records.map((r) =>
-    sanitizeAttendancePayload({
-      ...r,
+  const rows = records.map((record) => ({
+    ...sanitizeAttendancePayload({
+      ...record,
       mode: 'academy',
       academy_id: academyId,
-      user_id: user.id,
-    })
-  );
+    }),
+    expected_updated_at: record.expectedUpdatedAt ?? null,
+  }));
   for (const r of rows) {
     if (!r.class_session_id || !r.student_id) {
       throw new Error('class_session_id / student_id 가 누락된 출결이 있어요.');
     }
   }
-  const { data, error } = await supabase
-    .from('attendance_records')
-    .upsert(rows, { onConflict: 'class_session_id,student_id' })
-    .select();
-  if (error) throw error;
+  const { data, error } = await supabase.rpc('save_attendance_records_guarded', {
+    p_academy_id: academyId,
+    p_records: rows,
+  });
+  if (error) {
+    if (['42883', 'PGRST202'].includes(error.code)) {
+      const migrationError = new Error(
+        '출석 동시 수정 보호 기능이 아직 서버에 적용되지 않았어요. SQL 071을 먼저 실행해주세요.',
+      );
+      migrationError.code = 'ATTENDANCE_GUARD_NOT_INSTALLED';
+      throw migrationError;
+    }
+    if (error.code === '40001' || String(error.message || '').includes('다른 기기')) {
+      const conflict = createDataConflictError(
+        '다른 기기에서 출석을 먼저 수정했어요. 최신 출석을 다시 불러왔어요.',
+      );
+      conflict.code = 'DATA_CONFLICT_ATTENDANCE';
+      throw conflict;
+    }
+    throw error;
+  }
   return data ?? [];
 }
 

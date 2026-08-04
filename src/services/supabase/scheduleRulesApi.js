@@ -371,6 +371,7 @@ export async function updateClassGroupWithRulesTransaction({
   groupPatch,
   rules,
   effectiveFrom,
+  expectedUpdatedAt,
 } = {}) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
@@ -382,20 +383,32 @@ export async function updateClassGroupWithRulesTransaction({
     throw new Error('수업 규칙이 필요해요.');
   }
 
-  const { data, error } = await supabase.rpc('update_class_group_with_rules', {
+  if (!expectedUpdatedAt) {
+    throw new Error('반의 최신 수정 시각을 확인하지 못했어요. 수업 목록을 새로고침해주세요.');
+  }
+
+  const { data, error } = await supabase.rpc('update_class_group_with_rules_guarded', {
     p_academy_id: academyId,
     p_class_group_id: classGroupId,
     p_group_patch: groupPatch,
     p_rules: rules,
     p_effective_from: effectiveFrom || undefined,
+    p_expected_updated_at: expectedUpdatedAt,
   });
   if (error) {
     if (['42883', 'PGRST202'].includes(error.code)) {
       const migrationError = new Error(
-        '반 규칙 안전 저장 기능이 아직 서버에 적용되지 않았어요. SQL 047을 먼저 실행해주세요.',
+        '반 동시 수정 보호 기능이 아직 서버에 적용되지 않았어요. SQL 071을 먼저 실행해주세요.',
       );
-      migrationError.code = 'TRANSACTIONAL_CLASS_RULE_UPDATE_NOT_INSTALLED';
+      migrationError.code = 'CLASS_GROUP_GUARD_NOT_INSTALLED';
       throw migrationError;
+    }
+    if (error.code === '40001' || String(error.message || '').includes('다른 기기')) {
+      const conflict = new Error(
+        '다른 기기에서 이 반을 먼저 수정했어요. 최신 정보를 다시 열어주세요.',
+      );
+      conflict.code = 'DATA_CONFLICT_CLASS_GROUP';
+      throw conflict;
     }
     throw error;
   }
