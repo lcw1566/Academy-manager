@@ -201,11 +201,7 @@ export default function ClassGroupsPage() {
       />
 
       <div className="pt-14 md:pt-0 pb-6">
-        <div className="px-4 pt-4 mb-3">
-          <p className="text-sm text-gray-400">반 단위로 수업을 관리해요.</p>
-        </div>
-
-        <div className="px-4 mb-4">
+        <div className="px-4 pt-4 mb-4">
           <ListSearchFilterBar
             searchValue={search}
             onSearchChange={setSearch}

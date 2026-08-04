@@ -15,7 +15,7 @@ import { ListSearchFilterBar, ListFilterChips } from '../../../components/filter
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
-import { addDaysYMD, formatDateShort } from '../../../utils/date';
+import { formatDateShort } from '../../../utils/date';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getRoomTagClassName } from '../../../utils/roomTags';
 import {
@@ -479,8 +479,13 @@ export default function StudentAttendancePage() {
       console.warn('[attendance] 데이터 다시 불러오기 실패', error);
     });
   };
-  const yesterdayYmd = addDaysYMD(todayYmd, -1);
-  const isYesterday = selectedDate === yesterdayYmd;
+  const activeFilterCount = (viewFilter === 'all' ? 0 : 1)
+    + (selectedDate === todayYmd ? 0 : 1);
+
+  const resetFilters = () => {
+    setViewFilter('all');
+    setSelectedDate(todayYmd);
+  };
 
   return (
     <div>
@@ -500,53 +505,6 @@ export default function StudentAttendancePage() {
 
       <div className="pt-14 pb-6 md:pt-0">
         <div className="px-4 pt-4">
-          <div className="mb-4 flex min-w-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setSelectedDate(todayYmd)}
-              aria-pressed={isToday}
-              className={`h-11 flex-shrink-0 rounded-2xl px-4 text-sm font-bold transition-colors active:scale-[0.98] ${
-                isToday
-                  ? 'bg-[#0064FF] text-white shadow-sm'
-                  : 'border border-[#E5E8EB] bg-white text-[#4E5968] shadow-sm'
-              }`}
-            >
-              오늘
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedDate(yesterdayYmd)}
-              aria-pressed={isYesterday}
-              className={`h-11 flex-shrink-0 rounded-2xl px-4 text-sm font-bold transition-colors active:scale-[0.98] ${
-                isYesterday
-                  ? 'bg-[#0064FF] text-white shadow-sm'
-                  : 'border border-[#E5E8EB] bg-white text-[#4E5968] shadow-sm'
-              }`}
-            >
-              어제
-            </button>
-            <label
-              className={`relative flex h-11 min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 rounded-2xl border px-3 text-sm font-bold shadow-sm transition-colors active:scale-[0.99] ${
-                !isToday && !isYesterday
-                  ? 'border-[#3182F6] bg-[#F2F7FF] text-[#0064FF]'
-                  : 'border-[#E5E8EB] bg-white text-[#4E5968]'
-              }`}
-            >
-              <CalendarDays size={16} className="flex-shrink-0" />
-              <span className="truncate">{formatDateShort(selectedDate)}</span>
-              <ChevronDown size={14} className="flex-shrink-0 text-[#8B95A1]" />
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(event) => {
-                  if (event.target.value) setSelectedDate(event.target.value);
-                }}
-                aria-label="등하원 날짜 선택"
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              />
-            </label>
-          </div>
-
           <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             <SummaryItem label="예정" value={summary.expected} Icon={CalendarDays} tone="gray" />
             <SummaryItem label="등원" value={summary.checkedIn} Icon={CheckCircle2} tone="blue" />
@@ -570,21 +528,49 @@ export default function StudentAttendancePage() {
               searchValue={search}
               onSearchChange={setSearch}
               placeholder="학생 이름, 학교, 학년 검색"
-              filterCount={viewFilter === 'all' ? 0 : 1}
+              filterCount={activeFilterCount}
               filtersOpen={filtersOpen}
               onToggleFilters={() => setFiltersOpen((open) => !open)}
-              onResetFilters={() => setViewFilter('all')}
+              onResetFilters={resetFilters}
               resultText={`${rows.length}명`}
             >
-              <ListFilterChips
-                value={viewFilter}
-                onChange={setViewFilter}
-                ariaLabel="등하원 상태 필터"
-                options={VIEW_FILTERS.map((filter) => ({
-                  value: filter.id,
-                  label: filter.label,
-                }))}
-              />
+              <div>
+                <p className="mb-2 text-[11px] font-bold text-seenit-subtle">날짜</p>
+                <label
+                  className={`relative flex h-10 cursor-pointer items-center gap-2 rounded-xl border px-3 text-xs font-bold transition-colors active:scale-[0.99] ${
+                    selectedDate === todayYmd
+                      ? 'border-seenit-border-soft bg-seenit-control text-seenit-secondary'
+                      : 'border-seenit-brand bg-seenit-brand-muted text-seenit-brand'
+                  }`}
+                >
+                  <CalendarDays size={15} className="flex-shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{formatDateShort(selectedDate)}</span>
+                  <span className="flex-shrink-0 text-[10px] font-semibold text-seenit-subtle">
+                    {selectedDate === todayYmd ? '오늘' : '날짜 변경'}
+                  </span>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(event) => {
+                      if (event.target.value) setSelectedDate(event.target.value);
+                    }}
+                    aria-label="등하원 날짜 선택"
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  />
+                </label>
+              </div>
+              <div>
+                <p className="mb-2 text-[11px] font-bold text-seenit-subtle">상태</p>
+                <ListFilterChips
+                  value={viewFilter}
+                  onChange={setViewFilter}
+                  ariaLabel="등하원 상태 필터"
+                  options={VIEW_FILTERS.map((filter) => ({
+                    value: filter.id,
+                    label: filter.label,
+                  }))}
+                />
+              </div>
             </ListSearchFilterBar>
           </div>
 
