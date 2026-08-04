@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, PencilLine, Save, Search, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, ChevronDown, Loader2, PencilLine, Search, X } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -156,6 +156,14 @@ export default function ClinicInlineWorksheet({
   const [expandedStudentIds, setExpandedStudentIds] = useState(() => new Set());
   const [studentSearch, setStudentSearch] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savingStudentIds, setSavingStudentIds] = useState(() => new Set());
+  const [saveErrorStudentIds, setSaveErrorStudentIds] = useState(() => new Set());
+  const draftsRef = useRef(drafts);
+  const dirtyStudentIdsRef = useRef(dirtyStudentIds);
+  const saveErrorStudentIdsRef = useRef(saveErrorStudentIds);
+  const editRevisionRef = useRef(new Map());
+  const saveAllRef = useRef(null);
+  const savingRef = useRef(false);
   const studentKey = students
     .map((student) => `${student.id}:${student.clinicSubject || ''}`)
     .join('|');
@@ -170,12 +178,45 @@ export default function ClinicInlineWorksheet({
   }, [students, studentSearch]);
 
   useEffect(() => {
-    setDrafts(buildDrafts());
-    setDirtyStudentIds(new Set());
+    const nextDrafts = buildDrafts();
+    const emptyDirtyIds = new Set();
+    const emptyErrorIds = new Set();
+    draftsRef.current = nextDrafts;
+    dirtyStudentIdsRef.current = emptyDirtyIds;
+    saveErrorStudentIdsRef.current = emptyErrorIds;
+    setDrafts(nextDrafts);
+    setDirtyStudentIds(emptyDirtyIds);
+    setSavingStudentIds(new Set());
+    setSaveErrorStudentIds(emptyErrorIds);
+    editRevisionRef.current = new Map();
     setExpandedStudentIds(new Set());
     // 회차나 명단이 바뀔 때만 초기화한다. 서버 목록 갱신으로 초안이 지워지면 안 된다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.id, studentKey, subject]);
+
+  useEffect(() => { draftsRef.current = drafts; }, [drafts]);
+  useEffect(() => { dirtyStudentIdsRef.current = dirtyStudentIds; }, [dirtyStudentIds]);
+  useEffect(() => { saveErrorStudentIdsRef.current = saveErrorStudentIds; }, [saveErrorStudentIds]);
+
+  const markStudentDirty = (studentId) => {
+    editRevisionRef.current.set(
+      studentId,
+      (editRevisionRef.current.get(studentId) || 0) + 1,
+    );
+    setSaveErrorStudentIds((current) => {
+      if (!current.has(studentId)) return current;
+      const next = new Set(current);
+      next.delete(studentId);
+      saveErrorStudentIdsRef.current = next;
+      return next;
+    });
+    setDirtyStudentIds((current) => {
+      const next = new Set(current);
+      next.add(studentId);
+      dirtyStudentIdsRef.current = next;
+      return next;
+    });
+  };
 
   const toggleStudent = (studentId) => {
     setExpandedStudentIds((current) => {
@@ -187,20 +228,20 @@ export default function ClinicInlineWorksheet({
   };
 
   const updateItem = (studentId, itemId, field, value) => {
-    setDrafts((current) => ({
-      ...current,
-      [studentId]: {
-        ...current[studentId],
-        items: current[studentId].items.map((item) => (
-          item.id === itemId ? { ...item, [field]: value } : item
-        )),
-      },
-    }));
-    setDirtyStudentIds((current) => {
-      const next = new Set(current);
-      next.add(studentId);
+    setDrafts((current) => {
+      const next = {
+        ...current,
+        [studentId]: {
+          ...current[studentId],
+          items: current[studentId].items.map((item) => (
+            item.id === itemId ? { ...item, [field]: value } : item
+          )),
+        },
+      };
+      draftsRef.current = next;
       return next;
     });
+    markStudentDirty(studentId);
   };
 
   const updateStudentSubject = (student, nextSubject) => {
@@ -219,12 +260,14 @@ export default function ClinicInlineWorksheet({
           academyProfile,
           subject: nextSubject,
         }).items;
-      return {
+      const next = {
         ...current,
         [student.id]: { ...draft, subject: nextSubject, items: nextItems },
       };
+      draftsRef.current = next;
+      return next;
     });
-    setDirtyStudentIds((current) => new Set(current).add(student.id));
+    markStudentDirty(student.id);
   };
 
   const addStudentItem = (studentId, optionKey) => {
@@ -233,7 +276,7 @@ export default function ClinicInlineWorksheet({
       const draft = current[studentId];
       const option = getClinicOptions(draft?.subject).find((item) => item.key === optionKey);
       if (!draft || !option || draft.items.some((item) => item.categoryKey === option.key)) return current;
-      return {
+      const next = {
         ...current,
         [studentId]: {
           ...draft,
@@ -251,25 +294,49 @@ export default function ClinicInlineWorksheet({
           }],
         },
       };
+      draftsRef.current = next;
+      return next;
     });
-    setDirtyStudentIds((current) => new Set(current).add(studentId));
+    markStudentDirty(studentId);
   };
 
   const removeStudentItem = (studentId, itemId) => {
-    setDrafts((current) => ({
-      ...current,
-      [studentId]: {
-        ...current[studentId],
-        items: current[studentId].items.filter((item) => item.id !== itemId),
-      },
-    }));
-    setDirtyStudentIds((current) => new Set(current).add(studentId));
+    setDrafts((current) => {
+      const next = {
+        ...current,
+        [studentId]: {
+          ...current[studentId],
+          items: current[studentId].items.filter((item) => item.id !== itemId),
+        },
+      };
+      draftsRef.current = next;
+      return next;
+    });
+    markStudentDirty(studentId);
   };
 
-  const saveAll = async () => {
-    if (saving || dirtyStudentIds.size === 0) return;
-    const targetStudents = students.filter((student) => dirtyStudentIds.has(student.id));
+  const saveAll = async (requestedStudentIds = null) => {
+    if (savingRef.current) return;
+    const dirtyIds = dirtyStudentIdsRef.current;
+    const errorIds = saveErrorStudentIdsRef.current;
+    const requestedIds = Array.isArray(requestedStudentIds)
+      ? new Set(requestedStudentIds)
+      : null;
+    const targetStudents = students.filter((student) => (
+      dirtyIds.has(student.id)
+      && (!requestedIds || requestedIds.has(student.id))
+      && !errorIds.has(student.id)
+    ));
+    if (targetStudents.length === 0) return;
+    const targetStudentIds = new Set(targetStudents.map((student) => student.id));
+    const revisionSnapshot = new Map(targetStudents.map((student) => [
+      student.id,
+      editRevisionRef.current.get(student.id) || 0,
+    ]));
+    const draftSnapshot = draftsRef.current;
+    savingRef.current = true;
     setSaving(true);
+    setSavingStudentIds(targetStudentIds);
     const failedStudentIds = new Set();
     const conflictedStudentIds = new Set();
     let savedCount = 0;
@@ -284,7 +351,7 @@ export default function ClinicInlineWorksheet({
 
       for (const student of targetStudents) {
         try {
-          const draft = drafts[student.id];
+          const draft = draftSnapshot[student.id];
           const existing = student.clinicRecord || (
             draft.recordId ? clinicRecords.find((record) => record.id === draft.recordId) : null
           );
@@ -371,18 +438,22 @@ export default function ClinicInlineWorksheet({
               serverId: serverRecord?.id || null,
             }, { silent: true });
           }
-          setDrafts((current) => ({
-            ...current,
-            [student.id]: {
-              ...current[student.id],
-              recordId: localRecord?.id || current[student.id]?.recordId || null,
-              serverId: serverRecord?.id || existing?.serverId || current[student.id]?.serverId || null,
-              expectedUpdatedAt: serverRecord?.updated_at
-                || existing?.updatedAt
-                || current[student.id]?.expectedUpdatedAt
-                || null,
-            },
-          }));
+          setDrafts((current) => {
+            const next = {
+              ...current,
+              [student.id]: {
+                ...current[student.id],
+                recordId: localRecord?.id || current[student.id]?.recordId || null,
+                serverId: serverRecord?.id || existing?.serverId || current[student.id]?.serverId || null,
+                expectedUpdatedAt: serverRecord?.updated_at
+                  || existing?.updatedAt
+                  || current[student.id]?.expectedUpdatedAt
+                  || null,
+              },
+            };
+            draftsRef.current = next;
+            return next;
+          });
           savedCount += 1;
         } catch (error) {
           if (error?.code === 'DATA_CONFLICT') conflictedStudentIds.add(student.id);
@@ -403,13 +474,33 @@ export default function ClinicInlineWorksheet({
         const latestDrafts = {};
         for (const student of targetStudents) {
           if (!conflictedStudentIds.has(student.id)) continue;
-          const currentDraft = drafts[student.id];
+          const currentDraft = draftSnapshot[student.id];
+          const unchangedSinceSave = (editRevisionRef.current.get(student.id) || 0)
+            === revisionSnapshot.get(student.id);
           const latest = latestRecords.find((record) => (
             (currentDraft?.serverId && record.serverId === currentDraft.serverId)
             || (currentDraft?.recordId && record.id === currentDraft.recordId)
           ));
           if (!latest || latest.updatedAt === currentDraft?.expectedUpdatedAt) {
             failedStudentIds.add(student.id);
+            continue;
+          }
+          if (!unchangedSinceSave) {
+            // 저장 중 사용자가 계속 입력했다면 내용은 건드리지 않고 충돌 기준
+            // 시각만 최신으로 올린 뒤 새 입력을 다시 자동 저장한다.
+            setDrafts((current) => {
+              const next = {
+                ...current,
+                [student.id]: {
+                  ...current[student.id],
+                  recordId: latest.id || current[student.id]?.recordId || null,
+                  serverId: latest.serverId || current[student.id]?.serverId || null,
+                  expectedUpdatedAt: latest.updatedAt || current[student.id]?.expectedUpdatedAt || null,
+                },
+              };
+              draftsRef.current = next;
+              return next;
+            });
             continue;
           }
           latestDrafts[student.id] = buildStudentDraft({
@@ -426,25 +517,97 @@ export default function ClinicInlineWorksheet({
           });
         }
         if (Object.keys(latestDrafts).length > 0) {
-          setDrafts((current) => ({ ...current, ...latestDrafts }));
+          setDrafts((current) => {
+            const next = { ...current, ...latestDrafts };
+            draftsRef.current = next;
+            return next;
+          });
         }
       }
-      setDirtyStudentIds(failedStudentIds);
-      showToast(
-        conflictedStudentIds.size > 0 && failedStudentIds.size === 0
-          ? `${conflictedStudentIds.size}명은 다른 기기에서 먼저 수정되어 최신 기록으로 다시 불러왔어요.`
-          : failedStudentIds.size > 0
-          ? `${savedCount}명 저장, ${failedStudentIds.size}명은 저장하지 못했어요. 다시 시도해주세요.`
-          : `${savedCount}명의 클리닉 기록을 저장했어요.`,
-        failedStudentIds.size > 0 || conflictedStudentIds.size > 0 ? 'error' : 'success',
-      );
+      setDirtyStudentIds((current) => {
+        const next = new Set(current);
+        for (const student of targetStudents) {
+          const unchangedSinceSave = (editRevisionRef.current.get(student.id) || 0)
+            === revisionSnapshot.get(student.id);
+          if (!failedStudentIds.has(student.id) && unchangedSinceSave) {
+            next.delete(student.id);
+          } else {
+            next.add(student.id);
+          }
+        }
+        dirtyStudentIdsRef.current = next;
+        return next;
+      });
+      setSaveErrorStudentIds((current) => {
+        const next = new Set(current);
+        for (const studentId of targetStudentIds) next.delete(studentId);
+        for (const studentId of failedStudentIds) {
+          const unchangedSinceSave = (editRevisionRef.current.get(studentId) || 0)
+            === revisionSnapshot.get(studentId);
+          if (unchangedSinceSave) next.add(studentId);
+        }
+        saveErrorStudentIdsRef.current = next;
+        return next;
+      });
+      if (conflictedStudentIds.size > 0 && failedStudentIds.size === 0) {
+        showToast(
+          `${conflictedStudentIds.size}명은 다른 기기에서 먼저 수정되어 최신 기록으로 다시 불러왔어요.`,
+          'error',
+        );
+      } else if (failedStudentIds.size > 0) {
+        showToast(
+          `${savedCount}명 저장, ${failedStudentIds.size}명은 자동 저장하지 못했어요. 해당 학생을 다시 입력해주세요.`,
+          'error',
+        );
+      }
     } catch (error) {
       console.error('[clinic] inline clinic record save failed', error);
+      setSaveErrorStudentIds((current) => {
+        const next = new Set(current);
+        for (const studentId of targetStudentIds) {
+          const unchangedSinceSave = (editRevisionRef.current.get(studentId) || 0)
+            === revisionSnapshot.get(studentId);
+          if (unchangedSinceSave) next.add(studentId);
+        }
+        saveErrorStudentIdsRef.current = next;
+        return next;
+      });
       showToast(error?.message || '클리닉 기록을 저장하지 못했어요.', 'error');
     } finally {
+      savingRef.current = false;
       setSaving(false);
+      setSavingStudentIds(new Set());
     }
   };
+
+  saveAllRef.current = saveAll;
+
+  useEffect(() => {
+    if (saving || dirtyStudentIds.size === 0) return undefined;
+    const hasAutoSaveTarget = [...dirtyStudentIds].some(
+      (studentId) => !saveErrorStudentIds.has(studentId),
+    );
+    if (!hasAutoSaveTarget) return undefined;
+    const timer = window.setTimeout(() => {
+      saveAllRef.current?.();
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [dirtyStudentIds, saveErrorStudentIds, saving]);
+
+  const flushStudent = (studentId) => {
+    if (!dirtyStudentIdsRef.current.has(studentId)) return;
+    saveAllRef.current?.([studentId]);
+  };
+
+  useEffect(() => {
+    const flushPending = () => {
+      if (document.visibilityState === 'hidden' && dirtyStudentIdsRef.current.size > 0) {
+        saveAllRef.current?.();
+      }
+    };
+    document.addEventListener('visibilitychange', flushPending);
+    return () => document.removeEventListener('visibilitychange', flushPending);
+  }, []);
 
   return (
     <div className="border-t border-gray-50 bg-[#F8FAFC] px-3 py-3 md:px-4">
@@ -455,15 +618,27 @@ export default function ClinicInlineWorksheet({
             교재는 이어지고, 나머지는 이전 기록을 참고로만 보여줘요.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={saveAll}
-          disabled={saving || dirtyStudentIds.size === 0}
-          className="flex h-9 flex-shrink-0 items-center gap-1.5 rounded-xl bg-[#3182F6] px-3 text-xs font-bold text-white disabled:bg-[#D1D6DB]"
-        >
-          <Save size={13} />
-          {saving ? '저장 중' : dirtyStudentIds.size > 0 ? `${dirtyStudentIds.size}명 저장` : '저장'}
-        </button>
+        {saveErrorStudentIds.size > 0 ? (
+          <button
+            type="button"
+            onClick={() => setSaveErrorStudentIds(new Set())}
+            className="flex h-8 flex-shrink-0 items-center rounded-xl bg-red-50 px-2.5 text-[11px] font-bold text-red-600"
+          >
+            저장 실패 · 재시도
+          </button>
+        ) : (
+          <span className={`flex h-8 flex-shrink-0 items-center gap-1.5 px-1 text-[11px] font-bold ${
+            saving || dirtyStudentIds.size > 0 ? 'text-blue-600' : 'text-emerald-600'
+          }`}>
+            {saving ? (
+              <><Loader2 size={12} className="animate-spin" />자동 저장 중</>
+            ) : dirtyStudentIds.size > 0 ? (
+              '입력 내용 자동 저장 대기'
+            ) : (
+              <><CheckCircle2 size={12} />자동 저장</>
+            )}
+          </span>
+        )}
       </div>
 
       <div className="mb-3 flex h-10 items-center gap-2 rounded-xl border border-[#E5E8EB] bg-white px-3">
@@ -486,6 +661,9 @@ export default function ClinicInlineWorksheet({
           const draft = drafts[student.id];
           if (!draft) return null;
           const isDirty = dirtyStudentIds.has(student.id);
+          const isSavingStudent = savingStudentIds.has(student.id);
+          const hasSaveError = saveErrorStudentIds.has(student.id);
+          const hasSavedRecord = !!(draft.recordId || student.clinicRecord);
           const isExpanded = expandedStudentIds.has(student.id);
           return (
             <div key={student.id} className="overflow-hidden rounded-2xl border border-[#E5E8EB] bg-white">
@@ -502,14 +680,25 @@ export default function ClinicInlineWorksheet({
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-extrabold text-[#191F28]">{student.name}</span>
                     <span className={`mt-0.5 flex items-center gap-1 text-[10px] font-bold ${
-                      isDirty
-                        ? 'text-blue-600'
-                        : student.clinicRecord
-                          ? 'text-emerald-600'
-                          : 'text-[#8B95A1]'
+                      hasSaveError
+                        ? 'text-red-500'
+                        : isSavingStudent || isDirty
+                          ? 'text-blue-600'
+                          : hasSavedRecord
+                            ? 'text-emerald-600'
+                            : 'text-[#8B95A1]'
                     }`}>
-                      {student.clinicRecord && !isDirty && <CheckCircle2 size={11} />}
-                      {isDirty ? '저장 전' : student.clinicRecord ? '오늘 기록됨' : '작성 전'}
+                      {isSavingStudent && <Loader2 size={11} className="animate-spin" />}
+                      {hasSavedRecord && !isDirty && !isSavingStudent && <CheckCircle2 size={11} />}
+                      {hasSaveError
+                        ? '자동 저장 실패'
+                        : isSavingStudent
+                          ? '저장 중'
+                          : isDirty
+                            ? '자동 저장 대기'
+                            : hasSavedRecord
+                              ? '저장됨'
+                              : '입력하면 자동 저장'}
                     </span>
                   </span>
                   <ChevronDown
@@ -540,6 +729,7 @@ export default function ClinicInlineWorksheet({
                       <select
                         value={draft.subject}
                         onChange={(event) => updateStudentSubject(student, event.target.value)}
+                        onBlur={() => flushStudent(student.id)}
                         className="h-8 rounded-lg border border-[#E5E8EB] bg-white px-2 text-[11px] font-bold text-[#333D4B] outline-none focus:border-[#3182F6]"
                       >
                         <option value="">과목 없음</option>
@@ -578,6 +768,7 @@ export default function ClinicInlineWorksheet({
                               <input
                                 value={item.materialsText}
                                 onChange={(event) => updateItem(student.id, item.id, 'materialsText', event.target.value)}
+                                onBlur={() => flushStudent(student.id)}
                                 placeholder="교재·자료"
                                 className="h-9 w-full rounded-lg border border-[#E5E8EB] bg-white px-2.5 text-xs font-semibold text-[#333D4B] outline-none focus:border-[#3182F6]"
                               />
@@ -589,6 +780,7 @@ export default function ClinicInlineWorksheet({
                               <input
                                 value={item.description}
                                 onChange={(event) => updateItem(student.id, item.id, 'description', event.target.value)}
+                                onBlur={() => flushStudent(student.id)}
                                 placeholder={item.previousDescription || '오늘 진행한 내용'}
                                 className="h-9 w-full rounded-lg border border-[#E5E8EB] bg-white px-2.5 text-xs font-semibold text-[#333D4B] outline-none placeholder:text-[#B0B8C1] focus:border-[#3182F6]"
                               />
@@ -600,6 +792,7 @@ export default function ClinicInlineWorksheet({
                               <input
                                 value={item.result}
                                 onChange={(event) => updateItem(student.id, item.id, 'result', event.target.value)}
+                                onBlur={() => flushStudent(student.id)}
                                 placeholder={item.previousResult || '예: 24/30'}
                                 className="h-9 w-full rounded-lg border border-[#E5E8EB] bg-white px-2.5 text-xs font-semibold text-[#333D4B] outline-none placeholder:text-[#B0B8C1] focus:border-[#3182F6]"
                               />
