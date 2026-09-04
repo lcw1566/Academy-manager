@@ -2,6 +2,8 @@ import { supabase, isSupabaseConfigured, setAuthRememberPreference } from '../..
 
 const AUTH_SESSION_TIMEOUT_MS = 8000;
 const AUTH_SIGN_IN_TIMEOUT_MS = 15000;
+const AUTH_MIN_VALIDITY_MS = 60_000;
+let sessionRefreshPromise = null;
 
 function assertSupabaseConfigured() {
   if (!isSupabaseConfigured || !supabase) {
@@ -32,6 +34,51 @@ export async function getCurrentSession() {
   );
   if (error) throw error;
   return data.session;
+}
+
+// 앱 시작/절전 복귀 시 만료 직전 토큰으로 첫 DB 요청을 보내는 경합을 막는다.
+// 여러 로더가 동시에 진입해도 refresh 요청은 한 번만 실행한다.
+export async function ensureFreshSession({ forceRefresh = false } = {}) {
+  assertSupabaseConfigured();
+  const { data, error } = await withTimeout(
+    supabase.auth.getSession(),
+    AUTH_SESSION_TIMEOUT_MS,
+    '로그인 상태 확인 시간이 초과됐어요. 다시 시도해주세요.',
+  );
+  if (error) throw error;
+
+  const session = data?.session ?? null;
+  if (!session?.user) throw new Error('로그인이 필요해요.');
+
+  const expiresAtMs = Number(session.expires_at || 0) * 1000;
+  const shouldRefresh = forceRefresh || (
+    Boolean(session.refresh_token)
+    && expiresAtMs > 0
+    && expiresAtMs <= Date.now() + AUTH_MIN_VALIDITY_MS
+  );
+  if (!shouldRefresh) return session;
+  if (!session.refresh_token) throw new Error('로그인 정보가 만료됐어요. 다시 로그인해주세요.');
+
+  if (!sessionRefreshPromise) {
+    sessionRefreshPromise = (async () => {
+      try {
+        const { data: refreshedData, error: refreshError } = await withTimeout(
+          supabase.auth.refreshSession(),
+          AUTH_SESSION_TIMEOUT_MS,
+          '로그인 갱신 시간이 초과됐어요. 다시 시도해주세요.',
+        );
+        if (refreshError) throw refreshError;
+        if (!refreshedData?.session?.user) {
+          throw new Error('로그인 정보를 갱신하지 못했어요. 다시 로그인해주세요.');
+        }
+        return refreshedData.session;
+      } finally {
+        sessionRefreshPromise = null;
+      }
+    })();
+  }
+
+  return sessionRefreshPromise;
 }
 
 export async function getCurrentUser() {

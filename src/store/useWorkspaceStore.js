@@ -73,7 +73,12 @@ import {
 } from '../services/supabase/scheduleRulesApi';
 import useAuthStore from './useAuthStore';
 import useAcademyStore from './useAcademyStore';
-import { isTransientRequestError, retryAsync } from '../utils/asyncRetry';
+import { ensureFreshSession } from '../services/supabase/authApi';
+import {
+  isAuthenticationRequestError,
+  isTransientRequestError,
+  retryAsync,
+} from '../utils/asyncRetry';
 import { localizeError } from '../utils/localizeError';
 import { normalizeJobTitlePermissions } from '../utils/staffPermissions';
 import {
@@ -2399,26 +2404,41 @@ const useWorkspaceStore = create(
           set({ isWorkspaceLoading: true, workspaceError: null });
           try {
             const expectedAcademyId = get().currentAcademyId;
+            let sessionPrepared = false;
+            let authRefreshAttempted = false;
             // 로그인 직후 세션 저장과 첫 DB 요청 사이에는 아주 짧은 경합이 생길
             // 수 있고, 잠든 Supabase 인스턴스의 첫 응답도 늦을 수 있다. 이때 곧바로
             // 실패 화면을 띄우지 않고 필수 조회만 짧은 간격으로 자동 재시도한다.
             await retryAsync(
               async (attempt) => {
-                const [, loadedMemberships] = await Promise.all([
-                  get().syncProfile({
-                    throwOnError: true,
-                    reportError: false,
-                  }),
-                  // 학원 선택 화면과 첫 화면은 이름·운영 설정을 즉시 사용한다.
-                  // academy_members만 먼저 읽고 academies 조인을 나중에 채우면
-                  // `(이름 없음)` 또는 기본 설정이 한 프레임 노출될 수 있으므로
-                  // 상세까지 로그인 필수 데이터로 함께 기다린다.
+                if (!sessionPrepared) {
+                  await ensureFreshSession();
+                  sessionPrepared = true;
+                }
+
+                const loadRequiredWorkspaceData = () => Promise.all([
+                  get().syncProfile({ throwOnError: true, reportError: false }),
                   get().loadMemberships({
                     throwOnError: true,
                     includeAcademy: true,
                     reportError: false,
                   }),
                 ]);
+
+                let loadedMemberships;
+                try {
+                  [, loadedMemberships] = await loadRequiredWorkspaceData();
+                } catch (error) {
+                  // 자동 갱신과 첫 PostgREST 요청이 엇갈린 경우, 새 토큰을 확정한 뒤
+                  // 동일 요청을 한 번만 다시 보낸다. 실제 권한 오류(403)는 대상이 아니다.
+                  if (!authRefreshAttempted && isAuthenticationRequestError(error)) {
+                    authRefreshAttempted = true;
+                    await ensureFreshSession({ forceRefresh: true });
+                    [, loadedMemberships] = await loadRequiredWorkspaceData();
+                  } else {
+                    throw error;
+                  }
+                }
 
                 const membershipWithoutDetails = loadedMemberships.find(
                   (membership) => (

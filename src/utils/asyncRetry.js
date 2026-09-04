@@ -7,6 +7,24 @@ function readErrorStatus(error) {
   return Number.isFinite(status) ? status : null;
 }
 
+export function isAuthenticationRequestError(error) {
+  if (!error) return false;
+  const status = readErrorStatus(error);
+  if (status === 401) return true;
+
+  const code = String(error.code || '').toUpperCase();
+  if (['PGRST301', 'JWT_EXPIRED'].includes(code)) return true;
+
+  const message = `${error.name || ''} ${error.message || error}`.toLowerCase();
+  return (
+    message.includes('jwt expired')
+    || message.includes('token has expired')
+    || message.includes('invalid jwt')
+    || message.includes('로그인이 필요')
+    || message.includes('로그인 정보가 만료')
+  );
+}
+
 /**
  * 네트워크 단절, Supabase/PostgREST 콜드 스타트, 요청 시간 초과처럼
  * 같은 요청을 잠시 뒤 다시 보내면 회복될 수 있는 오류만 재시도한다.

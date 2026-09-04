@@ -102,6 +102,7 @@ export default function App() {
   const clearWorkspace = useWorkspaceStore((s) => s.clearWorkspace);
   const profile = useWorkspaceStore((s) => s.profile);
   const authUserId = useAuthStore((s) => s.user?.id);
+  const authSessionRevision = useAuthStore((s) => s.sessionRevision);
   const ensureAcademyDataOwner = useAcademyStore((s) => s.ensureAcademyDataOwner);
   const ensureAcademyDataScope = useAcademyStore((s) => s.ensureAcademyDataScope);
   const clearAcademyDataCache = useAcademyStore((s) => s.clearAcademyDataCache);
@@ -120,6 +121,7 @@ export default function App() {
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
   const [authEntryMode, setAuthEntryMode] = useState(null);
   const wasAuthenticatedRef = useRef(false);
+  const handledWorkspaceSessionRevisionRef = useRef(authSessionRevision);
 
   // 채팅 (학원 직원 전용) — 로그인 + 학원 선택 시 로드/실시간 구독.
   const loadChat = useChatStore((s) => s.loadChat);
@@ -210,6 +212,60 @@ export default function App() {
     activeChatThreadId,
     isQrDisplay,
   ]);
+
+  // 초기 조회가 실패한 뒤 토큰이 갱신되면 같은 사용자 ID라도 자동으로 복구한다.
+  // 진행 중 받은 이벤트는 로딩 종료 후 처리해 single-flight Promise에 흡수되지 않게 한다.
+  useEffect(() => {
+    if (authSessionRevision === handledWorkspaceSessionRevisionRef.current) return;
+    if (isWorkspaceLoading) return;
+    handledWorkspaceSessionRevisionRef.current = authSessionRevision;
+    if (
+      !isPublicCheckin
+      && isAuthInitialized
+      && isAuthenticated
+      && !isWorkspaceReady
+      && workspaceError
+    ) {
+      void initializeWorkspace();
+    }
+  }, [
+    authSessionRevision,
+    isWorkspaceLoading,
+    isPublicCheckin,
+    isAuthInitialized,
+    isAuthenticated,
+    isWorkspaceReady,
+    workspaceError,
+    initializeWorkspace,
+  ]);
+
+  // 모바일 절전, Wi-Fi 전환, 브라우저 백그라운드 복귀 뒤의 일시 실패는 사용자가
+  // 새로고침하지 않아도 복구한다. 핸들러 시점의 최신 store 상태를 확인한다.
+  useEffect(() => {
+    if (isPublicCheckin || !isAuthenticated) return undefined;
+    const recoverWorkspace = () => {
+      const workspace = useWorkspaceStore.getState();
+      if (
+        !workspace.isWorkspaceReady
+        && !workspace.isWorkspaceLoading
+        && workspace.workspaceError
+      ) {
+        void workspace.initializeWorkspace();
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') recoverWorkspace();
+    };
+
+    window.addEventListener('online', recoverWorkspace);
+    window.addEventListener('focus', recoverWorkspace);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('online', recoverWorkspace);
+      window.removeEventListener('focus', recoverWorkspace);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isPublicCheckin, isAuthenticated]);
 
   // server count loaders 완료 여부 — auto-hydrate 진입 가드.
   const serverStudentsLoadedAt = useWorkspaceStore((s) => s.serverStudentsLoadedAt);

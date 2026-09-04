@@ -32,6 +32,7 @@ const useAuthStore = create((set, get) => ({
   isPasswordRecovery: false,
   isSupabaseReady: isSupabaseConfigured,
   isInitialized: false,
+  sessionRevision: 0,
 
   isAuthPanelOpen: false,
   openAuthPanel: () => set({ isAuthPanelOpen: true, authError: null }),
@@ -55,14 +56,17 @@ const useAuthStore = create((set, get) => ({
       // 계속 받을 수 있어야 한다.
       if (!authSubscription) {
         authSubscription = subscribeAuthStateChange((event, nextSession) => {
-          set({
+          set((state) => ({
             session: nextSession,
             user: nextSession?.user ?? null,
             isAuthenticated: Boolean(nextSession?.user),
+            sessionRevision: event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN'
+              ? state.sessionRevision + 1
+              : state.sessionRevision,
             isPasswordRecovery:
               event === 'PASSWORD_RECOVERY'
               || (get().isPasswordRecovery && Boolean(nextSession?.user)),
-          });
+          }));
         });
       }
 
