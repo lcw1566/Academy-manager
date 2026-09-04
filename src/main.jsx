@@ -45,6 +45,21 @@ if (sentryDsn) {
       return { ...event, request };
     },
   });
+
+  // Sentry 최초 연결 확인용. 운영 URL에서 명시적으로 요청한 경우에만 한 번
+  // 전송하고, 새로고침으로 중복 전송되지 않도록 즉시 쿼리를 제거한다.
+  if (import.meta.env.PROD && typeof window !== 'undefined') {
+    const verificationUrl = new URL(window.location.href);
+    if (verificationUrl.searchParams.get('sentry-test') === '1') {
+      verificationUrl.searchParams.delete('sentry-test');
+      window.history.replaceState(
+        {},
+        '',
+        `${verificationUrl.pathname}${verificationUrl.search}${verificationUrl.hash}`,
+      );
+      Sentry.captureException(new Error('Seenit Sentry verification'));
+    }
+  }
 }
 
 // React가 그려지기 전에 저장된 테마를 적용해 첫 화면이 번쩍이는 현상을 막는다.
