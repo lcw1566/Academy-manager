@@ -21,6 +21,7 @@
     "@capacitor/ios": "^8.4.0",
     "@capacitor/push-notifications": "^8.1.1",
     "@rhwp/core": "^0.8.2",
+    "@sentry/react": "^10.73.0",
     "@ssabrojs/hwpxjs": "^0.4.0",
     "@supabase/supabase-js": "^2.106.0",
     "docx-preview": "^0.4.0",

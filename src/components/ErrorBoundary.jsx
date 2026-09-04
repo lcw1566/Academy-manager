@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import * as Sentry from '@sentry/react';
 import useAcademyStore from '../store/useAcademyStore';
 
 // Functional fallback so we can use hooks (store)
@@ -63,6 +64,16 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     const store = useAcademyStore.getState();
+
+    Sentry.withScope((scope) => {
+      scope.setTag('seenit.role', store.role || 'unknown');
+      scope.setTag('seenit.mode', store.currentMode || 'unknown');
+      scope.setTag('seenit.active_tab', store.activeTab || 'unknown');
+      scope.setContext('react', {
+        componentStack: info?.componentStack || null,
+      });
+      Sentry.captureException(error);
+    });
 
     console.error('[ErrorBoundary] 렌더링 오류 발생', {
       '── 오류 정보 ──': '',
