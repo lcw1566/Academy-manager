@@ -1,7 +1,8 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Plus, ChevronDown, ChevronUp, Pencil, Trash2, Clock3, CheckCircle2, MapPin,
+  Plus, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, CalendarDays,
+  Pencil, Trash2, Clock3, CheckCircle2, MapPin,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
@@ -16,11 +17,11 @@ import ClinicInlineWorksheet from './ClinicInlineWorksheet';
 import ClinicEventFormModal from './ClinicEventFormModal';
 import {
   today,
+  addDaysYMD,
   formatDateShort,
   getKoreanWeekdayFromYMD,
-  isThisWeek,
 } from '../../../utils/date';
-import { CLINIC_SUBJECT_FILTERS, DATE_FILTER_OPTIONS } from '../../../constants/labels';
+import { CLINIC_SUBJECT_FILTERS } from '../../../constants/labels';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import {
   CLINIC_ACTIVITY_TYPES,
@@ -33,35 +34,88 @@ import {
   plannedToClassSessionShape,
 } from '../../../utils/schedule';
 
-function groupByDate(records) {
-  const map = {};
-  records.forEach((r) => {
-    const d = r.date || 'unknown';
-    if (!map[d]) map[d] = [];
-    map[d].push(r);
-  });
-  return Object.entries(map).sort((a, b) => b[0].localeCompare(a[0]));
-}
+function DateStepper({ value, todayValue, onChange, recordCount, scheduleCount }) {
+  const touchStart = useRef(null);
+  const [year, month, day] = String(value || '').split('-').map(Number);
+  const [todayYear] = String(todayValue || '').split('-').map(Number);
+  const weekday = getKoreanWeekdayFromYMD(value);
+  const isToday = value === todayValue;
+  const dateLabel = `${year !== todayYear ? `${year}년 ` : ''}${month || ''}월 ${day || ''}일 ${weekday}요일`;
 
-function formatGroupDate(dateStr) {
-  if (!dateStr || dateStr === 'unknown') return '날짜 없음';
-  const [y, m, d] = dateStr.split('-');
-  const weekday = getKoreanWeekdayFromYMD(dateStr);
-  return `${y}년 ${parseInt(m)}월 ${parseInt(d)}일 ${weekday}요일`;
-}
+  const handleTouchEnd = (event) => {
+    if (!touchStart.current) return;
+    const distanceX = touchStart.current.x - event.changedTouches[0].clientX;
+    const distanceY = touchStart.current.y - event.changedTouches[0].clientY;
+    touchStart.current = null;
+    if (Math.abs(distanceX) < 48 || Math.abs(distanceX) <= Math.abs(distanceY) * 1.2) return;
+    onChange(addDaysYMD(value, distanceX > 0 ? 1 : -1));
+  };
 
-function isInDateRange(dateStr, filter) {
-  if (filter === 'all') return true;
-  if (filter === 'today') {
-    return dateStr === today();
-  }
-  if (filter === 'week') {
-    return isThisWeek(dateStr);
-  }
-  if (filter === 'month') {
-    return dateStr.slice(0, 7) === today().slice(0, 7);
-  }
-  return true;
+  return (
+    <section
+      className="border-b border-seenit-border-soft bg-seenit-surface px-4 py-3"
+      onTouchStart={(event) => {
+        touchStart.current = {
+          x: event.touches[0].clientX,
+          y: event.touches[0].clientY,
+        };
+      }}
+      onTouchEnd={handleTouchEnd}
+    >
+      <div className="mx-auto flex w-full max-w-xl items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onChange(addDaysYMD(value, -1))}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-seenit-muted transition-colors hover:bg-seenit-control active:scale-95"
+          aria-label="이전 날짜"
+          title="이전 날짜"
+        >
+          <ChevronLeft size={21} />
+        </button>
+
+        <label className="relative flex h-10 min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg text-seenit-ink transition-colors hover:bg-seenit-elevated">
+          <CalendarDays size={17} className="shrink-0 text-seenit-brand" />
+          <span className="truncate text-sm font-extrabold" aria-live="polite">
+            {isToday ? `오늘 · ${dateLabel}` : dateLabel}
+          </span>
+          <input
+            type="date"
+            value={value}
+            onChange={(event) => {
+              if (event.target.value) onChange(event.target.value);
+            }}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            aria-label="클리닉 날짜 선택"
+          />
+        </label>
+
+        <button
+          type="button"
+          onClick={() => onChange(addDaysYMD(value, 1))}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-seenit-muted transition-colors hover:bg-seenit-control active:scale-95"
+          aria-label="다음 날짜"
+          title="다음 날짜"
+        >
+          <ChevronRight size={21} />
+        </button>
+      </div>
+
+      <div className="mx-auto mt-1 flex min-h-7 w-full max-w-xl items-center justify-between gap-3 px-1">
+        <p className="truncate text-xs font-semibold text-seenit-muted">
+          일정 {scheduleCount}개 · 활동 기록 {recordCount}건
+        </p>
+        {!isToday && (
+          <button
+            type="button"
+            onClick={() => onChange(todayValue)}
+            className="shrink-0 text-xs font-bold text-seenit-brand active:opacity-60"
+          >
+            오늘로
+          </button>
+        )}
+      </div>
+    </section>
+  );
 }
 
 const SUPPORT_TAG_LABELS = {
@@ -109,7 +163,7 @@ export default function ClinicPage() {
   );
 
   const [subjectFilter, setSubjectFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('all');
+  const [selectedDate, setSelectedDate] = useState(() => today());
   const [search, setSearch] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -122,6 +176,7 @@ export default function ClinicPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
 
   const todayStr = today();
+  const isSelectedToday = selectedDate === todayStr;
 
   useEffect(() => {
     if (!currentAcademyId) return;
@@ -129,7 +184,7 @@ export default function ClinicPage() {
   }, [currentAcademyId, loadServerClinicEvents]);
 
   useEffect(() => {
-    if (!currentAcademyId || !todayStr) return;
+    if (!currentAcademyId || !selectedDate) return;
     void (async () => {
       try {
         // 로그인 직후 또는 다른 기기에서 반 시간을 바꾼 직후에도 전역 초기화와
@@ -138,14 +193,14 @@ export default function ClinicPage() {
           loadServerClassGroups(),
           loadServerClassSessions(),
           loadClassScheduleRules(),
-          loadClassSessionExceptions({ fromDate: todayStr, toDate: todayStr }),
+          loadClassSessionExceptions({ fromDate: selectedDate, toDate: selectedDate }),
         ]);
         await ensureClassSessionsForRangeLocal({
-          fromDate: todayStr,
-          toDate: todayStr,
+          fromDate: selectedDate,
+          toDate: selectedDate,
         });
       } catch (error) {
-        console.warn('[clinic] 오늘 수업 회차 준비 실패', error);
+        console.warn('[clinic] 선택 날짜 수업 회차 준비 실패', error);
       }
     })();
   }, [
@@ -155,7 +210,7 @@ export default function ClinicPage() {
     loadClassSessionExceptions,
     loadServerClassGroups,
     loadServerClassSessions,
-    todayStr,
+    selectedDate,
   ]);
 
   // 보조강사: 강사가 수업에서 남긴 보완 항목 목록
@@ -171,11 +226,15 @@ export default function ClinicPage() {
       })
       .sort((a, b) => (b.session?.date || '').localeCompare(a.session?.date || ''));
   }, [role, academyLessonRecords, classSessions, classGroups, academyStudents]);
+  const selectedSupportItems = useMemo(
+    () => supportItems.filter((item) => item.session?.date === selectedDate),
+    [supportItems, selectedDate],
+  );
 
   const [showClinicFromSupport, setShowClinicFromSupport] = useState(null);
 
   const filtered = useMemo(() => {
-    let list = clinicRecords.slice();
+    let list = clinicRecords.filter((record) => record.date === selectedDate);
     const query = search.trim().toLowerCase();
     if (query) {
       list = list.filter((record) => {
@@ -200,27 +259,28 @@ export default function ClinicPage() {
         list = list.filter((r) => r.subject === subjectFilter);
       }
     }
-    list = list.filter((r) => isInDateRange(r.date, dateFilter));
-    return list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  }, [clinicRecords, academyStudents, classGroups, search, subjectFilter, dateFilter]);
+    return list;
+  }, [clinicRecords, academyStudents, classGroups, search, subjectFilter, selectedDate]);
 
-  const todayCount = useMemo(() => clinicRecords.filter((r) => r.date === todayStr).length, [clinicRecords, todayStr]);
-  const weekCount = useMemo(() => clinicRecords.filter((r) => isInDateRange(r.date, 'week')).length, [clinicRecords]);
+  const selectedDateRecordCount = useMemo(
+    () => clinicRecords.filter((record) => record.date === selectedDate).length,
+    [clinicRecords, selectedDate],
+  );
   // 수업·등하원과 같은 계산기를 사용한다. RPC가 실제 회차를 반영하기 전에도
   // 규칙상 오늘 수업은 보이고, 실제 행이 도착하면 자연키 기준으로 하나만 남는다.
-  const todayScheduleSessions = useMemo(() => {
+  const selectedScheduleSessions = useMemo(() => {
     const planned = plannedToClassSessionShape(
       buildPlannedClassSessions({
         rules: classScheduleRules,
         exceptions: classSessionExceptions,
-        fromDate: todayStr,
-        toDate: todayStr,
+        fromDate: selectedDate,
+        toDate: selectedDate,
       }),
       classGroups,
     );
     return mergePlannedAndActualClassSessions(planned, classSessions)
       .filter((session) => (
-        session.date === todayStr
+        session.date === selectedDate
         && !['canceled', 'cancelled'].includes(session.status)
       ));
   }, [
@@ -228,10 +288,10 @@ export default function ClinicPage() {
     classScheduleRules,
     classSessionExceptions,
     classSessions,
-    todayStr,
+    selectedDate,
   ]);
 
-  const todayExpectedGroups = useMemo(() => todayScheduleSessions
+  const selectedExpectedGroups = useMemo(() => selectedScheduleSessions
     .slice()
     .sort((a, b) => (
       (a.startTime || '').localeCompare(b.startTime || '')
@@ -250,7 +310,7 @@ export default function ClinicPage() {
         .map((student) => ({
           ...student,
           clinicRecord: clinicRecords.find((record) => (
-            record.date === todayStr
+            record.date === selectedDate
             && record.studentId === student.id
             && (
               record.classSessionId === session.id
@@ -268,14 +328,14 @@ export default function ClinicPage() {
       return { session, group, students };
     })
     .filter((item) => item.students.length > 0), [
-    todayScheduleSessions,
+    selectedScheduleSessions,
     classGroups,
     academyStudents,
     clinicRecords,
-    todayStr,
+    selectedDate,
   ]);
-  const todayClinicEventGroups = useMemo(() => clinicEvents
-    .filter((event) => event.event_date === todayStr && event.status !== 'cancelled')
+  const selectedClinicEventGroups = useMemo(() => clinicEvents
+    .filter((event) => event.event_date === selectedDate && event.status !== 'cancelled')
     .slice()
     .sort((left, right) => (
       String(left.start_time || '99:99').localeCompare(String(right.start_time || '99:99'))
@@ -325,23 +385,15 @@ export default function ClinicPage() {
         },
         students,
       };
-    }), [clinicEvents, todayStr, classGroups, clinicRecords, academyStudents]);
-  const unlinkedTodayExpectedGroups = useMemo(() => {
-    const linkedGroupIds = new Set(todayClinicEventGroups
+    }), [clinicEvents, selectedDate, classGroups, clinicRecords, academyStudents]);
+  const unlinkedSelectedExpectedGroups = useMemo(() => {
+    const linkedGroupIds = new Set(selectedClinicEventGroups
       .map(({ event }) => event.class_group_id)
       .filter(Boolean));
-    return todayExpectedGroups.filter(({ group }) => (
+    return selectedExpectedGroups.filter(({ group }) => (
       !group || (!linkedGroupIds.has(group.id) && !linkedGroupIds.has(group.serverId))
     ));
-  }, [todayClinicEventGroups, todayExpectedGroups]);
-  const upcomingClinicEvents = useMemo(() => clinicEvents
-    .filter((event) => event.event_date > todayStr && event.status !== 'cancelled')
-    .slice()
-    .sort((left, right) => (
-      String(left.event_date).localeCompare(String(right.event_date))
-      || String(left.start_time || '99:99').localeCompare(String(right.start_time || '99:99'))
-    ))
-    .slice(0, 12), [clinicEvents, todayStr]);
+  }, [selectedClinicEventGroups, selectedExpectedGroups]);
   const temporaryClinicSubject = useMemo(() => {
     const subjects = Array.isArray(academyProfile?.academySubjects)
       ? academyProfile.academySubjects
@@ -350,7 +402,7 @@ export default function ClinicPage() {
     return ACADEMY_SUBJECT_OPTIONS.find((option) => option.id === subjects[0])?.label || '';
   }, [academyProfile?.academySubjects]);
   const temporaryClinicStudents = useMemo(() => {
-    if (classGroups.length > 0 || todayExpectedGroups.length > 0) return [];
+    if (classGroups.length > 0 || selectedExpectedGroups.length > 0) return [];
     return academyStudents
       .filter((student) => (student.status || 'active') !== 'inactive')
       .slice()
@@ -358,15 +410,15 @@ export default function ClinicPage() {
       .map((student) => ({
         ...student,
         clinicRecord: clinicRecords.find((record) => (
-          record.date === todayStr && record.studentId === student.id
+          record.date === selectedDate && record.studentId === student.id
         )) || null,
       }));
-  }, [classGroups.length, todayExpectedGroups.length, academyStudents, clinicRecords, todayStr]);
+  }, [classGroups.length, selectedExpectedGroups.length, academyStudents, clinicRecords, selectedDate]);
   const temporaryClinicSession = useMemo(() => ({
-    id: `temporary-clinic-${todayStr}`,
-    date: todayStr,
+    id: `temporary-clinic-${selectedDate}`,
+    date: selectedDate,
     isTemporary: true,
-  }), [todayStr]);
+  }), [selectedDate]);
   const temporaryClinicGroup = useMemo(() => ({
     id: '',
     name: '전체 학생',
@@ -374,8 +426,9 @@ export default function ClinicPage() {
     isTemporary: true,
   }), [temporaryClinicSubject]);
 
-  const grouped = useMemo(() => groupByDate(filtered), [filtered]);
-  const hasRecordQuery = !!search.trim() || dateFilter !== 'all' || subjectFilter !== 'all';
+  const hasRecordQuery = !!search.trim() || subjectFilter !== 'all';
+  const selectedScheduleCount = selectedClinicEventGroups.length
+    + unlinkedSelectedExpectedGroups.length;
   const toggleExpectedGroup = (sessionId) => {
     setExpandedExpectedIds((current) => {
       const next = new Set(current);
@@ -395,11 +448,11 @@ export default function ClinicPage() {
         ? await materializePlannedClassSession(session)
         : session;
       if (!actualSession?.id) {
-        throw new Error('오늘 수업 회차를 준비하지 못했어요.');
+        throw new Error('선택한 날짜의 수업 회차를 준비하지 못했어요.');
       }
       setQuickTarget({
         studentId: student.id,
-        date: todayStr,
+        date: selectedDate,
         subject: group?.subject || '',
         classGroupId: group?.id || '',
         classSessionId: actualSession.id,
@@ -442,7 +495,7 @@ export default function ClinicPage() {
     studentId: item.studentId,
     classGroupId: item.group?.id || '',
     classSessionId: item.sessionId || '',
-    date: item.session?.date || todayStr,
+    date: item.session?.date || selectedDate,
     subject: item.group?.subject || '',
     sourceSupportTags: item.supportTags || [],
     sourceSupportMemo: item.supportMemo || '',
@@ -491,26 +544,30 @@ export default function ClinicPage() {
       />
 
       <div className="pt-14 md:pt-0 pb-6">
-        {/* 요약 */}
-        <div className="px-4 pt-4 grid grid-cols-2 gap-3 mb-4">
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <p className="text-xs text-gray-500 mb-1">오늘 활동 기록</p>
-            <p className={`text-2xl font-bold ${todayCount > 0 ? 'text-blue-600' : 'text-gray-900'}`}>{todayCount}건</p>
-          </div>
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <p className="text-xs text-gray-500 mb-1">이번 주 활동</p>
-            <p className="text-2xl font-bold text-gray-900">{weekCount}건</p>
-          </div>
-        </div>
+        <DateStepper
+          value={selectedDate}
+          todayValue={todayStr}
+          onChange={(nextDate) => {
+            setSelectedDate(nextDate);
+            setExpandedExpectedIds(new Set());
+            setExpandedId(null);
+          }}
+          recordCount={selectedDateRecordCount}
+          scheduleCount={selectedScheduleCount}
+        />
 
-        {todayClinicEventGroups.length > 0 && (
-          <section className="px-4 mb-5">
+        {selectedClinicEventGroups.length > 0 && (
+          <section className="px-4 mt-5 mb-5">
             <div className="mb-2">
-              <p className="text-sm font-bold text-gray-900">오늘 클리닉</p>
+              <p className="text-sm font-bold text-gray-900">
+                {isSelectedToday
+                  ? '오늘 클리닉'
+                  : `${Number(selectedDate.slice(5, 7))}월 ${Number(selectedDate.slice(8, 10))}일 클리닉`}
+              </p>
               <p className="mt-0.5 text-[11px] text-gray-400">일정별로 펼치고 학생마다 한 행에서 기록하세요.</p>
             </div>
             <div className="flex flex-col gap-2">
-              {todayClinicEventGroups.map(({ event, session, group, students }) => {
+              {selectedClinicEventGroups.map(({ event, session, group, students }) => {
                 const expansionKey = `event-${event.id}`;
                 const expanded = expandedExpectedIds.has(expansionKey);
                 return (
@@ -587,37 +644,8 @@ export default function ClinicPage() {
           </section>
         )}
 
-        {upcomingClinicEvents.length > 0 && (
-          <section className="px-4 mb-5">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-bold text-gray-900">예정 일정</p>
-              <span className="text-[11px] font-semibold text-gray-400">{upcomingClinicEvents.length}개</span>
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-              {upcomingClinicEvents.map((event) => (
-                <button
-                  key={event.id}
-                  type="button"
-                  onClick={() => { if (canEditClinic) setEditEvent(event); }}
-                  disabled={!canEditClinic}
-                  className="min-w-[210px] flex-shrink-0 rounded-2xl bg-white p-3.5 text-left shadow-sm"
-                >
-                  <span className="block text-[11px] font-bold text-[#3182F6]">
-                    {formatDateShort(event.event_date)}
-                    {event.start_time ? ` · ${event.start_time.slice(0, 5)}` : ''}
-                  </span>
-                  <span className="mt-1.5 block truncate text-sm font-extrabold text-[#191F28]">{event.name}</span>
-                  <span className="mt-1 block truncate text-[11px] font-medium text-[#8B95A1]">
-                    {[event.subject, event.room, `${event.clinic_event_students?.length || 0}명`].filter(Boolean).join(' · ')}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {unlinkedTodayExpectedGroups.length > 0 && (
-          <section className="px-4 mb-5">
+        {unlinkedSelectedExpectedGroups.length > 0 && (
+          <section className={`px-4 mb-5 ${selectedClinicEventGroups.length === 0 ? 'mt-5' : ''}`}>
             <div className="mb-2 flex items-end justify-between">
               <div>
                 <p className="text-sm font-bold text-gray-900">수업에서 바로 기록</p>
@@ -629,7 +657,7 @@ export default function ClinicPage() {
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              {unlinkedTodayExpectedGroups.map(({ session, group, students }) => (
+              {unlinkedSelectedExpectedGroups.map(({ session, group, students }) => (
                 <div key={session.id} className="overflow-hidden rounded-2xl bg-white shadow-sm">
                   <button
                     type="button"
@@ -716,7 +744,7 @@ export default function ClinicPage() {
         )}
 
         {temporaryClinicStudents.length > 0 && (
-          <section className="px-4 mb-5">
+          <section className="px-4 mt-5 mb-5">
             <div className="mb-2">
               <p className="text-sm font-bold text-gray-900">학생 목록</p>
               <p className="mt-0.5 text-[11px] text-gray-400">
@@ -771,7 +799,7 @@ export default function ClinicPage() {
                         }
                         setQuickTarget({
                           studentId: student.id,
-                          date: todayStr,
+                          date: selectedDate,
                           subject: temporaryClinicSubject,
                           classGroupId: '',
                           classSessionId: '',
@@ -808,11 +836,11 @@ export default function ClinicPage() {
         )}
 
         {/* 보조강사: 수업에서 남긴 보완 항목 */}
-        {role === 'assistant' && supportItems.length > 0 && (
-          <div className="px-4 mb-5">
+        {role === 'assistant' && selectedSupportItems.length > 0 && (
+          <div className="px-4 mt-5 mb-5">
             <p className="text-sm font-bold text-gray-700 mb-2">수업에서 남긴 보완 항목</p>
             <div className="flex flex-col gap-2">
-              {supportItems.map((item, index) => (
+              {selectedSupportItems.map((item, index) => (
                 <div key={item.id} className="bg-orange-50 rounded-2xl px-4 py-3.5 border border-orange-100">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex-1 min-w-0">
@@ -831,7 +859,7 @@ export default function ClinicPage() {
                     <motion.button
                       whileTap={{ scale: 0.97 }}
                       onClick={() => setShowClinicFromSupport({
-                        targets: supportItems.map(buildSupportRelayTarget),
+                        targets: selectedSupportItems.map(buildSupportRelayTarget),
                         initialRelayIndex: index,
                       })}
                       className="flex-shrink-0 text-xs font-semibold text-white bg-orange-500 px-3 py-1.5 rounded-xl"
@@ -857,26 +885,23 @@ export default function ClinicPage() {
           </div>
         )}
 
-        <div className="px-4 mb-4">
+        <section className="px-4 mt-5 mb-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-sm font-bold text-seenit-ink">활동 기록</p>
+            <span className="text-xs font-semibold text-seenit-subtle">{selectedDateRecordCount}건</span>
+          </div>
           <ListSearchFilterBar
             searchValue={search}
             onSearchChange={setSearch}
             placeholder="학생·반·과목 검색"
-            filterCount={(dateFilter === 'all' ? 0 : 1) + (subjectFilter === 'all' ? 0 : 1)}
+            filterCount={subjectFilter === 'all' ? 0 : 1}
             filtersOpen={filtersOpen}
             onToggleFilters={() => setFiltersOpen((open) => !open)}
             onResetFilters={() => {
-              setDateFilter('all');
               setSubjectFilter('all');
             }}
             resultText={`${filtered.length}건`}
           >
-            <ListFilterChips
-              value={dateFilter}
-              onChange={setDateFilter}
-              ariaLabel="클리닉 날짜 필터"
-              options={DATE_FILTER_OPTIONS.map(({ id, label }) => ({ value: id, label }))}
-            />
             <ListFilterChips
               value={subjectFilter}
               onChange={setSubjectFilter}
@@ -884,50 +909,47 @@ export default function ClinicPage() {
               options={CLINIC_SUBJECT_FILTERS.map(({ id, label }) => ({ value: id, label }))}
             />
           </ListSearchFilterBar>
-        </div>
+        </section>
 
         {/* 클리닉 목록 */}
-        {grouped.length === 0 ? (
+        {filtered.length === 0 ? (
           hasRecordQuery ? (
             <EmptyState
               icon="🔍"
               title="조건에 맞는 기록이 없어요"
               description="검색어나 필터를 다시 확인해주세요."
             />
-          ) : todayClinicEventGroups.length === 0
-          && upcomingClinicEvents.length === 0
-          && unlinkedTodayExpectedGroups.length === 0
+          ) : selectedClinicEventGroups.length === 0
+          && unlinkedSelectedExpectedGroups.length === 0
           && temporaryClinicStudents.length === 0
+          && selectedSupportItems.length === 0
             ? (
               <EmptyState
                 icon="📋"
-                title="클리닉 일정이 없어요"
-                description="+ 버튼을 눌러 학생을 배정하고 바로 기록해보세요."
+                title={isSelectedToday ? '오늘 클리닉이 없어요' : '이 날짜에는 클리닉이 없어요'}
+                description="+ 버튼을 눌러 학생을 배정하고 기록해보세요."
               />
             )
-            : null
-        ) : (
-          <div className="px-4 flex flex-col gap-5">
-            {grouped.map(([dateStr, records]) => (
-              <div key={dateStr}>
-                <p className="text-xs font-bold text-gray-400 mb-2">{formatGroupDate(dateStr)}</p>
-                <div className="flex flex-col gap-2">
-                  {records.map((record) => (
-                    <ClinicRecordCard
-                      key={record.id}
-                      record={record}
-                      academyStudents={academyStudents}
-                      classGroups={classGroups}
-                      expanded={expandedId === record.id}
-                      onToggle={() => setExpandedId(expandedId === record.id ? null : record.id)}
-                      onEdit={() => { setEditRecord(record); setExpandedId(null); }}
-                      onDeleteRequest={() => setDeleteConfirmId(record.id)}
-                      canEditRecord={canEditRecord(record)}
-                      canDeleteRecord={canDeleteRecord(record)}
-                    />
-                  ))}
-                </div>
+            : (
+              <div className="px-4 py-5 text-center">
+                <p className="text-sm font-semibold text-seenit-muted">아직 저장된 활동 기록이 없어요.</p>
               </div>
+            )
+        ) : (
+          <div className="px-4 flex flex-col gap-2">
+            {filtered.map((record) => (
+              <ClinicRecordCard
+                key={record.id}
+                record={record}
+                academyStudents={academyStudents}
+                classGroups={classGroups}
+                expanded={expandedId === record.id}
+                onToggle={() => setExpandedId(expandedId === record.id ? null : record.id)}
+                onEdit={() => { setEditRecord(record); setExpandedId(null); }}
+                onDeleteRequest={() => setDeleteConfirmId(record.id)}
+                canEditRecord={canEditRecord(record)}
+                canDeleteRecord={canDeleteRecord(record)}
+              />
             ))}
           </div>
         )}
@@ -950,6 +972,7 @@ export default function ClinicPage() {
       {(showEventForm || editEvent) && (
         <ClinicEventFormModal
           event={editEvent}
+          initialDate={selectedDate}
           onClose={() => { setShowEventForm(false); setEditEvent(null); }}
         />
       )}

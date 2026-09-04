@@ -14,6 +14,7 @@ import useAcademyStore from '../store/useAcademyStore';
 import useAuthStore from '../store/useAuthStore';
 import useWorkspaceStore from '../store/useWorkspaceStore';
 import FeedbackModal from './FeedbackModal';
+import UpdateAnnouncementModal from './UpdateAnnouncementModal';
 
 const ROLE_LABEL = {
   tutor: '과외 선생님',
@@ -130,6 +131,7 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
       </button>
 
       <FeedbackModal isOpen={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+      <UpdateAnnouncementModal />
     </>
   );
 }

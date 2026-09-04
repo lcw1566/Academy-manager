@@ -18,7 +18,7 @@ function participantIdsOf(event) {
   );
 }
 
-export default function ClinicEventFormModal({ event = null, onClose }) {
+export default function ClinicEventFormModal({ event = null, initialDate = null, onClose }) {
   const academyStudents = useAcademyStore((state) => state.academyStudents) ?? [];
   const classGroups = useAcademyStore((state) => state.classGroups) ?? [];
   const showToast = useAcademyStore((state) => state.showToast);
@@ -27,7 +27,7 @@ export default function ClinicEventFormModal({ event = null, onClose }) {
 
   const [name, setName] = useState(event?.name || '');
   const [nameTouched, setNameTouched] = useState(!!event?.name);
-  const [date, setDate] = useState(event?.event_date || today());
+  const [date, setDate] = useState(event?.event_date || initialDate || today());
   const [startTime, setStartTime] = useState(event?.start_time?.slice(0, 5) || '');
   const [endTime, setEndTime] = useState(event?.end_time?.slice(0, 5) || '');
   const [subject, setSubject] = useState(event?.subject || '');
