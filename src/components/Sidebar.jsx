@@ -8,10 +8,12 @@
 //
 // tabs 항목은 { id, label, Icon } 또는 { id, label, icon } 형식 둘 다 지원
 // (학원 모드 = Icon, 과외 모드 BottomNav = icon).
-import { Building2 } from 'lucide-react';
+import { useState } from 'react';
+import { Building2, MessageCircleQuestion } from 'lucide-react';
 import useAcademyStore from '../store/useAcademyStore';
 import useAuthStore from '../store/useAuthStore';
 import useWorkspaceStore from '../store/useWorkspaceStore';
+import FeedbackModal from './FeedbackModal';
 
 const ROLE_LABEL = {
   tutor: '과외 선생님',
@@ -22,6 +24,7 @@ const ROLE_LABEL = {
 };
 
 export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds = [] }) {
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const role = useAcademyStore((s) => s.role);
   const activeTab = useAcademyStore((s) => s.activeTab);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -32,12 +35,25 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
   const academyName = currentMembership?.academy?.name;
 
   return (
-    <aside className="hidden md:flex md:flex-col w-[260px] shrink-0 bg-seenit-surface border-r border-seenit-border-soft h-screen sticky top-0">
-      {/* 브랜드 + 역할 */}
-      <div className="px-5 py-5 border-b border-seenit-border-soft">
-        <p className="text-base font-bold text-seenit-ink">씨닛</p>
-        <p className="text-xs text-seenit-muted mt-1">{ROLE_LABEL[role] ?? role ?? ''}</p>
-      </div>
+    <>
+      <aside className="hidden md:flex md:flex-col w-[260px] shrink-0 bg-seenit-surface border-r border-seenit-border-soft h-screen sticky top-0">
+        {/* 브랜드 + 역할 */}
+        <div className="flex items-center justify-between gap-3 border-b border-seenit-border-soft px-5 py-5">
+          <div className="min-w-0">
+            <p className="text-base font-bold text-seenit-ink">씨닛</p>
+            <p className="mt-1 truncate text-xs text-seenit-muted">{ROLE_LABEL[role] ?? role ?? ''}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFeedbackOpen(true)}
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-seenit-border bg-seenit-surface px-2.5 text-xs font-bold text-seenit-secondary transition-colors hover:bg-seenit-elevated"
+            aria-label="버그 신고 및 개선 제안"
+            title="버그 신고 및 개선 제안"
+          >
+            <MessageCircleQuestion size={16} />
+            의견
+          </button>
+        </div>
 
       {/* 탭 목록 */}
       <nav className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-0.5">
@@ -101,6 +117,19 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
           )}
         </div>
       )}
-    </aside>
+      </aside>
+
+      <button
+        type="button"
+        onClick={() => setFeedbackOpen(true)}
+        className="fixed bottom-[5.25rem] right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-seenit-border bg-seenit-surface text-seenit-secondary shadow-lg md:hidden"
+        aria-label="버그 신고 및 개선 제안"
+        title="버그 신고 및 개선 제안"
+      >
+        <MessageCircleQuestion size={21} />
+      </button>
+
+      <FeedbackModal isOpen={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
+    </>
   );
 }
