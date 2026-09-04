@@ -53,7 +53,7 @@ function DateStepper({ value, todayValue, onChange, recordCount, scheduleCount }
 
   return (
     <section
-      className="border-b border-seenit-border-soft bg-seenit-surface px-4 py-3"
+      className="mx-4 mt-4 overflow-hidden rounded-2xl border border-seenit-border-soft bg-seenit-surface px-3 py-2 shadow-sm"
       onTouchStart={(event) => {
         touchStart.current = {
           x: event.touches[0].clientX,
@@ -66,15 +66,15 @@ function DateStepper({ value, todayValue, onChange, recordCount, scheduleCount }
         <button
           type="button"
           onClick={() => onChange(addDaysYMD(value, -1))}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-seenit-muted transition-colors hover:bg-seenit-control active:scale-95"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-seenit-muted transition-colors hover:bg-seenit-control active:scale-95"
           aria-label="이전 날짜"
           title="이전 날짜"
         >
-          <ChevronLeft size={21} />
+          <ChevronLeft size={19} />
         </button>
 
-        <label className="relative flex h-10 min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg text-seenit-ink transition-colors hover:bg-seenit-elevated">
-          <CalendarDays size={17} className="shrink-0 text-seenit-brand" />
+        <label className="relative flex h-8 min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg text-seenit-ink transition-colors hover:bg-seenit-elevated">
+          <CalendarDays size={16} className="shrink-0 text-seenit-brand" />
           <span className="truncate text-sm font-extrabold" aria-live="polite">
             {isToday ? `오늘 · ${dateLabel}` : dateLabel}
           </span>
@@ -92,23 +92,23 @@ function DateStepper({ value, todayValue, onChange, recordCount, scheduleCount }
         <button
           type="button"
           onClick={() => onChange(addDaysYMD(value, 1))}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-seenit-muted transition-colors hover:bg-seenit-control active:scale-95"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-seenit-muted transition-colors hover:bg-seenit-control active:scale-95"
           aria-label="다음 날짜"
           title="다음 날짜"
         >
-          <ChevronRight size={21} />
+          <ChevronRight size={19} />
         </button>
       </div>
 
-      <div className="mx-auto mt-1 flex min-h-7 w-full max-w-xl items-center justify-between gap-3 px-1">
-        <p className="truncate text-xs font-semibold text-seenit-muted">
+      <div className="relative mx-auto flex min-h-5 w-full max-w-xl items-center justify-center px-10">
+        <p className="truncate text-[11px] font-semibold text-seenit-muted">
           일정 {scheduleCount}개 · 활동 기록 {recordCount}건
         </p>
         {!isToday && (
           <button
             type="button"
             onClick={() => onChange(todayValue)}
-            className="shrink-0 text-xs font-bold text-seenit-brand active:opacity-60"
+            className="absolute right-0 shrink-0 text-[11px] font-bold text-seenit-brand active:opacity-60"
           >
             오늘로
           </button>

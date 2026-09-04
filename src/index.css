@@ -7,6 +7,13 @@
   box-sizing: border-box;
 }
 
+/* 짧은 화면과 긴 화면 사이에서 세로 스크롤바 유무로 본문 폭이 흔들리지 않게 한다. */
+@media (min-width: 768px) {
+  html {
+    scrollbar-gutter: stable;
+  }
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Segoe UI', sans-serif;
   background-color: rgb(var(--seenit-color-canvas, 242 244 246));
