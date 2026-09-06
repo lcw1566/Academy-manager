@@ -346,7 +346,7 @@ export default function ClinicInlineWorksheet({
         ? await materializePlannedClassSession(session)
         : session;
       if (!session?.isTemporary && !clinicEvent && !resolvedSession?.id) {
-        throw new Error('오늘 수업 회차를 준비하지 못했어요.');
+        throw new Error('선택한 날짜의 수업 회차를 준비하지 못했어요.');
       }
 
       for (const student of targetStudents) {
