@@ -77,6 +77,7 @@ import useAcademyStore from './useAcademyStore';
 import { ensureFreshSession } from '../services/supabase/authApi';
 import {
   isAuthenticationRequestError,
+  isJwtIssuedInFutureError,
   isTransientRequestError,
   retryAsync,
 } from '../utils/asyncRetry';
@@ -2440,7 +2441,11 @@ const useWorkspaceStore = create(
                 } catch (error) {
                   // 자동 갱신과 첫 PostgREST 요청이 엇갈린 경우, 새 토큰을 확정한 뒤
                   // 동일 요청을 한 번만 다시 보낸다. 실제 권한 오류(403)는 대상이 아니다.
-                  if (!authRefreshAttempted && isAuthenticationRequestError(error)) {
+                  if (
+                    !authRefreshAttempted
+                    && isAuthenticationRequestError(error)
+                    && !isJwtIssuedInFutureError(error)
+                  ) {
                     authRefreshAttempted = true;
                     await ensureFreshSession({ forceRefresh: true });
                     [, loadedMemberships] = await loadRequiredWorkspaceData();
@@ -2481,8 +2486,8 @@ const useWorkspaceStore = create(
                 }
               },
               {
-                attempts: 4,
-                delays: [300, 800, 1600],
+                attempts: 5,
+                delays: [500, 1000, 2000, 4000],
                 shouldRetry: (error) => (
                   error?.code === 'WORKSPACE_MEMBERSHIP_NOT_READY'
                   || error?.code === 'WORKSPACE_DETAILS_NOT_READY'
@@ -2542,7 +2547,16 @@ const useWorkspaceStore = create(
                 || isAuthenticationRequestError(error)
                 || isTransientRequestError(error)
               );
-              Sentry.captureException(error, {
+              const reportedError = error instanceof Error
+                ? error
+                : Object.assign(
+                  new Error(error?.message || 'Workspace initialization failed'),
+                  {
+                    name: 'WorkspaceInitializationError',
+                    code: error?.code,
+                  },
+                );
+              Sentry.captureException(reportedError, {
                 tags: {
                   area: 'workspace-initialization',
                   retryable: String(retryable),
@@ -2551,6 +2565,7 @@ const useWorkspaceStore = create(
                   code: error?.code || null,
                   status: error?.status || error?.statusCode || null,
                   hadRememberedAcademy: Boolean(get().currentAcademyId),
+                  originalError: error && typeof error === 'object' ? error : null,
                 },
               });
               set({

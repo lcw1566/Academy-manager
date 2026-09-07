@@ -7,10 +7,19 @@ function readErrorStatus(error) {
   return Number.isFinite(status) ? status : null;
 }
 
+export function isJwtIssuedInFutureError(error) {
+  if (!error) return false;
+  const code = String(error.code || '').toUpperCase();
+  const message = `${error.name || ''} ${error.message || error}`.toLowerCase();
+  return code === 'PGRST303' && message.includes('jwt issued at future');
+}
+
 export function isAuthenticationRequestError(error) {
   if (!error) return false;
   const status = readErrorStatus(error);
   if (status === 401) return true;
+
+  if (isJwtIssuedInFutureError(error)) return true;
 
   const code = String(error.code || '').toUpperCase();
   if (['PGRST301', 'JWT_EXPIRED'].includes(code)) return true;
