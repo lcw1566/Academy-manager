@@ -111,6 +111,7 @@ export default function App() {
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
   const isWorkspaceLoading = useWorkspaceStore((s) => s.isWorkspaceLoading);
   const workspaceError = useWorkspaceStore((s) => s.workspaceError);
+  const workspaceErrorRetryable = useWorkspaceStore((s) => s.workspaceErrorRetryable);
   const workspacePicked = useWorkspaceStore((s) => s.workspacePicked);
   const startWorkspaceRealtime = useWorkspaceStore((s) => s.startWorkspaceRealtime);
   const stopWorkspaceRealtime = useWorkspaceStore((s) => s.stopWorkspaceRealtime);
@@ -122,6 +123,7 @@ export default function App() {
   const [authEntryMode, setAuthEntryMode] = useState(null);
   const wasAuthenticatedRef = useRef(false);
   const handledWorkspaceSessionRevisionRef = useRef(authSessionRevision);
+  const workspaceRecoveryAttemptsRef = useRef(0);
 
   // 채팅 (학원 직원 전용) — 로그인 + 학원 선택 시 로드/실시간 구독.
   const loadChat = useChatStore((s) => s.loadChat);
@@ -226,6 +228,7 @@ export default function App() {
       && !isWorkspaceReady
       && workspaceError
     ) {
+      workspaceRecoveryAttemptsRef.current = 0;
       void initializeWorkspace();
     }
   }, [
@@ -237,6 +240,49 @@ export default function App() {
     isWorkspaceReady,
     workspaceError,
     initializeWorkspace,
+  ]);
+
+  // 첫 초기화의 내부 재시도가 모두 끝난 직후 연결이 회복되는 경우에도 오류
+  // 화면에 고정되지 않도록, 재시도 가능한 실패만 짧은 간격으로 다시 확인한다.
+  useEffect(() => {
+    if (!isAuthenticated || isWorkspaceReady) {
+      workspaceRecoveryAttemptsRef.current = 0;
+      return undefined;
+    }
+    if (
+      isPublicCheckin
+      || isWorkspaceLoading
+      || !workspaceError
+      || !workspaceErrorRetryable
+      || workspaceRecoveryAttemptsRef.current >= 3
+    ) {
+      return undefined;
+    }
+
+    const retryIndex = workspaceRecoveryAttemptsRef.current;
+    const retryDelay = [1500, 5000, 15000][retryIndex];
+    const timer = window.setTimeout(() => {
+      if (navigator.onLine === false) return;
+      const workspace = useWorkspaceStore.getState();
+      if (
+        workspace.isWorkspaceReady
+        || workspace.isWorkspaceLoading
+        || !workspace.workspaceError
+      ) {
+        return;
+      }
+      workspaceRecoveryAttemptsRef.current += 1;
+      void workspace.initializeWorkspace();
+    }, retryDelay);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    isAuthenticated,
+    isPublicCheckin,
+    isWorkspaceLoading,
+    isWorkspaceReady,
+    workspaceError,
+    workspaceErrorRetryable,
   ]);
 
   // 모바일 절전, Wi-Fi 전환, 브라우저 백그라운드 복귀 뒤의 일시 실패는 사용자가
@@ -639,7 +685,10 @@ export default function App() {
           <LoadingScreen
             label="학원 정보 확인 중…"
             error={!isWorkspaceLoading ? workspaceError : null}
-            onRetry={initializeWorkspace}
+            onRetry={() => {
+              workspaceRecoveryAttemptsRef.current = 0;
+              void initializeWorkspace();
+            }}
           />
         );
       }

@@ -15,6 +15,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import * as Sentry from '@sentry/react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   getProfile,
@@ -184,6 +185,7 @@ const initialState = {
   currentAcademyId: null,
   isWorkspaceLoading: false,
   workspaceError: null,
+  workspaceErrorRetryable: false,
   isWorkspaceReady: false,
   // Phase 32 — 학원 선택 화면 통과 여부 (reactive).
   workspacePicked: readInitialWorkspacePicked(),
@@ -382,7 +384,10 @@ const useWorkspaceStore = create(
     (set, get) => ({
       ...initialState,
 
-      clearWorkspaceError: () => set({ workspaceError: null }),
+      clearWorkspaceError: () => set({
+        workspaceError: null,
+        workspaceErrorRetryable: false,
+      }),
 
       clearWorkspace: () => {
         get().stopWorkspaceRealtime?.();
@@ -2401,7 +2406,11 @@ const useWorkspaceStore = create(
         }
 
         const initialization = (async () => {
-          set({ isWorkspaceLoading: true, workspaceError: null });
+          set({
+            isWorkspaceLoading: true,
+            workspaceError: null,
+            workspaceErrorRetryable: false,
+          });
           try {
             const expectedAcademyId = get().currentAcademyId;
             let sessionPrepared = false;
@@ -2477,6 +2486,7 @@ const useWorkspaceStore = create(
                 shouldRetry: (error) => (
                   error?.code === 'WORKSPACE_MEMBERSHIP_NOT_READY'
                   || error?.code === 'WORKSPACE_DETAILS_NOT_READY'
+                  || isAuthenticationRequestError(error)
                   || isTransientRequestError(error)
                 ),
                 onRetry: (error, attempt) => {
@@ -2492,6 +2502,7 @@ const useWorkspaceStore = create(
               isWorkspaceReady: true,
               isWorkspaceLoading: false,
               workspaceError: null,
+              workspaceErrorRetryable: false,
             });
 
             // 아래 데이터는 화면별 로딩 상태로 갱신한다. 실패는 각 로더가 자체
@@ -2525,8 +2536,26 @@ const useWorkspaceStore = create(
             ]);
           } catch (error) {
             if (useAuthStore.getState().user?.id === authUserId) {
+              const retryable = (
+                error?.code === 'WORKSPACE_MEMBERSHIP_NOT_READY'
+                || error?.code === 'WORKSPACE_DETAILS_NOT_READY'
+                || isAuthenticationRequestError(error)
+                || isTransientRequestError(error)
+              );
+              Sentry.captureException(error, {
+                tags: {
+                  area: 'workspace-initialization',
+                  retryable: String(retryable),
+                },
+                extra: {
+                  code: error?.code || null,
+                  status: error?.status || error?.statusCode || null,
+                  hadRememberedAcademy: Boolean(get().currentAcademyId),
+                },
+              });
               set({
                 isWorkspaceReady: false,
+                workspaceErrorRetryable: retryable,
                 workspaceError: localizeError(
                   error,
                   '학원 정보를 불러오지 못했어요. 네트워크를 확인하고 다시 시도해주세요.',
