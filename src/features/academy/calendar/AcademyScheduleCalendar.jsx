@@ -24,6 +24,7 @@ export default function AcademyScheduleCalendar({
   title,
   emptyText,
   compact = false,
+  homeOverview = false,
 }) {
   const role = useAcademyStore((state) => state.role);
   const authUserId = useAuthStore((state) => state.user?.id);
@@ -73,6 +74,7 @@ export default function AcademyScheduleCalendar({
         title={title}
         emptyText={emptyText}
         compact={compact}
+        homeOverview={homeOverview}
         onAddEvent={(date) => setModal({ event: null, initialDate: date || selectedDate })}
       />
       {modal && (

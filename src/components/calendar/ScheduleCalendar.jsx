@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import {
   addDaysYMD,
@@ -25,9 +25,7 @@ function toMinutes(value) {
 }
 
 function formatHour(minutes) {
-  const hour = Math.floor(minutes / 60);
-  const minute = minutes % 60;
-  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  return String(Math.floor(minutes / 60));
 }
 
 function formatTimeRange(schedule) {
@@ -99,7 +97,7 @@ function layoutOverlappingSchedules(schedules) {
   return result;
 }
 
-function getTimelineRange(dates, schedules) {
+function getTimelineRange(dates, schedules, includeOperatingHours = false) {
   const visible = schedules.filter((schedule) => dates.includes(schedule.date));
   const bounds = [];
   visible.forEach((schedule) => {
@@ -109,8 +107,10 @@ function getTimelineRange(dates, schedules) {
     if (end != null) bounds.push(end);
   });
   if (bounds.length === 0) return null;
-  const startMin = Math.max(0, Math.floor((Math.min(...bounds) - 45) / 60) * 60);
-  const endMin = Math.min(24 * 60, Math.ceil((Math.max(...bounds) + 45) / 60) * 60);
+  const scheduleStart = Math.max(0, Math.floor((Math.min(...bounds) - 45) / 60) * 60);
+  const scheduleEnd = Math.min(24 * 60, Math.ceil((Math.max(...bounds) + 45) / 60) * 60);
+  const startMin = includeOperatingHours ? Math.min(8 * 60, scheduleStart) : scheduleStart;
+  const endMin = includeOperatingHours ? Math.max(22 * 60, scheduleEnd) : scheduleEnd;
   const ticks = [];
   for (let value = startMin; value <= endMin; value += 60) ticks.push(value);
   return { startMin, endMin, ticks };
@@ -165,10 +165,10 @@ function AllDayLane({ dates, schedules }) {
   );
 }
 
-function TimelineEvent({ item, range, pixelsPerMinute }) {
+function TimelineEvent({ item, range, pixelsPerMinute, topOffset = 0 }) {
   const { schedule, start, end, column, columnCount } = item;
   const tone = scheduleTone(schedule);
-  const top = (start - range.startMin) * pixelsPerMinute;
+  const top = topOffset + (start - range.startMin) * pixelsPerMinute;
   const height = Math.max(18, (end - start) * pixelsPerMinute - 3);
   const width = 100 / columnCount;
   const interactive = typeof schedule.onClick === 'function';
@@ -212,16 +212,18 @@ function TimelineEvent({ item, range, pixelsPerMinute }) {
 
 function TimeGrid({
   dates, schedules, today, compact = false, showHeaders = true, emptyText,
-  hasSupplementalEvents = false,
+  hasSupplementalEvents = false, scrollable = false, includeOperatingHours = false,
 }) {
   const nowMinutes = getKoreaMinutes();
+  const scrollRef = useRef(null);
+  const lastAutoScrollKeyRef = useRef('');
   const visibleSchedules = useMemo(
     () => schedules.filter((schedule) => dates.includes(schedule.date)),
     [dates, schedules],
   );
   const range = useMemo(
-    () => getTimelineRange(dates, visibleSchedules),
-    [dates, visibleSchedules],
+    () => getTimelineRange(dates, visibleSchedules, includeOperatingHours),
+    [dates, visibleSchedules, includeOperatingHours],
   );
   const layoutsByDate = useMemo(() => {
     const map = new Map();
@@ -234,10 +236,36 @@ function TimeGrid({
     return map;
   }, [dates, visibleSchedules]);
 
+  const pixelsPerMinute = compact ? 0.68 : 0.82;
+  const timelineEdgePadding = 10;
+  const dateKey = dates.join('|');
+
+  useEffect(() => {
+    if (!scrollable || !range || !scrollRef.current) return undefined;
+    const autoScrollKey = `${dateKey}:${range.startMin}:${range.endMin}`;
+    if (lastAutoScrollKeyRef.current === autoScrollKey) return undefined;
+    lastAutoScrollKeyRef.current = autoScrollKey;
+    const timedStarts = visibleSchedules
+      .map((schedule) => toMinutes(schedule.startTime || schedule.time))
+      .filter((value) => value != null);
+    const focusMinute = dates.includes(today) && nowMinutes >= range.startMin && nowMinutes <= range.endMin
+      ? nowMinutes
+      : Math.min(...timedStarts);
+    if (!Number.isFinite(focusMinute)) return undefined;
+    const frame = requestAnimationFrame(() => {
+      if (!scrollRef.current) return;
+      scrollRef.current.scrollTop = Math.max(
+        0,
+        timelineEdgePadding + (focusMinute - range.startMin) * pixelsPerMinute - 110,
+      );
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [dateKey, nowMinutes, pixelsPerMinute, range, scrollable, today, visibleSchedules]);
+
   if (!range) {
     if (hasSupplementalEvents) return null;
     return (
-      <div className="flex min-h-[150px] flex-col items-center justify-center px-4 py-8 text-center">
+      <div className={`flex min-h-[150px] flex-col items-center justify-center px-4 py-8 text-center ${scrollable ? 'md:min-h-0 md:flex-1' : ''}`}>
         <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#F2F7FF] text-[#3182F6]">
           <CalendarDays size={19} />
         </span>
@@ -246,14 +274,22 @@ function TimeGrid({
     );
   }
 
-  const pixelsPerMinute = compact ? 0.68 : 0.82;
-  const height = Math.max(compact ? 280 : 320, (range.endMin - range.startMin) * pixelsPerMinute);
+  const timelineHeight = Math.max(compact ? 280 : 320, (range.endMin - range.startMin) * pixelsPerMinute);
+  const height = timelineHeight + timelineEdgePadding * 2;
   const gridColumns = `52px repeat(${dates.length}, minmax(0, 1fr))`;
 
   return (
-    <div className="overflow-hidden">
+    <div
+      ref={scrollRef}
+      className={scrollable
+        ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-soft'
+        : 'overflow-hidden'}
+    >
       {showHeaders && (
-        <div className="grid border-b border-seenit-border-soft bg-seenit-elevated" style={{ gridTemplateColumns: gridColumns }}>
+        <div
+          className={`grid border-b border-seenit-border-soft bg-seenit-elevated ${scrollable ? 'sticky top-0 z-30' : ''}`}
+          style={{ gridTemplateColumns: gridColumns }}
+        >
           <div className="px-2 py-2.5 text-[10px] font-bold text-seenit-muted">시간</div>
           {dates.map((date) => (
             <div key={date} className="border-l border-seenit-border-soft px-1 py-2 text-center">
@@ -271,7 +307,7 @@ function TimeGrid({
             <span
               key={tick}
               className="absolute right-2 -translate-y-1/2 text-[9px] font-semibold text-seenit-muted"
-              style={{ top: (tick - range.startMin) * pixelsPerMinute }}
+              style={{ top: timelineEdgePadding + (tick - range.startMin) * pixelsPerMinute }}
             >
               {formatHour(tick)}
             </span>
@@ -287,13 +323,13 @@ function TimeGrid({
               <span
                 key={tick}
                 className="absolute inset-x-0 border-t border-seenit-border-soft"
-                style={{ top: (tick - range.startMin) * pixelsPerMinute }}
+                style={{ top: timelineEdgePadding + (tick - range.startMin) * pixelsPerMinute }}
               />
             ))}
             {date === today && nowMinutes >= range.startMin && nowMinutes <= range.endMin && (
               <span
                 className="absolute inset-x-0 z-20 flex items-center"
-                style={{ top: (nowMinutes - range.startMin) * pixelsPerMinute }}
+                style={{ top: timelineEdgePadding + (nowMinutes - range.startMin) * pixelsPerMinute }}
                 aria-label="현재 시간"
               >
                 <span className="h-2 w-2 -translate-x-1 rounded-full bg-[#0064FF]" />
@@ -306,6 +342,7 @@ function TimeGrid({
                 item={item}
                 range={range}
                 pixelsPerMinute={pixelsPerMinute}
+                topOffset={timelineEdgePadding}
               />
             ))}
           </div>
@@ -315,10 +352,16 @@ function TimeGrid({
   );
 }
 
-function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, today }) {
+function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, today, compact = false }) {
+  const cellHeight = compact
+    ? 'min-h-[62px] overflow-hidden md:min-h-0'
+    : 'min-h-[62px] md:min-h-[118px]';
+  const visibleScheduleCount = compact ? 1 : 3;
+  const cellPadding = compact ? 'p-1 md:p-1.5' : 'p-1 md:p-2';
+
   return (
-    <div>
-      <div className="grid grid-cols-7 border-b border-seenit-border-soft bg-seenit-elevated">
+    <div className={compact ? 'md:flex md:h-full md:min-h-0 md:flex-col' : ''}>
+      <div className={`grid grid-cols-7 border-b border-seenit-border-soft bg-seenit-elevated ${compact ? 'md:shrink-0' : ''}`}>
         {DAY_LABELS.map((label, index) => (
           <div
             key={label}
@@ -330,10 +373,10 @@ function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, t
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7">
+      <div className={`grid grid-cols-7 ${compact ? 'md:min-h-0 md:flex-1 md:auto-rows-fr' : ''}`}>
         {dates.map((date, index) => {
           if (!date) {
-            return <div key={`blank-${index}`} className="min-h-[62px] border-b border-r border-seenit-border-soft bg-seenit-elevated md:min-h-[118px]" />;
+            return <div key={`blank-${index}`} className={`${cellHeight} border-b border-r border-seenit-border-soft bg-seenit-elevated`} />;
           }
           const daySchedules = schedules
             .filter((schedule) => schedule.date === date)
@@ -344,14 +387,20 @@ function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, t
           return (
             <div
               key={date}
-              className={`min-h-[62px] border-b border-r border-seenit-border-soft p-1 md:min-h-[118px] md:p-2 ${
+              className={`relative ${cellHeight} ${cellPadding} border-b border-r border-seenit-border-soft ${
                 isSelected ? 'bg-seenit-brand-soft' : isToday ? 'bg-seenit-brand-soft/40' : 'bg-seenit-surface'
               }`}
             >
               <button
                 type="button"
                 onClick={() => onSelectDate(date)}
-                className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-extrabold md:h-8 md:w-8 md:text-xs ${
+                aria-label={`${date} 일정 보기`}
+                className="absolute inset-0 z-0 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-seenit-brand"
+              />
+              <span
+                className={`pointer-events-none relative z-10 flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-extrabold md:text-xs ${
+                  compact ? 'md:h-7 md:w-7' : 'md:h-8 md:w-8'
+                } ${
                   isSelected
                     ? 'bg-[#0064FF] text-white'
                     : isToday
@@ -360,32 +409,45 @@ function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, t
                 }`}
               >
                 {Number(date.slice(8))}
-              </button>
-              <div className="mt-1 flex items-center gap-0.5 px-0.5 md:hidden">
+              </span>
+              <div className="pointer-events-none relative z-10 mt-1 flex items-center gap-0.5 px-0.5 md:hidden">
                 {daySchedules.slice(0, 3).map((schedule, scheduleIndex) => (
                   <span key={schedule.id || scheduleIndex} className={`h-1.5 flex-1 rounded-full ${scheduleTone(schedule).dot}`} />
                 ))}
                 {daySchedules.length > 3 && <span className="text-[7px] font-black text-seenit-muted">+</span>}
               </div>
-              <div className="mt-1 hidden space-y-1 md:block">
-                {daySchedules.slice(0, 3).map((schedule, scheduleIndex) => {
+              <div className="pointer-events-none relative z-10 mt-1 hidden space-y-1 md:block">
+                {daySchedules.slice(0, visibleScheduleCount).map((schedule, scheduleIndex) => {
                   const tone = scheduleTone(schedule);
+                  const remainingCount = daySchedules.length - visibleScheduleCount;
                   return (
-                    <button
-                      key={schedule.id || scheduleIndex}
-                      type="button"
-                      onClick={schedule.onClick}
-                      disabled={typeof schedule.onClick !== 'function'}
-                      className={`w-full truncate rounded-lg border px-1.5 py-1 text-left text-[9px] font-bold active:scale-[0.99] ${tone.card} ${tone.title}`}
-                    >
-                      <span className={tone.time}>{String(schedule.startTime || '').slice(0, 5)}</span>
-                      {' '}{schedule.title || '수업'}
-                    </button>
+                    <div key={schedule.id || scheduleIndex} className={compact ? 'flex min-w-0 items-center gap-1' : ''}>
+                      <button
+                        type="button"
+                        onClick={schedule.onClick}
+                        disabled={typeof schedule.onClick !== 'function'}
+                        className={`pointer-events-auto min-w-0 truncate rounded-lg border px-1.5 text-left text-[9px] font-bold active:scale-[0.99] ${
+                          compact ? 'flex-1 py-0.5' : 'w-full py-1'
+                        } ${tone.card} ${tone.title}`}
+                      >
+                        <span className={tone.time}>{String(schedule.startTime || '').slice(0, 5)}</span>
+                        {' '}{schedule.title || '수업'}
+                      </button>
+                      {compact && remainingCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => onSelectDate(date)}
+                          className="pointer-events-auto shrink-0 rounded-md bg-seenit-control px-1.5 py-1 text-[8px] font-extrabold leading-none text-seenit-muted"
+                        >
+                          외 {remainingCount}개
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
-                {daySchedules.length > 3 && (
-                  <button type="button" onClick={() => onSelectDate(date)} className="px-1 text-[9px] font-extrabold text-seenit-muted">
-                    +{daySchedules.length - 3}개
+                {!compact && daySchedules.length > visibleScheduleCount && (
+                  <button type="button" onClick={() => onSelectDate(date)} className="pointer-events-auto px-1 text-[9px] font-extrabold leading-none text-seenit-muted">
+                    +{daySchedules.length - visibleScheduleCount}개
                   </button>
                 )}
               </div>
@@ -393,6 +455,117 @@ function MonthGrid({ dates, schedules, selectedDate, onSelectDate, anchorDate, t
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function DayAgenda({ date, schedules, today, emptyText, desktopScroll = false, groupSameTime = false }) {
+  const daySchedules = useMemo(
+    () => schedules
+      .filter((schedule) => schedule.date === date)
+      .sort((left, right) => {
+        const leftAllDay = isAllDaySchedule(left);
+        const rightAllDay = isAllDaySchedule(right);
+        if (leftAllDay !== rightAllDay) return leftAllDay ? -1 : 1;
+        return String(left.startTime || left.time || '').localeCompare(
+          String(right.startTime || right.time || ''),
+        );
+      }),
+    [date, schedules],
+  );
+  const agendaGroups = useMemo(() => {
+    const groups = [];
+    const groupsByTime = new Map();
+
+    daySchedules.forEach((schedule, index) => {
+      const allDay = isAllDaySchedule(schedule);
+      const startTime = String(schedule.startTime || schedule.time || '').slice(0, 5);
+      const groupKey = groupSameTime
+        ? (allDay ? 'all-day' : startTime || `untimed-${index}`)
+        : `${allDay ? 'all-day' : startTime}-${schedule.id || index}`;
+
+      if (!groupsByTime.has(groupKey)) {
+        const group = {
+          key: groupKey,
+          label: allDay ? '종일' : (groupSameTime ? startTime : formatTimeRange(schedule)),
+          schedules: [],
+        };
+        groupsByTime.set(groupKey, group);
+        groups.push(group);
+      }
+      groupsByTime.get(groupKey).schedules.push(schedule);
+    });
+
+    return groups;
+  }, [daySchedules, groupSameTime]);
+
+  return (
+    <div className={desktopScroll ? 'md:flex md:h-full md:min-h-0 md:flex-col' : ''}>
+      <div className={`border-b border-seenit-border-soft bg-seenit-surface px-4 py-3 ${desktopScroll ? 'md:shrink-0' : ''}`}>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-extrabold text-seenit-secondary">
+            {date === today ? '오늘' : formatDateShort(date)} 일정
+          </p>
+          <span className="text-[11px] font-bold text-seenit-muted">{daySchedules.length}개</span>
+        </div>
+      </div>
+
+      {daySchedules.length === 0 ? (
+        <div className={`flex min-h-[132px] items-center justify-center px-4 py-8 text-center ${desktopScroll ? 'md:min-h-0 md:flex-1' : ''}`}>
+          <p className="text-sm font-semibold text-seenit-muted">{emptyText}</p>
+        </div>
+      ) : (
+        <div className={`divide-y divide-seenit-border-soft px-4 ${desktopScroll ? 'md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain md:scroll-soft' : ''}`}>
+          {agendaGroups.map((group) => (
+            <div key={group.key} className="flex items-start gap-3 py-3">
+              <span className="w-[84px] shrink-0 pt-1 text-xs font-extrabold text-seenit-secondary">
+                {group.label}
+              </span>
+              <div className={groupSameTime
+                ? 'flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:overflow-x-auto md:pb-1 md:scroll-soft'
+                : 'min-w-0 flex-1 space-y-2'}
+              >
+                {group.schedules.map((schedule, index) => {
+                  const tone = scheduleTone(schedule);
+                  const interactive = typeof schedule.onClick === 'function';
+                  const endTime = String(schedule.endTime || '').slice(0, 5);
+                  const details = [
+                    groupSameTime && endTime ? `~${endTime}` : null,
+                    schedule.subtitle,
+                    schedule.badge,
+                  ].filter(Boolean);
+
+                  return (
+                    <button
+                      key={schedule.id || `${date}-${group.key}-${index}`}
+                      type="button"
+                      onClick={schedule.onClick}
+                      disabled={!interactive}
+                      className={`flex min-w-0 items-start gap-2 rounded-lg text-left enabled:active:opacity-70 ${
+                        groupSameTime
+                          ? 'w-full border border-seenit-border-soft bg-seenit-elevated p-2.5 md:min-w-[132px] md:flex-1'
+                          : 'w-full'
+                      }`}
+                    >
+                      <span className={`h-8 w-1 shrink-0 rounded-full ${tone.dot}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold text-seenit-ink">
+                          {schedule.title || '일정'}
+                        </span>
+                        {details.length > 0 && (
+                          <span className="mt-0.5 block truncate text-[11px] font-medium text-seenit-muted">
+                            {details.join(' · ')}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -434,6 +607,7 @@ export default function ScheduleCalendar({
   emptyText = '수업 일정이 없어요',
   defaultMode = 'week',
   compact = false,
+  homeOverview = false,
   onAddEvent,
   className = '',
 }) {
@@ -443,9 +617,16 @@ export default function ScheduleCalendar({
   const [mode, setMode] = useState(defaultMode);
   const activeDate = selectedDate || internalSelectedDate;
   const weekDates = useMemo(() => getWeekDatesFromYMD(anchorDate), [anchorDate]);
-  const monthDates = useMemo(() => getMonthCalendarDatesFromYMD(anchorDate), [anchorDate]);
-  const visibleDates = mode === 'week' ? weekDates : monthDates.filter(Boolean);
-  const visibleCount = schedules.filter((schedule) => visibleDates.includes(schedule.date)).length;
+  const monthDates = useMemo(() => {
+    const dates = getMonthCalendarDatesFromYMD(anchorDate);
+    if (!homeOverview || dates.length === 0) return dates;
+    const firstDateIndex = dates.findIndex(Boolean);
+    const firstDate = dates[firstDateIndex];
+    return Array.from(
+      { length: 42 },
+      (_, index) => addDaysYMD(firstDate, index - firstDateIndex),
+    );
+  }, [anchorDate, homeOverview]);
   const selectedDaySchedules = schedules.filter((schedule) => schedule.date === activeDate);
   const periodLabel = mode === 'week'
     ? `${formatDateShort(weekDates[0])} – ${formatDateShort(weekDates[6])}`
@@ -483,15 +664,10 @@ export default function ScheduleCalendar({
     <section className={`mx-4 overflow-hidden rounded-3xl bg-seenit-surface shadow-sm ${className}`}>
       <div className="border-b border-seenit-border-soft px-4 py-4 md:flex md:items-center md:justify-between md:gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-black text-seenit-ink">{title}</h3>
-            <span className="rounded-full bg-seenit-control px-2 py-0.5 text-[10px] font-extrabold text-seenit-secondary">
-              {visibleCount}개
-            </span>
-          </div>
+          <h3 className="text-base font-black text-seenit-ink">{title}</h3>
           <p className="mt-1 truncate text-[11px] font-semibold text-seenit-muted">{periodLabel}</p>
         </div>
-        <div className="mt-3 flex items-center justify-between gap-2 md:mt-0 md:justify-end">
+        <div className="mt-3 flex flex-wrap items-center justify-end gap-2 sm:justify-between md:mt-0 md:justify-end">
           {onAddEvent && (
             <button
               type="button"
@@ -554,23 +730,32 @@ export default function ScheduleCalendar({
             today={today}
           />
           <div className="md:hidden">
-            <div className="border-b border-seenit-border-soft px-4 py-3">
-              <p className="text-sm font-extrabold text-seenit-secondary">
-                {activeDate === today ? '오늘' : formatDateShort(activeDate)}
-              </p>
-            </div>
-            <AllDayLane dates={[activeDate]} schedules={schedules} />
-            <TimeGrid
-              dates={[activeDate]}
-              schedules={schedules}
-              today={today}
-              compact={compact}
-              showHeaders={false}
-              emptyText={emptyText}
-              hasSupplementalEvents={selectedDaySchedules.some(isAllDaySchedule)}
-            />
+            {homeOverview ? (
+              <DayAgenda date={activeDate} schedules={schedules} today={today} emptyText={emptyText} />
+            ) : (
+              <>
+                <div className="border-b border-seenit-border-soft px-4 py-3">
+                  <p className="text-sm font-extrabold text-seenit-secondary">
+                    {activeDate === today ? '오늘' : formatDateShort(activeDate)}
+                  </p>
+                </div>
+                <AllDayLane dates={[activeDate]} schedules={schedules} />
+                <TimeGrid
+                  dates={[activeDate]}
+                  schedules={schedules}
+                  today={today}
+                  compact={compact}
+                  showHeaders={false}
+                  emptyText={emptyText}
+                  hasSupplementalEvents={selectedDaySchedules.some(isAllDaySchedule)}
+                />
+              </>
+            )}
           </div>
-          <div className="hidden md:block">
+          <div className={homeOverview
+            ? 'hidden md:flex md:h-[525px] md:flex-col md:overflow-hidden'
+            : 'hidden md:block'}
+          >
             <AllDayLane dates={weekDates} schedules={schedules} />
             <TimeGrid
               dates={weekDates}
@@ -578,6 +763,8 @@ export default function ScheduleCalendar({
               today={today}
               compact={compact}
               emptyText={emptyText}
+              scrollable={homeOverview}
+              includeOperatingHours={homeOverview}
               hasSupplementalEvents={schedules.some((schedule) => (
                 weekDates.includes(schedule.date) && isAllDaySchedule(schedule)
               ))}
@@ -585,34 +772,58 @@ export default function ScheduleCalendar({
           </div>
         </>
       ) : (
-        <>
-          <MonthGrid
-            dates={monthDates}
-            schedules={schedules}
-            selectedDate={activeDate}
-            onSelectDate={selectDate}
-            anchorDate={anchorDate}
-            today={today}
-          />
-          <div className="border-t border-seenit-border-soft">
-            <div className="border-b border-seenit-border-soft px-4 py-3">
-              <p className="text-sm font-extrabold text-seenit-secondary">
-                {activeDate === today ? '오늘' : formatDateShort(activeDate)} 일정
-                <span className="ml-2 text-[11px] text-seenit-muted">{selectedDaySchedules.length}개</span>
-              </p>
-            </div>
-            <AllDayLane dates={[activeDate]} schedules={schedules} />
-            <TimeGrid
-              dates={[activeDate]}
+        homeOverview ? (
+          <div className="md:grid md:h-[525px] md:grid-cols-[minmax(0,1.8fr)_minmax(260px,0.9fr)] md:items-stretch">
+            <MonthGrid
+              dates={monthDates}
               schedules={schedules}
+              selectedDate={activeDate}
+              onSelectDate={selectDate}
+              anchorDate={anchorDate}
               today={today}
               compact
-              showHeaders={false}
-              emptyText={emptyText}
-              hasSupplementalEvents={selectedDaySchedules.some(isAllDaySchedule)}
             />
+            <div className="border-t border-seenit-border-soft md:h-full md:min-h-0 md:border-l md:border-t-0">
+              <DayAgenda
+                date={activeDate}
+                schedules={schedules}
+                today={today}
+                emptyText={emptyText}
+                desktopScroll
+                groupSameTime
+              />
+            </div>
           </div>
-        </>
+        ) : (
+          <>
+            <MonthGrid
+              dates={monthDates}
+              schedules={schedules}
+              selectedDate={activeDate}
+              onSelectDate={selectDate}
+              anchorDate={anchorDate}
+              today={today}
+            />
+            <div className="border-t border-seenit-border-soft">
+              <div className="border-b border-seenit-border-soft px-4 py-3">
+                <p className="text-sm font-extrabold text-seenit-secondary">
+                  {activeDate === today ? '오늘' : formatDateShort(activeDate)} 일정
+                  <span className="ml-2 text-[11px] text-seenit-muted">{selectedDaySchedules.length}개</span>
+                </p>
+              </div>
+              <AllDayLane dates={[activeDate]} schedules={schedules} />
+              <TimeGrid
+                dates={[activeDate]}
+                schedules={schedules}
+                today={today}
+                compact
+                showHeaders={false}
+                emptyText={emptyText}
+                hasSupplementalEvents={selectedDaySchedules.some(isAllDaySchedule)}
+              />
+            </div>
+          </>
+        )
       )}
     </section>
   );

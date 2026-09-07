@@ -3,7 +3,6 @@ import {
   Clock,
   FileText,
   Users as UsersIcon,
-  AlertCircle,
   CheckSquare,
   LogIn,
   QrCode,
@@ -265,19 +264,6 @@ export default function OwnerDashboard({ operationsOnly = false }) {
 
   const homeActions = useMemo(() => {
     const actions = [];
-    if (studentAttendanceEnabled) {
-      actions.push({
-        id: 'attendance',
-        icon: LogIn,
-        tone: 'green',
-        title: '등하원',
-        detail: `오늘 등원 ${todayStudentPresence.checkedInToday}명`,
-        value: `현재 원내 ${todayStudentPresence.inside}명`,
-        live: true,
-        onClick: () => setActiveTab('attendance'),
-      });
-    }
-
     const activeSession = inProgressOrSoonSessions[0];
     if (activeSession) {
       const group = classGroups.find((item) => item.id === activeSession.classGroupId);
@@ -302,7 +288,22 @@ export default function OwnerDashboard({ operationsOnly = false }) {
         detail: group?.name || '완료된 수업 기록을 작성해주세요.',
         onClick: () => navigateToClassSession(missingRecord.id),
       });
-    } else if (pendingInvitations.length > 0) {
+    }
+
+    if (studentAttendanceEnabled) {
+      actions.push({
+        id: 'attendance',
+        icon: LogIn,
+        tone: 'green',
+        title: '등하원',
+        detail: `오늘 등원 ${todayStudentPresence.checkedInToday}명`,
+        value: `현재 원내 ${todayStudentPresence.inside}명`,
+        live: true,
+        onClick: () => setActiveTab('attendance'),
+      });
+    }
+
+    if (pendingInvitations.length > 0) {
       actions.push({
         id: 'pending-invitations',
         icon: UsersIcon,
@@ -362,6 +363,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
           title="학원 수업 일정"
           emptyText="수업 일정이 없어요"
           compact
+          homeOverview
         />
       </div>
 
@@ -410,35 +412,30 @@ export default function OwnerDashboard({ operationsOnly = false }) {
             <AttendanceChip label="미출근" value={todayShiftSummary.absent} tone="red" />
             <AttendanceChip label="퇴근" value={todayShiftSummary.completed} tone="gray" />
           </div>
+          {recentAttendanceEvents.length > 0 && (
+            <div className="mt-3 border-t border-seenit-border-soft pt-3">
+              <p className="mb-2 text-[11px] font-bold text-seenit-muted">최근 출퇴근</p>
+              <div className="space-y-1.5">
+                {recentAttendanceEvents.map((event) => (
+                  <button
+                    key={event.id}
+                    type="button"
+                    onClick={() => setActiveTab('staff')}
+                    className="flex w-full items-center justify-between gap-3 text-left"
+                  >
+                    <span className="truncate text-xs font-semibold text-seenit-secondary">
+                      {event.name} {event.action}
+                    </span>
+                    <span className="shrink-0 text-xs font-bold tabular-nums text-seenit-muted">
+                      {event.time}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Phase 30 — 운영 알림 카드 */}
-      {(pendingInvitations.length > 0
-        || recentAttendanceEvents.length > 0) && (
-        <div className="px-4 mb-5 flex flex-col gap-2">
-          {recentAttendanceEvents.length > 0 && (
-            <OpsCard
-              icon={CheckSquare}
-              tone="green"
-              title={`오늘 근퇴 알림 ${recentAttendanceEvents.length}건`}
-              detail={recentAttendanceEvents
-                .map((event) => `${event.name} ${event.action} ${event.time}`)
-                .join(' · ')}
-              onClick={() => setActiveTab('staff')}
-            />
-          )}
-          {pendingInvitations.length > 0 && (
-            <OpsCard
-              icon={UsersIcon}
-              tone="purple"
-              title={`초대 대기 ${pendingInvitations.length}명`}
-              detail="구성원 관리에서 상태를 확인할 수 있어요."
-              onClick={() => setActiveTab('more')}
-            />
-          )}
-        </div>
-      )}
 
       {/* 강사별 수업 현황 */}
       {academyTeachers.length > 0 && (
@@ -518,34 +515,6 @@ function SummaryCard({ label, value, color = 'text-seenit-ink', onClick, pilotLo
       <p className={`${pilotLocked ? 'text-lg text-seenit-muted' : `text-2xl ${color}`} font-bold leading-none`}>
         {value}
       </p>
-    </button>
-  );
-}
-
-// Phase 30 — 운영 알림 카드.
-function OpsCard({ icon: Icon, tone = 'blue', title, detail, onClick }) {
-  const tones = {
-    blue:   { bg: 'bg-seenit-brand-soft', text: 'text-seenit-brand', iconColor: 'text-seenit-brand' },
-    green:  { bg: 'bg-seenit-success-soft', text: 'text-seenit-success', iconColor: 'text-seenit-success' },
-    amber:  { bg: 'bg-seenit-warning-soft', text: 'text-seenit-warning', iconColor: 'text-seenit-warning' },
-    purple: { bg: 'bg-seenit-purple-soft', text: 'text-seenit-purple', iconColor: 'text-seenit-purple' },
-    red:    { bg: 'bg-seenit-danger-soft', text: 'text-seenit-danger', iconColor: 'text-seenit-danger' },
-  };
-  const t = tones[tone] || tones.blue;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 rounded-2xl px-4 py-3 shadow-sm text-left active:scale-[0.98] transition-transform ${t.bg}`}
-    >
-      <div className="w-9 h-9 rounded-full bg-seenit-surface flex items-center justify-center flex-shrink-0">
-        <Icon size={16} className={t.iconColor} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-bold ${t.text}`}>{title}</p>
-        {detail && <p className="text-xs text-seenit-muted mt-0.5 truncate">{detail}</p>}
-      </div>
-      <AlertCircle size={14} className="text-seenit-subtle flex-shrink-0" />
     </button>
   );
 }

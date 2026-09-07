@@ -267,19 +267,6 @@ export default function TeacherDashboard() {
 
   const homeActions = useMemo(() => {
     const actions = [];
-    if (studentAttendanceEnabled) {
-      actions.push({
-        id: 'attendance',
-        icon: LogIn,
-        tone: 'green',
-        title: '등하원',
-        detail: `오늘 등원 ${todayStudentPresence.checkedInToday}명`,
-        value: `현재 원내 ${todayStudentPresence.inside}명`,
-        live: true,
-        onClick: () => setActiveTab('attendance'),
-      });
-    }
-
     if (currentOrNextSession) {
       const { session, start, end } = currentOrNextSession;
       const nowMinutes = getKoreaMinutes(now);
@@ -307,6 +294,19 @@ export default function TeacherDashboard() {
         title: `수업 기록 ${unfinishedRecordSessions.length}건 미작성`,
         detail: group?.name || '완료된 수업 기록을 작성해주세요.',
         onClick: () => navigateToClassSession(missingRecord.id),
+      });
+    }
+
+    if (studentAttendanceEnabled) {
+      actions.push({
+        id: 'attendance',
+        icon: LogIn,
+        tone: 'green',
+        title: '등하원',
+        detail: `오늘 등원 ${todayStudentPresence.checkedInToday}명`,
+        value: `현재 원내 ${todayStudentPresence.inside}명`,
+        live: true,
+        onClick: () => setActiveTab('attendance'),
       });
     }
 
@@ -358,6 +358,7 @@ export default function TeacherDashboard() {
           title="내 수업 일정"
           emptyText="내 수업 일정이 없어요"
           compact
+          homeOverview
         />
       </div>
 

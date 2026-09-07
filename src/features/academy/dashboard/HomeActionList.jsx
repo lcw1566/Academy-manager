@@ -15,7 +15,7 @@ export default function HomeActionList({ items = [] }) {
     <section className="px-4 mb-4">
       <p className="mb-2 px-1 text-sm font-bold text-seenit-ink">지금 할 일</p>
       <div className="overflow-hidden rounded-2xl bg-seenit-surface shadow-sm">
-        {items.slice(0, 3).map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           return (
             <button
