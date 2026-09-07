@@ -146,7 +146,7 @@ export default function ClinicEventFormModal({ event = null, initialDate = null,
   if (typeof document === 'undefined') return null;
   return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end bg-black/35 md:items-center md:justify-center md:p-6">
-      <div className="relative flex h-full w-full flex-col bg-[#F7F8FA] md:h-[min(880px,94vh)] md:max-w-3xl md:rounded-[28px] md:shadow-2xl">
+      <div className="relative flex h-[100dvh] w-full flex-col bg-[#F7F8FA] md:h-[880px] md:max-h-[calc(100dvh-48px)] md:max-w-3xl md:rounded-[28px] md:shadow-2xl">
         <header className="flex h-16 flex-shrink-0 items-center justify-between border-b border-[#E5E8EB] bg-white px-5 md:rounded-t-[28px]">
           <div>
             <h2 className="text-lg font-extrabold text-[#191F28]">{event ? '클리닉 일정 수정' : '클리닉 일정 만들기'}</h2>
@@ -237,7 +237,7 @@ export default function ClinicEventFormModal({ event = null, initialDate = null,
           </section>
         </div>
 
-        <footer className="flex flex-shrink-0 gap-2 border-t border-[#E5E8EB] bg-white p-4 md:rounded-b-[28px]">
+        <footer className="sheet-footer-pad flex flex-shrink-0 gap-2 border-t border-[#E5E8EB] bg-white p-4 md:rounded-b-[28px]">
           {event && (
             <button type="button" onClick={() => setConfirmDelete(true)} disabled={saving} className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-red-50 text-red-500 disabled:opacity-50" aria-label="클리닉 일정 삭제">
               <Trash2 size={18} />
@@ -249,7 +249,10 @@ export default function ClinicEventFormModal({ event = null, initialDate = null,
         </footer>
         {confirmDelete && (
           <div className="absolute inset-0 z-10 flex items-end bg-black/35 md:items-center md:justify-center md:rounded-[28px]">
-            <div className="w-full rounded-t-3xl bg-white p-5 md:max-w-sm md:rounded-3xl">
+            <div
+              className="w-full rounded-t-3xl bg-white p-5 md:max-w-sm md:rounded-3xl"
+              style={{ paddingBottom: 'calc(20px + env(safe-area-inset-bottom))' }}
+            >
               <p className="text-base font-extrabold text-[#191F28]">이 일정을 삭제할까요?</p>
               <p className="mt-2 text-sm leading-6 text-[#6B7684]">학생별로 이미 저장한 기록은 삭제되지 않고 기록 목록에 남아요.</p>
               <div className="mt-5 flex gap-2">

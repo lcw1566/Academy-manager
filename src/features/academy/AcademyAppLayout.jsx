@@ -577,7 +577,7 @@ export default function AcademyAppLayout() {
         activeTabIds={desktopChatOpen ? ['chat'] : []}
       />
 
-      <main className="min-w-0 flex-1">
+      <main className="min-w-0 flex-1 lg:ml-[260px]">
         <div className="main-content mx-auto w-full max-w-md pb-24 md:max-w-3xl md:px-6 md:py-6 lg:mx-0 lg:max-w-none lg:px-8 2xl:mx-auto 2xl:max-w-[1600px]">
           {currentAcademyId && (hasSyncError || isRealtimeReconnecting) && (
             <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 md:mx-0">

@@ -35,6 +35,7 @@ export default function Modal({
   footer,
   size = 'default',
   fitContent = false,
+  desktopPlacement = 'center',
   isLoading = false,
   loadingLabel = '불러오는 중이에요',
 }) {
@@ -48,6 +49,8 @@ export default function Modal({
 
   if (typeof document === 'undefined') return null;
 
+  const isDesktopBottomSheet = desktopPlacement === 'bottom';
+
   const handleDragEnd = (_, info) => {
     const shouldClose = info.offset.y > 110 || info.velocity.y > 720;
     if (shouldClose) onClose?.();
@@ -56,7 +59,9 @@ export default function Modal({
   return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 md:flex md:items-center md:justify-center md:p-6">
+        <div className={`fixed inset-0 z-50 md:flex md:justify-center ${
+          isDesktopBottomSheet ? 'md:items-end md:px-6 md:pt-6' : 'md:items-center md:p-6'
+        }`}>
           {/* Overlay */}
           <motion.div
             className="absolute inset-0 bg-black/40 transform-gpu"
@@ -80,7 +85,9 @@ export default function Modal({
             onDragEnd={handleDragEnd}
             className={`${fitContent ? 'sheet-shell-auto' : 'sheet-shell'} absolute bottom-0 left-0 right-0 max-w-md ${
               size === 'wide' ? 'md:max-w-[760px]' : 'md:max-w-[560px]'
-            } mx-auto flex flex-col overflow-hidden rounded-t-[28px] bg-seenit-surface text-seenit-ink shadow-2xl transform-gpu md:relative md:inset-auto md:w-full md:rounded-3xl`}
+            } mx-auto flex flex-col overflow-hidden rounded-t-[28px] bg-seenit-surface text-seenit-ink shadow-2xl transform-gpu md:w-full ${
+              isDesktopBottomSheet ? 'md:rounded-t-3xl' : 'md:relative md:inset-auto md:rounded-3xl'
+            }`}
             role="dialog"
             aria-modal="true"
             aria-label={title}

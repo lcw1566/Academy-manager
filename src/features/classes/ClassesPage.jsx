@@ -335,7 +335,7 @@ export default function ClassesPage() {
               key="add-sheet"
               initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
               transition={sheetTransition}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
+              className="legacy-sheet-footer-pad fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
               <p className="text-base font-bold text-gray-900 mb-4">수업 추가</p>
@@ -387,7 +387,7 @@ export default function ClassesPage() {
               key="menu-sheet"
               initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
               transition={sheetTransition}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
+              className="legacy-sheet-footer-pad fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
               <div className="flex flex-col gap-2">
@@ -447,7 +447,7 @@ export default function ClassesPage() {
               key="sort-sheet"
               initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
               transition={sheetTransition}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
+              className="legacy-sheet-footer-pad fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
               <p className="text-base font-bold text-gray-900 mb-4">정렬 기준</p>

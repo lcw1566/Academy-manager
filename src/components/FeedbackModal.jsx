@@ -114,6 +114,7 @@ export default function FeedbackModal({ isOpen, onClose }) {
       onClose={close}
       title="버그 신고 · 개선 제안"
       fitContent
+      desktopPlacement="bottom"
       footer={(
         <button
           type="button"
@@ -171,11 +172,10 @@ export default function FeedbackModal({ isOpen, onClose }) {
               if (error) setError('');
             }}
             rows={5}
-            autoFocus
             placeholder={category === 'bug'
               ? '무엇을 하던 중이었고, 어떤 문제가 생겼는지 적어주세요.'
               : '어떤 점이 더 편해지면 좋을지 적어주세요.'}
-            className="w-full resize-none rounded-lg border border-seenit-border bg-seenit-surface px-4 py-3 text-sm leading-6 text-seenit-ink outline-none transition-colors placeholder:text-seenit-subtle focus:border-seenit-brand"
+            className="w-full resize-none rounded-lg border border-seenit-border bg-seenit-surface px-4 py-3 text-base leading-6 text-seenit-ink outline-none transition-colors placeholder:text-seenit-subtle focus:border-seenit-brand md:text-sm"
           />
         </div>
 

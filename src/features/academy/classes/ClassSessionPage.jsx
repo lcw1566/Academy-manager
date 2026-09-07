@@ -1334,7 +1334,7 @@ export default function ClassSessionPage() {
 
       {/* ── 저장 / 완료 버튼 (fixed) ──────────────────── */}
       {(canEdit || canEditAttendance) && (
-        <div className="fixed bottom-0 left-0 right-0 z-20 mx-auto max-w-md border-t border-gray-100 bg-white/95 px-4 py-3 pb-safe backdrop-blur-xl md:bottom-6 md:min-h-0 md:max-w-[560px] md:rounded-[24px] md:border md:border-[#E5E8EB] md:p-3 md:shadow-[0_12px_40px_rgba(0,0,0,0.12)]">
+        <div className="fixed-action-footer-pad fixed bottom-0 left-0 right-0 z-20 mx-auto max-w-md border-t border-gray-100 bg-white/95 px-4 py-3 backdrop-blur-xl md:bottom-6 md:min-h-0 md:max-w-[560px] md:rounded-[24px] md:border md:border-[#E5E8EB] md:p-3 md:shadow-[0_12px_40px_rgba(0,0,0,0.12)]">
           <div className="flex gap-2">
             <button
               type="button"

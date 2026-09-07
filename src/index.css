@@ -152,6 +152,29 @@ input[type="month"].input {
   padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 
+/* 직접 구현된 하단 시트도 홈 인디케이터와 버튼이 겹치지 않게 한다. */
+.legacy-sheet-footer-pad {
+  padding-bottom: calc(40px + env(safe-area-inset-bottom));
+}
+
+.compact-sheet-footer-pad {
+  padding-bottom: calc(32px + env(safe-area-inset-bottom));
+}
+
+.safe-area-bottom-pad {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.fixed-action-footer-pad {
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 768px) {
+  .fixed-action-footer-pad {
+    padding-bottom: 12px;
+  }
+}
+
 .sheet-content {
   -webkit-overflow-scrolling: touch;
 }

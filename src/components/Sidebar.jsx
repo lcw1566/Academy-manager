@@ -36,7 +36,7 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
 
   return (
     <>
-      <aside className="hidden h-dvh w-[260px] shrink-0 flex-col border-r border-seenit-border-soft bg-seenit-surface lg:sticky lg:top-0 lg:flex">
+      <aside className="hidden h-dvh w-[260px] shrink-0 flex-col border-r border-seenit-border-soft bg-seenit-surface lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex">
         {/* 브랜드 + 역할 */}
         <div className="flex items-center justify-between gap-3 border-b border-seenit-border-soft px-5 py-5">
           <div className="min-w-0">

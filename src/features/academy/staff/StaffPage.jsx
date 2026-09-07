@@ -2092,7 +2092,7 @@ function StaffWorkDayDrawer({ target, classGroupById, onClose, onSave }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/20 flex items-end md:items-stretch md:justify-end">
       <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-label="닫기" />
-      <aside className="relative w-full md:w-[420px] max-h-[92vh] md:max-h-none bg-white rounded-t-3xl md:rounded-none shadow-2xl overflow-y-auto">
+      <aside className="safe-area-bottom-pad relative max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl md:max-h-none md:w-[420px] md:rounded-none">
         <div className="sticky top-0 bg-white border-b border-[#F2F4F6] px-5 py-4 flex items-start justify-between gap-3">
           <div>
             <p className="text-lg font-extrabold text-[#191F28]">{formatDateShort(target.date)} 근무</p>

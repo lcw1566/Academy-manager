@@ -112,7 +112,8 @@ export default function AcademyExamResultModal({
       />
       <form
         onSubmit={handleSubmit}
-        className="relative max-h-[92vh] w-full overflow-y-auto rounded-t-[28px] bg-white px-5 pb-6 pt-5 shadow-2xl md:max-w-xl md:rounded-[28px] md:p-6"
+        className="relative max-h-[92dvh] w-full overflow-y-auto rounded-t-[28px] bg-white px-5 pb-6 pt-5 shadow-2xl md:max-w-xl md:rounded-[28px] md:p-6"
+        style={{ paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}
       >
         <div className="mb-6 flex items-start justify-between gap-3">
           <div>

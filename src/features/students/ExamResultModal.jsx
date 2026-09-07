@@ -106,8 +106,8 @@ export default function ExamResultModal({ studentId, result = null, events = [],
       >
         <div className="absolute inset-0 bg-black/40" onClick={onClose} style={{ touchAction: 'none' }} />
         <motion.div
-          className="absolute bottom-0 left-0 right-0 max-w-md mx-auto bg-white rounded-t-3xl px-5 pt-5 pb-10 overflow-y-auto overscroll-contain"
-          style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 44px) - 16px)', WebkitOverflowScrolling: 'touch' }}
+          className="legacy-sheet-footer-pad absolute bottom-0 left-0 right-0 max-w-md mx-auto bg-white rounded-t-3xl px-5 pt-5 pb-10 overflow-y-auto overscroll-contain"
+          style={{ maxHeight: 'calc(100dvh - env(safe-area-inset-top, 44px) - 16px)', WebkitOverflowScrolling: 'touch' }}
           initial={{ y: '100%' }}
           animate={{ y: 0 }}
           exit={{ y: '100%' }}

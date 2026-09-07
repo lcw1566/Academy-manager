@@ -615,7 +615,7 @@ function MemberPickerSheet({ memberMap, authUserId, academyId, onClose, onPicked
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
         transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-        className={`${isFloating ? 'absolute max-h-[88%]' : 'fixed max-h-[80vh]'} bottom-0 left-0 right-0 z-50 flex flex-col rounded-t-3xl bg-white px-4 pb-8 pt-5`}
+        className={`${isFloating ? 'absolute max-h-[88%]' : 'fixed max-h-[80dvh]'} compact-sheet-footer-pad bottom-0 left-0 right-0 z-50 flex flex-col rounded-t-3xl bg-white px-4 pb-8 pt-5`}
       >
         <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
         <p className="text-base font-bold text-gray-900 mb-3">새 대화</p>

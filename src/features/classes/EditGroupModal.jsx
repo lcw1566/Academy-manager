@@ -586,7 +586,7 @@ export default function EditGroupModal({ groupId, onClose }) {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={tossSpring.sheet}
-              className="fixed bottom-0 left-0 right-0 z-[70] bg-white rounded-t-3xl px-4 pt-5 pb-10"
+              className="legacy-sheet-footer-pad fixed bottom-0 left-0 right-0 z-[70] bg-white rounded-t-3xl px-4 pt-5 pb-10"
             >
               <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
               <p className="text-base font-bold text-gray-900 mb-1">수정 범위 선택</p>
