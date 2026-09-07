@@ -12,7 +12,7 @@ export default function Toast({ message, type = 'success' }) {
   return (
     <motion.div
       layout="position"
-      className="fixed bottom-28 left-1/2 z-50 w-[88%] max-w-sm transform-gpu"
+      className="toast-bottom-offset fixed left-1/2 z-50 w-[88%] max-w-sm transform-gpu"
       style={{ x: '-50%' }}
       initial={{ opacity: 0, y: 16, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}

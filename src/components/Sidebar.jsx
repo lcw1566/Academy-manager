@@ -1,7 +1,6 @@
 // Sidebar
 //
-// Phase 18 — PC (md+) 전용 좌측 사이드바.
-// 모바일에서는 hidden, md 이상에서만 표시.
+// PC (lg+) 전용 좌측 사이드바. 모바일·태블릿에서는 하단 내비게이션을 사용한다.
 //
 // 사용 예:
 //   <Sidebar tabs={TAB_CONFIG[role]} />
@@ -37,7 +36,7 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
 
   return (
     <>
-      <aside className="hidden md:flex md:flex-col w-[260px] shrink-0 bg-seenit-surface border-r border-seenit-border-soft h-screen sticky top-0">
+      <aside className="hidden h-dvh w-[260px] shrink-0 flex-col border-r border-seenit-border-soft bg-seenit-surface lg:sticky lg:top-0 lg:flex">
         {/* 브랜드 + 역할 */}
         <div className="flex items-center justify-between gap-3 border-b border-seenit-border-soft px-5 py-5">
           <div className="min-w-0">
@@ -123,7 +122,7 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
       <button
         type="button"
         onClick={() => setFeedbackOpen(true)}
-        className="fixed bottom-[5.25rem] right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-seenit-border bg-seenit-surface text-seenit-secondary shadow-lg md:hidden"
+        className="above-bottom-nav fixed right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-seenit-border bg-seenit-surface text-seenit-secondary shadow-lg lg:hidden"
         aria-label="버그 신고 및 개선 제안"
         title="버그 신고 및 개선 제안"
       >

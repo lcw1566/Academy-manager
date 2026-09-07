@@ -56,7 +56,7 @@ export default function Modal({
   return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-50 md:flex md:items-center md:justify-center md:p-6">
           {/* Overlay */}
           <motion.div
             className="absolute inset-0 bg-black/40 transform-gpu"
@@ -80,7 +80,10 @@ export default function Modal({
             onDragEnd={handleDragEnd}
             className={`${fitContent ? 'sheet-shell-auto' : 'sheet-shell'} absolute bottom-0 left-0 right-0 max-w-md ${
               size === 'wide' ? 'md:max-w-[760px]' : 'md:max-w-[560px]'
-            } mx-auto bg-seenit-surface text-seenit-ink rounded-t-[28px] flex flex-col overflow-hidden shadow-2xl transform-gpu`}
+            } mx-auto flex flex-col overflow-hidden rounded-t-[28px] bg-seenit-surface text-seenit-ink shadow-2xl transform-gpu md:relative md:inset-auto md:w-full md:rounded-3xl`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
             style={{
               willChange: 'transform',
               WebkitTapHighlightColor: 'transparent',

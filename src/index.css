@@ -7,6 +7,26 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+@supports (overflow: clip) {
+  html,
+  body {
+    overflow-x: clip;
+  }
+}
+
 /* 짧은 화면과 긴 화면 사이에서 세로 스크롤바 유무로 본문 폭이 흔들리지 않게 한다. */
 @media (min-width: 768px) {
   html {
@@ -25,6 +45,21 @@ body {
   /* 텍스트 렌더링 최적화 */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeSpeed;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+img,
+video,
+canvas {
+  max-width: 100%;
+}
+
+input,
+textarea,
+select {
+  min-width: 0;
+  max-width: 100%;
 }
 
 textarea {
@@ -68,12 +103,32 @@ input[type="month"].input {
 
 /* iPhone safe area 대응 */
 .bottom-nav {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   padding-bottom: calc(12px + env(safe-area-inset-bottom));
   min-height: calc(60px + env(safe-area-inset-bottom));
 }
 
 .main-content {
   padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+
+.above-bottom-nav {
+  bottom: calc(5.25rem + env(safe-area-inset-bottom));
+}
+
+.toast-bottom-offset {
+  bottom: calc(7rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 1024px) {
+  .main-content {
+    padding-bottom: 32px;
+  }
+
+  .toast-bottom-offset {
+    bottom: 2rem;
+  }
 }
 
 /* ── Bottom Sheet ─────────────────────────────────────────────

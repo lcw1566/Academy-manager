@@ -201,7 +201,7 @@ function DesktopChatWindow({ pinned, onPinnedChange, onClose }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 18, scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-      className="fixed bottom-5 right-5 z-[60] hidden h-[min(720px,calc(100vh-40px))] w-[420px] flex-col overflow-hidden rounded-[24px] border border-seenit-border bg-seenit-canvas shadow-[0_24px_80px_rgba(15,23,42,0.24)] md:flex"
+      className="fixed bottom-5 right-5 z-[60] hidden h-[min(720px,calc(100dvh-40px))] w-[min(420px,calc(100vw-40px))] flex-col overflow-hidden rounded-[24px] border border-seenit-border bg-seenit-canvas shadow-[0_24px_80px_rgba(15,23,42,0.24)] lg:flex"
       aria-label="PC 채팅 창"
     >
       <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-seenit-border bg-seenit-surface px-4">
@@ -254,11 +254,11 @@ export default function AcademyAppLayout() {
   const [desktopChatOpen, setDesktopChatOpen] = useState(false);
   const [desktopChatPinned, setDesktopChatPinned] = useState(true);
   const [isDesktopViewport, setIsDesktopViewport] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches,
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
   );
 
   useEffect(() => {
-    const media = window.matchMedia('(min-width: 768px)');
+    const media = window.matchMedia('(min-width: 1024px)');
     const syncViewport = (event) => setIsDesktopViewport(event.matches);
     setIsDesktopViewport(media.matches);
     media.addEventListener('change', syncViewport);
@@ -568,8 +568,8 @@ export default function AcademyAppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-seenit-canvas text-seenit-ink md:flex">
-      {/* PC 사이드바 — md 이상에서만 표시 */}
+    <div className="min-h-screen bg-seenit-canvas text-seenit-ink lg:flex">
+      {/* 넓은 화면에서는 사이드바, 모바일·태블릿에서는 하단 내비게이션을 사용한다. */}
       <Sidebar
         tabs={tabs}
         badges={{ chat: chatUnread }}
@@ -578,7 +578,7 @@ export default function AcademyAppLayout() {
       />
 
       <main className="min-w-0 flex-1">
-        <div className="main-content mx-auto w-full max-w-md pb-24 md:max-w-none md:px-8 md:py-6 md:pb-8">
+        <div className="main-content mx-auto w-full max-w-md pb-24 md:max-w-3xl md:px-6 md:py-6 lg:mx-0 lg:max-w-none lg:px-8 2xl:mx-auto 2xl:max-w-[1600px]">
           {currentAcademyId && (hasSyncError || isRealtimeReconnecting) && (
             <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 md:mx-0">
               <div className="min-w-0">
@@ -641,9 +641,9 @@ export default function AcademyAppLayout() {
         )}
       </AnimatePresence>
 
-      {/* Bottom Nav — 모바일 전용 (md 이상에서는 좌측 사이드바가 대체).
+      {/* Bottom Nav — 모바일·태블릿 전용 (lg 이상에서는 좌측 사이드바가 대체).
           Phase 39 — 6개 탭이 들어가도록 아이콘/너비 살짝 축소. */}
-      <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-seenit-surface border-t border-seenit-border-soft shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
+      <nav className="bottom-nav fixed bottom-0 left-0 right-0 z-30 border-t border-seenit-border-soft bg-seenit-surface shadow-[0_-1px_0_rgba(0,0,0,0.06)] lg:hidden">
         <div className="max-w-md mx-auto flex pt-2">
           {mobileTabs.map(({ id, label, Icon, pilotLocked }) => {
             const active = mobileActiveTab === id;

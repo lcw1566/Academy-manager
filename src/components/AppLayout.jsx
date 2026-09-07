@@ -101,12 +101,12 @@ export default function AppLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-seenit-canvas text-seenit-ink md:flex">
-      {/* PC 사이드바 — md 이상에서만 표시 */}
+    <div className="min-h-screen bg-seenit-canvas text-seenit-ink lg:flex">
+      {/* 넓은 화면에서는 사이드바, 모바일·태블릿에서는 하단 내비게이션을 사용한다. */}
       <Sidebar tabs={PRIVATE_TABS} />
 
       <main className="flex-1 min-w-0">
-        <div className="main-content max-w-md mx-auto md:mx-0 md:max-w-none md:px-8 md:py-6 pb-24 md:pb-8">
+        <div className="main-content mx-auto w-full max-w-md pb-24 md:max-w-3xl md:px-6 md:py-6 lg:mx-0 lg:max-w-none lg:px-8 2xl:mx-auto 2xl:max-w-[1600px]">
           <Suspense fallback={<div className="h-[60vh]" />}>
             <div key={pageKey}>
               {renderContent()}

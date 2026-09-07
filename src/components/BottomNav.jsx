@@ -22,7 +22,7 @@ export default function BottomNav() {
     : tabs;
 
   return (
-    <nav className="md:hidden bottom-nav fixed bottom-0 left-0 right-0 z-30 bg-seenit-surface border-t border-seenit-border-soft shadow-[0_-1px_0_rgba(0,0,0,0.06)]">
+    <nav className="bottom-nav fixed bottom-0 left-0 right-0 z-30 border-t border-seenit-border-soft bg-seenit-surface shadow-[0_-1px_0_rgba(0,0,0,0.06)] lg:hidden">
       <div className="max-w-md mx-auto flex pt-2">
         {visibleTabs.map(({ id, label, icon: Icon }) => {
           const active = activeTab === id;

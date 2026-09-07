@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
+import * as Sentry from '@sentry/react';
 import { BellRing, Check, Sparkles } from 'lucide-react';
 import Modal from './Modal';
-import { PRODUCT_UPDATES } from '../constants/productUpdates';
+import {
+  PRODUCT_UPDATES,
+  isProductUpdateEligible,
+} from '../constants/productUpdates';
 import useAcademyStore from '../store/useAcademyStore';
 import useAuthStore from '../store/useAuthStore';
+import {
+  listReadProductUpdateIds,
+  markProductUpdateRead,
+} from '../services/supabase/productUpdatesApi';
 
 const INITIAL_DELAY_MS = 1200;
 const MODAL_RETRY_MS = 700;
-
-function appliesToUser(update, role, mode) {
-  const roleMatches = !update.roles?.length || update.roles.includes(role);
-  const modeMatches = !update.modes?.length || update.modes.includes(mode);
-  return roleMatches && modeMatches;
-}
 
 function readKey(userId, updateId) {
   return `seenit-product-update:${userId}:${updateId}`;
@@ -35,21 +37,35 @@ function rememberRead(userId, updateId) {
 }
 
 export default function UpdateAnnouncementModal() {
-  const userId = useAuthStore((s) => s.user?.id);
+  const user = useAuthStore((s) => s.user);
+  const userId = user?.id;
   const role = useAcademyStore((s) => s.role);
   const currentMode = useAcademyStore((s) => s.currentMode);
   const [isOpen, setIsOpen] = useState(false);
 
   const update = useMemo(
-    () => PRODUCT_UPDATES.find((item) => appliesToUser(item, role, currentMode)) || null,
-    [role, currentMode],
+    () => PRODUCT_UPDATES.find((item) => isProductUpdateEligible(item, {
+      role,
+      mode: currentMode,
+      userCreatedAt: user?.created_at,
+    })) || null,
+    [role, currentMode, user?.created_at],
   );
 
   useEffect(() => {
-    if (!userId || !update || wasRead(userId, update.id)) return undefined;
+    if (!userId || !update) return undefined;
+    if (wasRead(userId, update.id)) {
+      // 서버 읽음 기능 도입 전에 이 기기에서 확인한 기록도 다른 기기로 동기화한다.
+      void markProductUpdateRead(update.id).catch((error) => {
+        console.warn('[product-update] local acknowledgement backfill failed', error);
+      });
+      return undefined;
+    }
 
+    let cancelled = false;
     let timerId;
     const openWhenReady = () => {
+      if (cancelled) return;
       // 로그인 직후 온보딩 등 더 중요한 모달이 떠 있으면 닫힐 때까지 기다린다.
       if (document.body.style.overflow === 'hidden') {
         timerId = window.setTimeout(openWhenReady, MODAL_RETRY_MS);
@@ -58,14 +74,46 @@ export default function UpdateAnnouncementModal() {
       setIsOpen(true);
     };
 
-    timerId = window.setTimeout(openWhenReady, INITIAL_DELAY_MS);
-    return () => window.clearTimeout(timerId);
+    const prepareAnnouncement = async () => {
+      const startedAt = Date.now();
+      try {
+        const readIds = await listReadProductUpdateIds([update.id]);
+        if (cancelled) return;
+        if (readIds.includes(update.id)) {
+          rememberRead(userId, update.id);
+          return;
+        }
+      } catch (error) {
+        // 서버 읽음 동기화가 실패해도 로컬 읽음 상태로 공지 기능은 계속 동작한다.
+        console.warn('[product-update] read state sync failed', error);
+        Sentry.captureException(error, {
+          tags: { area: 'product-update-read-sync', operation: 'select' },
+        });
+      }
+
+      const remainingDelay = Math.max(0, INITIAL_DELAY_MS - (Date.now() - startedAt));
+      timerId = window.setTimeout(openWhenReady, remainingDelay);
+    };
+
+    void prepareAnnouncement();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timerId);
+    };
   }, [userId, update]);
 
   if (!update) return null;
 
   const acknowledge = () => {
-    if (userId) rememberRead(userId, update.id);
+    if (userId) {
+      rememberRead(userId, update.id);
+      void markProductUpdateRead(update.id).catch((error) => {
+        console.warn('[product-update] acknowledgement sync failed', error);
+        Sentry.captureException(error, {
+          tags: { area: 'product-update-read-sync', operation: 'upsert' },
+        });
+      });
+    }
     setIsOpen(false);
   };
 
