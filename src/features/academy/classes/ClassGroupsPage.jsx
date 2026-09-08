@@ -6,7 +6,6 @@ import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import Header from '../../../components/Header';
 import EmptyState from '../../../components/EmptyState';
-import AcademyScheduleCalendar from '../calendar/AcademyScheduleCalendar';
 import {
   ListSearchFilterBar,
   ListFilterChips,
@@ -15,7 +14,7 @@ import {
 } from '../../../components/filters/ListFilters';
 import ClassGroupFormModal from './ClassGroupFormModal';
 import { today, addDaysYMD, formatDateShort } from '../../../utils/date';
-import { getTeacherDisplayName, OWNER_TEACHER_ID } from '../../../utils/format';
+import { getTeacherDisplayName } from '../../../utils/format';
 import { currentUserCan } from '../../../utils/staffPermissions';
 import { getRoomTagClassName } from '../../../utils/roomTags';
 import {
@@ -44,7 +43,6 @@ export default function ClassGroupsPage() {
 
   const [showForm, setShowForm] = useState(false);
   const todayStr = today();
-  const [selectedDate, setSelectedDate] = useState(todayStr);
   const [search, setSearch] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [levelFilter, setLevelFilter] = useState('all');
@@ -79,9 +77,8 @@ export default function ClassGroupsPage() {
   const classScheduleRules = useWorkspaceStore((s) => s.classScheduleRules) ?? [];
   const classSessionExceptions = useWorkspaceStore((s) => s.classSessionExceptions) ?? [];
   const mergedClassSessions = useMemo(() => {
-    const from = [addDaysYMD(todayStr, -31), addDaysYMD(selectedDate, -45)].sort()[0];
-    const toCandidates = [addDaysYMD(todayStr, 90), addDaysYMD(selectedDate, 75)].sort();
-    const to = toCandidates[toCandidates.length - 1];
+    const from = addDaysYMD(todayStr, -31);
+    const to = addDaysYMD(todayStr, 90);
     const plannedRaw = buildPlannedClassSessions({
       rules: classScheduleRules,
       exceptions: classSessionExceptions,
@@ -90,7 +87,7 @@ export default function ClassGroupsPage() {
     });
     const plannedShaped = plannedToClassSessionShape(plannedRaw, classGroups);
     return mergePlannedAndActualClassSessions(plannedShaped, classSessions);
-  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr, selectedDate]);
+  }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr]);
 
   const enriched = useMemo(() =>
     classGroups
@@ -154,34 +151,6 @@ export default function ClassGroupsPage() {
     setTeacherFilter('all');
     setStatusFilter('all');
   };
-  const calendarSchedules = useMemo(() => {
-    const visibleGroupIds = new Set(filteredGroups.map((group) => group.id));
-    return mergedClassSessions
-      .filter((session) => (
-        session.status !== 'canceled'
-        && visibleGroupIds.has(session.classGroupId)
-      ))
-      .map((session) => {
-        const group = filteredGroups.find((item) => item.id === session.classGroupId);
-        return {
-          id: session.id,
-          classGroupId: session.classGroupId,
-          classGroupServerId: group?.serverId || group?.id,
-          date: session.date,
-          type: 'class',
-          startTime: session.startTime,
-          endTime: session.endTime,
-          title: group?.name || '수업',
-          subtitle: [
-            session.room || group?.room,
-            `${session.studentIds?.length || 0}명`,
-          ].filter(Boolean).join(' · '),
-          badge: session.sessionKind === 'makeup' ? '보강' : '',
-          onClick: () => navigateToClassGroup(session.classGroupId),
-        };
-      });
-  }, [mergedClassSessions, filteredGroups, navigateToClassGroup]);
-
   return (
     <div>
       <Header
@@ -201,7 +170,7 @@ export default function ClassGroupsPage() {
       />
 
       <div className="pt-14 md:pt-0 pb-6">
-        <div className="px-4 pt-4 mb-4">
+        <div className="px-4 pt-4 md:pt-0 mb-4">
           <ListSearchFilterBar
             searchValue={search}
             onSearchChange={setSearch}
@@ -256,16 +225,6 @@ export default function ClassGroupsPage() {
           </ListSearchFilterBar>
         </div>
 
-        <div className="mb-4">
-          <AcademyScheduleCalendar
-            selectedDate={selectedDate}
-            onSelectDate={setSelectedDate}
-            schedules={calendarSchedules}
-            title="전체 수업 일정"
-            emptyText="수업 일정이 없어요"
-          />
-        </div>
-
         {enriched.length === 0 ? (
           <EmptyState
             icon="📚"
@@ -283,15 +242,15 @@ export default function ClassGroupsPage() {
             }
           />
         ) : filteredGroups.length === 0 ? (
-          <div className="mx-4 rounded-2xl bg-white px-5 py-10 text-center shadow-sm">
-            <p className="text-sm font-bold text-[#333D4B]">조건에 맞는 반이 없어요.</p>
+          <div className="mx-4 rounded-xl border border-seenit-border-soft bg-seenit-surface px-5 py-10 text-center">
+            <p className="text-sm font-bold text-seenit-ink">조건에 맞는 반이 없어요.</p>
             <button
               type="button"
               onClick={() => {
                 setSearch('');
                 resetFilters();
               }}
-              className="mt-3 rounded-xl bg-[#F2F4F6] px-4 py-2 text-xs font-bold text-[#4E5968]"
+              className="mt-3 rounded-lg bg-seenit-control px-4 py-2 text-xs font-bold text-seenit-secondary transition-colors hover:bg-seenit-elevated"
             >
               검색·필터 초기화
             </button>
@@ -306,11 +265,12 @@ export default function ClassGroupsPage() {
                 group.activityName,
               );
               return (
-                <motion.div
+                <motion.button
                   key={group.id}
+                  type="button"
                   whileTap={{ scale: 0.97 }}
                   onClick={() => navigateToClassGroup(group.id)}
-                  className="flex min-h-[142px] cursor-pointer select-none flex-col rounded-2xl bg-white p-3 shadow-sm transition-shadow hover:shadow-md md:min-h-[150px]"
+                  className="flex min-h-[142px] select-none flex-col rounded-xl border border-seenit-border-soft bg-seenit-surface p-3 text-left transition-colors hover:bg-seenit-elevated md:min-h-[150px]"
                 >
                   <div className="mb-2 flex min-w-0 items-center gap-1.5">
                     <span className="min-w-0 truncate rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700 md:text-[11px]">
@@ -326,12 +286,12 @@ export default function ClassGroupsPage() {
                     </span>
                   </div>
 
-                  <p className="truncate text-sm font-extrabold leading-snug text-[#191F28] md:text-base">
+                  <p className="truncate text-sm font-extrabold leading-snug text-seenit-ink md:text-base">
                     {group.name}
                   </p>
-                  {group.level && <p className="mt-0.5 truncate text-[11px] font-semibold text-[#8B95A1]">{group.level}</p>}
+                  {group.level && <p className="mt-0.5 truncate text-[11px] font-semibold text-seenit-muted">{group.level}</p>}
 
-                  <div className="mt-2 flex min-w-0 items-center gap-2 text-[11px] font-medium text-[#6B7684]">
+                  <div className="mt-2 flex min-w-0 items-center gap-2 text-[11px] font-medium text-seenit-secondary">
                     <span className="flex flex-shrink-0 items-center gap-1">
                       <Users size={11} /> {group.studentCount}명
                     </span>
@@ -346,20 +306,20 @@ export default function ClassGroupsPage() {
                     </span>
                   </div>
 
-                  <div className="mt-auto flex min-w-0 items-center gap-1.5 border-t border-[#F2F4F6] pt-2">
+                  <div className="mt-auto flex min-w-0 items-center gap-1.5 border-t border-seenit-border-soft pt-2">
                     {group.room && (
                       <span className={`inline-flex max-w-[38%] truncate rounded-md border px-1.5 py-0.5 text-[9px] font-bold ${getRoomTagClassName(group.room)}`}>
                         {group.room}
                       </span>
                     )}
-                    <span className="min-w-0 flex-1 truncate text-[10px] font-semibold text-[#8B95A1]">
+                    <span className="min-w-0 flex-1 truncate text-[10px] font-semibold text-seenit-muted">
                       {group.nextSession
                         ? `${formatDateShort(group.nextSession.date)} · ${group.teacherName || '담당 미정'}`
                         : group.teacherName || '다음 수업 미정'}
                     </span>
-                    <ChevronRight size={14} className="text-gray-300" />
+                    <ChevronRight size={14} className="text-seenit-subtle" />
                   </div>
-                </motion.div>
+                </motion.button>
               );
             })}
           </div>

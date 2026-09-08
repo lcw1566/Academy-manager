@@ -16,7 +16,11 @@ import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
 import StaffHomeQrButton from './StaffHomeQrButton';
 import HomeActionList from './HomeActionList';
-import { summarizeStudentPresence } from './homeDashboardUtils';
+import {
+  getActionableClassSessions,
+  isSessionAssignedToCurrentUser,
+  summarizeStudentPresence,
+} from './homeDashboardUtils';
 import { isEffectiveAttendance } from '../../../utils/attendanceRecords';
 import { readAttendanceSettings } from '../attendance/attendanceHelpers';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
@@ -25,14 +29,6 @@ import {
   mergePlannedAndActualClassSessions,
   plannedToClassSessionShape,
 } from '../../../utils/schedule';
-
-// "HH:mm" 문자열을 분 단위로 변환 (00:00 기준)
-function parseHHmmToMinutes(hhmm) {
-  if (!hhmm || typeof hhmm !== 'string') return null;
-  const [h, m] = hhmm.split(':').map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return h * 60 + m;
-}
 
 function formatClock(value) {
   if (!value) return '';
@@ -54,6 +50,8 @@ export default function TeacherDashboard() {
   const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords);
   const academyAttendanceRecords = useAcademyStore((s) => s.academyAttendanceRecords);
   const academyTeachers = useAcademyStore((s) => s.academyTeachers);
+  const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
+  const academyManagers = useAcademyStore((s) => s.academyManagers) ?? [];
   const academyProfile = useAcademyStore((s) => s.academyProfile);
   const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -78,13 +76,25 @@ export default function TeacherDashboard() {
   );
   const studentAttendanceEnabled =
     readAttendanceSettings(myMembership?.academy).studentCheckMethod !== 'disabled';
+  const instructionStaff = useMemo(
+    () => [...academyTeachers, ...academyAssistants, ...academyManagers],
+    [academyTeachers, academyAssistants, academyManagers],
+  );
   const myTeacher = useMemo(
-    () => findLocalStaffForUser(academyTeachers, {
+    () => findLocalStaffForUser(instructionStaff, {
       userId: authUserId,
       memberId: myMembership?.id,
       email: authUserEmail,
     }),
-    [academyTeachers, authUserId, myMembership?.id, authUserEmail],
+    [instructionStaff, authUserId, myMembership?.id, authUserEmail],
+  );
+  const myStaffIds = useMemo(
+    () => new Set(
+      instructionStaff
+        .filter((staff) => staff.serverUserId === authUserId || staff.id === myTeacher?.id)
+        .map((staff) => staff.id),
+    ),
+    [instructionStaff, authUserId, myTeacher?.id],
   );
 
   const [selectedDate, setSelectedDate] = useState(today());
@@ -149,30 +159,17 @@ export default function TeacherDashboard() {
     return mergePlannedAndActualClassSessions(plannedShaped, classSessions);
   }, [classSessions, classScheduleRules, classSessionExceptions, classGroups, todayStr, selectedDate]);
 
-  // 본인 담당 세션 — teacherId / teacherUserId / 본인 담당 반 / Phase 30 대체 강사.
-  // 대체 강사로 배정된 세션은 원래 강사 대신 본인이 담당이므로 그대로 노출한다.
-  // substitute 매칭: local id (substituteTeacherId) 우선, server user_id (substituteTeacherUserId) fallback.
   const mySessions = useMemo(() => {
     if (!myTeacher && !authUserId) return [];
-    const subMatchesMe = (s) => {
-      if (s.substituteTeacherId && myTeacher && s.substituteTeacherId === myTeacher.id) return true;
-      if (s.substituteTeacherUserId && authUserId && s.substituteTeacherUserId === authUserId) return true;
-      return false;
-    };
     return mergedClassSessions.filter((s) => {
       if (s.status === 'canceled') return false;
-      const hasSubstitute = !!(s.substituteTeacherId || s.substituteTeacherUserId);
-      if (hasSubstitute) {
-        // 대체 강사 배정 — 그 사람이 본인이면 노출, 원 강사면 제외.
-        return subMatchesMe(s);
-      }
-      if (s.teacherUserId && authUserId && s.teacherUserId === authUserId) return true;
-      if (myTeacher && s.teacherId === myTeacher.id) return true;
-      if (authUserId && (s.assistantUserIds || []).includes(authUserId)) return true;
-      if (myTeacher && (s.assistantIds || []).includes(myTeacher.id)) return true;
-      return myGroupIds.has(s.classGroupId);
+      const group = classGroups.find((item) => item.id === s.classGroupId);
+      return isSessionAssignedToCurrentUser(s, group, {
+        userId: authUserId,
+        staffIds: myStaffIds,
+      });
     });
-  }, [mergedClassSessions, myTeacher, myGroupIds, authUserId]);
+  }, [mergedClassSessions, myTeacher, authUserId, classGroups, myStaffIds]);
 
   const todaySessions = useMemo(
     () => mySessions.filter((s) => s.date === todayStr).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')),
@@ -252,46 +249,41 @@ export default function TeacherDashboard() {
     [studentCheckEvents, todayStr],
   );
 
-  const currentOrNextSession = useMemo(() => {
-    const nowMinutes = getKoreaMinutes(now);
-    return todaySessions
-      .map((session) => ({
-        session,
-        start: parseHHmmToMinutes(session.startTime),
-        end: parseHHmmToMinutes(session.endTime),
-      }))
-      .filter(({ end }) => end === null || end >= nowMinutes)
-      .sort((a, b) => (a.start ?? Number.MAX_SAFE_INTEGER) - (b.start ?? Number.MAX_SAFE_INTEGER))[0]
-      || null;
-  }, [now, todaySessions]);
+  const actionableSessions = useMemo(() => getActionableClassSessions({
+    sessions: todaySessions,
+    groups: classGroups,
+    lessonRecords: academyLessonRecords,
+    nowMinutes: getKoreaMinutes(now),
+    assignment: { userId: authUserId, staffIds: myStaffIds },
+  }), [todaySessions, classGroups, academyLessonRecords, now, authUserId, myStaffIds]);
 
   const homeActions = useMemo(() => {
     const actions = [];
-    if (currentOrNextSession) {
-      const { session, start, end } = currentOrNextSession;
-      const nowMinutes = getKoreaMinutes(now);
+    actionableSessions.forEach(({ session, phase, startsIn }) => {
       const group = classGroups.find((item) => item.id === session.classGroupId);
-      const status = start !== null && end !== null && start <= nowMinutes && nowMinutes <= end
-        ? '진행 중'
-        : `${formatClock(session.startTime)} 시작`;
+      const status = phase === 'soon'
+        ? `${formatClock(session.startTime)} 시작 · ${startsIn}분 후`
+        : phase === 'live' ? '진행 중 · 수업 기록하기' : '수업 기록 마무리';
       actions.push({
         id: `session-${session.id}`,
-        icon: Clock,
-        tone: 'blue',
-        title: group?.name || '다음 수업',
-        detail: `${status} · 수업 기록 열기`,
+        icon: phase === 'finish' ? FileText : Clock,
+        tone: phase === 'finish' ? 'amber' : 'blue',
+        title: group?.name || '오늘 수업',
+        detail: `${status} · ${formatTimeRange(session.startTime, session.endTime)}`,
         onClick: () => void openSession(session),
       });
-    }
+    });
 
-    const missingRecord = unfinishedRecordSessions[0];
+    const actionableIds = new Set(actionableSessions.map(({ session }) => session.id));
+    const remainingRecords = unfinishedRecordSessions.filter((session) => !actionableIds.has(session.id));
+    const missingRecord = remainingRecords[0];
     if (missingRecord) {
       const group = classGroups.find((item) => item.id === missingRecord.classGroupId);
       actions.push({
         id: `record-${missingRecord.id}`,
         icon: FileText,
         tone: 'amber',
-        title: `수업 기록 ${unfinishedRecordSessions.length}건 미작성`,
+        title: `수업 기록 ${remainingRecords.length}건 미작성`,
         detail: group?.name || '완료된 수업 기록을 작성해주세요.',
         onClick: () => navigateToClassSession(missingRecord.id),
       });
@@ -312,10 +304,9 @@ export default function TeacherDashboard() {
 
     return actions;
   }, [
+    actionableSessions,
     classGroups,
-    currentOrNextSession,
     navigateToClassSession,
-    now,
     openSession,
     setActiveTab,
     studentAttendanceEnabled,

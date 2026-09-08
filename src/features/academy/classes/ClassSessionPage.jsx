@@ -1048,8 +1048,10 @@ export default function ClassSessionPage() {
             </div>
           </div>
         )}
+        <div className="lg:grid lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] lg:items-start lg:gap-6 lg:px-4">
+          <aside className="lg:sticky lg:top-6">
         {/* 수업 정보 카드 */}
-        <div className={`px-4 mb-4 ${isCanceledSession ? 'pt-3' : 'pt-4'}`}>
+        <div className={`px-4 mb-4 lg:px-0 ${isCanceledSession ? 'pt-3' : 'pt-4'}`}>
           <div className="bg-white rounded-2xl p-4 shadow-sm">
             <div className="grid grid-cols-3 gap-3 mb-3">
               <SummaryCell label="수강생" value={students.length} />
@@ -1129,7 +1131,7 @@ export default function ClassSessionPage() {
         </div>
 
         {(carriedHomework || carriedNextPlan) && (
-          <div className="px-4 mb-4">
+          <div className="px-4 mb-4 lg:px-0">
             <div className="rounded-2xl border border-blue-100 bg-white px-4 py-3.5 shadow-sm">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <p className="text-sm font-bold text-gray-900">이번 수업 준비</p>
@@ -1154,10 +1156,13 @@ export default function ClassSessionPage() {
             </div>
           </div>
         )}
+          </aside>
+
+          <section className="min-w-0 lg:pt-4">
 
         {/* ── 공통 수업 기록 ─────────────────────────────── */}
         {canEdit && hasCommonRecordBlocks && (
-          <div className="px-4 mb-4">
+          <div className="px-4 mb-4 lg:px-0">
             <div className="bg-blue-50 rounded-2xl p-4">
               <div className="flex items-center gap-2 mb-3">
                 <p className="text-sm font-bold text-blue-900">{activityLabel} 기록</p>
@@ -1199,7 +1204,7 @@ export default function ClassSessionPage() {
         )}
 
         {/* ── 학생별 출석·수업 기록 ───────────────────────── */}
-        <div className="px-4 mb-4">
+        <div className="px-4 mb-4 lg:px-0">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-bold text-gray-700">학생별 기록</p>
             {attendanceSettings.studentCheckMethod !== 'disabled' && attendanceHintByStudentId.size > 0 && (
@@ -1239,6 +1244,8 @@ export default function ClassSessionPage() {
               })
             )}
           </div>
+        </div>
+          </section>
         </div>
       </div>
 

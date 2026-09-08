@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Trash2, CalendarDays, Plus, Info, Users, Settings2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -93,7 +93,8 @@ export default function ClassGroupDetailPage() {
     role, selectedClassGroupId, classGroups, classSessions,
     academyStudents, academyTeachers, academyAssistants = [], academyManagers = [],
     academyProfile, academyAttendanceRecords,
-    clinicRecords = [], navigateToClassSession, goBackFromClassGroup, setActiveTab,
+    navigateToClassSession, goBackFromClassGroup,
+    navigateToAcademyStudent,
     deleteClassGroup, showToast, ensureClassSessionsForMonth,
     updateClassGroup, applyRecordSchemaToFutureSessions,
   } = useAcademyStore();
@@ -109,6 +110,7 @@ export default function ClassGroupDetailPage() {
     { role, staffProfile: myStaffProfile },
     'canManageClasses',
   );
+
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const ensureClassSessionsForRangeLocal = useWorkspaceStore(
@@ -119,6 +121,14 @@ export default function ClassGroupDetailPage() {
   );
 
   const [showEditForm, setShowEditForm] = useState(false);
+  const [detailTab, setDetailTab] = useState(() => {
+    try {
+      const saved = window.sessionStorage.getItem('seenit-class-detail-tab');
+      return ['overview', 'schedule', 'students', 'settings'].includes(saved) ? saved : 'overview';
+    } catch {
+      return 'overview';
+    }
+  });
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [calendarAnchor, setCalendarAnchor] = useState(today());
   const [calendarMode, setCalendarMode] = useState('week');
@@ -128,6 +138,10 @@ export default function ClassGroupDetailPage() {
   const [showSessionTypePicker, setShowSessionTypePicker] = useState(false);
   const [sessionCreateKind, setSessionCreateKind] = useState(null);
   const todayStr = today();
+
+  useEffect(() => {
+    if (detailTab === 'settings' && !canManageClasses) setDetailTab('overview');
+  }, [canManageClasses, detailTab]);
   const effectiveAttendanceRecords = useMemo(
     () => academyAttendanceRecords.filter(isEffectiveAttendance),
     [academyAttendanceRecords],
@@ -204,6 +218,12 @@ export default function ClassGroupDetailPage() {
       : [],
     [mergedClassSessions, group]
   );
+  const overviewSessions = useMemo(() => {
+    const available = sessions.filter((session) => session.status !== 'canceled');
+    const todaySessions = available.filter((session) => session.date === todayStr);
+    const nextSession = available.find((session) => compareYMD(session.date || '', todayStr) > 0) || null;
+    return { todaySessions, nextSession };
+  }, [sessions, todayStr]);
 
   const actualGroupSessions = useMemo(
     () => group
@@ -234,11 +254,6 @@ export default function ClassGroupDetailPage() {
   const instructors = useMemo(
     () => [...academyTeachers, ...academyManagers, ...academyAssistants],
     [academyTeachers, academyManagers, academyAssistants],
-  );
-
-  const groupClinicRecords = useMemo(
-    () => (clinicRecords || []).filter((r) => r.classGroupId === selectedClassGroupId),
-    [clinicRecords, selectedClassGroupId]
   );
 
   if (!group) {
@@ -326,34 +341,116 @@ export default function ClassGroupDetailPage() {
       <Header
         title={group.name}
         onBack={goBackFromClassGroup}
-        right={canManageClasses ? (
-          <div className="flex items-center gap-1">
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.97 }}
-              onClick={() => setShowEditForm(true)}
-              aria-label="반 수정"
-              className="w-9 h-9 flex items-center justify-center rounded-full text-gray-500 active:bg-gray-100 md:hover:bg-gray-100"
-            >
-              <Pencil size={17} />
-            </motion.button>
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.97 }}
-              onClick={handleDeleteClassGroup}
-              aria-label="반 삭제"
-              className="w-9 h-9 flex items-center justify-center rounded-full text-red-400 active:bg-red-50 md:hover:bg-red-50"
-            >
-              <Trash2 size={17} />
-            </motion.button>
-          </div>
-        ) : null}
       />
 
       <div className="pt-14 md:pt-0 pb-6">
+        <div className="sticky top-14 z-20 border-b border-seenit-border-soft bg-seenit-canvas/95 px-4 py-2 backdrop-blur-xl md:static md:border-0 md:bg-transparent md:py-0 md:backdrop-blur-none">
+          <div className={`grid rounded-xl bg-seenit-control p-1 ${canManageClasses ? 'grid-cols-4' : 'grid-cols-3'} md:w-fit`} role="tablist" aria-label="반 상세 보기">
+            {[
+              { id: 'overview', label: '개요', Icon: Info },
+              { id: 'schedule', label: '일정', Icon: CalendarDays },
+              { id: 'students', label: '학생', Icon: Users },
+              ...(canManageClasses ? [{ id: 'settings', label: '설정', Icon: Settings2 }] : []),
+            ].map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={detailTab === id}
+                onClick={() => {
+                  setDetailTab(id);
+                  try {
+                    window.sessionStorage.setItem('seenit-class-detail-tab', id);
+                  } catch {
+                    /* 세션 저장소 없이도 현재 화면 전환은 유지한다. */
+                  }
+                }}
+                className={`flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-bold transition-colors md:min-w-[92px] ${
+                  detailTab === id
+                    ? 'bg-seenit-surface text-seenit-brand shadow-sm'
+                    : 'text-seenit-muted'
+                }`}
+              >
+                <Icon size={14} />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* 반 정보 카드 */}
+        {detailTab === 'overview' && (
         <div className="px-4 pt-4 mb-5">
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
+          <section className="mb-3" aria-labelledby="class-session-shortcut-title">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <h2 id="class-session-shortcut-title" className="text-sm font-bold text-seenit-ink">
+                {overviewSessions.todaySessions.length > 0 ? '오늘 수업' : '다음 수업'}
+              </h2>
+              {overviewSessions.todaySessions.length > 1 && (
+                <span className="text-xs font-semibold text-seenit-muted">
+                  {overviewSessions.todaySessions.length}회
+                </span>
+              )}
+            </div>
+
+            {overviewSessions.todaySessions.length > 0 ? (
+              <div className="overflow-hidden rounded-xl border border-seenit-border-soft bg-seenit-surface">
+                {overviewSessions.todaySessions.map((session) => {
+                  const statusInfo = SESSION_STATUS[session.status] || SESSION_STATUS.scheduled;
+                  return (
+                    <button
+                      key={session.id}
+                      type="button"
+                      onClick={() => void openSession(session)}
+                      className="flex w-full items-center gap-3 border-b border-seenit-border-soft px-4 py-3 text-left transition-colors last:border-0 hover:bg-seenit-elevated active:bg-seenit-control"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-seenit-brand-soft text-seenit-brand">
+                        <CalendarDays size={17} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold text-seenit-ink">
+                          {formatSessionTimeRange(session.startTime, session.endTime)}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-seenit-muted">
+                          {session.status === 'completed' ? '수업 기록 보기' : '수업 기록하기'}
+                        </span>
+                      </span>
+                      <span className={`shrink-0 rounded-md px-2 py-1 text-[10px] font-bold ${statusInfo.color}`}>
+                        {statusInfo.label}
+                      </span>
+                      <ChevronRight size={15} className="shrink-0 text-seenit-subtle" />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : overviewSessions.nextSession ? (
+              <button
+                type="button"
+                onClick={() => void openSession(overviewSessions.nextSession)}
+                className="flex w-full items-center gap-3 rounded-xl border border-seenit-border-soft bg-seenit-surface px-4 py-3 text-left transition-colors hover:bg-seenit-elevated active:bg-seenit-control"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-seenit-brand-soft text-seenit-brand">
+                  <CalendarDays size={17} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-bold text-seenit-ink">
+                    {formatDateShort(overviewSessions.nextSession.date)}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-seenit-muted">
+                    {formatSessionTimeRange(overviewSessions.nextSession.startTime, overviewSessions.nextSession.endTime)}
+                  </span>
+                </span>
+                <span className="shrink-0 text-xs font-bold text-seenit-brand">일정 보기</span>
+                <ChevronRight size={15} className="shrink-0 text-seenit-subtle" />
+              </button>
+            ) : (
+              <div className="rounded-xl border border-seenit-border-soft bg-seenit-surface px-4 py-4 text-sm font-semibold text-seenit-muted">
+                예정된 수업이 없어요.
+              </div>
+            )}
+          </section>
+
+          <div className="rounded-xl border border-seenit-border-soft bg-seenit-surface p-4">
             <div className="grid grid-cols-2 gap-3 text-xs">
               <InfoRow label="요일" value={`${group.weekdays?.join('·')}요일`} />
               <InfoRow label="유형" value={activityLabel} />
@@ -381,55 +478,48 @@ export default function ClassGroupDetailPage() {
                   : '기본 수강료에 포함'}
               />
             </div>
-            {canManageClasses && (
-              <div className="mt-4 border-t border-gray-100 pt-3">
+          </div>
+        </div>
+        )}
+
+        {/* 학생 목록 */}
+        {detailTab === 'students' && (
+          <div className="px-4 pt-4 mb-5">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-bold text-seenit-ink">수강 학생</p>
+              <span className="text-xs font-semibold text-seenit-muted">{students.length}명</span>
+            </div>
+            {students.length > 0 ? (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {students.map((s) => (
                 <button
+                  key={s.id}
                   type="button"
-                  onClick={() => setShowRecordTemplate(true)}
-                  className="w-full rounded-xl bg-blue-50 py-2.5 text-xs font-bold text-blue-700 active:bg-blue-100"
+                  onClick={() => {
+                    goBackFromClassGroup();
+                    navigateToAcademyStudent(s.id);
+                  }}
+                  className="flex min-w-0 items-center gap-3 rounded-xl border border-seenit-border-soft bg-seenit-surface px-4 py-3 text-left transition-colors hover:bg-seenit-elevated"
                 >
-                  기록 구성
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-seenit-brand-soft text-sm font-extrabold text-seenit-brand">
+                    {(s.name || '?').charAt(0)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-bold text-seenit-ink">{s.name}</span>
+                  <ChevronRight size={15} className="shrink-0 text-seenit-subtle" />
                 </button>
+              ))}
+            </div>
+            ) : (
+              <div className="rounded-xl border border-seenit-border-soft bg-seenit-surface px-5 py-10 text-center text-sm font-semibold text-seenit-muted">
+                배정된 학생이 없어요
               </div>
             )}
           </div>
-        </div>
-
-        {/* 학생 목록 */}
-        {students.length > 0 && (
-          <div className="px-4 mb-5">
-            <p className="text-sm font-bold text-gray-700 mb-2">수강 학생</p>
-            <div className="flex gap-2 flex-wrap">
-              {students.map((s) => (
-                <span key={s.id} className="bg-white shadow-sm text-sm font-medium text-gray-700 px-3 py-1.5 rounded-full border border-gray-100">
-                  {s.name}
-                </span>
-              ))}
-            </div>
-          </div>
         )}
 
-        {/* 최근 클리닉 기록 */}
-        {groupClinicRecords.length > 0 && (
-          <div className="px-4 mb-5">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-bold text-gray-700">최근 클리닉 기록</p>
-              <button type="button" onClick={() => setActiveTab('clinic')} className="text-xs text-blue-600 font-semibold">
-                전체 보기
-              </button>
-            </div>
-            <div className="bg-blue-50 rounded-2xl px-4 py-3">
-              <p className="text-sm font-semibold text-blue-700">총 {groupClinicRecords.length}건 기록됨</p>
-              <p className="text-xs text-blue-500 mt-0.5">
-                {groupClinicRecords.slice(0, 2).map((r) => {
-                  const stu = academyStudents.find((s) => s.id === r.studentId);
-                  return `${stu?.name || '학생'}: ${r.subject}`;
-                }).join(' / ')}
-              </p>
-            </div>
-          </div>
-        )}
-
+        {detailTab === 'schedule' && (
+        <>
+        <div className="pt-4">
         <ClassGroupScheduleCalendar
           sessions={calendarSessions}
           students={students}
@@ -450,6 +540,7 @@ export default function ClassGroupDetailPage() {
           onAddSession={canManageClasses ? () => setShowSessionTypePicker(true) : null}
           onSessionClick={(session) => void openSession(session)}
         />
+        </div>
 
         {/* 전체 수업일 보기 */}
         {sessions.length > 0 && (
@@ -457,12 +548,56 @@ export default function ClassGroupDetailPage() {
             <button
               type="button"
               onClick={() => setShowAllSessions(true)}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-white border border-gray-200 text-sm font-bold text-gray-700 active:bg-gray-50"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-seenit-border-soft bg-seenit-surface py-3.5 text-sm font-bold text-seenit-secondary transition-colors hover:bg-seenit-elevated active:bg-seenit-control"
             >
-              <CalendarDays size={16} className="text-gray-500" />
+              <CalendarDays size={16} className="text-seenit-muted" />
               전체 수업일 보기
-              <span className="text-xs text-gray-400 font-medium">({sessions.length}회)</span>
+              <span className="text-xs font-medium text-seenit-subtle">({sessions.length}회)</span>
             </button>
+          </div>
+        )}
+        </>
+        )}
+
+        {detailTab === 'settings' && canManageClasses && (
+          <div className="px-4 pt-4">
+            <div className="overflow-hidden rounded-xl border border-seenit-border-soft bg-seenit-surface">
+              <button
+                type="button"
+                onClick={() => setShowEditForm(true)}
+                className="flex w-full items-center gap-3 border-b border-seenit-border-soft px-4 py-4 text-left transition-colors hover:bg-seenit-elevated"
+              >
+                <Pencil size={17} className="text-seenit-secondary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-seenit-ink">반 정보 수정</span>
+                  <span className="mt-0.5 block text-xs text-seenit-muted">시간, 담당 선생님, 학생과 비용을 관리해요.</span>
+                </span>
+                <ChevronRight size={16} className="text-seenit-subtle" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowRecordTemplate(true)}
+                className="flex w-full items-center gap-3 border-b border-seenit-border-soft px-4 py-4 text-left transition-colors hover:bg-seenit-elevated"
+              >
+                <Settings2 size={17} className="text-seenit-secondary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-seenit-ink">수업 기록 구성</span>
+                  <span className="mt-0.5 block text-xs text-seenit-muted">앞으로 사용할 공통·학생별 기록 항목을 정해요.</span>
+                </span>
+                <ChevronRight size={16} className="text-seenit-subtle" />
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteClassGroup}
+                className="flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-red-50"
+              >
+                <Trash2 size={17} className="text-red-500" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold text-red-600">반 삭제</span>
+                  <span className="mt-0.5 block text-xs text-red-400">수업 일정과 기록에 영향을 줄 수 있어요.</span>
+                </span>
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -544,7 +679,7 @@ export default function ClassGroupDetailPage() {
                   setShowSessionTypePicker(false);
                   setSessionCreateKind(option.id);
                 }}
-                className={`rounded-2xl border p-4 text-left active:scale-[0.99] ${option.tone}`}
+                className={`rounded-xl border p-4 text-left active:scale-[0.99] ${option.tone}`}
               >
                 <span className="block text-sm font-extrabold">{option.title}</span>
                 <span className="mt-1 block text-[11px] font-medium leading-relaxed opacity-70">
@@ -636,11 +771,11 @@ function ClassGroupScheduleCalendar({
 
   return (
     <div className="px-4 mb-5">
-      <div className="overflow-hidden rounded-3xl bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-[#F2F4F6] px-4 py-4 md:px-5 lg:flex-row lg:items-center lg:justify-between">
+      <div className="overflow-hidden rounded-xl border border-seenit-border-soft bg-seenit-surface">
+        <div className="flex flex-col gap-3 border-b border-seenit-border-soft px-4 py-4 md:px-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <p className="text-base font-black text-[#191F28]">{calendarMode === 'month' ? '월간 수업표' : '주간 수업표'}</p>
-            <p className="text-[11px] text-[#8B95A1] mt-0.5 truncate">
+            <p className="text-base font-black text-seenit-ink">{calendarMode === 'month' ? '월간 수업표' : '주간 수업표'}</p>
+            <p className="mt-0.5 truncate text-[11px] text-seenit-muted">
               {calendarMode === 'month'
                 ? `${formatMonth(selectedMonth)} · ${monthCount}회`
                 : `${weekLabel} · ${weekCount}회`}
@@ -651,20 +786,20 @@ function ClassGroupScheduleCalendar({
               <button
                 type="button"
                 onClick={onAddSession}
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#3182F6] text-white shadow-sm active:bg-[#1B64DA]"
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-seenit-brand text-white transition-colors hover:brightness-95 active:brightness-90"
                 aria-label="수업 추가"
                 title="수업 추가"
               >
                 <Plus size={17} strokeWidth={2.5} />
               </button>
             )}
-            <button type="button" onClick={onPrevPeriod} className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] active:bg-[#E5E8EB] flex items-center justify-center" aria-label={calendarMode === 'month' ? '이전 달' : '이전 주'}>
+            <button type="button" onClick={onPrevPeriod} className="flex h-9 w-9 items-center justify-center rounded-lg bg-seenit-control text-seenit-secondary transition-colors hover:bg-seenit-elevated" aria-label={calendarMode === 'month' ? '이전 달' : '이전 주'}>
               <ChevronLeft size={16} />
             </button>
-            <button type="button" onClick={onNextPeriod} className="w-9 h-9 rounded-xl bg-[#F2F4F6] text-[#4E5968] active:bg-[#E5E8EB] flex items-center justify-center" aria-label={calendarMode === 'month' ? '다음 달' : '다음 주'}>
+            <button type="button" onClick={onNextPeriod} className="flex h-9 w-9 items-center justify-center rounded-lg bg-seenit-control text-seenit-secondary transition-colors hover:bg-seenit-elevated" aria-label={calendarMode === 'month' ? '다음 달' : '다음 주'}>
               <ChevronRight size={16} />
             </button>
-            <div className="flex rounded-xl bg-[#F2F4F6] p-1">
+            <div className="flex rounded-lg bg-seenit-control p-1">
               {[
                 { id: 'week', label: '주간' },
                 { id: 'month', label: '월간' },
@@ -673,10 +808,10 @@ function ClassGroupScheduleCalendar({
                   key={item.id}
                   type="button"
                   onClick={() => onCalendarModeChange(item.id)}
-                  className={`h-8 px-3 rounded-lg text-xs font-bold ${
+                  className={`h-8 rounded-md px-3 text-xs font-bold transition-colors ${
                     calendarMode === item.id
-                      ? 'bg-white text-[#3182F6] shadow-sm'
-                      : 'text-[#8B95A1]'
+                      ? 'bg-seenit-surface text-seenit-brand shadow-sm'
+                      : 'text-seenit-muted'
                   }`}
                 >
                   {item.label}
@@ -689,9 +824,9 @@ function ClassGroupScheduleCalendar({
           {calendarMode === 'month' ? (
             <div className={`overflow-hidden transition md:overflow-x-auto ${monthNeedsGeneration ? 'blur-[1.5px] opacity-45 pointer-events-none select-none' : ''}`}>
             <div className="w-full md:min-w-[760px]">
-              <div className="grid grid-cols-7 bg-[#FBFCFD] border-b border-[#F2F4F6]">
+              <div className="grid grid-cols-7 border-b border-seenit-border-soft bg-seenit-elevated">
                 {DOW_TO_KO.map((day) => (
-                  <div key={day} className="px-1 py-2 text-center text-[10px] font-extrabold text-[#8B95A1] md:px-3 md:text-left md:text-[11px]">
+                  <div key={day} className="px-1 py-2 text-center text-[10px] font-extrabold text-seenit-muted md:px-3 md:text-left md:text-[11px]">
                     {day}
                   </div>
                 ))}
@@ -699,7 +834,7 @@ function ClassGroupScheduleCalendar({
               <div className="grid grid-cols-7">
                 {monthDates.map((date, idx) => {
                   if (!date) {
-                    return <div key={`blank-${idx}`} className="min-h-[92px] border-r border-b border-[#F2F4F6] bg-[#FBFCFD] md:min-h-[120px]" />;
+                    return <div key={`blank-${idx}`} className="min-h-[92px] border-r border-b border-seenit-border-soft bg-seenit-elevated md:min-h-[120px]" />;
                   }
                   const daySessions = sessionsByDate.get(date) || [];
                   return (
@@ -720,26 +855,26 @@ function ClassGroupScheduleCalendar({
           ) : (
             <div className={`overflow-hidden transition md:overflow-x-auto ${monthNeedsGeneration ? 'blur-[1.5px] opacity-45 pointer-events-none select-none' : ''}`}>
             <div className="w-full md:min-w-[760px]">
-              <div className="grid grid-cols-[38px_repeat(7,minmax(0,1fr))] border-b border-[#F2F4F6] bg-[#FBFCFD] md:grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
-                <div className="px-1 py-2 text-center text-[9px] font-bold text-[#8B95A1] md:px-2 md:text-left md:text-[10px]">시간</div>
+              <div className="grid grid-cols-[38px_repeat(7,minmax(0,1fr))] border-b border-seenit-border-soft bg-seenit-elevated md:grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
+                <div className="px-1 py-2 text-center text-[9px] font-bold text-seenit-muted md:px-2 md:text-left md:text-[10px]">시간</div>
                 {weekDates.map((date) => {
                   const isTodayCell = date === todayYMD;
                   return (
-                    <div key={date} className="border-l border-[#F2F4F6] px-0.5 py-2 text-center md:px-2 md:text-left">
-                      <p className={`text-[10px] font-extrabold leading-tight md:text-xs ${isTodayCell ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+                    <div key={date} className="border-l border-seenit-border-soft px-0.5 py-2 text-center md:px-2 md:text-left">
+                      <p className={`text-[10px] font-extrabold leading-tight md:text-xs ${isTodayCell ? 'text-seenit-brand' : 'text-seenit-ink'}`}>
                         {getKoreanWeekdayFromYMD(date)}
-                        <span className="block text-[9px] font-bold text-[#8B95A1] md:ml-1 md:inline md:text-[10px]">{date.slice(5).replace('-', '.')}</span>
+                        <span className="block text-[9px] font-bold text-seenit-muted md:ml-1 md:inline md:text-[10px]">{date.slice(5).replace('-', '.')}</span>
                       </p>
                     </div>
                   );
                 })}
               </div>
               <div className="grid grid-cols-[38px_repeat(7,minmax(0,1fr))] md:grid-cols-[56px_repeat(7,minmax(96px,1fr))]">
-                <div className="relative bg-[#FBFCFD] border-r border-[#F2F4F6]" style={{ height: calendarRange.height }}>
+                <div className="relative border-r border-seenit-border-soft bg-seenit-elevated" style={{ height: calendarRange.height }}>
                   {calendarRange.ticks.map((tick) => (
                     <div
                       key={tick}
-                      className="absolute right-0.5 text-[8px] font-medium text-[#8B95A1] md:right-2 md:text-[10px]"
+                      className="absolute right-0.5 text-[8px] font-medium text-seenit-muted md:right-2 md:text-[10px]"
                       style={{
                         top: `clamp(10px, ${((tick - calendarRange.startMin) / totalRange) * 100}%, calc(100% - 16px))`,
                         transform: 'translateY(-50%)',
@@ -755,18 +890,18 @@ function ClassGroupScheduleCalendar({
                   return (
                     <div
                       key={date}
-                      className={`relative border-l border-[#F2F4F6] ${isTodayColumn ? 'bg-blue-50/20' : 'bg-white'}`}
+                      className={`relative border-l border-seenit-border-soft ${isTodayColumn ? 'bg-seenit-brand-soft/30' : 'bg-seenit-surface'}`}
                       style={{ height: calendarRange.height }}
                     >
                       {calendarRange.ticks.map((tick) => (
                         <div
                           key={tick}
-                          className="absolute left-0 right-0 border-t border-[#F2F4F6]"
+                          className="absolute left-0 right-0 border-t border-seenit-border-soft"
                           style={{ top: `${((tick - calendarRange.startMin) / totalRange) * 100}%` }}
                         />
                       ))}
                       {daySessions.length === 0 && (
-                        <div className="absolute inset-x-0.5 top-4 rounded-lg border border-dashed border-[#F2F4F6] px-1 py-2 text-center text-[8px] font-semibold text-[#B0B8C1] md:inset-x-2 md:rounded-xl md:px-2 md:py-3 md:text-[11px]">
+                        <div className="absolute inset-x-0.5 top-4 rounded-lg border border-dashed border-seenit-border-soft px-1 py-2 text-center text-[8px] font-semibold text-seenit-subtle md:inset-x-2 md:px-2 md:py-3 md:text-[11px]">
                           수업 없음
                         </div>
                       )}
@@ -798,17 +933,17 @@ function ClassGroupScheduleCalendar({
           )}
 
           {monthNeedsGeneration && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/55 px-4">
-              <div className="rounded-2xl bg-white/95 px-5 py-5 shadow-xl border border-blue-100 text-center max-w-[320px]">
-                <p className="text-sm font-extrabold text-[#191F28]">아직 이 달 일정이 없어요</p>
-                <p className="mt-1 text-xs leading-relaxed text-[#8B95A1]">
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-seenit-canvas/60 px-4 backdrop-blur-[2px]">
+              <div className="max-w-[320px] rounded-xl border border-seenit-border-soft bg-seenit-surface/95 px-5 py-5 text-center shadow-xl">
+                <p className="text-sm font-extrabold text-seenit-ink">아직 이 달 일정이 없어요</p>
+                <p className="mt-1 text-xs leading-relaxed text-seenit-muted">
                   필요한 달만 수업 회차를 만들어 데이터가 불필요하게 쌓이지 않아요.
                 </p>
                 <button
                   type="button"
                   onClick={onGenerateMonth}
                   disabled={generatingMonth}
-                  className="mt-4 w-full rounded-xl bg-[#3182F6] px-4 py-3 text-sm font-extrabold text-white shadow-sm active:bg-[#1B64DA] disabled:opacity-60"
+                  className="mt-4 w-full rounded-lg bg-seenit-brand px-4 py-3 text-sm font-extrabold text-white active:brightness-90 disabled:opacity-60"
                 >
                   {generatingMonth ? '일정 만드는 중...' : '이 달 수업 일정 만들기'}
                 </button>
@@ -864,22 +999,22 @@ function WeekSessionBlock({ session, students, attendanceRecords, todayYMD, top,
 function MonthSessionCell({ date, sessions, students, attendanceRecords, todayYMD, onSessionClick }) {
   const isTodayCell = date === todayYMD;
   return (
-    <div className={`min-h-[92px] border-r border-b border-[#F2F4F6] p-1.5 md:min-h-[120px] md:p-3 ${isTodayCell ? 'bg-blue-50/40' : 'bg-white'}`}>
+    <div className={`min-h-[92px] border-r border-b border-seenit-border-soft p-1.5 md:min-h-[120px] md:p-3 ${isTodayCell ? 'bg-seenit-brand-soft/30' : 'bg-seenit-surface'}`}>
       <div className="flex items-start justify-between gap-1 md:gap-2">
         <div>
-          <p className={`text-xs font-extrabold md:text-sm ${isTodayCell ? 'text-[#3182F6]' : 'text-[#191F28]'}`}>
+          <p className={`text-xs font-extrabold md:text-sm ${isTodayCell ? 'text-seenit-brand' : 'text-seenit-ink'}`}>
             {Number(date.slice(8))}
           </p>
-          <p className="text-[9px] font-semibold text-[#8B95A1] md:text-[10px]">{getKoreanWeekdayFromYMD(date)}</p>
+          <p className="text-[9px] font-semibold text-seenit-muted md:text-[10px]">{getKoreanWeekdayFromYMD(date)}</p>
         </div>
         {sessions.length > 0 && (
-          <span className="rounded-full bg-blue-50 px-1 py-0.5 text-[8px] font-bold text-[#3182F6] md:px-2 md:text-[10px]">
+          <span className="rounded-md bg-seenit-brand-soft px-1 py-0.5 text-[8px] font-bold text-seenit-brand md:px-2 md:text-[10px]">
             {sessions.length}회
           </span>
         )}
       </div>
       {sessions.length === 0 ? (
-        <p className="mt-3 text-[9px] font-semibold text-[#B0B8C1] md:mt-4 md:text-[11px]">수업 없음</p>
+        <p className="mt-3 text-[9px] font-semibold text-seenit-subtle md:mt-4 md:text-[11px]">수업 없음</p>
       ) : (
         <div className="mt-2 flex flex-col gap-1 md:mt-3 md:gap-1.5">
           {sessions.slice(0, 3).map((session) => {
@@ -890,17 +1025,17 @@ function MonthSessionCell({ date, sessions, students, attendanceRecords, todayYM
                 key={session.id}
                 type="button"
                 onClick={() => onSessionClick(session)}
-                className="rounded-lg border border-blue-100 bg-blue-50 px-1.5 py-1.5 text-left active:scale-[0.99] md:rounded-xl md:px-2.5 md:py-2"
+                className="rounded-lg border border-seenit-brand-muted bg-seenit-brand-soft/60 px-1.5 py-1.5 text-left transition-colors hover:bg-seenit-brand-soft active:scale-[0.99] md:px-2.5 md:py-2"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-[9px] font-extrabold text-[#191F28] md:text-[11px]">
+                  <p className="truncate text-[9px] font-extrabold text-seenit-ink md:text-[11px]">
                     {formatSessionTimeRange(session.startTime, session.endTime)}
                   </p>
                   <span className={`hidden shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold md:inline-flex ${session.isPlanned ? 'bg-indigo-50 text-indigo-600' : statusInfo.color}`}>
                     {session.isPlanned ? '규칙' : statusInfo.label}
                   </span>
                 </div>
-                <p className="mt-0.5 hidden truncate text-[10px] font-semibold text-[#8B95A1] md:block">
+                <p className="mt-0.5 hidden truncate text-[10px] font-semibold text-seenit-muted md:block">
                   {session.room || '강의실 미정'} · {students.length}명
                   {attendedCount > 0 ? ` · 출석 ${attendedCount}` : ''}
                 </p>
@@ -908,7 +1043,7 @@ function MonthSessionCell({ date, sessions, students, attendanceRecords, todayYM
             );
           })}
           {sessions.length > 3 && (
-            <p className="text-[9px] font-bold text-[#8B95A1] md:text-[10px]">+{sessions.length - 3}회</p>
+            <p className="text-[9px] font-bold text-seenit-muted md:text-[10px]">+{sessions.length - 3}회</p>
           )}
         </div>
       )}
@@ -960,8 +1095,8 @@ function AllSessionsModal({ sessions, students, attendanceRecords, todayYMD, onS
           options={FILTERS.map((item) => ({ value: item.id, label: item.label }))}
         />
         {filtered.length === 0 ? (
-          <div className="bg-white rounded-2xl p-6 text-center">
-            <p className="text-sm text-gray-400">해당 수업일이 없어요</p>
+          <div className="rounded-xl border border-seenit-border-soft bg-seenit-surface p-6 text-center">
+            <p className="text-sm text-seenit-muted">해당 수업일이 없어요</p>
           </div>
         ) : (
           <div className="flex flex-col gap-2">
@@ -991,13 +1126,13 @@ function SessionCard({ session, students, attendanceRecords, onClick, isPast }) 
       type="button"
       whileTap={{ scale: 0.97 }}
       onClick={onClick}
-      className={`bg-white rounded-2xl p-4 shadow-sm text-left w-full ${isPast ? 'opacity-80' : ''}`}
+      className={`w-full rounded-xl border border-seenit-border-soft bg-seenit-surface p-4 text-left transition-colors hover:bg-seenit-elevated ${isPast ? 'opacity-80' : ''}`}
     >
       <div className="flex items-center justify-between mb-1">
-        <span className="font-semibold text-gray-900 text-sm">{formatDateShort(session.date)}</span>
+        <span className="text-sm font-semibold text-seenit-ink">{formatDateShort(session.date)}</span>
         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusInfo.color}`}>{statusInfo.label}</span>
       </div>
-      <div className="flex items-center gap-3 text-xs text-gray-400">
+      <div className="flex items-center gap-3 text-xs text-seenit-muted">
         <span>{session.startTime}–{session.endTime}</span>
         {session.room && <RoomTag room={session.room} compact />}
         <span>{students.length}명</span>
@@ -1012,8 +1147,8 @@ function SessionCard({ session, students, attendanceRecords, onClick, isPast }) 
 function InfoRow({ label, value }) {
   return (
     <div>
-      <p className="text-gray-400 mb-0.5">{label}</p>
-      <p className="font-semibold text-gray-800">{value}</p>
+      <p className="mb-0.5 text-seenit-muted">{label}</p>
+      <p className="font-semibold text-seenit-ink">{value}</p>
     </div>
   );
 }

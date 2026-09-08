@@ -376,6 +376,20 @@ html.dark body {
   color-scheme: dark;
 }
 
+/* 화면 모드 전환 중에만 색상 계열 속성을 보간한다. 초기 로딩과 평상시 렌더 비용은 늘리지 않는다. */
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-transitioning,
+  html.theme-transitioning body,
+  html.theme-transitioning #root,
+  html.theme-transitioning #root *,
+  html.theme-transitioning #root *::before,
+  html.theme-transitioning #root *::after {
+    transition-property: color, background-color, border-color, outline-color, fill, stroke, box-shadow;
+    transition-duration: 220ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+}
+
 /* 아직 의미 토큰으로 전환하지 않은 오래된 화면을 위한 호환 레이어.
    신규·공통 컴포넌트에서는 아래 색상 클래스 대신 seenit 토큰을 사용한다. */
 html.dark .bg-white,

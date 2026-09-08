@@ -8,6 +8,7 @@ import {
   QrCode,
 } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
+import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import {
   today,
@@ -33,7 +34,7 @@ import {
   plannedToStaffShiftShape,
 } from '../../../utils/schedule';
 import HomeActionList from './HomeActionList';
-import { summarizeStudentPresence } from './homeDashboardUtils';
+import { getActionableClassSessions, summarizeStudentPresence } from './homeDashboardUtils';
 
 function formatClock(value) {
   if (!value) return '';
@@ -48,6 +49,7 @@ function formatTimeRange(start, end) {
 }
 
 export default function OwnerDashboard({ operationsOnly = false }) {
+  const role = useAcademyStore((s) => s.role);
   const academyStudents = useAcademyStore((s) => s.academyStudents);
   const classGroups = useAcademyStore((s) => s.classGroups);
   const classSessions = useAcademyStore((s) => s.classSessions);
@@ -62,6 +64,7 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const showToast = useAcademyStore((s) => s.showToast);
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
+  const authUserId = useAuthStore((s) => s.user?.id);
   const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
   const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
   const staffAttendanceLogs = useWorkspaceStore((s) => s.staffAttendanceLogs) ?? [];
@@ -149,6 +152,14 @@ export default function OwnerDashboard({ operationsOnly = false }) {
     () => mergedClassSessions.filter((s) => s.date === todayStr && s.status !== 'canceled'),
     [mergedClassSessions, todayStr]
   );
+  const myStaffIds = useMemo(
+    () => new Set(
+      [...academyTeachers, ...academyAssistants, ...academyManagers]
+        .filter((staff) => staff.serverUserId === authUserId)
+        .map((staff) => staff.id),
+    ),
+    [academyTeachers, academyAssistants, academyManagers, authUserId],
+  );
 
   const schedules = useMemo(
     () => mergedClassSessions
@@ -211,21 +222,29 @@ export default function OwnerDashboard({ operationsOnly = false }) {
     [todayShifts],
   );
 
-  // 진행 중 / 곧 시작 수업 (시작 90분 이내)
   const nowMinutes = useMemo(() => {
     return getKoreaMinutes(now);
   }, [now]);
-  const inProgressOrSoonSessions = useMemo(() => {
-    return todaySessions.filter((s) => {
-      if (!s.startTime || !s.endTime) return false;
-      const [sh, sm] = s.startTime.split(':').map(Number);
-      const [eh, em] = s.endTime.split(':').map(Number);
-      const startM = sh * 60 + sm;
-      const endM = eh * 60 + em;
-      // 진행 중 OR 90분 이내 시작
-      return (nowMinutes >= startM && nowMinutes <= endM) || (startM - nowMinutes <= 90 && startM > nowMinutes);
-    }).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
-  }, [todaySessions, nowMinutes]);
+  const actionableSessions = useMemo(() => getActionableClassSessions({
+    sessions: todaySessions,
+    groups: classGroups,
+    lessonRecords: academyLessonRecords,
+    nowMinutes,
+    assignment: {
+      userId: authUserId,
+      staffIds: myStaffIds,
+      isOwner: role === 'owner' && !operationsOnly,
+    },
+  }), [
+    todaySessions,
+    classGroups,
+    academyLessonRecords,
+    nowMinutes,
+    authUserId,
+    myStaffIds,
+    role,
+    operationsOnly,
+  ]);
 
   // 미작성 수업 기록 — 오늘 또는 어제까지 status='completed' 인데 lesson_records (_common_) 없음
   const unfinishedLessonRecordSessions = useMemo(() => {
@@ -264,27 +283,33 @@ export default function OwnerDashboard({ operationsOnly = false }) {
 
   const homeActions = useMemo(() => {
     const actions = [];
-    const activeSession = inProgressOrSoonSessions[0];
-    if (activeSession) {
-      const group = classGroups.find((item) => item.id === activeSession.classGroupId);
+    actionableSessions.forEach(({ session, phase, startsIn }) => {
+      const group = classGroups.find((item) => item.id === session.classGroupId);
+      const status = phase === 'soon'
+        ? `${formatClock(session.startTime)} 시작 · ${startsIn}분 후`
+        : phase === 'live' ? '진행 중 · 수업 기록하기' : '수업 기록 마무리';
       actions.push({
-        id: `session-${activeSession.id}`,
-        icon: Clock,
-        tone: 'blue',
-        title: group?.name || '곧 시작하는 수업',
-        detail: `${formatTimeRange(activeSession.startTime, activeSession.endTime)} · 수업 기록 열기`,
-        onClick: () => void openSession(activeSession),
+        id: `session-${session.id}`,
+        icon: phase === 'finish' ? FileText : Clock,
+        tone: phase === 'finish' ? 'amber' : 'blue',
+        title: group?.name || '오늘 수업',
+        detail: `${status} · ${formatTimeRange(session.startTime, session.endTime)}`,
+        onClick: () => void openSession(session),
       });
-    }
+    });
 
-    const missingRecord = unfinishedLessonRecordSessions[0];
+    const actionableIds = new Set(actionableSessions.map(({ session }) => session.id));
+    const remainingRecords = unfinishedLessonRecordSessions.filter(
+      (session) => !actionableIds.has(session.id),
+    );
+    const missingRecord = remainingRecords[0];
     if (missingRecord) {
       const group = classGroups.find((item) => item.id === missingRecord.classGroupId);
       actions.push({
         id: `record-${missingRecord.id}`,
         icon: FileText,
         tone: 'amber',
-        title: `수업 기록 ${unfinishedLessonRecordSessions.length}건 미작성`,
+        title: `수업 기록 ${remainingRecords.length}건 미작성`,
         detail: group?.name || '완료된 수업 기록을 작성해주세요.',
         onClick: () => navigateToClassSession(missingRecord.id),
       });
@@ -316,8 +341,8 @@ export default function OwnerDashboard({ operationsOnly = false }) {
 
     return actions;
   }, [
+    actionableSessions,
     classGroups,
-    inProgressOrSoonSessions,
     openSession,
     navigateToClassSession,
     pendingInvitations.length,

@@ -38,7 +38,7 @@ function formatThreadStamp(iso) {
   return `${month}월 ${day}일`;
 }
 
-export default function ChatPage({ displayMode = 'page' }) {
+export default function ChatPage({ displayMode = 'page', onClose }) {
   const isFloating = displayMode === 'floating';
   const authUserId = useAuthStore((s) => s.user?.id);
   const threads = useChatStore((s) => s.threads);
@@ -175,6 +175,7 @@ export default function ChatPage({ displayMode = 'page' }) {
       {!isFloating && (
         <Header
           title="채팅"
+          onBack={onClose}
           right={
             <motion.button
               whileTap={{ scale: 0.97 }}

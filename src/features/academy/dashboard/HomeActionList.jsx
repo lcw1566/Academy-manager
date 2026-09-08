@@ -14,7 +14,7 @@ export default function HomeActionList({ items = [] }) {
   return (
     <section className="px-4 mb-4">
       <p className="mb-2 px-1 text-sm font-bold text-seenit-ink">지금 할 일</p>
-      <div className="overflow-hidden rounded-2xl bg-seenit-surface shadow-sm">
+      <div className="overflow-hidden rounded-xl border border-seenit-border-soft bg-seenit-surface">
         {items.map((item) => {
           const Icon = item.icon;
           return (
@@ -25,7 +25,7 @@ export default function HomeActionList({ items = [] }) {
               className="flex w-full items-center gap-3 border-b border-seenit-border-soft px-3.5 py-3 text-left transition-colors last:border-0 active:bg-seenit-elevated"
             >
               <span
-                className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl ${
+                className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${
                   TONES[item.tone] || TONES.gray
                 }`}
               >

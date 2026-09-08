@@ -64,7 +64,6 @@ const TAB_CONFIG = {
     { id: 'payments',   label: '수납',  Icon: CreditCard, pilotLocked: true },
     { id: 'owner-payroll', label: '급여', Icon: BarChart2, pilotLocked: true },
     { id: 'drive',      label: '드라이브', Icon: FolderOpen },
-    { id: 'chat',       label: '채팅',  Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
   teacher: [
@@ -77,7 +76,6 @@ const TAB_CONFIG = {
     { id: 'payments', label: '수납', Icon: CreditCard, pilotLocked: true },
     { id: 'payroll',  label: '급여', Icon: CreditCard, pilotLocked: true },
     { id: 'drive',    label: '드라이브', Icon: FolderOpen },
-    { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
   // 모든 직원 역할에 같은 후보 탭을 제공한 뒤 아래 권한 필터에서 실제 노출을 결정한다.
@@ -92,7 +90,6 @@ const TAB_CONFIG = {
     { id: 'payments', label: '수납', Icon: CreditCard, pilotLocked: true },
     { id: 'payroll',  label: '급여', Icon: CreditCard, pilotLocked: true },
     { id: 'drive',    label: '드라이브', Icon: FolderOpen },
-    { id: 'chat',     label: '채팅', Icon: MessageCircle },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
   ],
   manager: [
@@ -105,16 +102,15 @@ const TAB_CONFIG = {
     { id: 'payments',   label: '수납',  Icon: CreditCard, pilotLocked: true },
     { id: 'payroll',    label: '급여',  Icon: BarChart2, pilotLocked: true },
     { id: 'drive',      label: '드라이브', Icon: FolderOpen },
-    { id: 'chat',       label: '채팅', Icon: MessageCircle },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
   ],
 };
 
 // 모바일은 매일 가장 자주 쓰는 기능 5개 + 더보기로 고정한다.
-// 권한이나 학원 설정으로 항목이 빠지면 뒤의 후보(채팅·직원 등)로 채워
+// 권한이나 학원 설정으로 항목이 빠지면 뒤의 후보(직원·수납 등)로 채워
 // 가능한 경우 항상 6칸을 유지한다.
 const MOBILE_PRIMARY_TAB_IDS = ['home', 'attendance', 'classes', 'students', 'clinic'];
-const MOBILE_FALLBACK_TAB_IDS = ['chat', 'staff', 'payments', 'payroll', 'owner-payroll', 'drive'];
+const MOBILE_FALLBACK_TAB_IDS = ['staff', 'payments', 'payroll', 'owner-payroll', 'drive'];
 
 function FallbackScreen() {
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -201,7 +197,11 @@ function DesktopChatWindow({ pinned, onPinnedChange, onClose }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 18, scale: 0.97 }}
       transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-      className="fixed bottom-5 right-5 z-[60] hidden h-[min(720px,calc(100dvh-40px))] w-[min(420px,calc(100vw-40px))] flex-col overflow-hidden rounded-[24px] border border-seenit-border bg-seenit-canvas shadow-[0_24px_80px_rgba(15,23,42,0.24)] lg:flex"
+      className={`fixed right-5 z-[60] hidden w-[min(420px,calc(100vw-40px))] flex-col overflow-hidden rounded-[24px] border border-seenit-border bg-seenit-canvas shadow-[0_24px_80px_rgba(15,23,42,0.24)] lg:flex ${
+        pinned
+          ? 'bottom-5 top-5'
+          : 'bottom-5 h-[min(720px,calc(100dvh-40px))]'
+      }`}
       aria-label="PC 채팅 창"
     >
       <div className="flex h-12 flex-shrink-0 items-center gap-2 border-b border-seenit-border bg-seenit-surface px-4">
@@ -253,6 +253,7 @@ export default function AcademyAppLayout() {
   const goBackFromAcademyStudent = useAcademyStore((s) => s.goBackFromAcademyStudent);
   const [desktopChatOpen, setDesktopChatOpen] = useState(false);
   const [desktopChatPinned, setDesktopChatPinned] = useState(true);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
   );
@@ -265,10 +266,11 @@ export default function AcademyAppLayout() {
     return () => media.removeEventListener('change', syncViewport);
   }, []);
 
-  // 모바일에서 열었던 채팅 탭을 PC에서 복원할 때는 전체 화면 대신 플로팅 창으로 전환한다.
+  // 이전 버전에 저장된 채팅 탭 상태는 현재 화면을 보존한 채 독립 채팅 창으로 옮긴다.
   useEffect(() => {
-    if (!isDesktopViewport || activeTab !== 'chat') return;
-    setDesktopChatOpen(true);
+    if (activeTab !== 'chat') return;
+    if (isDesktopViewport) setDesktopChatOpen(true);
+    else setMobileChatOpen(true);
     setActiveTab('home');
   }, [isDesktopViewport, activeTab, setActiveTab]);
 
@@ -277,8 +279,14 @@ export default function AcademyAppLayout() {
   useEffect(() => {
     if (isDesktopViewport || !desktopChatOpen) return;
     setDesktopChatOpen(false);
-    setActiveTab('chat');
-  }, [isDesktopViewport, desktopChatOpen, setActiveTab]);
+    setMobileChatOpen(true);
+  }, [isDesktopViewport, desktopChatOpen]);
+
+  useEffect(() => {
+    if (!isDesktopViewport || !mobileChatOpen) return;
+    setMobileChatOpen(false);
+    setDesktopChatOpen(true);
+  }, [isDesktopViewport, mobileChatOpen]);
 
   useEffect(() => {
     const roleLoaders = role === 'owner'
@@ -536,7 +544,6 @@ export default function AcademyAppLayout() {
         return <PilotLockedFeature featureId={activeTab} onReturn={() => setActiveTab('classes')} />;
       }
       if (activeTab === 'staff')      return <StaffPage />;
-      if (activeTab === 'chat')       return <ChatPage />;
       if (activeTab === 'drive')      return <DrivePage />;
       // Phase 40 호환 — 이전 버전 store 에 'work' 가 저장되어 있어도 staff 로 매핑.
       if (activeTab === 'work')       return <StaffPage />;
@@ -561,10 +568,9 @@ export default function AcademyAppLayout() {
     }
   };
 
-  const handleDesktopTabSelect = (tab) => {
-    if (tab.id !== 'chat') return false;
-    setDesktopChatOpen(true);
-    return true;
+  const openChat = () => {
+    if (isDesktopViewport) setDesktopChatOpen((open) => !open);
+    else setMobileChatOpen((open) => !open);
   };
 
   return (
@@ -573,11 +579,19 @@ export default function AcademyAppLayout() {
       <Sidebar
         tabs={tabs}
         badges={{ chat: chatUnread }}
-        onTabSelect={handleDesktopTabSelect}
-        activeTabIds={desktopChatOpen ? ['chat'] : []}
+        utilities={[{
+          id: 'chat',
+          label: '채팅',
+          Icon: MessageCircle,
+          badge: chatUnread,
+          active: desktopChatOpen || mobileChatOpen,
+          onClick: openChat,
+        }]}
       />
 
-      <main className="min-w-0 flex-1 lg:ml-[260px]">
+      <main className={`min-w-0 flex-1 transition-[margin] duration-200 lg:ml-[260px] ${
+        desktopChatOpen && desktopChatPinned ? 'xl:mr-[440px]' : ''
+      }`}>
         <div className="main-content mx-auto w-full max-w-md pb-24 md:max-w-3xl md:px-6 md:py-6 lg:mx-0 lg:max-w-none lg:px-8 2xl:mx-auto 2xl:max-w-[1600px]">
           {currentAcademyId && (hasSyncError || isRealtimeReconnecting) && (
             <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 md:mx-0">
@@ -638,6 +652,38 @@ export default function AcademyAppLayout() {
             onPinnedChange={setDesktopChatPinned}
             onClose={() => setDesktopChatOpen(false)}
           />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {mobileChatOpen && (
+          <motion.div
+            key="mobile-chat"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
+            className="fixed inset-0 z-[35] overflow-hidden bg-seenit-canvas md:bg-black/30 lg:hidden"
+          >
+            <button
+              type="button"
+              onClick={() => setMobileChatOpen(false)}
+              className="absolute inset-0 hidden md:block"
+              aria-label="채팅 닫기"
+            />
+            <motion.section
+              initial={{ x: 28 }}
+              animate={{ x: 0 }}
+              exit={{ x: 28 }}
+              transition={{ duration: 0.18, ease: [0.2, 0, 0, 1] }}
+              className="relative ml-auto h-full w-full bg-seenit-canvas shadow-2xl md:w-[420px]"
+              aria-label="채팅"
+            >
+              <Suspense fallback={<div className="h-full bg-seenit-canvas" />}>
+                <ChatPage onClose={() => setMobileChatOpen(false)} />
+              </Suspense>
+            </motion.section>
+          </motion.div>
         )}
       </AnimatePresence>
 

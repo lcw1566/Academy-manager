@@ -23,7 +23,7 @@ const ROLE_LABEL = {
   manager: '운영 매니저',
 };
 
-export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds = [] }) {
+export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds = [], utilities = [] }) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const role = useAcademyStore((s) => s.role);
   const activeTab = useAcademyStore((s) => s.activeTab);
@@ -103,6 +103,35 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
         })}
       </nav>
 
+      {utilities.length > 0 && (
+        <div className="border-t border-seenit-border-soft px-3 py-3">
+          {utilities.map((utility) => {
+            const UtilityIcon = utility.Icon || utility.icon;
+            return (
+              <button
+                key={utility.id}
+                type="button"
+                onClick={utility.onClick}
+                aria-pressed={utility.active}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                  utility.active
+                    ? 'bg-seenit-brand-soft text-seenit-brand'
+                    : 'text-seenit-secondary hover:bg-seenit-elevated'
+                }`}
+              >
+                {UtilityIcon && <UtilityIcon size={18} strokeWidth={utility.active ? 2.4 : 1.8} />}
+                <span className="text-sm font-semibold">{utility.label}</span>
+                {utility.badge > 0 && (
+                  <span className="ml-auto flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                    {utility.badge > 99 ? '99+' : utility.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* 워크스페이스 / 계정 요약 */}
       {(academyName || userEmail) && (
         <div className="px-4 py-4 border-t border-seenit-border-soft">
@@ -119,15 +148,41 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
       )}
       </aside>
 
-      <button
-        type="button"
-        onClick={() => setFeedbackOpen(true)}
-        className="above-bottom-nav fixed right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full border border-seenit-border bg-seenit-surface text-seenit-secondary shadow-lg lg:hidden"
-        aria-label="버그 신고 및 개선 제안"
-        title="버그 신고 및 개선 제안"
-      >
-        <MessageCircleQuestion size={21} />
-      </button>
+      <div className="above-bottom-nav fixed right-4 z-30 flex items-center gap-2 lg:hidden">
+        {utilities.map((utility) => {
+          const UtilityIcon = utility.Icon || utility.icon;
+          return (
+            <button
+              key={utility.id}
+              type="button"
+              onClick={utility.onClick}
+              className={`relative flex h-11 w-11 items-center justify-center rounded-full border shadow-lg ${
+                utility.active
+                  ? 'border-seenit-brand bg-seenit-brand text-white'
+                  : 'border-seenit-border bg-seenit-surface text-seenit-secondary'
+              }`}
+              aria-label={utility.label}
+              title={utility.label}
+            >
+              {UtilityIcon && <UtilityIcon size={20} />}
+              {utility.badge > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                  {utility.badge > 99 ? '99+' : utility.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setFeedbackOpen(true)}
+          className="flex h-11 w-11 items-center justify-center rounded-full border border-seenit-border bg-seenit-surface text-seenit-secondary shadow-lg"
+          aria-label="버그 신고 및 개선 제안"
+          title="버그 신고 및 개선 제안"
+        >
+          <MessageCircleQuestion size={21} />
+        </button>
+      </div>
 
       <FeedbackModal isOpen={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
       <UpdateAnnouncementModal />
