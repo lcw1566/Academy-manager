@@ -55,3 +55,11 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <App />
   </React.StrictMode>
 );
+
+// 알림 허용 여부와 무관하게 설치형 PWA로 인식되도록 서비스 워커를 등록한다.
+if (import.meta.env.PROD && window.isSecureContext && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/push-sw.js')
+      .catch((error) => console.warn('[pwa] service worker registration failed', error));
+  });
+}

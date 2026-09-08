@@ -1,3 +1,19 @@
+self.addEventListener('install', (event) => {
+  event.waitUntil(self.skipWaiting());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
+// 네트워크 동작은 바꾸지 않으면서 설치형 PWA가 모든 페이지를 제어하도록 한다.
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+  event.respondWith(fetch(event.request));
+});
+
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     const payload = event.data?.json() || {};
