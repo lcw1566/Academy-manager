@@ -39,9 +39,19 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
       <aside className="hidden h-dvh w-[260px] shrink-0 flex-col border-r border-seenit-border-soft bg-seenit-surface lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex">
         {/* 브랜드 + 역할 */}
         <div className="flex items-center justify-between gap-3 border-b border-seenit-border-soft px-5 py-5">
-          <div className="min-w-0">
-            <p className="text-base font-bold text-seenit-ink">씨닛</p>
-            <p className="mt-1 truncate text-xs text-seenit-muted">{ROLE_LABEL[role] ?? role ?? ''}</p>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="h-10 w-10 shrink-0 overflow-hidden rounded-[11px] shadow-sm ring-1 ring-black/5 dark:ring-white/10">
+              <img
+                src="/icon-192.png"
+                alt=""
+                className="h-full w-full object-cover"
+                draggable="false"
+              />
+            </span>
+            <div className="min-w-0">
+              <p className="text-base font-bold text-seenit-ink">씨닛</p>
+              <p className="mt-1 truncate text-xs text-seenit-muted">{ROLE_LABEL[role] ?? role ?? ''}</p>
+            </div>
           </div>
           <button
             type="button"
