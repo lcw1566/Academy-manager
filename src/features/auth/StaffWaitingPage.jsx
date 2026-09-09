@@ -15,6 +15,7 @@ import { Building2, Mail, Check, Loader2, RefreshCw, LogOut } from 'lucide-react
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAcademyStore from '../../store/useAcademyStore';
+import SeenitLogo from '../../components/SeenitLogo';
 
 const INVITE_ROLE_LABEL = {
   teacher: '기본', assistant: '기본', manager: '운영', pending: '미설정',
@@ -77,7 +78,7 @@ export default function StaffWaitingPage({ assignmentMembership = null }) {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center px-6 pt-14">
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
-          <div className="text-4xl mb-3">📨</div>
+          <SeenitLogo className="mx-auto mb-3 h-12 w-12 rounded-[13px] shadow-sm ring-1 ring-black/5" />
           <h1 className="text-xl font-bold text-gray-900">
             {isRoleAssignmentPending ? '역할 배정 대기 중이에요' : '초대를 기다리고 있어요'}
           </h1>

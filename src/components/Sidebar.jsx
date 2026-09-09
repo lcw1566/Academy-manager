@@ -14,6 +14,7 @@ import useAuthStore from '../store/useAuthStore';
 import useWorkspaceStore from '../store/useWorkspaceStore';
 import FeedbackModal from './FeedbackModal';
 import UpdateAnnouncementModal from './UpdateAnnouncementModal';
+import SeenitLogo from './SeenitLogo';
 
 const ROLE_LABEL = {
   tutor: '과외 선생님',
@@ -41,12 +42,7 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
         <div className="flex items-center justify-between gap-3 border-b border-seenit-border-soft px-5 py-5">
           <div className="flex min-w-0 items-center gap-3">
             <span className="h-10 w-10 shrink-0 overflow-hidden rounded-[11px] shadow-sm ring-1 ring-black/5 dark:ring-white/10">
-              <img
-                src="/icon-192.png"
-                alt=""
-                className="h-full w-full object-cover"
-                draggable="false"
-              />
+              <SeenitLogo className="h-full w-full" />
             </span>
             <div className="min-w-0">
               <p className="text-base font-bold text-seenit-ink">씨닛</p>

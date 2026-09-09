@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  X, Building2, Users, GraduationCap, CheckCircle2, ShieldCheck, Sparkles, Eye, EyeOff,
+  X, Building2, Users, CheckCircle2, ShieldCheck, Sparkles, Eye, EyeOff,
   MailCheck, KeyRound,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
@@ -9,6 +9,7 @@ import useAcademyStore from '../../store/useAcademyStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
 import { updateMyProfileAccountType, updateMyProfileBasic } from '../../services/supabase/workspaceApi';
 import { formatPhoneNumber } from '../../utils/format';
+import SeenitLogo from '../../components/SeenitLogo';
 
 const ACCOUNT_TYPES = [
   {
@@ -298,9 +299,7 @@ export default function AuthPage({ onAuthSuccess, onCancel, initialMode = 'signI
       <header className="absolute inset-x-0 top-0 z-10">
         <div className="mx-auto flex h-14 max-w-6xl items-center px-4 md:h-16 md:px-6">
           <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white">
-              <GraduationCap size={18} />
-            </span>
+            <SeenitLogo className="h-8 w-8 rounded-[9px] shadow-sm ring-1 ring-black/5" />
             <span className="text-base font-black">씨닛</span>
           </div>
         </div>

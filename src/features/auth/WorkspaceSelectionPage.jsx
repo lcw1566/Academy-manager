@@ -36,6 +36,7 @@ import TuitionRateFields from '../academy/onboarding/TuitionRateFields';
 import ClinicDefaultItemsEditor from '../academy/clinic/ClinicDefaultItemsEditor';
 import { localizeError } from '../../utils/localizeError';
 import useDeveloperStore from '../../store/useDeveloperStore';
+import SeenitLogo from '../../components/SeenitLogo';
 
 export const WORKSPACE_PICKED_KEY = 'workspace-picked';
 
@@ -284,7 +285,7 @@ export default function WorkspaceSelectionPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center px-6 pt-12 pb-10">
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
-          <div className="text-4xl mb-3">🏫</div>
+          <SeenitLogo className="mx-auto mb-3 h-12 w-12 rounded-[13px] shadow-sm ring-1 ring-black/5" />
           <h1 className="text-xl font-bold text-gray-900">
             {hasDeveloperAccess || isTutor ? '워크스페이스를 선택해주세요' : '학원을 선택해주세요'}
           </h1>

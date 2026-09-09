@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Clock3,
   Download,
-  GraduationCap,
   MessageCircle,
   Monitor,
   MousePointerClick,
@@ -20,6 +19,7 @@ import {
   UserCheck,
   UsersRound,
 } from 'lucide-react';
+import SeenitLogo from '../../components/SeenitLogo';
 
 const ctaBase =
   'transition-all duration-300 ease-out hover:-translate-y-1 active:translate-y-0';
@@ -93,9 +93,7 @@ export default function LandingPage({ onSignIn, onSignUp }) {
       <header className="fixed inset-x-0 top-0 z-30 border-b border-gray-100/80 bg-white/90 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-5 md:px-6">
           <a href="#" className="flex items-center gap-2" aria-label="씨닛 홈">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-white">
-              <GraduationCap size={18} />
-            </div>
+            <SeenitLogo className="h-8 w-8 rounded-[9px] shadow-sm ring-1 ring-black/5" />
             <span className="text-base font-black tracking-normal">씨닛</span>
           </a>
           <nav className="hidden items-center gap-7 text-sm font-semibold text-gray-600 md:flex">

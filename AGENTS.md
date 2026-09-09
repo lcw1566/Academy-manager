@@ -2,6 +2,11 @@
 
 These rules apply to every change in this repository, including work performed in later sessions or by delegated agents.
 
+## Brand assets
+
+- Use `src/components/SeenitLogo.jsx` for the 씨닛 brand mark in product UI. Do not substitute an emoji or a generic icon.
+- `docs/brand/icon-192.png.png` and `docs/brand/icon-512.png.png` are the source of truth. Keep the corresponding public PWA and maskable icons synchronized in the same change.
+
 ## Authorization and privacy
 
 - Treat Supabase RLS, grants, triggers, and security-definer RPC checks as the authorization source of truth. Hiding a button or tab is only defense in depth.
