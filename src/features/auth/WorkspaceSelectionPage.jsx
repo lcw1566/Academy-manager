@@ -1,11 +1,12 @@
 // WorkspaceSelectionPage — Phase 32 workspace-first 진입
 //
-// 로그인한 모든 academy 사용자(owner/teacher/assistant)가 진입 직후 거치는 한 화면.
+// 로그인한 모든 워크스페이스 사용자(학원/과외/개발자)가 진입 직후 거치는 한 화면.
 // 학원 수와 관계없이 항상 노출되며, 다음 항목을 한 곳에서 처리한다:
 //
 //   1) 받은 초대 (pending invitations) — 있으면 상단에 노출, 수락 가능
-//   2) 소속 학원 목록 — 카드로 노출, 클릭 시 진입
-//   3) 빈 상태 :
+//   2) 사용 가능한 개발자/개인 과외 워크스페이스
+//   3) 소속 학원 목록 — 카드로 노출, 클릭 시 진입
+//   4) 빈 상태 :
 //       - owner: "학원 만들기" 진입 onboarding
 //       - staff: "받은 초대가 없어요" 안내
 //
@@ -65,6 +66,8 @@ export default function WorkspaceSelectionPage() {
   const saveAttendanceSettings = useWorkspaceStore((s) => s.saveAttendanceSettings);
   const signOutUser = useAuthStore((s) => s.signOutUser);
   const showToast = useAcademyStore((s) => s.showToast);
+  const role = useAcademyStore((s) => s.role);
+  const setRole = useAcademyStore((s) => s.setRole);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const setAcademyProfile = useAcademyStore((s) => s.setAcademyProfile);
   const clearAcademyDataCache = useAcademyStore((s) => s.clearAcademyDataCache);
@@ -97,6 +100,7 @@ export default function WorkspaceSelectionPage() {
 
   const isOwner = profile?.account_type === 'owner';
   const isStaff = profile?.account_type === 'staff';
+  const isTutor = profile?.account_type === 'tutor' || role === 'tutor';
   const hasDeveloperAccess = developerAccess?.has_access === true;
 
   useEffect(() => {
@@ -135,6 +139,14 @@ export default function WorkspaceSelectionPage() {
     clearAcademyDataCache?.();
     setCurrentAcademyId?.(null);
     setActiveTab('home');
+    markWorkspacePicked();
+  };
+
+  const handlePickTutor = () => {
+    leaveDeveloperWorkspace();
+    clearAcademyDataCache?.();
+    setCurrentAcademyId?.(null);
+    setRole('tutor');
     markWorkspacePicked();
   };
 
@@ -274,14 +286,34 @@ export default function WorkspaceSelectionPage() {
         <div className="text-center mb-6">
           <div className="text-4xl mb-3">🏫</div>
           <h1 className="text-xl font-bold text-gray-900">
-            {hasDeveloperAccess ? '워크스페이스를 선택해주세요' : '학원을 선택해주세요'}
+            {hasDeveloperAccess || isTutor ? '워크스페이스를 선택해주세요' : '학원을 선택해주세요'}
           </h1>
           <p className="text-sm text-gray-500 mt-2 leading-relaxed">
-            {hasDeveloperAccess
-              ? '학원 운영 화면 또는 개발자 도구로 이동할 수 있어요.'
+            {hasDeveloperAccess || isTutor
+              ? '사용할 워크스페이스를 선택하면 해당 화면이 열려요.'
               : '진입할 학원을 선택하면 해당 학원의 운영 화면이 열려요.'}
           </p>
         </div>
+
+        {isTutor && (
+          <div className="mb-5">
+            <p className="mb-2 px-1 text-xs font-bold text-gray-700">개인</p>
+            <button
+              type="button"
+              onClick={handlePickTutor}
+              className="flex w-full items-center gap-3 rounded-2xl border border-blue-100 bg-white px-4 py-4 text-left shadow-sm transition-colors hover:bg-blue-50"
+            >
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50">
+                <Users size={18} className="text-blue-600" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-bold text-gray-900">개인 과외 워크스페이스</p>
+                <p className="mt-0.5 text-xs text-gray-500">개인 학생·수업 관리</p>
+              </div>
+              <ChevronRight size={16} className="shrink-0 text-gray-300" />
+            </button>
+          </div>
+        )}
 
         {hasDeveloperAccess && (
           <div className="mb-5">
@@ -454,7 +486,7 @@ export default function WorkspaceSelectionPage() {
         )}
 
         {/* tutor 또는 기타 — 안전한 fallback */}
-        {!isOwner && !isStaff && !hasMemberships && (
+        {!isOwner && !isStaff && !isTutor && !hasMemberships && (
           <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm text-center">
             <p className="text-sm font-bold text-gray-900 mb-1">아직 학원이 없어요</p>
             <p className="text-xs text-gray-500 leading-relaxed">

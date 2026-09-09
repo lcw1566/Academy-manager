@@ -35,6 +35,12 @@ if (/import\.meta\.env\.(?:SUPABASE_SECRET_KEY|VITE_SUPABASE_SERVICE)/.test(sour
 if (!sources.selection.includes('enterWorkspace') || !sources.app.includes('DeveloperWorkspace')) {
   throw new Error('워크스페이스 선택 또는 앱 진입 경로가 누락됐습니다.');
 }
+if (sources.app.includes('return <StaffWaitingPage')) {
+  throw new Error('소속 학원이 없는 직원을 전용 대기 화면으로 보내면 안 됩니다.');
+}
+if (!sources.selection.includes('handlePickTutor') || !sources.app.includes('hasWorkspaceAccount')) {
+  throw new Error('학원·과외·개발자 공통 워크스페이스 선택 경로가 누락됐습니다.');
+}
 if (!sources.page.includes('개인정보') || !sources.page.includes('학생 연락처')) {
   throw new Error('개발자 워크스페이스 개인정보 안내가 누락됐습니다.');
 }

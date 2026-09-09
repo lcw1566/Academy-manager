@@ -8,7 +8,6 @@ import useChatStore from './store/useChatStore';
 import RoleSelectPage from './features/auth/RoleSelectPage';
 import AuthPage from './features/auth/AuthPage';
 import LandingPage from './features/landing/LandingPage';
-import StaffWaitingPage from './features/auth/StaffWaitingPage';
 import WorkspaceSelectionPage, { wasWorkspacePicked, clearWorkspacePicked } from './features/auth/WorkspaceSelectionPage';
 import AppLayout from './components/AppLayout';
 import AcademyAppLayout from './features/academy/AcademyAppLayout';
@@ -483,7 +482,7 @@ export default function App() {
   //   1) currentAcademyId 의 membership → membership.role
   //   2) account_type === 'tutor' & 멤버십 없음 → 'tutor'
   //   3) account_type === 'owner' & 멤버십 없음 → 'owner' (학원 생성 안내)
-  //   4) account_type === 'staff' & 멤버십 없음 → role 유지 (StaffWaitingPage 가 처리)
+  //   4) account_type === 'staff' & 멤버십 없음 → role 유지 (워크스페이스 선택 화면이 처리)
   //
   // 사용자가 명시적으로 모드를 바꿔도 다음 effect 트리거 시 다시 권장값으로
   // 되돌리지 않도록, "마지막에 우리가 권장해서 설정한 role" 을 기억하고
@@ -505,7 +504,7 @@ export default function App() {
     } else if (profile?.account_type === 'owner') {
       nextRole = 'owner';
     }
-    // staff 계정 + 멤버십 없음: nextRole 은 null. StaffWaitingPage 가 노출됨.
+    // staff 계정 + 멤버십 없음: nextRole 은 null. 워크스페이스 선택 화면이 노출됨.
 
     if (!nextRole) return;
     if (nextRole === role) return;
@@ -717,33 +716,29 @@ export default function App() {
       }
     }
 
-    // 직원은 active 멤버십이 생기기 전까지 전용 대기 화면에 머문다. 새 역할 없는
-    // 초대를 수락하면 pending/invited 멤버십이 생기며, 원장/운영 매니저가 역할을
-    // 배정하기 전에는 일반 학원 화면·채팅에 접근할 수 없다.
     const activeMemberships = memberships.filter((membership) => membership.status === 'active');
-    const roleAssignmentMembership = memberships.find(
-      (membership) => membership.status === 'invited' && membership.role === 'pending',
+
+    // 모든 워크스페이스형 계정은 이번 세션에서 대상을 선택하지 않았다면 선택 화면을
+    // 거친다. 직원은 활성 학원이 0개가 되는 즉시 선택 화면으로 돌아가 초대와
+    // 개발자 워크스페이스를 함께 확인한다. 과외 계정도 개인 워크스페이스 카드를
+    // 통해 진입하므로 향후 학원+과외 통합 시 같은 선택 구조를 재사용할 수 있다.
+    // store 의 reactive 한 workspacePicked 를 subscribe 해서 mark 직후 즉시
+    // re-render 가 일어나도록 한다.
+    const hasWorkspaceAccount = (
+      ACADEMY_ROLES.includes(role)
+      || role === 'tutor'
+      || ['owner', 'staff', 'tutor'].includes(profile?.account_type)
+      || developerAccess?.has_access
+    );
+    const mustChooseWorkspace = (
+      !workspacePicked
+      || (profile?.account_type === 'staff' && activeMemberships.length === 0)
     );
     if (
       isAuthenticated &&
       isWorkspaceReady &&
-      profile?.account_type === 'staff' &&
-      activeMemberships.length === 0 &&
-      !developerAccess?.has_access
-    ) {
-      return <StaffWaitingPage assignmentMembership={roleAssignmentMembership} />;
-    }
-
-    // Phase 32 — academy 모드 사용자(owner/teacher/assistant) 는 이번 세션에서
-    // 학원을 한 번도 선택하지 않았다면 학원 선택 화면을 거친다 (membership 수와
-    // 무관). 학원이 0개여도 안내/생성/초대 수락이 이 한 화면에서 모두 처리된다.
-    // store 의 reactive 한 workspacePicked 를 subscribe 해서 mark 직후 즉시
-    // re-render 가 일어나도록 한다.
-    if (
-      isAuthenticated &&
-      isWorkspaceReady &&
-      (ACADEMY_ROLES.includes(role) || developerAccess?.has_access) &&
-      !workspacePicked
+      hasWorkspaceAccount &&
+      mustChooseWorkspace
     ) {
       return <WorkspaceSelectionPage />;
     }
