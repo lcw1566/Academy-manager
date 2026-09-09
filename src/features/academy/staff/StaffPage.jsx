@@ -98,25 +98,10 @@ function getStaffJobTitle(staff) {
     || '직원',
   ).trim();
 }
-const INVITATION_STATUS_META = {
-  pending: {
-    label: '수락 대기',
-    description: '아직 상대방이 초대를 수락하지 않았어요.',
-    tone: 'bg-amber-50 text-amber-700',
-    dot: 'bg-amber-500',
-  },
-  accepted: {
-    label: '수락 완료',
-    description: '상대방이 초대를 수락했어요.',
-    tone: 'bg-emerald-50 text-emerald-700',
-    dot: 'bg-emerald-500',
-  },
-  canceled: {
-    label: '취소됨',
-    description: '취소한 초대예요.',
-    tone: 'bg-gray-100 text-gray-500',
-    dot: 'bg-gray-400',
-  },
+const PENDING_INVITATION_META = {
+  label: '수락 대기',
+  tone: 'bg-amber-50 text-amber-700',
+  dot: 'bg-amber-500',
 };
 
 const SUB_TABS = [
@@ -288,6 +273,7 @@ function OwnerStaffView({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedKey, setSelectedKey] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteInitialEmail, setInviteInitialEmail] = useState('');
   const [invitationStatusOpen, setInvitationStatusOpen] = useState(false);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
@@ -492,6 +478,14 @@ function OwnerStaffView({
     setInvitationStatusOpen(true);
     loadAcademyInvitations?.();
   };
+  const openInvitationForm = (email = '') => {
+    setInviteInitialEmail(email);
+    setInviteOpen(true);
+  };
+  const closeInvitationForm = () => {
+    setInviteOpen(false);
+    setInviteInitialEmail('');
+  };
 
   return (
     <div className="w-full">
@@ -500,7 +494,7 @@ function OwnerStaffView({
         right={canInviteStaff ? (
           <button
             type="button"
-            onClick={() => setInviteOpen(true)}
+            onClick={() => openInvitationForm()}
             className="hidden md:flex items-center gap-1.5 bg-[#0064FF] text-white text-sm font-bold px-4 py-2 rounded-xl active:bg-[#0050CC]"
           >
             <Plus size={14} /> 직원 초대
@@ -563,7 +557,7 @@ function OwnerStaffView({
 
               {canInviteStaff && <button
                 type="button"
-                onClick={() => setInviteOpen(true)}
+                onClick={() => openInvitationForm()}
                 className="md:hidden w-full flex items-center justify-center gap-1.5 mb-3 py-2.5 rounded-xl bg-[#0064FF] text-white text-sm font-bold active:bg-[#0050CC]"
               >
                 <Plus size={14} /> 직원 초대
@@ -619,7 +613,7 @@ function OwnerStaffView({
               )
             ) : (
               <EmptyDetailPanel
-                onAdd={canInviteStaff ? () => setInviteOpen(true) : null}
+                onAdd={canInviteStaff ? () => openInvitationForm() : null}
               />
             )}
           </section>
@@ -630,12 +624,12 @@ function OwnerStaffView({
       {inviteOpen && canInviteStaff && (
         <Modal
           isOpen
-          onClose={() => setInviteOpen(false)}
-          title="직원 초대"
+          onClose={closeInvitationForm}
+          title={inviteInitialEmail ? '직원 다시 초대' : '직원 초대'}
           footer={
             <button
               type="button"
-              onClick={() => setInviteOpen(false)}
+              onClick={closeInvitationForm}
               className="w-full bg-gray-100 text-gray-700 font-bold py-3.5 rounded-xl"
             >
               닫기
@@ -649,7 +643,10 @@ function OwnerStaffView({
                 바꿀 수 있고, 초대 후에는 직원별로 조정할 수 있어요.
               </p>
             </div>
-            <StaffInviteWidget canInviteManagers={canInviteManagers} />
+            <StaffInviteWidget
+              initialEmail={inviteInitialEmail}
+              canInviteManagers={canInviteManagers}
+            />
           </div>
         </Modal>
       )}
@@ -658,6 +655,10 @@ function OwnerStaffView({
         <InvitationStatusModal
           invitations={invitationTimeline}
           onClose={() => setInvitationStatusOpen(false)}
+          onReinvite={(invitation) => {
+            setInvitationStatusOpen(false);
+            openInvitationForm(invitation.email);
+          }}
         />
       )}
     </div>
@@ -667,6 +668,7 @@ function OwnerStaffView({
 function InvitationStatusModal({
   invitations,
   onClose,
+  onReinvite,
 }) {
   const cancelAcademyInvitationById = useWorkspaceStore((s) => s.cancelAcademyInvitationById);
   const showToast = useAcademyStore((s) => s.showToast);
@@ -680,7 +682,14 @@ function InvitationStatusModal({
         === String(invitation.email || '').trim().toLowerCase()
     )) === index
   ));
-  const invitationHistory = invitations.filter((invitation) => invitation.status === 'accepted');
+  const invitationHistory = invitations.filter((invitation, index, list) => (
+    invitation.status === 'accepted'
+    && list.findIndex((candidate) => (
+      candidate.status === 'accepted'
+      && String(candidate.email || '').trim().toLowerCase()
+        === String(invitation.email || '').trim().toLowerCase()
+    )) === index
+  ));
   const visibleInvitations = activeInvitationTab === 'active'
     ? activeInvitations
     : invitationHistory;
@@ -740,7 +749,7 @@ function InvitationStatusModal({
 
         <div className="mt-5 flex items-center justify-between">
           <p className="text-xs font-bold text-[#6B7684]">
-            {activeInvitationTab === 'active' ? '수락을 기다리는 초대' : '수락 완료 기록'}
+            {activeInvitationTab === 'active' ? '수락을 기다리는 초대' : '지금까지 초대한 계정'}
           </p>
         </div>
 
@@ -750,17 +759,29 @@ function InvitationStatusModal({
             <p className="mt-2 text-sm font-bold text-[#6B7684]">
               {activeInvitationTab === 'active'
                 ? '현재 대기 중인 초대가 없어요.'
-                : '수락 완료된 초대 기록이 없어요.'}
+                : '아직 초대에 참여한 계정이 없어요.'}
             </p>
           </div>
         ) : (
           <div className="mt-2 flex flex-col gap-2">
             {visibleInvitations.map((invitation) => {
-              const meta = INVITATION_STATUS_META[invitation.status]
-                || INVITATION_STATUS_META.canceled;
+              const meta = PENDING_INVITATION_META;
+              const account = invitation.invitation_account || {};
+              const isHistory = activeInvitationTab === 'history';
+              const isActiveMember = account.membership_status === 'active';
+              const hasPendingInvitation = account.has_pending_invitation
+                || activeInvitations.some((candidate) => (
+                  String(candidate.email || '').trim().toLowerCase()
+                    === String(invitation.email || '').trim().toLowerCase()
+                ));
+              const reinviteLabel = isActiveMember
+                ? '재직 중'
+                : hasPendingInvitation
+                  ? '초대 대기 중'
+                  : '다시 초대하기';
               const statusTime = invitation.status === 'pending'
                 ? invitation.created_at
-                : invitation.updated_at;
+                : (account.last_accepted_at || invitation.updated_at);
               return (
                 <div
                   key={invitation.id}
@@ -769,18 +790,36 @@ function InvitationStatusModal({
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-extrabold text-[#191F28]">
-                        {invitation.email}
+                        {isHistory
+                          ? (account.display_name || '이름 미등록')
+                          : invitation.email}
                       </p>
                       <p className="mt-0.5 text-[11px] font-medium text-[#8B95A1]">
-                        {invitation.job_title || STAFF_ROLE_LABELS[invitation.role] || '직원'}
+                        {isHistory && <>{invitation.email} · </>}
+                        {account.last_job_title || invitation.job_title || STAFF_ROLE_LABELS[invitation.role] || '직원'}
                         {statusTime ? ` · ${formatInvitationDate(statusTime)}` : ''}
                       </p>
-                      <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${meta.tone}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-                        {meta.label}
-                      </span>
+                      {!isHistory && (
+                        <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${meta.tone}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                          {meta.label}
+                        </span>
+                      )}
                     </div>
-                    {invitation.status === 'pending' && (
+                    {isHistory ? (
+                      <button
+                        type="button"
+                        onClick={() => onReinvite?.(invitation)}
+                        disabled={isActiveMember || hasPendingInvitation}
+                        className={`flex h-11 flex-shrink-0 items-center justify-center rounded-xl px-4 text-sm font-extrabold transition-colors disabled:cursor-default ${
+                          isActiveMember || hasPendingInvitation
+                            ? 'bg-[#F2F4F6] text-[#8B95A1]'
+                            : 'bg-blue-50 text-[#3182F6] active:bg-blue-100'
+                        }`}
+                      >
+                        {reinviteLabel}
+                      </button>
+                    ) : (
                       <button
                         type="button"
                         onClick={() => handleCancel(invitation)}
@@ -798,7 +837,7 @@ function InvitationStatusModal({
         )}
 
         <p className="mt-3 text-[10px] leading-relaxed text-[#8B95A1]">
-          취소한 초대는 현황과 기록에 남지 않아요. 수락한 초대만 기록에서 확인할 수 있어요.
+          기록에는 초대에 참여했던 계정이 한 번씩 표시돼요. 퇴사한 직원은 다시 초대할 수 있어요.
         </p>
       </div>
     </Modal>

@@ -253,13 +253,27 @@ export async function createAcademyInvitation({
 export async function listAcademyInvitations(academyId) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
-  const { data, error } = await supabase
-    .from('academy_invitations')
-    .select('*')
-    .eq('academy_id', academyId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data ?? [];
+  const [invitationResult, accountResult] = await Promise.all([
+    supabase
+      .from('academy_invitations')
+      .select('*')
+      .eq('academy_id', academyId)
+      .order('created_at', { ascending: false }),
+    supabase.rpc('list_academy_invitation_accounts', {
+      p_academy_id: academyId,
+    }),
+  ]);
+  if (invitationResult.error) throw invitationResult.error;
+
+  const accountRpcMissing = ['42883', 'PGRST202'].includes(accountResult.error?.code);
+  if (accountResult.error && !accountRpcMissing) throw accountResult.error;
+  const accountByEmail = new Map(
+    (accountResult.data || []).map((account) => [normalizeEmail(account.email), account]),
+  );
+  return (invitationResult.data || []).map((invitation) => ({
+    ...invitation,
+    invitation_account: accountByEmail.get(normalizeEmail(invitation.email)) || null,
+  }));
 }
 
 // 직원이 본인 이메일로 받은 pending 초대 조회.

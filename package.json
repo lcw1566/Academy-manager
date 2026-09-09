@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "npm run check:academy-help && npm run check:security && npm run check:staff-exit-cache && npm run check:developer-workspace && npm run check:brand-assets && vite build",
+    "build": "npm run check:academy-help && npm run check:security && npm run check:staff-exit-cache && npm run check:staff-invitations && npm run check:developer-workspace && npm run check:brand-assets && vite build",
     "check:academy-help": "node scripts/check-academy-help.mjs",
     "check:security": "node scripts/check-security-guardrails.mjs",
     "check:staff-exit-cache": "node scripts/check-staff-exit-cache.mjs",
+    "check:staff-invitations": "node scripts/check-staff-invitation-ui.mjs",
     "check:developer-workspace": "node scripts/check-developer-workspace.mjs",
     "check:brand-assets": "node scripts/check-brand-assets.mjs",
     "developer:access": "node --env-file=.env.local scripts/manage-developer-access.mjs",

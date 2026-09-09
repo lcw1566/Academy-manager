@@ -45,6 +45,10 @@ const staffReinvitationSql = await readFile(
   new URL('../supabase/sql/080_staff_reinvitation.sql', import.meta.url),
   'utf8',
 );
+const invitationAccountHistorySql = await readFile(
+  new URL('../supabase/sql/081_invitation_account_history.sql', import.meta.url),
+  'utf8',
+);
 for (const required of [
   'list_academy_students_secure',
   'set_student_contact_permissions',
@@ -61,6 +65,21 @@ for (const required of [
 ]) {
   if (!contactRegistrationSql.includes(required)) {
     failures.push(`SQL 079 연락처 등록/조회 분리 보호 누락: ${required}`);
+  }
+}
+if (/\b(?:phone|parent_phone|checkin_pin)\b/.test(invitationAccountHistorySql)) {
+  failures.push('SQL 081 초대 계정 기록에 연락처 또는 등하원 PIN을 포함할 수 없습니다.');
+}
+
+for (const required of [
+  'list_academy_invitation_accounts',
+  'profile.display_name',
+  'membership_status',
+  "has_academy_permission(p_academy_id, 'canManageStaff')",
+  'revoke all on function public.list_academy_invitation_accounts',
+]) {
+  if (!invitationAccountHistorySql.includes(required)) {
+    failures.push(`SQL 081 초대 계정 기록 보호 누락: ${required}`);
   }
 }
 
