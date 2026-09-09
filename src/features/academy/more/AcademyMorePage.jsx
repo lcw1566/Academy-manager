@@ -311,6 +311,11 @@ export default function AcademyMorePage({
                 onOpenSettings={() => setSettingsOpen(true)}
               />
             )}
+
+            <SectionTitle>계정</SectionTitle>
+            <div className="mx-4">
+              <InlineLogoutButton />
+            </div>
           </>
         )}
       </div>
@@ -488,6 +493,7 @@ function InlineLogoutButton() {
     <SettingsRow
       icon={LogOut}
       title="로그아웃"
+      subtitle="현재 계정에서 로그아웃해요"
       onClick={handle}
       rightAdornment={
         isAuthLoading ? <Loader2 size={14} className="animate-spin text-gray-400" /> : <span />
@@ -627,7 +633,6 @@ function SettingsHome({
           subtitle="현재 비밀번호 확인 후 변경"
           onClick={onChangePassword}
         />
-        <InlineLogoutButton />
       </div>
 
       <SectionTitle>계정 관리</SectionTitle>
