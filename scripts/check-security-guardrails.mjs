@@ -41,6 +41,10 @@ const contactRegistrationSql = await readFile(
   new URL('../supabase/sql/079_student_contact_registration.sql', import.meta.url),
   'utf8',
 );
+const staffReinvitationSql = await readFile(
+  new URL('../supabase/sql/080_staff_reinvitation.sql', import.meta.url),
+  'utf8',
+);
 for (const required of [
   'list_academy_students_secure',
   'set_student_contact_permissions',
@@ -57,6 +61,19 @@ for (const required of [
 ]) {
   if (!contactRegistrationSql.includes(required)) {
     failures.push(`SQL 079 연락처 등록/조회 분리 보호 누락: ${required}`);
+  }
+}
+
+for (const required of [
+  'create_academy_invitation_guarded',
+  "member.status = 'active'",
+  'academy_invitations_one_pending_email_idx',
+  "permissions = '{}'::jsonb",
+  'employment_ended_on = null',
+  'revoke all on function public.create_academy_invitation_guarded',
+]) {
+  if (!staffReinvitationSql.includes(required)) {
+    failures.push(`SQL 080 재초대 권한 보호 누락: ${required}`);
   }
 }
 

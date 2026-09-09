@@ -408,20 +408,13 @@ function OwnerStaffView({
     () => (academyInvitations || []).filter((inv) => inv.status === 'pending'),
     [academyInvitations],
   );
-  const latestInvitations = useMemo(() => {
-    const seen = new Set();
+  const invitationTimeline = useMemo(() => {
     return (academyInvitations || [])
       .slice()
       .sort((a, b) => (
         (b.created_at || '').localeCompare(a.created_at || '')
         || (b.updated_at || '').localeCompare(a.updated_at || '')
-      ))
-      .filter((invitation) => {
-        const key = String(invitation.email || invitation.id || '').trim().toLowerCase();
-        if (!key || seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      ));
   }, [academyInvitations]);
   const currentAcademy = memberships.find(
     (membership) => membership.academy_id === currentAcademyId,
@@ -663,7 +656,7 @@ function OwnerStaffView({
 
       {invitationStatusOpen && (
         <InvitationStatusModal
-          invitations={latestInvitations}
+          invitations={invitationTimeline}
           onClose={() => setInvitationStatusOpen(false)}
         />
       )}
@@ -679,7 +672,14 @@ function InvitationStatusModal({
   const showToast = useAcademyStore((s) => s.showToast);
   const [cancellingId, setCancellingId] = useState(null);
   const [activeInvitationTab, setActiveInvitationTab] = useState('active');
-  const activeInvitations = invitations.filter((invitation) => invitation.status === 'pending');
+  const activeInvitations = invitations.filter((invitation, index, list) => (
+    invitation.status === 'pending'
+    && list.findIndex((candidate) => (
+      candidate.status === 'pending'
+      && String(candidate.email || '').trim().toLowerCase()
+        === String(invitation.email || '').trim().toLowerCase()
+    )) === index
+  ));
   const invitationHistory = invitations.filter((invitation) => invitation.status === 'accepted');
   const visibleInvitations = activeInvitationTab === 'active'
     ? activeInvitations

@@ -96,7 +96,7 @@ export default function StaffInviteWidget({
         const list = await listAcademyInvitations(currentAcademyId);
         if (cancelled) return;
         const match = list.find(
-          (inv) => normalizeEmail(inv.email) === cleaned && inv.status !== 'canceled',
+          (inv) => normalizeEmail(inv.email) === cleaned && inv.status === 'pending',
         );
         setExistingInvite(match || null);
       } catch {

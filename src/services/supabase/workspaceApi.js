@@ -221,54 +221,30 @@ export async function createAcademyInvitation({
   role = 'teacher',
   jobTitle,
 }) {
-  const user = await getCurrentUserOrThrow();
+  await getCurrentUserOrThrow();
   if (!academyId) throw new Error('academyId가 필요해요.');
   const cleanedEmail = normalizeEmail(email);
   if (!cleanedEmail) throw new Error('이메일을 입력해주세요.');
   assertStaffRole(role);
+  const normalizedTitle = normalizeJobTitle(jobTitle)
+    || (role === 'manager' ? '운영 매니저' : '선생님');
 
-  // 한 이메일에 역할별 초대가 여러 장 생기지 않도록 현재 열린 초대를 먼저 찾는다.
-  const { data: existingRows, error: existingError } = await supabase
-    .from('academy_invitations')
-    .select('id, status, role')
-    .eq('academy_id', academyId)
-    .eq('email', cleanedEmail)
-    .order('created_at', { ascending: false });
-  if (existingError) throw existingError;
-  if ((existingRows || []).some((row) => row.status === 'accepted')) {
-    throw new Error('이 직원은 이미 초대를 수락했어요. 직원 목록에서 역할을 변경해주세요.');
+  // 과거 accepted 초대가 아니라 현재 active 멤버십을 서버에서 확인한다.
+  // 퇴사자는 과거 이력을 보존한 채 새 pending 초대를 받는다.
+  const { data, error } = await supabase.rpc('create_academy_invitation_guarded', {
+    p_academy_id: academyId,
+    p_email: cleanedEmail,
+    p_job_title: normalizedTitle,
+  });
+  if (error) {
+    if (['42883', 'PGRST202'].includes(error.code)) {
+      throw new Error('직원 재초대 기능이 아직 서버에 적용되지 않았어요. SQL 080을 먼저 실행해주세요.');
+    }
+    throw new Error(error.message || '초대 생성에 실패했어요.');
   }
-
-  const payload = {
-    academy_id: academyId,
-    email: cleanedEmail,
-    role,
-    job_title: normalizeJobTitle(jobTitle)
-      || (role === 'manager' ? '운영 매니저' : '선생님'),
-    status: 'pending',
-    invited_by: user.id,
-    accepted_user_id: null,
-  };
-
-  const openInvite = (existingRows || []).find((row) => row.status === 'pending');
-  if (openInvite) {
-    const { data, error } = await supabase
-      .from('academy_invitations')
-      .update(payload)
-      .eq('id', openInvite.id)
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  }
-
-  const { data, error } = await supabase
-    .from('academy_invitations')
-    .upsert(payload, { onConflict: 'academy_id,email,role' })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  const invitation = Array.isArray(data) ? data[0] : data;
+  if (!invitation?.id) throw new Error('초대 생성 결과를 확인하지 못했어요.');
+  return invitation;
 }
 
 // 원장이 본인 학원의 초대 목록 조회.
