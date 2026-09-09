@@ -18,7 +18,7 @@ const ERROR_TRANSLATIONS = [
   [/reauthentication needed|reauthentication required|requires reauthentication/gi, '보안을 위해 다시 로그인한 뒤 변경해주세요.'],
   [/database error saving new user/gi, '회원 정보를 저장하지 못했어요. 잠시 후 다시 시도해주세요.'],
   [/user not found/gi, '해당 계정을 찾을 수 없어요.'],
-  [/permission denied/gi, '이 작업을 수행할 권한이 없어요.'],
+  [/permission denied.*$/gi, '이 작업을 수행할 권한이 없어요.'],
   [/new row violates row-level security policy.*$/gi, '이 정보를 저장할 권한이 없어요.'],
   [/row-level security policy.*$/gi, '데이터 접근 권한을 확인해주세요.'],
   [/column .* does not exist/gi, '필요한 데이터베이스 업데이트가 적용되지 않았어요.'],

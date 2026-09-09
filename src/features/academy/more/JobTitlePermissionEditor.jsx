@@ -3,6 +3,7 @@ import { Check, ChevronDown, ChevronUp, Plus, Trash2 } from 'lucide-react';
 import {
   PERMISSION_KEYS,
   PERMISSION_LABELS,
+  PERMISSION_SECTIONS,
   normalizeJobTitlePermissions,
 } from '../../../utils/staffPermissions';
 
@@ -37,10 +38,13 @@ export default function JobTitlePermissionEditor({ value, onChange }) {
 
   const togglePermission = (title, key) => {
     const policy = policies[title];
+    const nextValue = !policy.permissions[key];
     const permissions = {
       ...policy.permissions,
-      [key]: !policy.permissions[key],
+      [key]: nextValue,
     };
+    if (key === 'canManageStudents' && nextValue) permissions.canViewStudents = true;
+    if (key === 'canViewStudents' && !nextValue) permissions.canManageStudents = false;
     updatePolicy(title, {
       permissions,
       // 직책의 내부 역할은 권한 토글과 독립적이다. 특히 선생님의 기본
@@ -100,24 +104,38 @@ export default function JobTitlePermissionEditor({ value, onChange }) {
 
               {expanded && (
                 <div className="border-t border-[#F2F4F6] bg-[#F8FAFC] px-3.5 py-4">
-                  <div className="space-y-1.5">
-                    {CONFIGURABLE_PERMISSION_KEYS.map((key) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => togglePermission(title, key)}
-                        className="flex w-full items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5 text-left"
-                      >
-                        <span className="text-xs font-bold text-[#333D4B]">{PERMISSION_LABELS[key]}</span>
-                        <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border ${
-                          policy.permissions[key]
-                            ? 'border-blue-600 bg-blue-600 text-white'
-                            : 'border-[#D1D6DB] bg-white text-transparent'
-                        }`}>
-                          <Check size={13} strokeWidth={3} />
-                        </span>
-                      </button>
-                    ))}
+                  <div className="space-y-4">
+                    {PERMISSION_SECTIONS.map((section) => {
+                      const keys = section.keys.filter((key) => CONFIGURABLE_PERMISSION_KEYS.includes(key));
+                      if (keys.length === 0) return null;
+                      return (
+                        <section key={section.id}>
+                          <p className="text-xs font-black text-[#333D4B]">{section.label}</p>
+                          <p className="mb-2 mt-0.5 text-[10px] leading-4 text-[#8B95A1]">
+                            {section.description}
+                          </p>
+                          <div className="space-y-1.5">
+                            {keys.map((key) => (
+                              <button
+                                key={key}
+                                type="button"
+                                onClick={() => togglePermission(title, key)}
+                                className="flex w-full items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5 text-left"
+                              >
+                                <span className="text-xs font-bold text-[#333D4B]">{PERMISSION_LABELS[key]}</span>
+                                <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border ${
+                                  policy.permissions[key]
+                                    ? 'border-blue-600 bg-blue-600 text-white'
+                                    : 'border-[#D1D6DB] bg-white text-transparent'
+                                }`}>
+                                  <Check size={13} strokeWidth={3} />
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      );
+                    })}
                   </div>
                   <p className="mt-3 text-[11px] leading-5 text-[#8B95A1]">
                     권한 변경은 이 직책의 내부 역할을 바꾸지 않아요.

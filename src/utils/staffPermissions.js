@@ -71,15 +71,15 @@ export const PERMISSION_DEFAULTS = {
 
 export const PERMISSION_LABELS = {
   canViewStudents: '학생 정보 조회',
+  canManageStudents: '학생 정보 관리 (등록·수정·삭제)',
   canViewStudentContacts: '학생·보호자 연락처 조회',
-  canManageStudentContacts: '학생·보호자 연락처 수정',
+  canManageStudentContacts: '학생·보호자 연락처 관리 (조회 포함)',
   canEditLessonRecords: '수업 기록 작성/수정',
   canEditAttendance: '등하원·출석 기록',
   canEditClinicRecords: '클리닉 기록 작성/수정',
   canViewPayroll: '본인 급여 조회',
   canViewPayments: '학원 수납 정보 조회',
   canManageClasses: '반/회차 생성·수정',
-  canManageStudents: '학생 등록·수정·삭제',
   canManagePayments: '수납 생성·수정·삭제',
   canManageStaff: '직원 초대·근무표 관리',
   canManageStaffPermissions: '직책·권한 부여/회수',
@@ -98,12 +98,45 @@ export const OWNER_DELEGATED_PERMISSION_KEYS = new Set([
 
 export const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS);
 
+export const PERMISSION_SECTIONS = [
+  {
+    id: 'student-info',
+    label: '학생 기본 정보',
+    description: '관리 권한에는 조회와 등록·수정·삭제가 포함돼요.',
+    keys: ['canViewStudents', 'canManageStudents'],
+  },
+  {
+    id: 'student-contacts',
+    label: '학생·보호자 연락처',
+    description: '민감정보이며 관리 권한에는 조회가 포함돼요.',
+    keys: ['canViewStudentContacts', 'canManageStudentContacts'],
+  },
+  {
+    id: 'academy-operations',
+    label: '수업 및 운영',
+    description: '담당 업무에 필요한 기능별 권한이에요.',
+    keys: PERMISSION_KEYS.filter((key) => ![
+      'canViewStudents',
+      'canManageStudents',
+      'canViewStudentContacts',
+      'canManageStudentContacts',
+    ].includes(key)),
+  },
+];
+
 function pickBooleanPermissions(value) {
   const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   return PERMISSION_KEYS.reduce((result, key) => {
     if (typeof source[key] === 'boolean') result[key] = source[key];
     return result;
   }, {});
+}
+
+function applyPermissionDependencies(permissions) {
+  const normalized = { ...permissions };
+  if (normalized.canManageStudents) normalized.canViewStudents = true;
+  if (normalized.canManageStudentContacts) normalized.canViewStudentContacts = true;
+  return normalized;
 }
 
 export const DEFAULT_JOB_TITLE_PERMISSIONS = {
@@ -130,10 +163,10 @@ export function normalizeJobTitlePermissions(value) {
         normalizedTitle,
         {
           role,
-          permissions: {
+          permissions: applyPermissionDependencies({
             ...PERMISSION_DEFAULTS[role],
             ...pickBooleanPermissions(policy?.permissions),
-          },
+          }),
         },
       ];
     })
@@ -155,11 +188,11 @@ export function getJobTitlePolicy(jobTitlePermissions, jobTitle, fallbackRole = 
 // 직책 기본값 위에 직원별 예외값을 덮어 유효 권한을 계산한다.
 export function resolvePermissions(role, custom = {}, titleDefaults = {}) {
   const base = PERMISSION_DEFAULTS[role] || PERMISSION_DEFAULTS.teacher;
-  return {
+  return applyPermissionDependencies({
     ...base,
     ...pickBooleanPermissions(titleDefaults),
     ...pickBooleanPermissions(custom),
-  };
+  });
 }
 
 // 단일 권한 체크 — 원장은 currentUserCan에서 먼저 처리한다.

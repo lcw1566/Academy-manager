@@ -66,6 +66,7 @@ import {
 import {
   PERMISSION_LABELS,
   PERMISSION_KEYS,
+  PERMISSION_SECTIONS,
   resolvePermissions,
   currentUserCan,
   getJobTitlePolicy,
@@ -3201,6 +3202,12 @@ function StaffPermissionSection({ staff, canEdit = false, canEditSensitive = fal
       if (key === 'canViewStudentContacts' && !nextValue) {
         next.canManageStudentContacts = false;
       }
+      if (key === 'canManageStudents' && nextValue) {
+        next.canViewStudents = true;
+      }
+      if (key === 'canViewStudents' && !nextValue) {
+        next.canManageStudents = false;
+      }
       return next;
     });
   };
@@ -3262,35 +3269,49 @@ function StaffPermissionSection({ staff, canEdit = false, canEditSensitive = fal
         )}
       </div>
 
-      <div className="mt-4 space-y-1.5">
-        {ACTIVE_PERMISSION_KEYS.map((key) => {
-          const overridden = typeof draftOverrides[key] === 'boolean';
-          const enabled = effectivePermissions[key];
-          const sensitive = OWNER_DELEGATED_PERMISSION_KEYS.has(key);
-          const rowEditable = canEdit && (!sensitive || canEditSensitive);
+      <div className="mt-4 space-y-5">
+        {PERMISSION_SECTIONS.map((section) => {
+          const keys = section.keys.filter((key) => ACTIVE_PERMISSION_KEYS.includes(key));
+          if (keys.length === 0) return null;
           return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => toggle(key)}
-              disabled={!rowEditable}
-              className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#F8F9FA] px-3 py-3 text-left disabled:cursor-default"
-            >
-              <span>
-                <span className="block text-sm font-medium text-[#333D4B]">{PERMISSION_LABELS[key]}</span>
-                {overridden && <span className="mt-0.5 block text-[10px] font-bold text-blue-600">개인별 조정</span>}
-                {sensitive && !canEditSensitive && (
-                  <span className="mt-0.5 block text-[10px] font-bold text-[#8B95A1]">원장만 부여·회수</span>
-                )}
-              </span>
-              <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border ${
-                enabled
-                  ? 'border-blue-600 bg-blue-600 text-white'
-                  : 'border-[#D1D6DB] bg-white text-transparent'
-              }`}>
-                <Check size={14} strokeWidth={3} />
-              </span>
-            </button>
+            <section key={section.id}>
+              <p className="text-sm font-black text-[#333D4B]">{section.label}</p>
+              <p className="mb-2 mt-0.5 text-[11px] leading-5 text-[#8B95A1]">
+                {section.description}
+              </p>
+              <div className="space-y-1.5">
+                {keys.map((key) => {
+                  const overridden = typeof draftOverrides[key] === 'boolean';
+                  const enabled = effectivePermissions[key];
+                  const sensitive = OWNER_DELEGATED_PERMISSION_KEYS.has(key);
+                  const rowEditable = canEdit && (!sensitive || canEditSensitive);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggle(key)}
+                      disabled={!rowEditable}
+                      className="flex w-full items-center justify-between gap-3 rounded-xl bg-[#F8F9FA] px-3 py-3 text-left disabled:cursor-default"
+                    >
+                      <span>
+                        <span className="block text-sm font-medium text-[#333D4B]">{PERMISSION_LABELS[key]}</span>
+                        {overridden && <span className="mt-0.5 block text-[10px] font-bold text-blue-600">개인별 조정</span>}
+                        {sensitive && !canEditSensitive && (
+                          <span className="mt-0.5 block text-[10px] font-bold text-[#8B95A1]">원장만 부여·회수</span>
+                        )}
+                      </span>
+                      <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border ${
+                        enabled
+                          ? 'border-blue-600 bg-blue-600 text-white'
+                          : 'border-[#D1D6DB] bg-white text-transparent'
+                      }`}>
+                        <Check size={14} strokeWidth={3} />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
           );
         })}
       </div>

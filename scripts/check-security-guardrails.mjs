@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import { PERMISSION_DEFAULTS } from '../src/utils/staffPermissions.js';
+import { PERMISSION_DEFAULTS, resolvePermissions } from '../src/utils/staffPermissions.js';
 
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -18,6 +18,21 @@ for (const role of ['teacher', 'assistant', 'manager']) {
       || PERMISSION_DEFAULTS[role]?.canManageStudentContacts !== false) {
     failures.push(`${role} 연락처 기본 권한은 false여야 합니다.`);
   }
+}
+
+const studentManagerPermissions = resolvePermissions('teacher', {
+  canViewStudents: false,
+  canManageStudents: true,
+});
+if (!studentManagerPermissions.canViewStudents) {
+  failures.push('학생 관리 권한은 학생 정보 조회 권한을 포함해야 합니다.');
+}
+const contactManagerPermissions = resolvePermissions('teacher', {
+  canViewStudentContacts: false,
+  canManageStudentContacts: true,
+});
+if (!contactManagerPermissions.canViewStudentContacts) {
+  failures.push('학생 연락처 관리 권한은 연락처 조회 권한을 포함해야 합니다.');
 }
 
 for (const path of await sourceFiles(new URL('../src', import.meta.url).pathname)) {
@@ -49,6 +64,23 @@ const invitationAccountHistorySql = await readFile(
   new URL('../supabase/sql/081_invitation_account_history.sql', import.meta.url),
   'utf8',
 );
+const studentPermissionConsistencySql = await readFile(
+  new URL('../supabase/sql/082_student_permission_consistency.sql', import.meta.url),
+  'utf8',
+);
+const domainApiSource = await readFile(
+  new URL('../src/services/supabase/domainApi.js', import.meta.url),
+  'utf8',
+);
+const academyStudentCreateSource = domainApiSource.match(
+  /export async function createAcademyStudent[\s\S]*?export async function createPrivateStudent/,
+)?.[0] || '';
+if (!academyStudentCreateSource.includes(".from('students')\n    .insert(row)")) {
+  failures.push('학원 학생 신규 등록은 students INSERT를 사용해야 합니다.');
+}
+if (academyStudentCreateSource.includes('.upsert(')) {
+  failures.push('연락처 SELECT 권한과 충돌하는 students UPSERT를 신규 등록에 사용할 수 없습니다.');
+}
 for (const required of [
   'list_academy_students_secure',
   'set_student_contact_permissions',
@@ -56,6 +88,22 @@ for (const required of [
   'academy_invitations update by operations',
 ]) {
   if (!hardeningSql.includes(required)) failures.push(`SQL 075 필수 보호 누락: ${required}`);
+}
+
+for (const required of [
+  'academy_member_has_permission',
+  "p_permission = 'canViewStudents'",
+  "v_effective -> 'canManageStudents'",
+  "p_permission = 'canViewStudentContacts'",
+  "v_effective -> 'canManageStudentContacts'",
+  "m.status = 'active'",
+  "set_config('seenit.allow_student_contact_permission_write', 'on', true)",
+  'revoke all on function public.academy_member_has_permission',
+  'revoke all on function public.protect_student_contact_permission_assignment',
+]) {
+  if (!studentPermissionConsistencySql.includes(required)) {
+    failures.push(`SQL 082 학생 권한 일관성 보호 누락: ${required}`);
+  }
 }
 
 for (const required of [

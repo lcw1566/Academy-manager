@@ -25,6 +25,7 @@ import {
   projectStudentGrade,
 } from '../../../utils/studentBilling';
 import { createClientUuid } from '../../../utils/uuid';
+import { localizeError } from '../../../utils/localizeError';
 
 const SCHOOL_TYPES = [
   { id: 'elementary', label: '초등' },
@@ -461,7 +462,7 @@ export default function AcademyStudentFormModal({
         await loadServerStudents?.();
       }
       showToast(
-        err?.message || (isEdit
+        localizeError(err, isEdit
           ? '학생 정보를 수정하지 못했어요.'
           : '학생을 추가하지 못했어요. 연결을 확인하고 다시 시도해주세요.'),
         'error',

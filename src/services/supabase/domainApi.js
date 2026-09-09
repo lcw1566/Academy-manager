@@ -73,13 +73,24 @@ export async function createAcademyStudent({ academyId, ...payload } = {}) {
     academy_id: academyId,
     user_id: user.id,
   });
-  const mutation = row.id
-    ? supabase.from('students').upsert(row, { onConflict: 'id' })
-    : supabase.from('students').insert(row);
-  const { data, error } = await mutation
+  // 연락처 컬럼은 SQL 075에서 직접 SELECT가 금지되어 있다. ON CONFLICT DO UPDATE는
+  // 갱신 대상 컬럼의 SELECT 권한까지 요구하므로, UUID가 있어도 신규 등록은 INSERT만
+  // 사용한다. 응답을 잃은 동일 요청의 재시도는 아래 primary-key 처리로 멱등성을 유지한다.
+  const { data, error } = await supabase
+    .from('students')
+    .insert(row)
     .select('id')
     .single();
-  if (error) throw error;
+  if (error) {
+    const isRetriedRequest = row.id
+      && error.code === '23505'
+      && /students_pkey/i.test(`${error.message || ''} ${error.details || ''}`);
+    if (!isRetriedRequest) throw error;
+
+    const existing = await getStudentById(row.id);
+    if (existing?.mode !== 'academy' || existing?.academy_id !== academyId) throw error;
+    return existing;
+  }
   return getStudentById(data.id);
 }
 
