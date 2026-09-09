@@ -34,6 +34,7 @@ import { computeLessonHoursForMonth } from '../utils/shiftCoverage';
 import { sumStaffAttendanceHours } from '../utils/staffAttendance';
 import { normalizeRecordSchema } from '../constants/learningActivitySettings';
 import { DEFAULT_JOB_TITLE_PERMISSIONS } from '../utils/staffPermissions';
+import { reconcileStaffCollectionsWithActiveMembers } from '../utils/staffCache';
 
 const noopStorage = {
   getItem: () => null,
@@ -1631,17 +1632,51 @@ const useAcademyStore = create(
   },
   // 서버 멤버십을 inactive로 전환한 직원을 현재 기기의 목록에서도 즉시 숨긴다.
   // 과거 기록이 참조하는 로컬 ID는 유지하고 상태만 바꾼다.
-  deactivateLocalStaff: (staffId, role) => {
+  deactivateLocalStaff: (staffId, role, identity = {}) => {
     const collectionKey = role === 'manager'
       ? 'academyManagers'
       : role === 'assistant'
         ? 'academyAssistants'
         : 'academyTeachers';
+    const serverUserId = identity.serverUserId || identity.userId || null;
+    const academyMemberId = identity.academyMemberId || identity.memberId || null;
+    const normalizedEmail = String(identity.email || '').trim().toLowerCase();
+    const deactivateMatches = (staff, key) => {
+      const matches = (
+        (key === collectionKey && staff.id === staffId)
+        || (serverUserId && staff.serverUserId === serverUserId)
+        || (academyMemberId && staff.academyMemberId === academyMemberId)
+        || (normalizedEmail && String(staff.email || '').trim().toLowerCase() === normalizedEmail)
+      );
+      return matches && staff.status !== 'inactive' ? { ...staff, status: 'inactive' } : staff;
+    };
     set((state) => ({
-      [collectionKey]: (state[collectionKey] || []).map((staff) => (
-        staff.id === staffId ? { ...staff, status: 'inactive' } : staff
-      )),
+      academyTeachers: (state.academyTeachers || [])
+        .map((staff) => deactivateMatches(staff, 'academyTeachers')),
+      academyAssistants: (state.academyAssistants || [])
+        .map((staff) => deactivateMatches(staff, 'academyAssistants')),
+      academyManagers: (state.academyManagers || [])
+        .map((staff) => deactivateMatches(staff, 'academyManagers')),
     }));
+  },
+  // 서버가 돌려준 활성 멤버 목록을 기준으로, 이전 브라우저 세션에 남아 있는
+  // 서버 연결 직원만 비활성화한다. 과거 수업/급여가 참조하는 로컬 ID는 보존한다.
+  reconcileLocalStaffWithActiveMembers: (activeMembers = []) => {
+    let result = { deactivated: 0, skipped: true };
+    set((state) => {
+      result = reconcileStaffCollectionsWithActiveMembers({
+        teachers: state.academyTeachers,
+        assistants: state.academyAssistants,
+        managers: state.academyManagers,
+      }, activeMembers);
+      if (result.skipped) return {};
+      return {
+        academyTeachers: result.teachers,
+        academyAssistants: result.assistants,
+        academyManagers: result.managers,
+      };
+    });
+    return { deactivated: result.deactivated, skipped: result.skipped };
   },
   changeLocalStaffRole: (staffId, fromRole, toRole, updates = {}) => {
     if (!staffId || fromRole === toRole) return null;

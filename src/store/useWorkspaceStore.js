@@ -1707,7 +1707,9 @@ const useWorkspaceStore = create(
           const list = await listAcademyMemberProfiles(academyId);
           if (!isCurrentAcademy(get, academyId)) return list;
           set({ academyMemberProfiles: list });
-          get().syncLocalStaffFromServerMembers();
+          // 이 호출의 list는 방금 서버에서 정상 조회한 활성 멤버 snapshot이다.
+          // 다른 기기나 이전 세션에서 이미 내보낸 직원도 로컬 캐시에서 정리한다.
+          get().syncLocalStaffFromServerMembers({ reconcileMissing: true });
           return list;
         } catch (err) {
           if (!isCurrentAcademy(get, academyId)) return [];
@@ -1873,7 +1875,7 @@ const useWorkspaceStore = create(
       // local arrays clean.
       //
       // Returns { mirrored, skipped } for diagnostics.
-      syncLocalStaffFromServerMembers: () => {
+      syncLocalStaffFromServerMembers: ({ reconcileMissing = false } = {}) => {
         const memberProfiles = get().academyMemberProfiles || [];
         const staffProfiles = get().academyStaffProfiles || [];
         // Hotfix (2026-06) — staff_profile 이 비어 있는 신규 수락자도
@@ -1886,6 +1888,7 @@ const useWorkspaceStore = create(
         const upsertAssistant = academyState.upsertLocalAssistantFromServerStaff;
         const upsertManager = academyState.upsertLocalManagerFromServerStaff;
         const reconcileShiftLocalIds = academyState.reconcileStaffShiftLocalIds;
+        const reconcileLocalStaff = academyState.reconcileLocalStaffWithActiveMembers;
         if (typeof upsertTeacher !== 'function' || typeof upsertAssistant !== 'function' || typeof upsertManager !== 'function') {
           return { mirrored: 0, skipped: memberProfiles.length };
         }
@@ -1943,6 +1946,9 @@ const useWorkspaceStore = create(
             skipped += 1;
           }
         });
+        if (reconcileMissing && typeof reconcileLocalStaff === 'function') {
+          reconcileLocalStaff(memberProfiles);
+        }
         if (typeof reconcileShiftLocalIds === 'function') reconcileShiftLocalIds();
         return { mirrored, skipped };
       },

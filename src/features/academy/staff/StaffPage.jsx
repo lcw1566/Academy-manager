@@ -1051,7 +1051,11 @@ function StaffDetailPanel({
         userId: staff.serverUserId,
         lastWorkDate: removeLastWorkDate,
       });
-      deactivateLocalStaff?.(staff.id, staff._sourceRole || staff._role);
+      deactivateLocalStaff?.(staff.id, staff._sourceRole || staff._role, {
+        serverUserId: staff.serverUserId,
+        academyMemberId: staff.academyMemberId,
+        email: staff.email,
+      });
       await Promise.all([
         loadAcademyMemberProfiles?.(),
         loadAcademyStaffProfiles?.(),
@@ -1066,6 +1070,24 @@ function StaffDetailPanel({
       setRemoveConfirmOpen(false);
       onRemoved?.();
     } catch (error) {
+      const errorMessage = String(error?.message || '');
+      if (errorMessage.includes('활성 상태인 직원을 찾을 수 없어요')) {
+        // 이전 요청이나 다른 기기에서 이미 내보내기가 끝난 경우다. 서버의
+        // inactive 상태를 성공한 최종 상태로 보고 남은 로컬 카드만 정리한다.
+        deactivateLocalStaff?.(staff.id, staff._sourceRole || staff._role, {
+          serverUserId: staff.serverUserId,
+          academyMemberId: staff.academyMemberId,
+          email: staff.email,
+        });
+        await Promise.allSettled([
+          loadAcademyMemberProfiles?.(),
+          loadAcademyStaffProfiles?.(),
+        ]);
+        showToast('이미 내보내기가 완료된 직원이라 목록에서 정리했어요.');
+        setRemoveConfirmOpen(false);
+        onRemoved?.();
+        return;
+      }
       showToast(error?.message || '직원을 내보내지 못했어요.', 'error');
     } finally {
       setRemoving(false);
