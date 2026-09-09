@@ -36,25 +36,19 @@ async function getCurrentUserOrThrow() {
 export async function listAcademyStudents(academyId) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
-  const { data, error } = await supabase
-    .from('students')
-    .select('*')
-    .eq('mode', 'academy')
-    .eq('academy_id', academyId)
-    .order('name', { ascending: true });
+  // 연락처 컬럼은 테이블 직접 SELECT 권한이 없다. 서버 함수가 호출자의
+  // canViewStudentContacts 권한을 확인한 뒤 허용된 경우에만 원문을 반환한다.
+  const { data, error } = await supabase.rpc('list_academy_students_secure', {
+    p_academy_id: academyId,
+  });
   if (error) throw error;
   return data ?? [];
 }
 
 // 개인(과외) 모드 학생 목록 — 본인 user_id 기준
 export async function listMyPrivateStudents() {
-  const user = await getCurrentUserOrThrow();
-  const { data, error } = await supabase
-    .from('students')
-    .select('*')
-    .eq('mode', 'private')
-    .eq('user_id', user.id)
-    .order('name', { ascending: true });
+  await getCurrentUserOrThrow();
+  const { data, error } = await supabase.rpc('list_my_private_students_secure');
   if (error) throw error;
   return data ?? [];
 }
@@ -62,11 +56,9 @@ export async function listMyPrivateStudents() {
 export async function getStudentById(id) {
   assertSupabaseConfigured();
   if (!id) throw new Error('id가 필요해요.');
-  const { data, error } = await supabase
-    .from('students')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('get_student_secure', {
+    p_student_id: id,
+  });
   if (error) throw error;
   return data;
 }
@@ -85,10 +77,10 @@ export async function createAcademyStudent({ academyId, ...payload } = {}) {
     ? supabase.from('students').upsert(row, { onConflict: 'id' })
     : supabase.from('students').insert(row);
   const { data, error } = await mutation
-    .select()
+    .select('id')
     .single();
   if (error) throw error;
-  return data;
+  return getStudentById(data.id);
 }
 
 // 개인(과외) 모드 학생 생성. 본인 user_id 로 자동 귀속.
@@ -103,10 +95,10 @@ export async function createPrivateStudent(payload = {}) {
   const { data, error } = await supabase
     .from('students')
     .insert(row)
-    .select()
+    .select('id')
     .single();
   if (error) throw error;
-  return data;
+  return getStudentById(data.id);
 }
 
 // ownership 컬럼은 patch 로 변경 불가 — sanitize 에서 자동 제거.
@@ -122,7 +114,7 @@ export async function updateStudent(id, patch = {}, { expectedUpdatedAt } = {}) 
     .update(safe)
     .eq('id', id);
   if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt);
-  const { data, error } = await query.select().maybeSingle();
+  const { data, error } = await query.select('id').maybeSingle();
   if (error) throw error;
   if (!data) {
     const conflict = createDataConflictError(
@@ -131,7 +123,7 @@ export async function updateStudent(id, patch = {}, { expectedUpdatedAt } = {}) 
     conflict.code = 'DATA_CONFLICT_STUDENT';
     throw conflict;
   }
-  return data;
+  return getStudentById(data.id);
 }
 
 export async function deleteStudent(id) {

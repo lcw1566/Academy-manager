@@ -420,6 +420,14 @@ export default function AcademyStudentDetailPage() {
     { role, staffProfile: myStaffProfile },
     'canManageStudents',
   );
+  const canManageStudentContacts = currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageStudentContacts',
+  );
+  const canViewStudentContacts = canManageStudentContacts || currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canViewStudentContacts',
+  );
 
   const [activeTab, setActiveTab] = useState('요약');
   const [showEdit, setShowEdit] = useState(false);
@@ -643,7 +651,9 @@ export default function AcademyStudentDetailPage() {
     );
   }
   const statusMeta = getStudentStatusMeta(student.status);
-  const missingInformation = getMissingStudentInformation(student);
+  const missingInformation = getMissingStudentInformation(student).filter(
+    (item) => canViewStudentContacts || !['phone', 'parentPhone'].includes(item.key),
+  );
 
   // 최근 수업 (요약용): 미래 회차는 제외한다.
   const latestRecord = dailyRecords.find((r) => !r.isFuture) || null;
@@ -697,10 +707,10 @@ export default function AcademyStudentDetailPage() {
         <div className="flex flex-col gap-2">
           {student.grade && <InfoRowFull label="학년" value={student.grade} />}
           {student.school && <InfoRowFull label="학교" value={student.school} />}
-          {student.phone && <InfoRowFull label="연락처" value={student.phone} phone={student.phone} />}
-          {student.parentName && <InfoRowFull label="학부모" value={student.parentName} />}
-          {student.parentPhone && <InfoRowFull label="학부모 연락처" value={student.parentPhone} phone={student.parentPhone} />}
-          {canManageStudents && showCheckinPin && student.checkinPin && (
+          {canViewStudentContacts && student.phone && <InfoRowFull label="연락처" value={student.phone} phone={student.phone} />}
+          {canViewStudentContacts && student.parentName && <InfoRowFull label="학부모" value={student.parentName} />}
+          {canViewStudentContacts && student.parentPhone && <InfoRowFull label="학부모 연락처" value={student.parentPhone} phone={student.parentPhone} />}
+          {canManageStudentContacts && showCheckinPin && student.checkinPin && (
             <InfoRowFull label="등하원 PIN" value={student.checkinPin} />
           )}
           {student.memo && <InfoRowFull label="메모" value={student.memo} />}
@@ -1374,7 +1384,14 @@ export default function AcademyStudentDetailPage() {
         </div>
       </div>
 
-      {showEdit && <AcademyStudentFormModal editStudent={student} onClose={() => setShowEdit(false)} />}
+      {showEdit && (
+        <AcademyStudentFormModal
+          editStudent={student}
+          canViewStudentContacts={canViewStudentContacts}
+          canManageStudentContacts={canManageStudentContacts}
+          onClose={() => setShowEdit(false)}
+        />
+      )}
       {showClinicForm && (
         <ClinicRecordFormModal presetStudentId={student.id} onClose={() => setShowClinicForm(false)} />
       )}

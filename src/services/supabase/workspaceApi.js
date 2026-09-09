@@ -167,12 +167,14 @@ export async function getAcademyById(academyId) {
 //   - 이메일 lowercase + trim
 //   - 빈 값 / 너무 짧으면 즉시 null
 //   - RPC 호출. 실패해도 invite flow 가 계속 동작하도록 console.warn + null 반환.
-export async function findProfileByEmail(email) {
+export async function findProfileByEmail(email, academyId) {
   assertSupabaseConfigured();
+  if (!academyId) return null;
   const cleaned = (email ?? '').trim().toLowerCase();
   if (!cleaned || cleaned.length < 3) return null;
   try {
     const { data, error } = await supabase.rpc('search_profile_by_email', {
+      p_academy_id: academyId,
       p_email: cleaned,
     });
     if (error) {
@@ -826,6 +828,26 @@ export async function manageAcademyStaffAccess({ academyId, userId, jobTitle, pe
   return data;
 }
 
+// 학생 연락처 권한은 다른 직원에게 재위임할 수 없는 원장 전용 설정이다.
+// null은 개인 예외를 제거하고 기본값(비허용)으로 되돌린다는 뜻이다.
+export async function setStudentContactPermissions({
+  academyId,
+  userId,
+  canView = null,
+  canManage = null,
+}) {
+  assertSupabaseConfigured();
+  if (!academyId || !userId) throw new Error('학원과 직원 정보가 필요해요.');
+  const { data, error } = await supabase.rpc('set_student_contact_permissions', {
+    p_academy_id: academyId,
+    p_user_id: userId,
+    p_can_view: typeof canView === 'boolean' ? canView : null,
+    p_can_manage: typeof canManage === 'boolean' ? canManage : null,
+  });
+  if (error) throw new Error(error.message || '학생 연락처 권한을 저장하지 못했어요.');
+  return data;
+}
+
 // Owner creates or updates a staff profile row. Keyed by (academy_id, user_id).
 // The caller passes role + academy-managed fields. Basic identity (name/email/
 // phone) is NOT stored here — that lives on public.profiles.
@@ -925,11 +947,13 @@ export async function removeAcademyMember({ academyId, userId, lastWorkDate }) {
 }
 
 // 직원 본인이 현재 학원에서 나간다. 원장은 소유권 이전 없이는 실행할 수 없다.
-export async function leaveAcademy(academyId) {
+export async function leaveAcademy(academyId, lastWorkDate) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!lastWorkDate) throw new Error('마지막 근무일을 선택해주세요.');
   const { data, error } = await supabase.rpc('leave_academy', {
     p_academy_id: academyId,
+    p_last_work_date: lastWorkDate,
   });
   if (error) throw new Error(error.message || '학원에서 나가지 못했어요.');
   return data;

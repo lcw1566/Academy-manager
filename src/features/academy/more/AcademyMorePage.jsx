@@ -41,6 +41,7 @@ import { normalizeJobTitlePermissions } from '../../../utils/staffPermissions';
 import { leaveAcademy } from '../../../services/supabase/workspaceApi';
 import { withdrawCurrentAccount } from '../../../services/supabase/authApi';
 import { getThemePreference, setThemePreference } from '../../../utils/theme';
+import { getTodayYMD } from '../../../utils/date';
 
 export default function AcademyMorePage({
   mobileNavigationItems = [],
@@ -228,8 +229,8 @@ export default function AcademyMorePage({
     if (typeof window !== 'undefined') window.location.reload();
   };
 
-  const handleLeaveAcademy = async () => {
-    await leaveAcademy(currentAcademyId);
+  const handleLeaveAcademy = async ({ lastWorkDate } = {}) => {
+    await leaveAcademy(currentAcademyId, lastWorkDate);
     await loadMemberships?.({ throwOnError: true });
     clearWorkspacePicked();
     setExitAction(null);
@@ -912,15 +913,17 @@ function AccountExitModal({
 }) {
   const showToast = useAcademyStore((s) => s.showToast);
   const [confirmText, setConfirmText] = useState('');
+  const [lastWorkDate, setLastWorkDate] = useState(getTodayYMD());
   const [submitting, setSubmitting] = useState(false);
   const isWithdrawal = action === 'withdraw';
-  const canSubmit = !ownerBlocked && (!isWithdrawal || confirmText.trim() === '탈퇴');
+  const canSubmit = !ownerBlocked
+    && (isWithdrawal ? confirmText.trim() === '탈퇴' : Boolean(lastWorkDate));
 
   const handleConfirm = async () => {
     if (!canSubmit || submitting) return;
     setSubmitting(true);
     try {
-      await onConfirm?.();
+      await onConfirm?.({ lastWorkDate });
     } catch (error) {
       showToast(error?.message || (isWithdrawal
         ? '탈퇴 요청을 처리하지 못했어요.'
@@ -998,6 +1001,24 @@ function AccountExitModal({
               placeholder="탈퇴"
               className="input"
             />
+          </div>
+        )}
+        {!isWithdrawal && !ownerBlocked && (
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-[#4E5968]">
+              마지막 근무일
+            </label>
+            <input
+              type="date"
+              value={lastWorkDate}
+              max={getTodayYMD()}
+              onChange={(event) => setLastWorkDate(event.target.value)}
+              disabled={submitting}
+              className="input"
+            />
+            <p className="mt-1.5 text-xs leading-5 text-[#8B95A1]">
+              이 날짜까지의 근퇴 기록을 기준으로 퇴사 월 급여 초안이 보존돼요.
+            </p>
           </div>
         )}
       </div>

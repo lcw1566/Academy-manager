@@ -89,14 +89,6 @@ function emptyToNull(v) {
   return v;
 }
 
-function lastFourDigits(...values) {
-  for (const value of values) {
-    const digits = String(value || '').replace(/\D/g, '');
-    if (digits.length >= 4) return digits.slice(-4);
-  }
-  return '';
-}
-
 function normalizePin(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 4);
 }
@@ -119,21 +111,13 @@ function normalizeGradeForSchoolType(value, schoolType) {
 // id / academy_id / user_id / mode 는 createAcademyStudent 가 자동 주입.
 // class_group_ids 는 폼이 관리하지 않으므로 입력에 명시적으로 있을 때만 포함
 // (update 시 빈 배열로 서버의 기존 매핑을 덮어쓰지 않도록).
-function mapAcademyStudentFormToServerPayload(form) {
+function mapAcademyStudentFormToServerPayload(form, { includeContacts = true } = {}) {
   const payload = {
     name: form.name?.trim() ?? '',
     school_type: emptyToNull(form.schoolType),
     school_name: emptyToNull(form.school),
     grade: emptyToNull(form.grade),
     grade_reference_year: form.gradeReferenceYear || null,
-    phone: emptyToNull(form.phone),
-    parent_phone: emptyToNull(form.parentPhone),
-    parent_title: emptyToNull(form.parentTitle),
-    parent_title_custom: form.parentTitle === 'custom'
-      ? emptyToNull(String(form.parentTitleCustom || '').trim())
-      : null,
-    parent_name: emptyToNull(form.parentName),
-    checkin_pin: emptyToNull(normalizePinOrEmpty(form.checkinPin)),
     enrollment_date: emptyToNull(form.enrollmentDate),
     base_tuition: Math.max(0, Number(form.baseTuition) || 0),
     tuition_subjects: Array.isArray(form.tuitionSubjects) ? form.tuitionSubjects : [],
@@ -143,13 +127,28 @@ function mapAcademyStudentFormToServerPayload(form) {
     status: form.status || 'active',
     memo: emptyToNull(form.memo),
   };
+  if (includeContacts) {
+    payload.phone = emptyToNull(form.phone);
+    payload.parent_phone = emptyToNull(form.parentPhone);
+    payload.parent_title = emptyToNull(form.parentTitle);
+    payload.parent_title_custom = form.parentTitle === 'custom'
+      ? emptyToNull(String(form.parentTitleCustom || '').trim())
+      : null;
+    payload.parent_name = emptyToNull(form.parentName);
+    payload.checkin_pin = emptyToNull(normalizePinOrEmpty(form.checkinPin));
+  }
   if (Array.isArray(form.classGroupIds)) {
     payload.class_group_ids = form.classGroupIds;
   }
   return payload;
 }
 
-export default function AcademyStudentFormModal({ editStudent, onClose }) {
+export default function AcademyStudentFormModal({
+  editStudent,
+  canViewStudentContacts = false,
+  canManageStudentContacts = false,
+  onClose,
+}) {
   const {
     addAcademyStudent, updateAcademyStudent, setAcademyStudentServerId,
     assignAcademyStudentToClassGroups,
@@ -343,7 +342,7 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
   const handleSubmit = async () => {
     if (submitting) return;
     if (!form.name.trim()) return alert('이름을 입력해주세요.');
-    if (form.parentTitle === 'custom' && !form.parentTitleCustom.trim()) {
+    if (canManageStudentContacts && form.parentTitle === 'custom' && !form.parentTitleCustom.trim()) {
       return alert('직접 사용할 학부모 호칭을 입력해주세요.');
     }
     if (form.tuitionSource === 'custom' && form.baseTuition === '') {
@@ -362,8 +361,8 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
       form.parentTitle,
       form.parentTitleCustom,
     );
-    const resolvedCheckinPin = normalizePinOrEmpty(form.checkinPin)
-      || lastFourDigits(form.phone, form.parentPhone);
+    // 비워둔 PIN은 서버가 연락처와 무관한 임의 번호로 발급한다.
+    const resolvedCheckinPin = normalizePinOrEmpty(form.checkinPin);
     const data = {
       ...form,
       name: trimmedName,
@@ -382,7 +381,9 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
           if (editStudent.serverId) {
             serverStudent = await updateStudent(
               editStudent.serverId,
-              mapAcademyStudentFormToServerPayload(data),
+              mapAcademyStudentFormToServerPayload(data, {
+                includeContacts: canManageStudentContacts,
+              }),
               { expectedUpdatedAt: editStudent.updatedAt || undefined },
             );
           } else {
@@ -390,7 +391,9 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
             serverStudent = await createAcademyStudent({
               academyId: currentAcademyId,
               id: createStudentRequestIdRef.current,
-              ...mapAcademyStudentFormToServerPayload(data),
+              ...mapAcademyStudentFormToServerPayload(data, {
+                includeContacts: canManageStudentContacts,
+              }),
             });
           }
         }
@@ -414,7 +417,9 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
         serverStudent = await createAcademyStudent({
           academyId: currentAcademyId,
           id: createStudentRequestIdRef.current,
-          ...mapAcademyStudentFormToServerPayload(data),
+          ...mapAcademyStudentFormToServerPayload(data, {
+            includeContacts: canManageStudentContacts,
+          }),
         });
       }
 
@@ -941,15 +946,17 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
           </p>
         </div>
 
-        <Field label="학생 연락처">
-          <input inputMode="tel" value={form.phone} onChange={(e) => set('phone', formatPhoneNumber(e.target.value))} placeholder="010-0000-0000" className="input" />
-        </Field>
+        {canManageStudentContacts ? (
+          <>
+            <Field label="학생 연락처">
+              <input inputMode="tel" value={form.phone} onChange={(e) => set('phone', formatPhoneNumber(e.target.value))} placeholder="010-0000-0000" className="input" />
+            </Field>
 
-        <Field label="학부모 연락처">
-          <input inputMode="tel" value={form.parentPhone} onChange={(e) => set('parentPhone', formatPhoneNumber(e.target.value))} placeholder="010-0000-0000" className="input" />
-        </Field>
+            <Field label="학부모 연락처">
+              <input inputMode="tel" value={form.parentPhone} onChange={(e) => set('parentPhone', formatPhoneNumber(e.target.value))} placeholder="010-0000-0000" className="input" />
+            </Field>
 
-        <Field label={form.schoolType === 'adult' ? '보호자 호칭 (선택)' : '학부모 호칭 *'}>
+            <Field label={form.schoolType === 'adult' ? '보호자 호칭 (선택)' : '학부모 호칭 *'}>
           <div className="flex gap-2 flex-wrap">
             {PARENT_TITLE_OPTIONS.map(({ value, label }) => (
               <button key={value} type="button" onClick={() => set('parentTitle', value)}
@@ -969,20 +976,31 @@ export default function AcademyStudentFormModal({ editStudent, onClose }) {
               className="input mt-2"
             />
           )}
-        </Field>
+            </Field>
+          </>
+        ) : (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-sm font-bold text-amber-800">연락처 보호 적용 중</p>
+            <p className="mt-1 text-xs leading-5 text-amber-700">
+              {canViewStudentContacts
+                ? '연락처를 조회할 수 있지만 수정 권한은 없어요.'
+                : '학생·보호자 연락처는 원장 또는 원장이 개별 허용한 직원만 확인할 수 있어요.'}
+            </p>
+          </div>
+        )}
 
-        {showCheckinPin && (
+        {showCheckinPin && canManageStudentContacts && (
           <Field label="등하원 PIN">
             <input
               inputMode="numeric"
               value={form.checkinPin}
               onChange={(e) => set('checkinPin', normalizePin(e.target.value))}
-              placeholder={lastFourDigits(form.phone, form.parentPhone) || '0000'}
+              placeholder="비워두면 자동 발급"
               maxLength={4}
               className="input tracking-[0.25em] font-bold"
             />
             <p className="text-xs text-gray-500 mt-1.5">
-              비워두면 학생 연락처, 없으면 학부모 연락처 끝 4자리로 자동 설정돼요.
+              비워두면 연락처와 무관한 임의의 4자리 번호가 자동 발급돼요.
             </p>
           </Field>
         )}

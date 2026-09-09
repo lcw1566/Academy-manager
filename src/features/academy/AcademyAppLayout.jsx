@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen, Clock3, Pin, X, CheckSquare, RefreshCw } from 'lucide-react';
+import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, MessageCircle, ClipboardList, FolderOpen, Clock3, Pin, X, CheckSquare, RefreshCw, HelpCircle } from 'lucide-react';
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -10,6 +10,7 @@ import AttendanceSettingsSheet from './attendance/AttendanceSettingsSheet';
 import { readAttendanceSettings } from './attendance/attendanceHelpers';
 import TuitionPolicyOnboardingSheet from './onboarding/TuitionPolicyOnboardingSheet';
 import Sidebar from '../../components/Sidebar';
+import AcademyTabHelpModal from './help/AcademyTabHelpModal';
 
 const loadOwnerDashboard = () => import('./dashboard/OwnerDashboard');
 const loadTeacherDashboard = () => import('./dashboard/TeacherDashboard');
@@ -254,6 +255,7 @@ export default function AcademyAppLayout() {
   const [desktopChatOpen, setDesktopChatOpen] = useState(false);
   const [desktopChatPinned, setDesktopChatPinned] = useState(true);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [tabHelpOpen, setTabHelpOpen] = useState(false);
   const [isDesktopViewport, setIsDesktopViewport] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
   );
@@ -579,14 +581,23 @@ export default function AcademyAppLayout() {
       <Sidebar
         tabs={tabs}
         badges={{ chat: chatUnread }}
-        utilities={[{
-          id: 'chat',
-          label: '채팅',
-          Icon: MessageCircle,
-          badge: chatUnread,
-          active: desktopChatOpen || mobileChatOpen,
-          onClick: openChat,
-        }]}
+        utilities={[
+          {
+            id: 'chat',
+            label: '채팅',
+            Icon: MessageCircle,
+            badge: chatUnread,
+            active: desktopChatOpen || mobileChatOpen,
+            onClick: openChat,
+          },
+          {
+            id: 'help',
+            label: '현재 탭 도움말',
+            Icon: HelpCircle,
+            active: tabHelpOpen,
+            onClick: () => setTabHelpOpen(true),
+          },
+        ]}
       />
 
       <main className={`min-w-0 flex-1 transition-[margin] duration-200 lg:ml-[260px] ${
@@ -644,6 +655,12 @@ export default function AcademyAppLayout() {
           onClose={() => setAttendanceOnboardingDismissed(true)}
         />
       )}
+
+      <AcademyTabHelpModal
+        isOpen={tabHelpOpen}
+        onClose={() => setTabHelpOpen(false)}
+        tabId={activeTab}
+      />
 
       <AnimatePresence>
         {desktopChatOpen && (

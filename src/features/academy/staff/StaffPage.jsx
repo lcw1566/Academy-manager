@@ -49,7 +49,7 @@ import {
   deleteAcademyStaffShift as deleteServerStaffShift,
 } from '../../../services/supabase/domainApi';
 import {
-  manageAcademyStaffAccess, removeAcademyMember,
+  manageAcademyStaffAccess, removeAcademyMember, setStudentContactPermissions,
 } from '../../../services/supabase/workspaceApi';
 import {
   buildRecurringStaffWorkPreview,
@@ -1004,6 +1004,19 @@ function StaffDetailPanel({
           ? (serverProfile?.permissions || staff.permissions || {})
           : {},
       });
+      if (canEditSensitive && nextTitle === (serverProfile?.job_title || getStaffJobTitle(staff))) {
+        const currentOverrides = serverProfile?.permissions || staff.permissions || {};
+        await setStudentContactPermissions({
+          academyId: currentAcademyId,
+          userId: staff.serverUserId,
+          canView: typeof currentOverrides.canViewStudentContacts === 'boolean'
+            ? currentOverrides.canViewStudentContacts
+            : null,
+          canManage: typeof currentOverrides.canManageStudentContacts === 'boolean'
+            ? currentOverrides.canManageStudentContacts
+            : null,
+        });
+      }
       await Promise.all([
         loadAcademyMemberProfiles?.(),
         loadAcademyStaffProfiles?.(),
@@ -3098,10 +3111,17 @@ function StaffPermissionSection({ staff, canEdit = false, canEditSensitive = fal
 
   const toggle = (key) => {
     if (!canEdit || (OWNER_DELEGATED_PERMISSION_KEYS.has(key) && !canEditSensitive)) return;
-    setDraftOverrides((current) => ({
-      ...current,
-      [key]: !effectivePermissions[key],
-    }));
+    setDraftOverrides((current) => {
+      const nextValue = !effectivePermissions[key];
+      const next = { ...current, [key]: nextValue };
+      if (key === 'canManageStudentContacts' && nextValue) {
+        next.canViewStudentContacts = true;
+      }
+      if (key === 'canViewStudentContacts' && !nextValue) {
+        next.canManageStudentContacts = false;
+      }
+      return next;
+    });
   };
 
   const resetToTitle = () => setDraftOverrides({});
@@ -3116,6 +3136,18 @@ function StaffPermissionSection({ staff, canEdit = false, canEditSensitive = fal
         jobTitle,
         permissions: draftOverrides,
       });
+      if (canEditSensitive) {
+        await setStudentContactPermissions({
+          academyId: currentAcademyId,
+          userId: staff.serverUserId,
+          canView: typeof draftOverrides.canViewStudentContacts === 'boolean'
+            ? draftOverrides.canViewStudentContacts
+            : null,
+          canManage: typeof draftOverrides.canManageStudentContacts === 'boolean'
+            ? draftOverrides.canManageStudentContacts
+            : null,
+        });
+      }
       await Promise.all([
         loadAcademyMemberProfiles?.(),
         loadAcademyStaffProfiles?.(),

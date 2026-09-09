@@ -17,6 +17,8 @@
 export const PERMISSION_DEFAULTS = {
   teacher: {
     canViewStudents: true,
+    canViewStudentContacts: false,
+    canManageStudentContacts: false,
     canEditLessonRecords: true,
     canEditAttendance: true,
     canEditClinicRecords: true,
@@ -32,6 +34,8 @@ export const PERMISSION_DEFAULTS = {
   },
   assistant: {
     canViewStudents: true,
+    canViewStudentContacts: false,
+    canManageStudentContacts: false,
     canEditLessonRecords: true,
     canEditAttendance: true,
     canEditClinicRecords: true,
@@ -47,6 +51,8 @@ export const PERMISSION_DEFAULTS = {
   },
   manager: {
     canViewStudents: true,
+    canViewStudentContacts: false,
+    canManageStudentContacts: false,
     canEditLessonRecords: true,
     canEditAttendance: true,
     canEditClinicRecords: true,
@@ -65,6 +71,8 @@ export const PERMISSION_DEFAULTS = {
 
 export const PERMISSION_LABELS = {
   canViewStudents: '학생 정보 조회',
+  canViewStudentContacts: '학생·보호자 연락처 조회',
+  canManageStudentContacts: '학생·보호자 연락처 수정',
   canEditLessonRecords: '수업 기록 작성/수정',
   canEditAttendance: '등하원·출석 기록',
   canEditClinicRecords: '클리닉 기록 작성/수정',
@@ -82,6 +90,8 @@ export const PERMISSION_LABELS = {
 // 이 두 권한은 다른 직원에게 다시 나눠줄 수 있는 고위험 권한이다.
 // 보유자는 일반 권한을 관리할 수 있지만, 이 값 자체의 부여·회수는 원장만 한다.
 export const OWNER_DELEGATED_PERMISSION_KEYS = new Set([
+  'canViewStudentContacts',
+  'canManageStudentContacts',
   'canManageStaffPermissions',
   'canRemoveStaff',
 ]);

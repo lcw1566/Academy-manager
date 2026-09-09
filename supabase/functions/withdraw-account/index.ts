@@ -48,39 +48,13 @@ Deno.serve(async (req) => {
 
     const withdrawnEmail = `withdrawn-${user.id}@invalid.seenit.local`;
 
-    const { error: memberError } = await admin
-      .from('academy_members')
-      .update({ status: 'inactive', updated_at: new Date().toISOString() })
-      .eq('user_id', user.id)
-      .neq('status', 'inactive');
-    if (memberError) throw memberError;
-
-    const { error: staffError } = await admin
-      .from('academy_staff_profiles')
-      .update({ status: 'inactive', updated_at: new Date().toISOString() })
-      .eq('user_id', user.id);
-    if (staffError) throw staffError;
-
-    const { error: ruleError } = await admin
-      .from('academy_staff_work_rules')
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq('staff_user_id', user.id)
-      .eq('is_active', true);
-    if (ruleError) throw ruleError;
-
-    const { error: profileError } = await admin
-      .from('profiles')
-      .update({
-        email: withdrawnEmail,
-        display_name: '탈퇴한 사용자',
-        phone: null,
-        withdrawn_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id);
-    if (profileError) throw profileError;
-
-    await admin.from('push_devices').update({ is_active: false }).eq('user_id', user.id);
+    // 멤버십/직원/근무/프로필/푸시 토큰 변경은 DB 함수 안에서 전부 성공하거나
+    // 전부 롤백된다. 기존의 여러 REST 요청은 중간 실패 시 반쪽 탈퇴가 됐다.
+    const { error: withdrawalDataError } = await admin.rpc('withdraw_account_data', {
+      p_user_id: user.id,
+      p_withdrawn_email: withdrawnEmail,
+    });
+    if (withdrawalDataError) throw withdrawalDataError;
 
     const { error: authError } = await admin.auth.admin.updateUserById(user.id, {
       email: withdrawnEmail,

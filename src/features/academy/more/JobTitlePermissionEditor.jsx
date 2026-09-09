@@ -12,19 +12,13 @@ const SENSITIVE_KEYS = new Set([
   'canViewPayments',
   'canManagePayments',
   'canManageDrive',
+  // 학생 연락처는 직책 전체에 일괄 부여하지 않고 원장이 직원별로만 위임한다.
+  'canViewStudentContacts',
+  'canManageStudentContacts',
 ]);
 const CONFIGURABLE_PERMISSION_KEYS = PERMISSION_KEYS.filter(
   (key) => !SENSITIVE_KEYS.has(key),
 );
-const ACADEMY_WIDE_MANAGEMENT_KEYS = new Set([
-  'canManageClasses',
-  'canManageStudents',
-  'canManagePayments',
-  'canManageStaff',
-  'canManageStaffPermissions',
-  'canRemoveStaff',
-]);
-
 export default function JobTitlePermissionEditor({ value, onChange }) {
   const policies = useMemo(() => normalizeJobTitlePermissions(value), [value]);
   const [expandedTitle, setExpandedTitle] = useState('');
@@ -49,9 +43,9 @@ export default function JobTitlePermissionEditor({ value, onChange }) {
     };
     updatePolicy(title, {
       permissions,
-      role: [...ACADEMY_WIDE_MANAGEMENT_KEYS].some(
-        (permissionKey) => permissions[permissionKey],
-      ) ? 'manager' : 'teacher',
+      // 직책의 내부 역할은 권한 토글과 독립적이다. 특히 선생님의 기본
+      // canManageStudents=true 때문에 단순 편집만으로 manager가 되면 안 된다.
+      role: policy.role === 'manager' ? 'manager' : 'teacher',
     });
   };
 
@@ -126,8 +120,8 @@ export default function JobTitlePermissionEditor({ value, onChange }) {
                     ))}
                   </div>
                   <p className="mt-3 text-[11px] leading-5 text-[#8B95A1]">
-                    학생·반·직원 관리 권한을 켜면 학원 전체 범위로 자동 적용돼요.
-                    직책·권한 관리와 직원 내보내기는 원장만 부여하거나 회수할 수 있어요.
+                    권한 변경은 이 직책의 내부 역할을 바꾸지 않아요.
+                    학생 연락처·직책 관리·직원 내보내기는 원장이 직원별로만 부여할 수 있어요.
                   </p>
                   {!['선생님', '운영 매니저'].includes(title) && (
                     <button

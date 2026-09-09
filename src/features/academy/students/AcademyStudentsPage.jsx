@@ -48,6 +48,14 @@ export default function AcademyStudentsPage() {
     { role, staffProfile: myStaffProfile },
     'canManageStudents',
   );
+  const canManageStudentContacts = role === 'owner' || currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canManageStudentContacts',
+  );
+  const canViewStudentContacts = canManageStudentContacts || role === 'owner' || currentUserCan(
+    { role, staffProfile: myStaffProfile },
+    'canViewStudentContacts',
+  );
 
   // 앱 진입 시 다른 데이터보다 학생 조회가 늦어져 빈 상태가 먼저 굳는 일을 막는다.
   // 탭이 열릴 때 현재 학원 기준으로 한 번 더 동기화하며 store가 academyId를 검증한다.
@@ -207,8 +215,12 @@ export default function AcademyStudentsPage() {
               const groups = getStudentGroups(student.id);
               const pendingCount = getPendingClinics(student.id);
               const statusMeta = getStudentStatusMeta(student.status);
-              const callNumber = student.phone || student.parentPhone || '';
-              const missingInformation = getMissingStudentInformation(student);
+              const callNumber = canViewStudentContacts
+                ? (student.phone || student.parentPhone || '')
+                : '';
+              const missingInformation = getMissingStudentInformation(student).filter(
+                (item) => canViewStudentContacts || !['phone', 'parentPhone'].includes(item.key),
+              );
               const tuition = resolveStudentBaseTuition({
                 student,
                 groups: classGroups,
@@ -300,7 +312,13 @@ export default function AcademyStudentsPage() {
         )}
       </div>
 
-      {showForm && <AcademyStudentFormModal onClose={() => setShowForm(false)} />}
+      {showForm && (
+        <AcademyStudentFormModal
+          canViewStudentContacts={canViewStudentContacts}
+          canManageStudentContacts={canManageStudentContacts}
+          onClose={() => setShowForm(false)}
+        />
+      )}
     </div>
   );
 }

@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "npm run check:academy-help && npm run check:security && vite build",
+    "check:academy-help": "node scripts/check-academy-help.mjs",
+    "check:security": "node scripts/check-security-guardrails.mjs",
     "preview": "vite preview",
     "auth:reset-password": "node --env-file=.env.local scripts/reset-supabase-user-password.mjs",
     "cap:add:ios": "cap add ios",

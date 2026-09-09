@@ -138,7 +138,7 @@ export default function StaffInviteWidget({
     }
     setSearching(true);
     try {
-      const profile = await findProfileByEmail(cleanedEmail);
+      const profile = await findProfileByEmail(cleanedEmail, currentAcademyId);
       if (profile) {
         setSearchResult('found');
         setFeedback({
