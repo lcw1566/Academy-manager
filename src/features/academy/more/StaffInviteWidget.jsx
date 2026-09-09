@@ -70,7 +70,8 @@ export default function StaffInviteWidget({
   const availableJobTitles = Object.entries(jobTitlePermissions)
     .filter(([, policy]) => canInviteManagers || policy.role !== 'manager');
 
-  // 폼 prefill 이 바뀌면 따라가도록 (수정 시작 시 등)
+  // 폼 prefill 이 실제로 바뀔 때만 따라간다. 초대 전송 뒤 workspace refresh 로
+  // jobTitlePermissions 객체가 새로 만들어져도 사용자가 입력한 이메일을 지우지 않는다.
   useEffect(() => {
     setEmail(initialEmail || '');
     const nextTitle = initialJobTitle || '선생님';
@@ -79,7 +80,7 @@ export default function StaffInviteWidget({
     setSearchResult(null);
     setFeedback(null);
     setExistingInvite(null);
-  }, [initialEmail, initialRole, initialJobTitle, jobTitlePermissions]);
+  }, [initialEmail, initialRole, initialJobTitle]);
 
   // 학원에 이미 같은 이메일의 역할 없는 직원 초대가 있는지 조회 (정보용)
   useEffect(() => {

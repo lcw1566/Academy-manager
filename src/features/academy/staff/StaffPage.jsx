@@ -423,7 +423,6 @@ function OwnerStaffView({
         return true;
       });
   }, [academyInvitations]);
-  const acceptedInvitationCount = latestInvitations.filter((inv) => inv.status === 'accepted').length;
   const currentAcademy = memberships.find(
     (membership) => membership.academy_id === currentAcademyId,
   )?.academy;
@@ -536,7 +535,7 @@ function OwnerStaffView({
                   <span className="min-w-0">
                     <span className="block text-xs font-extrabold text-[#191F28]">보낸 초대 현황</span>
                     <span className="mt-0.5 block text-[11px] font-semibold text-[#8B95A1]">
-                      대기 {pendingInvitations.length}명 · 완료 {acceptedInvitationCount}명
+                      현재 수락 대기 {pendingInvitations.length}명
                     </span>
                   </span>
                 </span>
@@ -679,8 +678,12 @@ function InvitationStatusModal({
   const cancelAcademyInvitationById = useWorkspaceStore((s) => s.cancelAcademyInvitationById);
   const showToast = useAcademyStore((s) => s.showToast);
   const [cancellingId, setCancellingId] = useState(null);
-  const pendingCount = invitations.filter((invitation) => invitation.status === 'pending').length;
-  const acceptedCount = invitations.filter((invitation) => invitation.status === 'accepted').length;
+  const [activeInvitationTab, setActiveInvitationTab] = useState('active');
+  const activeInvitations = invitations.filter((invitation) => invitation.status === 'pending');
+  const invitationHistory = invitations.filter((invitation) => invitation.status === 'accepted');
+  const visibleInvitations = activeInvitationTab === 'active'
+    ? activeInvitations
+    : invitationHistory;
   const handleCancel = async (invitation) => {
     if (!invitation?.id || cancellingId) return;
     setCancellingId(invitation.id);
@@ -698,7 +701,7 @@ function InvitationStatusModal({
     <Modal
       isOpen
       onClose={onClose}
-      title="보낸 초대 현황"
+      title="보낸 초대"
       footer={(
         <button
           type="button"
@@ -710,29 +713,49 @@ function InvitationStatusModal({
       )}
     >
       <div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="rounded-2xl bg-amber-50 px-4 py-3">
-            <p className="text-[11px] font-bold text-amber-700">수락 대기</p>
-            <p className="mt-1 text-xl font-extrabold text-amber-700">{pendingCount}명</p>
-          </div>
-          <div className="rounded-2xl bg-emerald-50 px-4 py-3">
-            <p className="text-[11px] font-bold text-emerald-700">수락 완료</p>
-            <p className="mt-1 text-xl font-extrabold text-emerald-700">{acceptedCount}명</p>
-          </div>
+        <div className="grid grid-cols-2 rounded-2xl bg-[#F2F4F6] p-1">
+          {[
+            { id: 'active', label: '현황', count: activeInvitations.length },
+            { id: 'history', label: '기록', count: invitationHistory.length },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveInvitationTab(tab.id)}
+              className={`flex h-11 items-center justify-center gap-1.5 rounded-xl text-sm font-extrabold transition-all ${
+                activeInvitationTab === tab.id
+                  ? 'bg-white text-[#191F28] shadow-sm'
+                  : 'text-[#8B95A1]'
+              }`}
+            >
+              {tab.label}
+              <span className={`text-[11px] ${
+                activeInvitationTab === tab.id ? 'text-[#3182F6]' : 'text-[#B0B8C1]'
+              }`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
         </div>
 
-        <div className="mt-4 flex items-center">
-          <p className="text-xs font-bold text-[#6B7684]">최근 초대</p>
+        <div className="mt-5 flex items-center justify-between">
+          <p className="text-xs font-bold text-[#6B7684]">
+            {activeInvitationTab === 'active' ? '수락을 기다리는 초대' : '수락 완료 기록'}
+          </p>
         </div>
 
-        {invitations.length === 0 ? (
+        {visibleInvitations.length === 0 ? (
           <div className="mt-3 rounded-2xl bg-[#F8FAFC] px-4 py-8 text-center">
             <Mail size={18} className="mx-auto text-[#B0B8C1]" />
-            <p className="mt-2 text-sm font-bold text-[#6B7684]">보낸 초대가 없어요.</p>
+            <p className="mt-2 text-sm font-bold text-[#6B7684]">
+              {activeInvitationTab === 'active'
+                ? '현재 대기 중인 초대가 없어요.'
+                : '수락 완료된 초대 기록이 없어요.'}
+            </p>
           </div>
         ) : (
           <div className="mt-2 flex flex-col gap-2">
-            {invitations.map((invitation) => {
+            {visibleInvitations.map((invitation) => {
               const meta = INVITATION_STATUS_META[invitation.status]
                 || INVITATION_STATUS_META.canceled;
               const statusTime = invitation.status === 'pending'
@@ -741,10 +764,10 @@ function InvitationStatusModal({
               return (
                 <div
                   key={invitation.id}
-                  className="rounded-2xl border border-[#E5E8EB] bg-white px-3.5 py-3"
+                  className="rounded-2xl border border-[#E5E8EB] bg-white px-4 py-3.5"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-extrabold text-[#191F28]">
                         {invitation.email}
                       </p>
@@ -752,25 +775,22 @@ function InvitationStatusModal({
                         {invitation.job_title || STAFF_ROLE_LABELS[invitation.role] || '직원'}
                         {statusTime ? ` · ${formatInvitationDate(statusTime)}` : ''}
                       </p>
+                      <span className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${meta.tone}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                        {meta.label}
+                      </span>
                     </div>
-                    <span className={`flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-bold ${meta.tone}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-                      {meta.label}
-                    </span>
+                    {invitation.status === 'pending' && (
+                      <button
+                        type="button"
+                        onClick={() => handleCancel(invitation)}
+                        disabled={Boolean(cancellingId)}
+                        className="flex h-11 flex-shrink-0 items-center justify-center rounded-xl bg-red-50 px-4 text-sm font-extrabold text-red-600 transition-colors active:bg-red-100 disabled:opacity-50"
+                      >
+                        {cancellingId === invitation.id ? '취소 중…' : '초대 취소'}
+                      </button>
+                    )}
                   </div>
-                  <p className="mt-2 text-[11px] leading-relaxed text-[#6B7684]">
-                    {meta.description}
-                  </p>
-                  {invitation.status === 'pending' && (
-                    <button
-                      type="button"
-                      onClick={() => handleCancel(invitation)}
-                      disabled={Boolean(cancellingId)}
-                      className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-[11px] font-bold text-red-600 disabled:opacity-50"
-                    >
-                      {cancellingId === invitation.id ? '취소 중…' : '초대 취소'}
-                    </button>
-                  )}
                 </div>
               );
             })}
@@ -778,7 +798,7 @@ function InvitationStatusModal({
         )}
 
         <p className="mt-3 text-[10px] leading-relaxed text-[#8B95A1]">
-          상대방이 앱에서 수락하면 완료 상태가 자동으로 반영돼요.
+          취소한 초대는 현황과 기록에 남지 않아요. 수락한 초대만 기록에서 확인할 수 있어요.
         </p>
       </div>
     </Modal>

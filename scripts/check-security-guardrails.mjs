@@ -37,6 +37,10 @@ const hardeningSql = await readFile(
   new URL('../supabase/sql/075_permission_and_student_privacy_hardening.sql', import.meta.url),
   'utf8',
 );
+const contactRegistrationSql = await readFile(
+  new URL('../supabase/sql/079_student_contact_registration.sql', import.meta.url),
+  'utf8',
+);
 for (const required of [
   'list_academy_students_secure',
   'set_student_contact_permissions',
@@ -44,6 +48,16 @@ for (const required of [
   'academy_invitations update by operations',
 ]) {
   if (!hardeningSql.includes(required)) failures.push(`SQL 075 필수 보호 누락: ${required}`);
+}
+
+for (const required of [
+  "tg_op = 'INSERT'",
+  "has_academy_permission(new.academy_id, 'canManageStudents')",
+  'can_manage_student_contacts(new.academy_id)',
+]) {
+  if (!contactRegistrationSql.includes(required)) {
+    failures.push(`SQL 079 연락처 등록/조회 분리 보호 누락: ${required}`);
+  }
 }
 
 if (failures.length > 0) throw new Error(failures.join('\n'));

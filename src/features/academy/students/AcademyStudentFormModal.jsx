@@ -143,6 +143,19 @@ function mapAcademyStudentFormToServerPayload(form, { includeContacts = true } =
   return payload;
 }
 
+function redactStudentContactsForLocalCache(student) {
+  return {
+    ...student,
+    phone: '',
+    parentPhone: '',
+    parentName: '',
+    parentDisplayName: '',
+    parentTitle: '',
+    parentTitleCustom: '',
+    checkinPin: '',
+  };
+}
+
 export default function AcademyStudentFormModal({
   editStudent,
   canViewStudentContacts = false,
@@ -162,6 +175,7 @@ export default function AcademyStudentFormModal({
   const loadServerClassGroups = useWorkspaceStore((s) => s.loadServerClassGroups);
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const isEdit = !!editStudent;
+  const canEnterStudentContacts = !isEdit || canManageStudentContacts;
   const currentAcademy = memberships.find((membership) => membership.academy_id === currentAcademyId)?.academy || null;
   const showCheckinPin = readAttendanceSettings(currentAcademy).studentCheckMethod === 'qr';
   const configuredSubjectsValue = currentAcademy?.academy_subjects
@@ -342,7 +356,7 @@ export default function AcademyStudentFormModal({
   const handleSubmit = async () => {
     if (submitting) return;
     if (!form.name.trim()) return alert('이름을 입력해주세요.');
-    if (canManageStudentContacts && form.parentTitle === 'custom' && !form.parentTitleCustom.trim()) {
+    if (canEnterStudentContacts && form.parentTitle === 'custom' && !form.parentTitleCustom.trim()) {
       return alert('직접 사용할 학부모 호칭을 입력해주세요.');
     }
     if (form.tuitionSource === 'custom' && form.baseTuition === '') {
@@ -418,20 +432,24 @@ export default function AcademyStudentFormModal({
           academyId: currentAcademyId,
           id: createStudentRequestIdRef.current,
           ...mapAcademyStudentFormToServerPayload(data, {
-            includeContacts: canManageStudentContacts,
+            includeContacts: true,
           }),
         });
       }
 
       // 서버 저장 성공 뒤에 로컬 캐시를 생성한다.
+      // 연락처 조회 권한이 없는 등록자의 브라우저에는 방금 입력한 값도 남기지 않는다.
+      const locallyVisibleData = canViewStudentContacts
+        ? data
+        : redactStudentContactsForLocalCache(data);
       const localStudent = addAcademyStudent({
-        ...data,
+        ...locallyVisibleData,
         serverId: serverStudent?.id || null,
       });
       if (serverStudent) await loadServerStudents();
       setCreatedStudent({
         ...localStudent,
-        ...data,
+        ...locallyVisibleData,
         id: serverStudent?.id || localStudent.id,
         serverId: serverStudent?.id || null,
         updatedAt: serverStudent?.updated_at || localStudent.updatedAt,
@@ -946,7 +964,7 @@ export default function AcademyStudentFormModal({
           </p>
         </div>
 
-        {canManageStudentContacts ? (
+        {canEnterStudentContacts ? (
           <>
             <Field label="학생 연락처">
               <input inputMode="tel" value={form.phone} onChange={(e) => set('phone', formatPhoneNumber(e.target.value))} placeholder="010-0000-0000" className="input" />
@@ -977,6 +995,14 @@ export default function AcademyStudentFormModal({
             />
           )}
             </Field>
+            {!canViewStudentContacts && (
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
+                <p className="text-sm font-bold text-blue-800">등록할 때만 입력할 수 있어요</p>
+                <p className="mt-1 text-xs leading-5 text-blue-700">
+                  연락처는 안전하게 저장되지만 등록 완료 후에는 조회·수정 권한이 없으면 다시 표시되지 않아요.
+                </p>
+              </div>
+            )}
           </>
         ) : (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">

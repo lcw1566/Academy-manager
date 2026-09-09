@@ -495,10 +495,10 @@ export default function StudentAttendancePage() {
           <button
             type="button"
             onClick={openQrDisplayWindow}
-            className="flex h-9 items-center gap-1 rounded-xl bg-blue-50 px-3 text-xs font-bold text-blue-700"
+            className="flex h-11 items-center gap-2 rounded-xl bg-[#0064FF] px-4 text-sm font-extrabold text-white shadow-sm transition-colors active:bg-[#0050CC]"
           >
-            <QrCode size={14} />
-            QR
+            <QrCode size={18} />
+            공용 QR
           </button>
         ) : null}
       />
