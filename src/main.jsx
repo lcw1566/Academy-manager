@@ -4,6 +4,11 @@ import * as Sentry from '@sentry/react';
 import App from './App';
 import './index.css';
 import { initializeTheme } from './utils/theme';
+import { installDynamicImportRecovery } from './utils/dynamicImportRecovery';
+
+// 열린 탭이 배포 교체 전의 해시 청크를 요청하면 최신 HTML을 한 번 다시 받아온다.
+// React 렌더링보다 먼저 등록해야 첫 lazy import 실패도 놓치지 않는다.
+installDynamicImportRecovery();
 
 const sentryDsn = String(import.meta.env.VITE_SENTRY_DSN || '').trim();
 

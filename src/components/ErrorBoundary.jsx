@@ -1,10 +1,12 @@
 import { Component } from 'react';
 import * as Sentry from '@sentry/react';
 import useAcademyStore from '../store/useAcademyStore';
+import { isDynamicImportError } from '../utils/dynamicImportRecovery';
 
 // Functional fallback so we can use hooks (store)
 function ErrorFallback({ error, componentStack, onReset }) {
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
+  const isStaleDeployment = isDynamicImportError(error);
 
   const handleGoHome = () => {
     setActiveTab('home');
@@ -14,8 +16,14 @@ function ErrorFallback({ error, componentStack, onReset }) {
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
       <div className="text-5xl mb-4">⚠️</div>
-      <p className="text-base font-bold text-gray-800 mb-2">화면을 불러오지 못했어요.</p>
-      <p className="text-sm text-gray-500 mb-6">일시적인 오류가 발생했어요. 홈으로 이동해 다시 시도해주세요.</p>
+      <p className="text-base font-bold text-gray-800 mb-2">
+        {isStaleDeployment ? '최신 버전을 불러오지 못했어요.' : '화면을 불러오지 못했어요.'}
+      </p>
+      <p className="text-sm text-gray-500 mb-6">
+        {isStaleDeployment
+          ? '네트워크를 확인한 뒤 새로고침해 주세요.'
+          : '일시적인 오류가 발생했어요. 홈으로 이동해 다시 시도해주세요.'}
+      </p>
 
       {import.meta.env.DEV && error && (
         <div className="w-full max-w-sm mb-4 text-left">
@@ -35,17 +43,21 @@ function ErrorFallback({ error, componentStack, onReset }) {
       )}
 
       <div className="flex gap-3">
-        <button
-          onClick={handleGoHome}
-          className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm"
-        >
-          홈으로 이동
-        </button>
+        {!isStaleDeployment && (
+          <button
+            onClick={handleGoHome}
+            className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl text-sm"
+          >
+            홈으로 이동
+          </button>
+        )}
         <button
           onClick={() => window.location.reload()}
-          className="px-6 py-3 bg-gray-100 text-gray-700 font-bold rounded-2xl text-sm"
+          className={`px-6 py-3 font-bold rounded-2xl text-sm ${
+            isStaleDeployment ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'
+          }`}
         >
-          새로고침
+          {isStaleDeployment ? '최신 버전 다시 불러오기' : '새로고침'}
         </button>
       </div>
     </div>
@@ -64,11 +76,13 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     const store = useAcademyStore.getState();
+    const errorKind = isDynamicImportError(error) ? 'dynamic-import' : 'render';
 
     Sentry.withScope((scope) => {
       scope.setTag('seenit.role', store.role || 'unknown');
       scope.setTag('seenit.mode', store.currentMode || 'unknown');
       scope.setTag('seenit.active_tab', store.activeTab || 'unknown');
+      scope.setTag('seenit.error_kind', errorKind);
       scope.setContext('react', {
         componentStack: info?.componentStack || null,
       });
