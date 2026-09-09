@@ -12,6 +12,9 @@ These rules apply to every change in this repository, including work performed i
 - Never trust caller-supplied roles, academy IDs, ownership fields, or target user IDs. Resolve them from active server records and validate academy relationships.
 - High-risk permissions (staff permission management, staff removal, and student-contact access) may only be granted or revoked by the academy owner and must not be delegated transitively.
 - Invitation recipients may accept only through the acceptance RPC. They must never receive direct update access to invitation role, job title, academy, inviter, or status fields.
+- Developer workspace access must come from a server-side user-ID allowlist and be rechecked by every privileged RPC. Never hardcode a developer email or ship a service-role/Sentry admin token to the client.
+- Developer dashboards must use aggregate or explicitly allowlisted support data. They must not expose student/guardian contacts, check-in PINs, or unrestricted academy impersonation. Any future support access requires owner consent, a short expiry, least privilege, and an immutable audit record.
+- Every developer-side mutation must be recorded in `developer_action_logs` or an equivalent append-only audit trail.
 
 ## Navigation help
 

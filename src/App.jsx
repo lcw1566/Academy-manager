@@ -14,6 +14,7 @@ import AppLayout from './components/AppLayout';
 import AcademyAppLayout from './features/academy/AcademyAppLayout';
 import PublicCheckinPage from './features/academy/attendance/PublicCheckinPage';
 import QrDisplayPage from './features/academy/attendance/QrDisplayPage';
+import DeveloperWorkspace from './features/developer/DeveloperWorkspace';
 import Toast from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import { fetchAcademySnapshot } from './services/supabase/hydrateApi';
@@ -23,6 +24,7 @@ import { tossSpring } from './utils/motion';
 import { retryAsync } from './utils/asyncRetry';
 import { initializePushNotifications, showForegroundChatNotification } from './services/pushNotifications';
 import { getTodayYMD } from './utils/date';
+import useDeveloperStore from './store/useDeveloperStore';
 
 const ACADEMY_ROLES = ['owner', 'teacher', 'assistant', 'manager'];
 
@@ -120,6 +122,11 @@ export default function App() {
   );
   const loadServerClassSessions = useWorkspaceStore((s) => s.loadServerClassSessions);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
+  const developerAccess = useDeveloperStore((s) => s.access);
+  const isDeveloperAccessLoaded = useDeveloperStore((s) => s.isAccessLoaded);
+  const developerWorkspaceSelected = useDeveloperStore((s) => s.isWorkspaceSelected);
+  const loadDeveloperAccess = useDeveloperStore((s) => s.loadAccess);
+  const clearDeveloperState = useDeveloperStore((s) => s.clear);
   const [authEntryMode, setAuthEntryMode] = useState(null);
   const wasAuthenticatedRef = useRef(false);
   const handledWorkspaceSessionRevisionRef = useRef(authSessionRevision);
@@ -344,10 +351,12 @@ export default function App() {
       // (private/tutor 데이터는 건드리지 않는다.)
       if (authUserId) ensureAcademyDataOwner(authUserId);
       initializeWorkspace();
+      void loadDeveloperAccess();
     } else {
       clearAcademyDataCache();
       clearWorkspace();
       clearChat();
+      clearDeveloperState();
       // Phase 27: 로그아웃 시 자동 역할 ref 초기화. 다음 사용자의 권장 역할이
       // 이전 사용자 값과 같아 잘못 skip 되는 것을 방지.
       autoAppliedRoleRef.current = null;
@@ -357,6 +366,7 @@ export default function App() {
   }, [
     isPublicCheckin, isAuthInitialized, isAuthenticated, authUserId, ensureAcademyDataOwner,
     clearAcademyDataCache, initializeWorkspace, clearWorkspace, clearChat,
+    loadDeveloperAccess, clearDeveloperState,
   ]);
 
   useEffect(() => {
@@ -698,6 +708,15 @@ export default function App() {
       return <QrDisplayPage onClose={closeQrDisplayPage} />;
     }
 
+    if (isAuthenticated && developerWorkspaceSelected) {
+      if (!isDeveloperAccessLoaded) {
+        return <LoadingScreen label="개발자 권한 확인 중…" />;
+      }
+      if (developerAccess?.has_access) {
+        return <DeveloperWorkspace />;
+      }
+    }
+
     // 직원은 active 멤버십이 생기기 전까지 전용 대기 화면에 머문다. 새 역할 없는
     // 초대를 수락하면 pending/invited 멤버십이 생기며, 원장/운영 매니저가 역할을
     // 배정하기 전에는 일반 학원 화면·채팅에 접근할 수 없다.
@@ -709,7 +728,8 @@ export default function App() {
       isAuthenticated &&
       isWorkspaceReady &&
       profile?.account_type === 'staff' &&
-      activeMemberships.length === 0
+      activeMemberships.length === 0 &&
+      !developerAccess?.has_access
     ) {
       return <StaffWaitingPage assignmentMembership={roleAssignmentMembership} />;
     }
@@ -722,7 +742,7 @@ export default function App() {
     if (
       isAuthenticated &&
       isWorkspaceReady &&
-      ACADEMY_ROLES.includes(role) &&
+      (ACADEMY_ROLES.includes(role) || developerAccess?.has_access) &&
       !workspacePicked
     ) {
       return <WorkspaceSelectionPage />;

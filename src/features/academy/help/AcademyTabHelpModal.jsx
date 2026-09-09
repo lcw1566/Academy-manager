@@ -5,7 +5,13 @@ import { getAcademyTabHelp } from './academyTabHelp';
 export default function AcademyTabHelpModal({ isOpen, onClose, tabId }) {
   const help = getAcademyTabHelp(tabId);
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={help.title} fitContent>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={help.title}
+      fitContent
+      desktopPlacement="bottom"
+    >
       <p className="text-sm font-semibold leading-6 text-seenit-secondary">{help.summary}</p>
       {help.warning && (
         <div className="mt-4 flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">

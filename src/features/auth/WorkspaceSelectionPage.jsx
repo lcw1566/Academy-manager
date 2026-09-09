@@ -14,11 +14,11 @@
 //   - App.jsx 의 auto-role effect 가 새 academy 의 membership.role 로 진입시킨다.
 //
 // "학원 전환" 더보기 옵션을 누르면 sessionStorage 키를 비우고 다시 이 화면을 띄운다.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Building2, ChevronRight, LogOut, Plus, Inbox, Loader2, Mail, Check,
-  QrCode, MousePointerClick, Users, Ban,
+  QrCode, MousePointerClick, Users, Ban, Code2, ShieldCheck,
 } from 'lucide-react';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
@@ -34,6 +34,7 @@ import { generateQrToken } from '../academy/attendance/attendanceHelpers';
 import TuitionRateFields from '../academy/onboarding/TuitionRateFields';
 import ClinicDefaultItemsEditor from '../academy/clinic/ClinicDefaultItemsEditor';
 import { localizeError } from '../../utils/localizeError';
+import useDeveloperStore from '../../store/useDeveloperStore';
 
 export const WORKSPACE_PICKED_KEY = 'workspace-picked';
 
@@ -66,6 +67,14 @@ export default function WorkspaceSelectionPage() {
   const showToast = useAcademyStore((s) => s.showToast);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const setAcademyProfile = useAcademyStore((s) => s.setAcademyProfile);
+  const clearAcademyDataCache = useAcademyStore((s) => s.clearAcademyDataCache);
+  const setCurrentAcademyId = useWorkspaceStore((s) => s.setCurrentAcademyId);
+  const developerAccess = useDeveloperStore((s) => s.access);
+  const isDeveloperAccessLoaded = useDeveloperStore((s) => s.isAccessLoaded);
+  const loadDeveloperAccess = useDeveloperStore((s) => s.loadAccess);
+  const enterDeveloperWorkspace = useDeveloperStore((s) => s.enterWorkspace);
+  const leaveDeveloperWorkspace = useDeveloperStore((s) => s.leaveWorkspace);
+  const clearDeveloperState = useDeveloperStore((s) => s.clear);
 
   const [submitting, setSubmitting] = useState(false);
   const [pickingAcademyId, setPickingAcademyId] = useState(null);
@@ -88,12 +97,18 @@ export default function WorkspaceSelectionPage() {
 
   const isOwner = profile?.account_type === 'owner';
   const isStaff = profile?.account_type === 'staff';
+  const hasDeveloperAccess = developerAccess?.has_access === true;
+
+  useEffect(() => {
+    if (!isDeveloperAccessLoaded) void loadDeveloperAccess();
+  }, [isDeveloperAccessLoaded, loadDeveloperAccess]);
 
   const handlePick = async (academyId) => {
     if (submitting) return;
     setSubmitting(true);
     setPickingAcademyId(academyId);
     try {
+      leaveDeveloperWorkspace();
       await prepareAcademyWorkspace(academyId);
       setActiveTab('home');
       markWorkspacePicked();
@@ -109,6 +124,18 @@ export default function WorkspaceSelectionPage() {
       setSubmitting(false);
       setPickingAcademyId(null);
     }
+  };
+
+  const handlePickDeveloper = () => {
+    if (!enterDeveloperWorkspace()) {
+      showToast('개발자 권한을 다시 확인해주세요.', 'error');
+      return;
+    }
+    // 개발자 화면에는 이전 학원의 학생·수업 캐시를 들고 가지 않는다.
+    clearAcademyDataCache?.();
+    setCurrentAcademyId?.(null);
+    setActiveTab('home');
+    markWorkspacePicked();
   };
 
   const handleAccept = async (invitationId) => {
@@ -230,6 +257,7 @@ export default function WorkspaceSelectionPage() {
 
   const handleSignOut = async () => {
     try {
+      clearDeveloperState();
       await signOutUser();
     } catch (err) {
       showToast(err?.message ?? '로그아웃에 실패했어요.', 'error');
@@ -245,11 +273,38 @@ export default function WorkspaceSelectionPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
           <div className="text-4xl mb-3">🏫</div>
-          <h1 className="text-xl font-bold text-gray-900">학원을 선택해주세요</h1>
+          <h1 className="text-xl font-bold text-gray-900">
+            {hasDeveloperAccess ? '워크스페이스를 선택해주세요' : '학원을 선택해주세요'}
+          </h1>
           <p className="text-sm text-gray-500 mt-2 leading-relaxed">
-            진입할 학원을 선택하면 해당 학원의 운영 화면이 열려요.
+            {hasDeveloperAccess
+              ? '학원 운영 화면 또는 개발자 도구로 이동할 수 있어요.'
+              : '진입할 학원을 선택하면 해당 학원의 운영 화면이 열려요.'}
           </p>
         </div>
+
+        {hasDeveloperAccess && (
+          <div className="mb-5">
+            <div className="mb-2 flex items-center gap-1.5 px-1">
+              <ShieldCheck size={12} className="text-slate-700" />
+              <p className="text-xs font-bold text-gray-700">개발</p>
+            </div>
+            <button
+              type="button"
+              onClick={handlePickDeveloper}
+              className="flex w-full items-center gap-3 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-4 text-left text-white shadow-sm transition-colors hover:bg-slate-800"
+            >
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/10">
+                <Code2 size={19} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-bold">개발자 워크스페이스</p>
+                <p className="mt-0.5 text-xs text-slate-300">버그·개선 제안과 운영 상태 확인</p>
+              </div>
+              <ChevronRight size={16} className="shrink-0 text-slate-400" />
+            </button>
+          </div>
+        )}
 
         {/* 받은 초대 (상단) */}
         {hasInvitations && (
