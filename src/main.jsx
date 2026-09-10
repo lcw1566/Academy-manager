@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import * as Sentry from '@sentry/react';
+import 'wanted-sans/fonts/webfonts/variable/split/WantedSansVariable.css';
 import App from './App';
 import './index.css';
 import { initializeTheme } from './utils/theme';

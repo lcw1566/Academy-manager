@@ -3,6 +3,9 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['var(--seenit-font-sans)'],
+      },
       colors: {
         seenit: {
           canvas: 'rgb(var(--seenit-color-canvas) / <alpha-value>)',

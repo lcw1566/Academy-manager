@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --seenit-font-sans: "Wanted Sans Variable", "Wanted Sans", -apple-system,
+    BlinkMacSystemFont, system-ui, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR",
+    "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
   box-sizing: border-box;
@@ -35,7 +41,7 @@ body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Pretendard', 'Segoe UI', sans-serif;
+  font-family: var(--seenit-font-sans);
   background-color: rgb(var(--seenit-color-canvas, 242 244 246));
   color: rgb(var(--seenit-color-ink, 25 31 40));
   margin: 0;
@@ -258,7 +264,7 @@ input[type="month"].input {
   overflow-wrap: anywhere;
   background: #fff;
   color: #191f28;
-  font-family: "Noto Sans KR", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-family: var(--seenit-font-sans);
   font-size: 14px;
   line-height: 1.75;
   box-shadow: 0 1px 7px rgba(0, 0, 0, 0.14);

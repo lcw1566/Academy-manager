@@ -33,6 +33,14 @@ These rules apply to every change in this repository, including work performed i
 - Card-style and list-row buttons should use the shared `pressable-surface` interaction class so hover and press states have the same soft surface-color transition and restrained scale feedback as the attendance group buttons. Keep destructive buttons, selection controls, switches, and text-only actions on their purpose-specific feedback styles.
 - Preserve `prefers-reduced-motion` behavior when adding or changing interaction motion. New press effects must remain theme-aware by using semantic Seenit color tokens rather than hard-coded light-only colors.
 
+## Typography
+
+- Use `Wanted Sans Variable` as the single product UI typeface through the shared `--seenit-font-sans` token. Load the official `wanted-sans` package's variable split webfont locally through the application bundle; do not add an external font CDN or another product UI font without an explicit brand-system decision.
+- Keep `public/licenses/WantedSans-OFL.txt` synchronized with the installed Wanted Sans package whenever the font dependency changes so web, PWA, iOS, and Android distributions retain the required license notice.
+- Use weight 400–500 for body and supporting text, 600 for controls and list titles, and 700 for headings and key values. Reserve 800–900 for rare, high-priority metrics or display moments; do not use extreme weight as the default way to establish hierarchy.
+- Keep Korean letter spacing at the font default unless a reviewed component has a specific optical need. Use tabular numerals for aligned amounts, attendance counts, times, and other changing operational data.
+- Keep system and Korean fallback fonts after Wanted Sans so content remains readable if a font asset cannot load. Content viewers may preserve a document-specific typeface when reproducing the source document requires it.
+
 ## Schema and verification
 
 - Add forward-only, idempotent SQL migrations; do not weaken an older migration without also adding a new migration that upgrades existing deployments.
