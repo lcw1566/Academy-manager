@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../store/useAcademyStore';
-import StatCard from '../../components/StatCard';
+import HomeSummaryBar from '../../components/HomeSummaryBar';
 import ClassFormModal from '../classes/ClassFormModal';
 import StudentFormModal from '../students/StudentFormModal';
 import WeeklyExpandableCalendar from '../../components/calendar/WeeklyExpandableCalendar';
@@ -214,13 +214,29 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
-          {/* 요약 카드 */}
-          <div className="px-4 grid grid-cols-2 gap-3 mb-5">
-            <StatCard label="오늘 수업" value={todayClasses.length} unit="개" onClick={() => setActiveTab('classes')} />
-            <StatCard label="출결 미체크" value={uncheckedCount} unit="명" color={uncheckedCount > 0 ? 'text-orange-500' : 'text-gray-900'} onClick={() => setActiveTab('classes')} />
-            <StatCard label="수업기록 미작성" value={notesUnwrittenCount} unit="건" color={notesUnwrittenCount > 0 ? 'text-blue-600' : 'text-gray-900'} onClick={() => setActiveTab('classes')} />
-            <StatCard label="이달 미납" value={formatCurrency(unpaidAmount)} color={unpaidAmount > 0 ? 'text-red-500' : 'text-gray-900'} onClick={() => setActiveTab('payments')} />
-          </div>
+          <HomeSummaryBar
+            items={[
+              { label: '오늘 수업', value: `${todayClasses.length}개`, onClick: () => setActiveTab('classes') },
+              {
+                label: '출결 미체크',
+                value: `${uncheckedCount}명`,
+                color: uncheckedCount > 0 ? 'text-orange-500' : 'text-seenit-ink',
+                onClick: () => setActiveTab('classes'),
+              },
+              {
+                label: '수업기록 미작성',
+                value: `${notesUnwrittenCount}건`,
+                color: notesUnwrittenCount > 0 ? 'text-blue-600' : 'text-seenit-ink',
+                onClick: () => setActiveTab('classes'),
+              },
+              {
+                label: '이달 미납',
+                value: formatCurrency(unpaidAmount),
+                color: unpaidAmount > 0 ? 'text-red-500' : 'text-seenit-ink',
+                onClick: () => setActiveTab('payments'),
+              },
+            ]}
+          />
 
           {/* 오늘 할 일 */}
           <div className="px-4">

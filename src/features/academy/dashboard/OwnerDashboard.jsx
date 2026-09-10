@@ -5,7 +5,6 @@ import {
   Users as UsersIcon,
   CheckSquare,
   LogIn,
-  QrCode,
 } from 'lucide-react';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -21,7 +20,6 @@ import AcademyScheduleCalendar from '../calendar/AcademyScheduleCalendar';
 import {
   classifyShiftStatus,
   getAcademyYmd,
-  openQrDisplayWindow,
   readAttendanceSettings,
 } from '../attendance/attendanceHelpers';
 // Phase 44.6 / Phase B — 룰 기반 예정 세션 머지.
@@ -34,6 +32,7 @@ import {
   plannedToStaffShiftShape,
 } from '../../../utils/schedule';
 import HomeActionList from './HomeActionList';
+import HomeSummaryBar from '../../../components/HomeSummaryBar';
 import { getActionableClassSessions, summarizeStudentPresence } from './homeDashboardUtils';
 
 function formatClock(value) {
@@ -356,25 +355,9 @@ export default function OwnerDashboard({ operationsOnly = false }) {
     <div className="pt-6 pb-4">
       {/* 인사 */}
       <div className="px-5 mb-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
-            <h2 className="text-xl font-bold text-seenit-ink mt-0.5">오늘 학원 운영</h2>
-            <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)} · {academyProfile.name || '학원'}</p>
-          </div>
-          {(attendance.staffCheckMethod === 'qr' || attendance.studentCheckMethod === 'qr') && (
-            <button
-              type="button"
-              onClick={openQrDisplayWindow}
-              className="h-11 px-4 rounded-2xl bg-[#0064FF] text-white text-sm font-bold flex items-center gap-1.5 shadow-sm active:bg-[#0050CC]"
-            >
-              <QrCode size={15} />
-              {attendance.staffCheckMethod === 'qr' && attendance.studentCheckMethod === 'qr'
-                ? '공용 QR'
-                : attendance.staffCheckMethod === 'qr' ? '직원 QR' : '학생 QR'}
-            </button>
-          )}
-        </div>
+        <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
+        <h2 className="text-xl font-bold text-seenit-ink mt-0.5">오늘 학원 운영</h2>
+        <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)} · {academyProfile.name || '학원'}</p>
       </div>
 
       <HomeActionList items={homeActions} />
@@ -393,22 +376,19 @@ export default function OwnerDashboard({ operationsOnly = false }) {
       </div>
 
       {/* 핵심 지표 — 큰 개별 카드 대신 한 줄 요약 바 */}
-      <div className="px-4 mb-3">
-        <div className="grid grid-flow-col auto-cols-fr divide-x divide-seenit-border-soft overflow-hidden rounded-2xl border border-seenit-border-soft bg-seenit-surface shadow-sm">
-          <SummaryMetric label="오늘 수업" value={`${todaySessions.length}개`} onClick={() => setActiveTab('classes')} />
-          {studentAttendanceEnabled && (
-            <SummaryMetric label="등원 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('attendance')} />
-          )}
-          <SummaryMetric label="오늘 출근 예정" value={`${todayShiftStaffIds.length}명`} onClick={() => setActiveTab('staff')} />
-          {academyProfile?.clinicRequired !== false && (
-            <SummaryMetric
-              label="오늘 클리닉 기록"
-              value={`${todayClinicCount}건`}
-              color={todayClinicCount > 0 ? 'text-blue-600' : 'text-seenit-ink'}
-            />
-          )}
-        </div>
-      </div>
+      <HomeSummaryBar
+        className="mb-3"
+        items={[
+          { label: '오늘 수업', value: `${todaySessions.length}개`, onClick: () => setActiveTab('classes') },
+          studentAttendanceEnabled && { label: '등원 예정', value: `${todayStudentIds.length}명`, onClick: () => setActiveTab('attendance') },
+          { label: '오늘 출근 예정', value: `${todayShiftStaffIds.length}명`, onClick: () => setActiveTab('staff') },
+          academyProfile?.clinicRequired !== false && {
+            label: '오늘 클리닉 기록',
+            value: `${todayClinicCount}건`,
+            color: todayClinicCount > 0 ? 'text-blue-600' : 'text-seenit-ink',
+          },
+        ]}
+      />
 
       {/* 준비 중인 지표는 핵심 운영 요약과 분리 */}
       <div className="px-4 grid grid-cols-2 gap-3 mb-5">
@@ -506,24 +486,6 @@ export default function OwnerDashboard({ operationsOnly = false }) {
       )}
 
     </div>
-  );
-}
-
-function SummaryMetric({ label, value, color = 'text-seenit-ink', onClick }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      className={`min-w-0 px-2 py-3 text-left sm:px-4 sm:py-3.5 ${onClick ? 'pressable-surface' : 'cursor-default'}`}
-    >
-      <p className="min-h-7 text-[10px] font-semibold leading-3.5 text-seenit-muted sm:min-h-0 sm:text-xs sm:leading-normal">
-        {label}
-      </p>
-      <p className={`mt-1 truncate text-lg font-extrabold leading-none sm:text-xl ${color}`}>
-        {value}
-      </p>
-    </button>
   );
 }
 

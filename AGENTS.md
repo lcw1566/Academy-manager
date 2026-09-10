@@ -32,6 +32,7 @@ These rules apply to every change in this repository, including work performed i
 
 - Card-style and list-row buttons should use the shared `pressable-surface` interaction class so hover and press states have the same soft surface-color transition and restrained scale feedback as the attendance group buttons. Keep destructive buttons, selection controls, switches, and text-only actions on their purpose-specific feedback styles.
 - Preserve `prefers-reduced-motion` behavior when adding or changing interaction motion. New press effects must remain theme-aware by using semantic Seenit color tokens rather than hard-coded light-only colors.
+- Home dashboard operational metrics must use `src/components/HomeSummaryBar.jsx` so owner, manager, teacher, assistant, and private-mode homes keep the same compact single-row layout. Express role-specific differences through the component's `items`; do not recreate separate 2-column summary-card grids.
 
 ## Typography
 

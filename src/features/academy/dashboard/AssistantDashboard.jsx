@@ -14,8 +14,8 @@ import {
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
-import StaffHomeQrButton from './StaffHomeQrButton';
 import ClinicRecordFormModal from '../clinic/ClinicRecordFormModal';
+import HomeSummaryBar from '../../../components/HomeSummaryBar';
 
 // "방금 끝난 수업" 윈도우 — 종료 후 이 시간(분) 이내 수업을 홈 상단에 우선 노출.
 const JUST_FINISHED_WINDOW_MIN = 120;
@@ -226,7 +226,6 @@ export default function AssistantDashboard() {
               <CheckSquare size={14} />
               <span className="hidden sm:inline">등하원</span>
             </button>
-            <StaffHomeQrButton staff={myAssistant} staffRole="assistant" />
           </div>
         </div>
       </div>
@@ -314,20 +313,17 @@ export default function AssistantDashboard() {
         )}
       </div>
 
-      {/* 요약 카드 */}
-      <div className="px-4 grid grid-cols-2 gap-3 mb-5">
-        <SummaryCard
-          label="오늘 클리닉 기록"
-          value={`${todayRecordCount}건`}
-          color={todayRecordCount > 0 ? 'text-[#0064FF]' : 'text-gray-900'}
-          onClick={() => setActiveTab('clinic')}
-        />
-        <SummaryCard
-          label="이번 주 기록"
-          value={`${weekRecordCount}건`}
-          onClick={() => setActiveTab('clinic')}
-        />
-      </div>
+      <HomeSummaryBar
+        items={[
+          {
+            label: '오늘 클리닉 기록',
+            value: `${todayRecordCount}건`,
+            color: todayRecordCount > 0 ? 'text-[#0064FF]' : 'text-seenit-ink',
+            onClick: () => setActiveTab('clinic'),
+          },
+          { label: '이번 주 기록', value: `${weekRecordCount}건`, onClick: () => setActiveTab('clinic') },
+        ]}
+      />
 
       {/* Phase 32 — 내 급여 (이번 달) */}
       <MyPayrollCard
@@ -364,14 +360,5 @@ export default function AssistantDashboard() {
         />
       )}
     </div>
-  );
-}
-
-function SummaryCard({ label, value, color = 'text-seenit-ink', onClick }) {
-  return (
-    <button onClick={onClick} className="pressable-surface bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full">
-      <p className="text-xs text-seenit-muted mb-1 font-medium">{label}</p>
-      <p className={`text-2xl font-bold leading-none ${color}`}>{value}</p>
-    </button>
   );
 }

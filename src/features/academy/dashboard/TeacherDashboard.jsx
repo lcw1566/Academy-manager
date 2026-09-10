@@ -14,8 +14,8 @@ import AcademyScheduleCalendar from '../calendar/AcademyScheduleCalendar';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
 import MyTodayShiftCard from './MyTodayShiftCard';
 import MyPayrollCard from './MyPayrollCard';
-import StaffHomeQrButton from './StaffHomeQrButton';
 import HomeActionList from './HomeActionList';
+import HomeSummaryBar from '../../../components/HomeSummaryBar';
 import {
   getActionableClassSessions,
   isSessionAssignedToCurrentUser,
@@ -327,16 +327,9 @@ export default function TeacherDashboard() {
   return (
     <div className="pt-6 pb-4">
       <div className="px-5 mb-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
-            <h2 className="text-xl font-bold text-seenit-ink mt-0.5">오늘 내 수업</h2>
-            <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <StaffHomeQrButton staff={myTeacher} staffRole="teacher" />
-          </div>
-        </div>
+        <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
+        <h2 className="text-xl font-bold text-seenit-ink mt-0.5">오늘 내 수업</h2>
+        <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)}</p>
       </div>
 
       <HomeActionList items={homeActions} />
@@ -356,27 +349,27 @@ export default function TeacherDashboard() {
       {/* Phase 31 — 오늘 근무 카드 + 출/퇴근 */}
       <MyTodayShiftCard staff={myTeacher} staffRole="teacher" />
 
-      {/* 요약 카드 */}
-      <div className="px-4 grid grid-cols-2 gap-3 mb-5">
-        <SummaryCard label="오늘 수업" value={`${todaySessions.length}개`} onClick={() => setActiveTab('classes')} />
-        <SummaryCard
-          label="출결 미체크"
-          value={`${todayStudentIds.filter((id) => !checkedTodayIds.has(id)).length}명`}
-          color={todayStudentIds.some((id) => !checkedTodayIds.has(id)) ? 'text-orange-500' : 'text-gray-900'}
-        />
-        <SummaryCard
-          label="기록 미작성"
-          value={`${todayStudentIds.filter((id) => !notesWrittenToday.has(id)).length}건`}
-          color={todayStudentIds.some((id) => !notesWrittenToday.has(id)) ? 'text-blue-600' : 'text-gray-900'}
-        />
-        {academyProfile?.clinicRequired !== false && (
-          <SummaryCard
-            label="클리닉"
-            value={`${myClinics.length}건`}
-            color={myClinics.length > 0 ? 'text-purple-600' : 'text-gray-900'}
-          />
-        )}
-      </div>
+      {/* 핵심 지표 — 역할에 관계없이 같은 한 줄 요약 패턴을 사용 */}
+      <HomeSummaryBar
+        items={[
+          { label: '오늘 수업', value: `${todaySessions.length}개`, onClick: () => setActiveTab('classes') },
+          {
+            label: '출결 미체크',
+            value: `${todayStudentIds.filter((id) => !checkedTodayIds.has(id)).length}명`,
+            color: todayStudentIds.some((id) => !checkedTodayIds.has(id)) ? 'text-orange-500' : 'text-seenit-ink',
+          },
+          {
+            label: '기록 미작성',
+            value: `${todayStudentIds.filter((id) => !notesWrittenToday.has(id)).length}건`,
+            color: todayStudentIds.some((id) => !notesWrittenToday.has(id)) ? 'text-blue-600' : 'text-seenit-ink',
+          },
+          academyProfile?.clinicRequired !== false && {
+            label: '클리닉',
+            value: `${myClinics.length}건`,
+            color: myClinics.length > 0 ? 'text-purple-600' : 'text-seenit-ink',
+          },
+        ]}
+      />
 
       {/* Phase 32 — 작성 필요한 수업 기록 (본인 담당 완료 세션 중 기록 없음) */}
       {unfinishedRecordSessions.length > 0 && (
@@ -467,14 +460,5 @@ export default function TeacherDashboard() {
         </div>
       )}
     </div>
-  );
-}
-
-function SummaryCard({ label, value, color = 'text-seenit-ink', onClick }) {
-  return (
-    <button onClick={onClick} className="pressable-surface bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full">
-      <p className="text-xs text-seenit-muted mb-1 font-medium">{label}</p>
-      <p className={`text-2xl font-bold leading-none ${color}`}>{value}</p>
-    </button>
   );
 }
