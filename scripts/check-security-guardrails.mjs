@@ -68,6 +68,10 @@ const studentPermissionConsistencySql = await readFile(
   new URL('../supabase/sql/082_student_permission_consistency.sql', import.meta.url),
   'utf8',
 );
+const advisorFunctionHardeningSql = await readFile(
+  new URL('../supabase/sql/083_supabase_advisor_function_hardening.sql', import.meta.url),
+  'utf8',
+);
 const domainApiSource = await readFile(
   new URL('../src/services/supabase/domainApi.js', import.meta.url),
   'utf8',
@@ -141,6 +145,26 @@ for (const required of [
 ]) {
   if (!staffReinvitationSql.includes(required)) {
     failures.push(`SQL 080 재초대 권한 보호 누락: ${required}`);
+  }
+}
+
+for (const required of [
+  "alter function public.set_updated_at() set search_path = pg_catalog",
+  "'public_student_checkin'",
+  'revoke execute on function public.public_student_checkin(uuid, text, text, bigint)',
+  'to anon, authenticated',
+  "'rls_auto_enable'",
+  "'enforce_student_contact_write_permission'",
+  "'handle_auth_user_profile_upsert'",
+  "'touch_chat_thread_on_message'",
+  'revoke execute on functions from public',
+  "has_function_privilege('anon', procedure.oid, 'execute')",
+  "has_function_privilege('authenticated', procedure.oid, 'execute')",
+  'authenticated lost required RLS/RPC function access',
+  'anon lost required public_student_checkin access',
+]) {
+  if (!advisorFunctionHardeningSql.includes(required)) {
+    failures.push(`SQL 083 함수 실행 권한 보호 누락: ${required}`);
   }
 }
 
