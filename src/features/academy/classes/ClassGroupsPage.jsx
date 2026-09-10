@@ -270,7 +270,7 @@ export default function ClassGroupsPage() {
                   type="button"
                   whileTap={{ scale: 0.97 }}
                   onClick={() => navigateToClassGroup(group.id)}
-                  className="flex min-h-[142px] select-none flex-col rounded-xl border border-seenit-border-soft bg-seenit-surface p-3 text-left transition-colors hover:bg-seenit-elevated md:min-h-[150px]"
+                  className="pressable-surface flex min-h-[142px] select-none flex-col rounded-xl border border-seenit-border-soft bg-seenit-surface p-3 text-left md:min-h-[150px]"
                 >
                   <div className="mb-2 flex min-w-0 items-center gap-1.5">
                     <span className="min-w-0 truncate rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-700 md:text-[11px]">

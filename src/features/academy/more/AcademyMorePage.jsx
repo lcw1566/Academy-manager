@@ -391,7 +391,7 @@ function MobileExtraMenu({ items = [], badges = {}, onNavigate }) {
               key={item.id}
               type="button"
               onClick={() => onNavigate?.(item.id)}
-              className={`flex min-h-[58px] w-full items-center gap-3 px-4 text-left active:bg-gray-50 ${
+              className={`pressable-surface flex min-h-[58px] w-full items-center gap-3 px-4 text-left ${
                 index > 0 ? 'border-t border-gray-50' : ''
               }`}
               aria-label={item.pilotLocked ? `${item.label}, 추후 제공 예정` : item.label}
@@ -445,7 +445,9 @@ function SettingsRow({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-3.5 text-left active:bg-gray-50 ${danger ? 'border border-red-100' : 'border border-gray-100'} shadow-sm`}
+      className={`w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-3.5 text-left ${
+        danger ? 'border border-red-100 transition-colors active:bg-red-50' : 'pressable-surface border border-gray-100'
+      } shadow-sm`}
     >
       <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${toneClass}`}>
         <Icon size={16} />
@@ -835,7 +837,7 @@ function StaffMoreSections({
         <button
           type="button"
           onClick={onEditMyProfile}
-          className="w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-4 text-left active:bg-gray-50 border border-gray-100 shadow-sm"
+          className="pressable-surface w-full flex items-center gap-3 bg-white rounded-2xl px-4 py-4 text-left border border-gray-100 shadow-sm"
         >
           <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-base font-bold text-blue-600 flex-shrink-0">
             {(displayName || email || '?').charAt(0).toUpperCase()}

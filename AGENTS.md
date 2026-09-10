@@ -28,6 +28,11 @@ These rules apply to every change in this repository, including work performed i
 - Add contextual help for new nested workflows when a reasonable user could misunderstand data scope, permanence, billing effects, or who can see the result.
 - Help text must describe the server-enforced behavior, not merely the visible UI.
 
+## Interaction feedback
+
+- Card-style and list-row buttons should use the shared `pressable-surface` interaction class so hover and press states have the same soft surface-color transition and restrained scale feedback as the attendance group buttons. Keep destructive buttons, selection controls, switches, and text-only actions on their purpose-specific feedback styles.
+- Preserve `prefers-reduced-motion` behavior when adding or changing interaction motion. New press effects must remain theme-aware by using semantic Seenit color tokens rather than hard-coded light-only colors.
+
 ## Schema and verification
 
 - Add forward-only, idempotent SQL migrations; do not weaken an older migration without also adding a new migration that upgrades existing deployments.

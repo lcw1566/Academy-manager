@@ -22,7 +22,7 @@ export default function HomeActionList({ items = [] }) {
               key={item.id}
               type="button"
               onClick={item.onClick}
-              className="flex w-full items-center gap-3 border-b border-seenit-border-soft px-3.5 py-3 text-left transition-colors last:border-0 active:bg-seenit-elevated"
+              className="pressable-surface flex w-full items-center gap-3 border-b border-seenit-border-soft px-3.5 py-3 text-left last:border-0"
             >
               <span
                 className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${

@@ -392,20 +392,26 @@ export default function OwnerDashboard({ operationsOnly = false }) {
         />
       </div>
 
-      {/* 요약 카드 */}
+      {/* 핵심 지표 — 큰 개별 카드 대신 한 줄 요약 바 */}
+      <div className="px-4 mb-3">
+        <div className="grid grid-flow-col auto-cols-fr divide-x divide-seenit-border-soft overflow-hidden rounded-2xl border border-seenit-border-soft bg-seenit-surface shadow-sm">
+          <SummaryMetric label="오늘 수업" value={`${todaySessions.length}개`} onClick={() => setActiveTab('classes')} />
+          {studentAttendanceEnabled && (
+            <SummaryMetric label="등원 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('attendance')} />
+          )}
+          <SummaryMetric label="오늘 출근 예정" value={`${todayShiftStaffIds.length}명`} onClick={() => setActiveTab('staff')} />
+          {academyProfile?.clinicRequired !== false && (
+            <SummaryMetric
+              label="오늘 클리닉 기록"
+              value={`${todayClinicCount}건`}
+              color={todayClinicCount > 0 ? 'text-blue-600' : 'text-seenit-ink'}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* 준비 중인 지표는 핵심 운영 요약과 분리 */}
       <div className="px-4 grid grid-cols-2 gap-3 mb-5">
-        <SummaryCard label="오늘 수업" value={`${todaySessions.length}개`} onClick={() => setActiveTab('classes')} />
-        {studentAttendanceEnabled && (
-          <SummaryCard label="등원 예정" value={`${todayStudentIds.length}명`} onClick={() => setActiveTab('attendance')} />
-        )}
-        <SummaryCard label="오늘 출근 예정" value={`${todayShiftStaffIds.length}명`} onClick={() => setActiveTab('staff')} />
-        {academyProfile?.clinicRequired !== false && (
-          <SummaryCard
-            label="오늘 클리닉 기록"
-            value={`${todayClinicCount}건`}
-            color={todayClinicCount > 0 ? 'text-blue-600' : 'text-gray-900'}
-          />
-        )}
         <SummaryCard
           label="이달 미납"
           value="준비 중"
@@ -503,6 +509,24 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   );
 }
 
+function SummaryMetric({ label, value, color = 'text-seenit-ink', onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`min-w-0 px-2 py-3 text-left sm:px-4 sm:py-3.5 ${onClick ? 'pressable-surface' : 'cursor-default'}`}
+    >
+      <p className="min-h-7 text-[10px] font-semibold leading-3.5 text-seenit-muted sm:min-h-0 sm:text-xs sm:leading-normal">
+        {label}
+      </p>
+      <p className={`mt-1 truncate text-lg font-extrabold leading-none sm:text-xl ${color}`}>
+        {value}
+      </p>
+    </button>
+  );
+}
+
 // Phase 41 — 출결 chip
 function AttendanceChip({ label, value, tone = 'gray' }) {
   const tones = {
@@ -525,7 +549,7 @@ function SummaryCard({ label, value, color = 'text-seenit-ink', onClick, pilotLo
       type="button"
       onClick={onClick}
       aria-label={pilotLocked ? `${label}, 추후 제공 예정` : label}
-      className={`bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-all ${
+      className={`pressable-surface bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full ${
         pilotLocked ? 'opacity-50 grayscale' : ''
       }`}
     >

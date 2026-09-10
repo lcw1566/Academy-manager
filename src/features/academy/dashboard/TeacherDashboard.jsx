@@ -472,7 +472,7 @@ export default function TeacherDashboard() {
 
 function SummaryCard({ label, value, color = 'text-seenit-ink', onClick }) {
   return (
-    <button onClick={onClick} className="bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-transform">
+    <button onClick={onClick} className="pressable-surface bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full">
       <p className="text-xs text-seenit-muted mb-1 font-medium">{label}</p>
       <p className={`text-2xl font-bold leading-none ${color}`}>{value}</p>
     </button>

@@ -861,8 +861,8 @@ function StaffRosterCard({ item, active, summary, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className={`relative w-full text-left rounded-2xl px-3 py-3 bg-white transition-colors ${
-        active ? 'text-[#3182F6]' : 'text-[#191F28] active:bg-[#F8F9FA]'
+      className={`relative w-full text-left rounded-2xl px-3 py-3 bg-white ${
+        active ? 'text-[#3182F6] transition-colors' : 'pressable-surface text-[#191F28]'
       }`}
     >
       {active && (

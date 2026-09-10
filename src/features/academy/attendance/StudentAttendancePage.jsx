@@ -635,7 +635,7 @@ export default function StudentAttendancePage() {
                     <button
                       type="button"
                       onClick={() => toggleAttendanceGroup(id)}
-                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition-colors active:bg-[#F9FAFB] md:gap-3 md:px-4 md:py-3.5"
+                      className="pressable-surface flex w-full items-center gap-2.5 px-3 py-2.5 text-left md:gap-3 md:px-4 md:py-3.5"
                       aria-expanded={expanded}
                     >
                       <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#E8F3FF] text-[#1B64DA] md:h-9 md:w-9 md:rounded-xl">

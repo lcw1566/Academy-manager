@@ -73,6 +73,35 @@ button {
   -webkit-touch-callout: none;
 }
 
+/* 카드·목록형 버튼의 공통 눌림 피드백.
+   밝은 화면의 부드러운 흰색 계열 전환을 다크 모드에서도 의미 토큰으로 유지한다. */
+.pressable-surface {
+  transition-property: background-color, transform, box-shadow;
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+.pressable-surface:not(:disabled):active {
+  background-color: rgb(var(--seenit-color-elevated, 248 249 250));
+  transform: scale(0.99);
+}
+
+@media (hover: hover) {
+  .pressable-surface:not(:disabled):hover {
+    background-color: rgb(var(--seenit-color-elevated, 248 249 250));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pressable-surface {
+    transition-duration: 0.01ms;
+  }
+
+  .pressable-surface:not(:disabled):active {
+    transform: none;
+  }
+}
+
 a,
 input,
 textarea,

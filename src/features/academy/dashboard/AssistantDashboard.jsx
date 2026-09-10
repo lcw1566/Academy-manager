@@ -342,7 +342,7 @@ export default function AssistantDashboard() {
         <button
           type="button"
           onClick={() => setActiveTab('clinic')}
-          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-seenit-surface shadow-sm active:scale-[0.98] transition-transform"
+          className="pressable-surface w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-seenit-surface shadow-sm"
         >
           <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
             <Check size={15} className="text-[#0064FF]" />
@@ -369,7 +369,7 @@ export default function AssistantDashboard() {
 
 function SummaryCard({ label, value, color = 'text-seenit-ink', onClick }) {
   return (
-    <button onClick={onClick} className="bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full active:scale-[0.97] transition-transform">
+    <button onClick={onClick} className="pressable-surface bg-seenit-surface rounded-2xl p-4 shadow-sm text-left w-full">
       <p className="text-xs text-seenit-muted mb-1 font-medium">{label}</p>
       <p className={`text-2xl font-bold leading-none ${color}`}>{value}</p>
     </button>

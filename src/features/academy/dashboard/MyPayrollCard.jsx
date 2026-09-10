@@ -26,7 +26,7 @@ export default function MyPayrollCard({ role, myStaffProfile, onOpen }) {
       <button
         type="button"
         onClick={onOpen}
-        className="w-full bg-white rounded-2xl px-4 py-3.5 border border-gray-100 shadow-sm flex items-center gap-3 active:bg-gray-50 text-left"
+        className="pressable-surface w-full bg-white rounded-2xl px-4 py-3.5 border border-gray-100 shadow-sm flex items-center gap-3 text-left"
       >
         <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
           <Clock3 size={16} className="text-gray-500" />
