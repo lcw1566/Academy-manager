@@ -25,19 +25,18 @@
   - Settings → API → Project URL / Project API keys
 - [ ] **service_role key 는 절대 프론트엔드/Vercel 에 노출하지 않음**
 
-## 2. Supabase SQL 마이그레이션
+## 2. Supabase DB 마이그레이션
 
 [`supabase-migration-checklist.md`](./supabase-migration-checklist.md) 참조.
 
-Dashboard → SQL Editor 에서 **번호 순서대로 현재 최신 파일까지** 실행:
-
-- [ ] 신규 환경: [`supabase/README.md`](../supabase/README.md)의 실행 순서대로 `001`~`064`
-- [ ] 기존 환경: 마지막 적용 번호 다음 파일부터 `064`까지
-- [ ] `063_shared_student_attendance_for_staff.sql` 적용
-- [ ] `064_drive_edge_function_service_role_grants.sql` 적용
+- [ ] `SUPABASE_TELEMETRY_DISABLED=1 npx supabase db push --linked --dry-run`
+- [ ] 미리보기에 의도한 신규 마이그레이션만 표시되는지 확인
+- [ ] `SUPABASE_TELEMETRY_DISABLED=1 npx supabase db push --linked`
+- [ ] `npx supabase migration list`의 local/remote 버전 일치 확인
 - [ ] [`diagnose_cross_device_consistency.sql`](../supabase/sql/diagnostics/diagnose_cross_device_consistency.sql) 결과에서 핵심 항목이 모두 `true`
 
-각 SQL 은 idempotent — 재실행해도 안전합니다.
+기존 `sql/001`~`084`는 SQL Editor 배포 이력입니다. 운영 프로젝트에는 다시
+실행하지 말고 `supabase/migrations/`의 새 파일만 CLI로 적용합니다.
 
 ## 3. Git push
 

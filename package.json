@@ -12,6 +12,8 @@
     "check:staff-invitations": "node scripts/check-staff-invitation-ui.mjs",
     "check:developer-workspace": "node scripts/check-developer-workspace.mjs",
     "check:brand-assets": "node scripts/check-brand-assets.mjs",
+    "supabase:version": "supabase --version",
+    "supabase:local:status": "supabase status",
     "developer:access": "node --env-file=.env.local scripts/manage-developer-access.mjs",
     "preview": "vite preview",
     "auth:reset-password": "node --env-file=.env.local scripts/reset-supabase-user-password.mjs",
@@ -29,6 +31,7 @@
     "@capacitor/push-notifications": "^8.1.1",
     "@rhwp/core": "^0.8.2",
     "@sentry/react": "^10.73.0",
+    "@sentry/vite-plugin": "^5.4.0",
     "@ssabrojs/hwpxjs": "^0.4.0",
     "@supabase/supabase-js": "^2.106.0",
     "docx-preview": "^0.4.0",
@@ -46,6 +49,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.35",
+    "supabase": "2.117.0",
     "tailwindcss": "^3.4.1",
     "vite": "^8.2.2"
   }

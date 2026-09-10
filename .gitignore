@@ -5,6 +5,7 @@ test-artifacts/
 .env
 .env.local
 .env.*.local
+.env.sentry-build-plugin
 *.local
 !.env.example
 

@@ -1,0 +1,31 @@
+# Production observability connections for this trusted repository.
+# OAuth credentials are stored by Codex and must never be committed here.
+
+[mcp_servers.supabase_prod]
+url = "https://mcp.supabase.com/mcp?project_ref=vfiiieqnxawnhtgrvmxn&read_only=true&features=database%2Cdebugging%2Cdocs"
+enabled = true
+required = false
+enabled_tools = [
+  "get_advisors",
+  "query_logs",
+  "list_migrations",
+  "list_tables",
+  "list_extensions",
+  "search_docs",
+]
+default_tools_approval_mode = "prompt"
+tool_timeout_sec = 60
+
+[mcp_servers.sentry]
+# Scope the hosted Sentry session to the Seenit organization and project.
+url = "https://mcp.sentry.dev/mcp/student-n02/javascript-react"
+enabled = true
+required = false
+enabled_tools = [
+  "get_sentry_resource",
+  "search_events",
+  "search_issues",
+  "search_sentry_tools",
+]
+default_tools_approval_mode = "prompt"
+tool_timeout_sec = 60

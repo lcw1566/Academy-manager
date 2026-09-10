@@ -72,6 +72,14 @@ const advisorFunctionHardeningSql = await readFile(
   new URL('../supabase/sql/083_supabase_advisor_function_hardening.sql', import.meta.url),
   'utf8',
 );
+const advisorPerformanceSql = await readFile(
+  new URL('../supabase/sql/084_supabase_advisor_performance.sql', import.meta.url),
+  'utf8',
+);
+const advisorPerformanceMigrationSql = await readFile(
+  new URL('../supabase/migrations/20260910164500_advisor_performance.sql', import.meta.url),
+  'utf8',
+);
 const domainApiSource = await readFile(
   new URL('../src/services/supabase/domainApi.js', import.meta.url),
   'utf8',
@@ -166,6 +174,29 @@ for (const required of [
   if (!advisorFunctionHardeningSql.includes(required)) {
     failures.push(`SQL 083 함수 실행 권한 보호 누락: ${required}`);
   }
+}
+
+for (const required of [
+  'create index if not exists academy_calendar_events_created_by_idx',
+  'create index if not exists student_check_events_created_by_idx',
+  "array['uid', 'email', 'jwt', 'role']",
+  "format('(select auth.%s())', v_function_name)",
+  'alter policy %I on %I.%I%s%s',
+  'drop policy if exists "exam_results_write_by_permission"',
+  'create policy "exam_results_insert_by_permission"',
+  'create policy "exam_results_update_by_permission"',
+  'create policy "exam_results_delete_by_permission"',
+  'drop policy if exists "student_events_write_by_permission"',
+  'create policy "student_events_insert_by_permission"',
+  'create policy "student_events_update_by_permission"',
+  'create policy "student_events_delete_by_permission"',
+]) {
+  if (!advisorPerformanceSql.includes(required)) {
+    failures.push(`SQL 084 Advisor 성능 개선 누락: ${required}`);
+  }
+}
+if (advisorPerformanceSql !== advisorPerformanceMigrationSql) {
+  failures.push('SQL 084 검토용 원본과 CLI 마이그레이션이 일치해야 합니다.');
 }
 
 if (failures.length > 0) throw new Error(failures.join('\n'));

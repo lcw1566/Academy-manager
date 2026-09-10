@@ -1,7 +1,14 @@
 # Supabase 설정 가이드
 
-이 폴더에는 Seenit 의 Supabase 스키마 / RLS 정책을 정의한 SQL 파일이
-들어 있습니다. Supabase Dashboard 의 SQL Editor 에서 **번호 순서대로** 실행해주세요.
+이 폴더에는 Seenit의 Supabase 스키마 / RLS 정책이 들어 있습니다.
+`sql/001`~`084`는 기존 SQL Editor 배포 이력과 검토용 원본이고, 운영
+프로젝트의 CLI 기준선은 2026-09-11에 생성되었습니다. 이후 DB 변경은
+`migrations/`의 timestamp 마이그레이션으로 배포합니다.
+
+일상적인 CLI 절차는 `docs/observability-connections.md`의
+`Production database migration history`를 따릅니다. 기존 `001`~`083`을
+`migration repair`로 별도 등록하거나 운영 DB에 `db reset --linked`를
+실행하면 안 됩니다.
 
 ## 디렉터리 구조
 
@@ -91,7 +98,7 @@ supabase/
 각 파일은 idempotent 하게 작성되어 있어 여러 번 실행해도 안전합니다.
 `drop table` 같은 destructive 명령은 포함되어 있지 않습니다.
 
-> 운영 환경은 중간 번호를 건너뛰지 말고 현재 최신 번호인 `064`까지 순서대로
+> 운영 환경은 중간 번호를 건너뛰지 말고 현재 최신 번호인 `084`까지 순서대로
 > 적용하세요. 적용 뒤 `sql/diagnostics/diagnose_cross_device_consistency.sql`로
 > 핵심 함수·트리거·Realtime 등록 상태를 읽기 전용으로 확인할 수 있습니다.
 
