@@ -247,9 +247,9 @@ export async function createAcademyInvitation({
   return invitation;
 }
 
-// 원장이 본인 학원의 초대 목록 조회.
-// RLS 가 owner 또는 본인 이메일 매칭만 허용하므로, 학원 owner 가 호출하면
-// 해당 학원의 전체 초대가 보인다.
+// RLS 범위 안의 초대 목록을 조회한다. 원장/직원 관리자는 학원 목록 전체를,
+// 일반 직원은 본인 이메일에 해당하는 행만 받는다. 계정 이력 RPC는 직원 관리
+// 권한자 전용이므로 일반 직원의 명시적인 42501은 부가 정보 없음으로 처리한다.
 export async function listAcademyInvitations(academyId) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
@@ -265,10 +265,16 @@ export async function listAcademyInvitations(academyId) {
   ]);
   if (invitationResult.error) throw invitationResult.error;
 
-  const accountRpcMissing = ['42883', 'PGRST202'].includes(accountResult.error?.code);
-  if (accountResult.error && !accountRpcMissing) throw accountResult.error;
+  const accountErrorText = String(accountResult.error?.message || '');
+  const accountHistoryUnavailable = ['42883', 'PGRST202'].includes(accountResult.error?.code)
+    || (
+      accountResult.error?.code === '42501'
+      && accountErrorText.includes('초대 기록을 확인할 권한이 없어요.')
+    );
+  if (accountResult.error && !accountHistoryUnavailable) throw accountResult.error;
   const accountByEmail = new Map(
-    (accountResult.data || []).map((account) => [normalizeEmail(account.email), account]),
+    (accountHistoryUnavailable ? [] : (accountResult.data || []))
+      .map((account) => [normalizeEmail(account.email), account]),
   );
   return (invitationResult.data || []).map((invitation) => ({
     ...invitation,

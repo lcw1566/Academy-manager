@@ -1723,9 +1723,8 @@ const useWorkspaceStore = create(
         }
       },
 
-      // Phase 29 — 원장이 자기 학원의 모든 초대(pending/accepted/canceled) 목록을 조회.
-      // 구성원 관리 섹션에서 pending 항목만 추려 표시한다. RLS 가 owner 만 통과시키므로
-      // staff 가 호출하면 RLS 가 빈 결과를 줄 뿐 에러는 나지 않는다.
+      // Phase 29 — RLS 범위 안의 초대 목록을 조회한다. 일반 직원은 본인 초대 행만
+      // 볼 수 있고, 직원 관리 권한이 필요한 계정 이력 보강은 API에서 선택적으로 생략한다.
       loadAcademyInvitations: async () => {
         if (!isSupabaseConfigured) {
           set({ academyInvitations: [] });

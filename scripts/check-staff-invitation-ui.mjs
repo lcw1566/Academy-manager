@@ -25,6 +25,12 @@ if (staffPage.includes('수락 완료')) {
 if (!workspaceApi.includes("rpc('list_academy_invitation_accounts'")) {
   throw new Error('초대 계정 이름 조회 API 연결이 누락됐습니다.');
 }
+if (
+  !workspaceApi.includes("accountResult.error?.code === '42501'")
+  || !workspaceApi.includes('초대 기록을 확인할 권한이 없어요.')
+) {
+  throw new Error('일반 직원의 예상된 초대 이력 권한 거절 처리가 누락됐습니다.');
+}
 if (!historySql.includes('display_name') || !historySql.includes('has_pending_invitation')) {
   throw new Error('초대 계정 기록 서버 응답에 필요한 필드가 누락됐습니다.');
 }
