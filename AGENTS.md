@@ -21,6 +21,14 @@ These rules apply to every change in this repository, including work performed i
 - Developer dashboards must use aggregate or explicitly allowlisted support data. They must not expose student/guardian contacts, check-in PINs, or unrestricted academy impersonation. Any future support access requires owner consent, a short expiry, least privilege, and an immutable audit record.
 - Every developer-side mutation must be recorded in `developer_action_logs` or an equivalent append-only audit trail.
 
+## Observability and secrets
+
+- Use the repository-scoped, read-only Supabase and Sentry MCP connections in `.codex/config.toml` for inspection. Do not broaden their tool allowlists or perform external mutations during a diagnostic-only task.
+- Keep `SENTRY_AUTH_TOKEN`, Supabase secret/service-role keys, database passwords, and OAuth credentials out of Git, client bundles, logs, screenshots, and chat. `SENTRY_AUTH_TOKEN` is a build-only Vercel secret and must never use a `VITE_` prefix. Keep `.env.sentry-build-plugin` ignored.
+- Sentry events must keep `sendDefaultPii: false` and must not include request bodies, cookies, authorization headers, student/guardian contacts, guardian identity fields, or check-in PINs. Preserve the scrubbing in `src/main.jsx` when changing Sentry initialization.
+- Upload browser source maps only from production builds to the `student-n02/javascript-react` Sentry project. Treat source maps as build artifacts; do not intentionally expose them as public application assets.
+- A successful local source-map upload does not prove a Vercel deployment succeeded. Verify the deployment separately and use a new production error only when end-to-end symbolication must be tested.
+
 ## Navigation help
 
 - Every top-level academy tab in `TAB_CONFIG` must have an entry in `src/features/academy/help/academyTabHelp.js` in the same change.
@@ -44,7 +52,11 @@ These rules apply to every change in this repository, including work performed i
 
 ## Schema and verification
 
-- Add forward-only, idempotent SQL migrations; do not weaken an older migration without also adding a new migration that upgrades existing deployments.
+- The production CLI migration baseline is `20260910163138_remote_schema_baseline`; `20260910164500_advisor_performance` is the first forward migration after it. The numbered `supabase/sql/001`–`084` files are legacy SQL Editor history and review copies, not entries to register again.
+- Put every future production schema change in a new timestamped file under `supabase/migrations/`. Add forward-only, idempotent SQL; do not edit the baseline, rewrite an applied migration, or weaken an older migration without a new upgrading migration.
+- Create migrations with `npx supabase migration new <short_name>`. Before production, replay them against the local Docker database, run relevant role tests, and use `supabase db push --linked --dry-run` to confirm that only the intended files are pending.
+- Run `supabase db push --linked` only for an explicitly authorized schema-change task. Never use it during inspection. Never run `supabase db reset --linked`, never include seed data in a production push, and never use `migration repair` to register the old `001`–`083` SQL Editor scripts.
+- After a production migration, verify local/remote history, rerun Supabase security and performance Advisors, and inspect the immediate error/5xx log window. Treat newly created indexes reported as unused as informational until representative production traffic and stable statistics exist.
 - For permission changes, verify at least owner, manager, teacher, delegated staff, invitation recipient, inactive member, and unauthenticated cases. Include direct REST/RPC attempts, not only UI clicks.
 - For student-contact changes, verify that unauthorized list/detail/direct-table requests cannot retrieve the values and unauthorized writes cannot alter them.
 - For staff exit changes, verify membership/profile deactivation, future shift cancellation, recurring-rule shutdown, payroll preservation, owner/self protections, and orphaned class warnings.
