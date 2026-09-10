@@ -4,7 +4,9 @@ import { Home, BookOpen, Users, MoreHorizontal, CreditCard, BarChart2, UserCog, 
 import useAcademyStore from '../../store/useAcademyStore';
 import useAuthStore from '../../store/useAuthStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
+import useDeveloperStore from '../../store/useDeveloperStore';
 import useChatStore, { totalUnread } from '../../store/useChatStore';
+import { getMyDeveloperTestContext } from '../../services/supabase/developerApi';
 import { currentUserCan } from '../../utils/staffPermissions';
 import AttendanceSettingsSheet from './attendance/AttendanceSettingsSheet';
 import { readAttendanceSettings } from './attendance/attendanceHelpers';
@@ -25,6 +27,8 @@ const loadAcademyMorePage = () => import('./more/AcademyMorePage');
 const loadStaffPage = () => import('./staff/StaffPage');
 const loadChatPage = () => import('./chat/ChatPage');
 const loadDrivePage = () => import('./drive/DrivePage');
+const loadSettlementPage = () => import('./settlement/SettlementPage');
+const loadPayrollPage = () => import('./payroll/PayrollPage');
 
 const OwnerDashboard = lazy(loadOwnerDashboard);
 const TeacherDashboard = lazy(loadTeacherDashboard);
@@ -39,6 +43,8 @@ const AcademyMorePage = lazy(loadAcademyMorePage);
 const StaffPage = lazy(loadStaffPage);
 const ChatPage = lazy(loadChatPage);
 const DrivePage = lazy(loadDrivePage);
+const SettlementPage = lazy(loadSettlementPage);
+const PayrollPage = lazy(loadPayrollPage);
 
 const COMMON_ACADEMY_TAB_LOADERS = [
   loadClassGroupsPage,
@@ -252,6 +258,9 @@ export default function AcademyAppLayout() {
   const goBackFromClassGroup = useAcademyStore((s) => s.goBackFromClassGroup);
   const goBackFromClassSession = useAcademyStore((s) => s.goBackFromClassSession);
   const goBackFromAcademyStudent = useAcademyStore((s) => s.goBackFromAcademyStudent);
+  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
+  const enterDeveloperWorkspace = useDeveloperStore((s) => s.enterWorkspace);
+  const [developerTestContext, setDeveloperTestContext] = useState({ is_test_lab: false });
   const [desktopChatOpen, setDesktopChatOpen] = useState(false);
   const [desktopChatPinned, setDesktopChatPinned] = useState(true);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
@@ -259,6 +268,23 @@ export default function AcademyAppLayout() {
   const [isDesktopViewport, setIsDesktopViewport] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches,
   );
+  const isDeveloperTestLab = developerTestContext?.is_test_lab === true;
+
+  useEffect(() => {
+    let active = true;
+    if (!currentAcademyId) {
+      setDeveloperTestContext({ is_test_lab: false });
+      return () => { active = false; };
+    }
+    getMyDeveloperTestContext(currentAcademyId)
+      .then((context) => {
+        if (active) setDeveloperTestContext(context || { is_test_lab: false });
+      })
+      .catch(() => {
+        if (active) setDeveloperTestContext({ is_test_lab: false });
+      });
+    return () => { active = false; };
+  }, [currentAcademyId]);
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 1024px)');
@@ -300,7 +326,8 @@ export default function AcademyAppLayout() {
       : role === 'assistant'
       ? [loadClinicPage]
       : [];
-    const preload = () => [...COMMON_ACADEMY_TAB_LOADERS, ...roleLoaders]
+    const testLabLoaders = isDeveloperTestLab ? [loadSettlementPage, loadPayrollPage] : [];
+    const preload = () => [...COMMON_ACADEMY_TAB_LOADERS, ...roleLoaders, ...testLabLoaders]
       .forEach((load) => load().catch(() => {}));
     if (typeof window.requestIdleCallback === 'function') {
       const id = window.requestIdleCallback(preload, { timeout: 2500 });
@@ -308,11 +335,10 @@ export default function AcademyAppLayout() {
     }
     const id = window.setTimeout(preload, 1200);
     return () => window.clearTimeout(id);
-  }, [role]);
+  }, [role, isDeveloperTestLab]);
 
   // Phase 41 — owner 가 출결 onboarding 을 마치지 않았으면 1회성 모달 노출.
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
-  const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const isWorkspaceReady = useWorkspaceStore((s) => s.isWorkspaceReady);
   const workspaceRealtimeStatus = useWorkspaceStore((s) => s.workspaceRealtimeStatus);
   const chatRealtimeStatus = useChatStore((s) => s.realtimeStatus);
@@ -401,7 +427,14 @@ export default function AcademyAppLayout() {
     () => academyStaffProfiles.find((sp) => sp.user_id === authUserId) || null,
     [academyStaffProfiles, authUserId],
   );
-  const baseTabs = TAB_CONFIG[role] || TAB_CONFIG.owner;
+  const baseTabs = useMemo(
+    () => (TAB_CONFIG[role] || TAB_CONFIG.owner).map((tab) => (
+      isDeveloperTestLab && tab.pilotLocked
+        ? { ...tab, pilotLocked: false, developerTestFeature: true }
+        : tab
+    )),
+    [role, isDeveloperTestLab],
+  );
   const tabs = useMemo(() => {
     return baseTabs.filter((tab) => {
       if (tab.id === 'clinic') {
@@ -521,12 +554,12 @@ export default function AcademyAppLayout() {
     : activeTab;
 
   const renderDashboard = () => {
-    if (role === 'owner')     return <OwnerDashboard />;
-    if (role === 'teacher')   return <TeacherDashboard />;
+    if (role === 'owner')     return <OwnerDashboard pilotFeaturesEnabled={isDeveloperTestLab} />;
+    if (role === 'teacher')   return <TeacherDashboard pilotFeaturesEnabled={isDeveloperTestLab} />;
     // 이전 DB의 assistant 역할도 선생님 화면으로 통합한다.
-    if (role === 'assistant') return <TeacherDashboard />;
-    if (role === 'manager')   return <OwnerDashboard operationsOnly />;
-    return <OwnerDashboard />;
+    if (role === 'assistant') return <TeacherDashboard pilotFeaturesEnabled={isDeveloperTestLab} />;
+    if (role === 'manager')   return <OwnerDashboard operationsOnly pilotFeaturesEnabled={isDeveloperTestLab} />;
+    return <OwnerDashboard pilotFeaturesEnabled={isDeveloperTestLab} />;
   };
 
   const renderContent = () => {
@@ -540,9 +573,17 @@ export default function AcademyAppLayout() {
         return clinicEnabled ? <ClinicPage /> : renderDashboard();
       }
       if (activeTab === 'payments' || activeTab === 'settlement') {
+        if (isDeveloperTestLab) {
+          return <SettlementPage operationsOnly={role === 'manager'} initialSegment="payments" title="수납" />;
+        }
         return <PilotLockedFeature featureId="payments" onReturn={() => setActiveTab('classes')} />;
       }
       if (activeTab === 'owner-payroll' || activeTab === 'payroll') {
+        if (isDeveloperTestLab) {
+          return activeTab === 'owner-payroll'
+            ? <SettlementPage initialSegment="payroll" title="급여" />
+            : <PayrollPage />;
+        }
         return <PilotLockedFeature featureId={activeTab} onReturn={() => setActiveTab('classes')} />;
       }
       if (activeTab === 'staff')      return <StaffPage />;
@@ -604,6 +645,23 @@ export default function AcademyAppLayout() {
         desktopChatOpen && desktopChatPinned ? 'xl:mr-[440px]' : ''
       }`}>
         <div className="main-content mx-auto w-full max-w-md pb-24 md:max-w-3xl md:px-6 md:py-6 lg:mx-0 lg:max-w-none lg:px-8 2xl:mx-auto 2xl:max-w-[1600px]">
+          {isDeveloperTestLab && (
+            <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 md:mx-0">
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-indigo-900">기능 테스트 학원</p>
+                <p className="mt-0.5 text-xs font-semibold text-indigo-700">
+                  합성 데이터 · {developerTestContext.active_persona || role} 역할 · 수납·급여 잠금 해제
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => enterDeveloperWorkspace()}
+                className="pressable-surface h-9 shrink-0 rounded-xl bg-indigo-600 px-3 text-xs font-bold text-white"
+              >
+                역할 바꾸기
+              </button>
+            </div>
+          )}
           {currentAcademyId && (hasSyncError || isRealtimeReconnecting) && (
             <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 md:mx-0">
               <div className="min-w-0">

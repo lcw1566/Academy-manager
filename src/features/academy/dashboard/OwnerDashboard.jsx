@@ -47,7 +47,7 @@ function formatTimeRange(start, end) {
   return `${s || '-'} - ${e || '-'}`;
 }
 
-export default function OwnerDashboard({ operationsOnly = false }) {
+export default function OwnerDashboard({ operationsOnly = false, pilotFeaturesEnabled = false }) {
   const role = useAcademyStore((s) => s.role);
   const academyStudents = useAcademyStore((s) => s.academyStudents);
   const classGroups = useAcademyStore((s) => s.classGroups);
@@ -59,6 +59,8 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const academyProfile = useAcademyStore((s) => s.academyProfile);
   const academyLessonRecords = useAcademyStore((s) => s.academyLessonRecords) ?? [];
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
+  const academyPayments = useAcademyStore((s) => s.academyPayments) ?? [];
+  const academyPayrolls = useAcademyStore((s) => s.academyPayrolls) ?? [];
   const navigateToClassSession = useAcademyStore((s) => s.navigateToClassSession);
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
   const showToast = useAcademyStore((s) => s.showToast);
@@ -84,6 +86,18 @@ export default function OwnerDashboard({ operationsOnly = false }) {
   const [selectedDate, setSelectedDate] = useState(() => getAcademyYmd() || today());
   const [now, setNow] = useState(() => new Date());
   const todayStr = getAcademyYmd() || today();
+  const currentMonth = todayStr.slice(0, 7);
+  const unpaidThisMonth = academyPayments.filter(
+    (payment) => payment.month === currentMonth && payment.status !== 'paid' && payment.status !== 'waived',
+  );
+  const unpaidAmountThisMonth = unpaidThisMonth.reduce(
+    (sum, payment) => sum + (Number(payment.amount) || 0),
+    0,
+  );
+  const payrollReviewCount = academyPayrolls.filter(
+    (payroll) => payroll.month === currentMonth
+      && (payroll.status !== 'completed' || payroll.requiresReview === true),
+  ).length;
 
   const openSession = useCallback(async (session) => {
     try {
@@ -394,16 +408,16 @@ export default function OwnerDashboard({ operationsOnly = false }) {
       <div className="px-4 grid grid-cols-2 gap-3 mb-5">
         <SummaryCard
           label="이달 미납"
-          value="준비 중"
+          value={pilotFeaturesEnabled ? `${unpaidAmountThisMonth.toLocaleString()}원` : '준비 중'}
           onClick={() => setActiveTab('payments')}
-          pilotLocked
+          pilotLocked={!pilotFeaturesEnabled}
         />
         {!operationsOnly && (
           <SummaryCard
             label="급여 확인 필요"
-            value="준비 중"
+            value={pilotFeaturesEnabled ? `${payrollReviewCount}건` : '준비 중'}
             onClick={() => setActiveTab('owner-payroll')}
-            pilotLocked
+            pilotLocked={!pilotFeaturesEnabled}
           />
         )}
       </div>

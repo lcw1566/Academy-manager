@@ -96,7 +96,7 @@ function getMonthDateRange(month) {
   };
 }
 
-export default function SettlementPage({ operationsOnly = false }) {
+export default function SettlementPage({ operationsOnly = false, initialSegment = 'payments', title = '정산' }) {
   const {
     role, academyStudents, classGroups, academyPayments,
     academyTeachers, academyAssistants, academyManagers = [], academyPayrolls,
@@ -134,7 +134,11 @@ export default function SettlementPage({ operationsOnly = false }) {
 
   const months = getRecentMonths();
   const [selectedMonth, setSelectedMonth] = useState(months[0]);
-  const [segment, setSegment] = useState('payments'); // 'payments' | 'payroll' | 'settings'
+  const [segment, setSegment] = useState(
+    operationsOnly || !['payments', 'payroll', 'settings'].includes(initialSegment)
+      ? 'payments'
+      : initialSegment,
+  ); // 'payments' | 'payroll' | 'settings'
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [addForm, setAddForm] = useState({ studentId: '', classGroupId: '', amount: '' });
@@ -441,7 +445,7 @@ export default function SettlementPage({ operationsOnly = false }) {
 
   return (
     <div>
-      <Header title="정산" />
+      <Header title={title} />
 
       <div className="pt-14 md:pt-0 pb-6">
         {/* 월 선택 */}

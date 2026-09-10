@@ -3,12 +3,12 @@
 // Teacher / Assistant 홈에 노출되는 "내 급여 (이번 달)" 요약 카드.
 // canViewPayroll 권한 있을 때만 노출. payroll row 가 없으면 안내 카드 노출.
 import { useMemo } from 'react';
-import { Clock3 } from 'lucide-react';
+import { Clock3, Wallet } from 'lucide-react';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import useAuthStore from '../../../store/useAuthStore';
 import { currentUserCan } from '../../../utils/staffPermissions';
 
-export default function MyPayrollCard({ role, myStaffProfile, onOpen }) {
+export default function MyPayrollCard({ role, myPayroll, myStaffProfile, enabled = false, onOpen }) {
   const authUserId = useAuthStore((s) => s.user?.id);
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const staffProfile = useMemo(
@@ -20,6 +20,8 @@ export default function MyPayrollCard({ role, myStaffProfile, onOpen }) {
   if (!canView) return null;
   if (!myStaffProfile) return null;
 
+  const payrollAmount = Math.max(0, Math.round(Number(myPayroll?.amount) || 0));
+
   return (
     <div className="mx-4 mb-5">
       <p className="text-sm font-bold text-gray-700 mb-2">급여</p>
@@ -29,14 +31,20 @@ export default function MyPayrollCard({ role, myStaffProfile, onOpen }) {
         className="pressable-surface w-full bg-white rounded-2xl px-4 py-3.5 border border-gray-100 shadow-sm flex items-center gap-3 text-left"
       >
         <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-          <Clock3 size={16} className="text-gray-500" />
+          {enabled
+            ? <Wallet size={16} className="text-blue-600" />
+            : <Clock3 size={16} className="text-gray-500" />}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-700">파일럿 이후 제공 예정</p>
-          <p className="text-xs text-gray-400 mt-0.5">급여 계산과 명세 기능을 준비하고 있어요.</p>
+          <p className="text-sm font-semibold text-gray-700">
+            {enabled ? `${payrollAmount.toLocaleString()}원` : '파일럿 이후 제공 예정'}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {enabled ? '합성 근퇴 기록으로 만든 이번 달 급여 명세' : '급여 계산과 명세 기능을 준비하고 있어요.'}
+          </p>
         </div>
         <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-500">
-          준비 중
+          {enabled ? '테스트' : '준비 중'}
         </span>
       </button>
     </div>

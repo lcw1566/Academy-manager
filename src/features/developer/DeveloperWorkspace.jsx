@@ -6,20 +6,28 @@ import {
   Building2,
   CheckCircle2,
   Clock3,
+  FlaskConical,
   ExternalLink,
   Image as ImageIcon,
   Lightbulb,
   Loader2,
+  Play,
   RefreshCw,
+  RotateCcw,
   ShieldCheck,
+  UserRoundCog,
   Users,
 } from 'lucide-react';
 import useDeveloperStore from '../../store/useDeveloperStore';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
+import useAcademyStore from '../../store/useAcademyStore';
 import {
   createDeveloperFeedbackScreenshotUrl,
   getDeveloperDashboardStats,
+  getDeveloperTestLab,
   listDeveloperFeedback,
+  prepareDeveloperTestLab,
+  setDeveloperTestPersona,
   updateDeveloperFeedbackStatus,
 } from '../../services/supabase/developerApi';
 
@@ -35,6 +43,22 @@ const CATEGORY_OPTIONS = [
   { id: '', label: '전체' },
   { id: 'bug', label: '버그' },
   { id: 'improvement', label: '개선 제안' },
+];
+
+const TEST_SCENARIOS = [
+  { id: 'full', label: '전체 기능', detail: '홈부터 수납·급여까지 한 번에 확인' },
+  { id: 'billing', label: '수납·급여', detail: '미납·부분 납부·급여 명세에서 시작' },
+  { id: 'attendance', label: '등하원·근무', detail: '출석과 출퇴근 예외에서 시작' },
+  { id: 'staff', label: '직원·초대', detail: '근무표와 초대 대기 상태에서 시작' },
+];
+
+const TEST_PERSONAS = [
+  { id: 'owner', label: '원장', detail: '모든 기능과 설정을 검증' },
+  { id: 'manager', label: '운영 매니저', detail: '수납·직원 운영 권한을 검증' },
+  { id: 'teacher', label: '선생님', detail: '담당 수업과 내 급여를 검증' },
+  { id: 'assistant', label: '보조강사 직책', detail: '선생님 권한 + 보조 업무 직책' },
+  { id: 'invited', label: '초대 대기', detail: '초대 수락 전 상태를 검증' },
+  { id: 'inactive', label: '퇴사·비활성', detail: '학원 접근 차단 상태를 검증' },
 ];
 
 function statusMeta(status) {
@@ -63,8 +87,15 @@ export default function DeveloperWorkspace() {
   const access = useDeveloperStore((state) => state.access);
   const leaveWorkspace = useDeveloperStore((state) => state.leaveWorkspace);
   const setWorkspacePicked = useWorkspaceStore((state) => state.setWorkspacePicked);
+  const setCurrentAcademyId = useWorkspaceStore((state) => state.setCurrentAcademyId);
+  const loadMemberships = useWorkspaceStore((state) => state.loadMemberships);
+  const loadMyPendingInvitations = useWorkspaceStore((state) => state.loadMyPendingInvitations);
+  const prepareAcademyWorkspace = useWorkspaceStore((state) => state.prepareAcademyWorkspace);
+  const setActiveTab = useAcademyStore((state) => state.setActiveTab);
   const [stats, setStats] = useState(null);
   const [feedback, setFeedback] = useState([]);
+  const [testLab, setTestLab] = useState(null);
+  const [testLabBusy, setTestLabBusy] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [selectedId, setSelectedId] = useState(null);
@@ -75,6 +106,7 @@ export default function DeveloperWorkspace() {
   const [screenshotUrl, setScreenshotUrl] = useState(null);
   const [screenshotLoading, setScreenshotLoading] = useState(false);
   const canManageFeedback = ['developer', 'support'].includes(access?.role);
+  const canManageTestLab = access?.role === 'developer';
 
   const selected = useMemo(
     () => feedback.find((item) => item.id === selectedId) || feedback[0] || null,
@@ -86,16 +118,18 @@ export default function DeveloperWorkspace() {
     else setLoading(true);
     setError('');
     try {
-      const [nextStats, nextFeedback] = await Promise.all([
+      const [nextStats, nextFeedback, nextTestLab] = await Promise.all([
         getDeveloperDashboardStats(),
         listDeveloperFeedback({
           status: statusFilter || null,
           category: categoryFilter || null,
           limit: 100,
         }),
+        getDeveloperTestLab(),
       ]);
       setStats(nextStats);
       setFeedback(nextFeedback);
+      setTestLab(nextTestLab);
       setSelectedId((current) => (
         current && nextFeedback.some((item) => item.id === current)
           ? current
@@ -159,6 +193,68 @@ export default function DeveloperWorkspace() {
     setWorkspacePicked(false);
   };
 
+  const prepareTestLab = async (scenario) => {
+    if (!canManageTestLab || testLabBusy) return;
+    setTestLabBusy(`scenario:${scenario}`);
+    setError('');
+    try {
+      const nextLab = await prepareDeveloperTestLab(scenario);
+      setTestLab(nextLab);
+      await loadMemberships({ throwOnError: true });
+    } catch (labError) {
+      setError(labError?.message || '테스트 학원을 준비하지 못했어요.');
+    } finally {
+      setTestLabBusy('');
+    }
+  };
+
+  const changeTestPersona = async (persona) => {
+    if (!canManageTestLab || !testLab?.exists || testLabBusy) return;
+    setTestLabBusy(`persona:${persona}`);
+    setError('');
+    try {
+      const nextLab = await setDeveloperTestPersona(persona);
+      setTestLab(nextLab);
+      await Promise.all([
+        loadMemberships({ throwOnError: true }),
+        loadMyPendingInvitations(),
+      ]);
+    } catch (labError) {
+      setError(labError?.message || '테스트 역할을 변경하지 못했어요.');
+    } finally {
+      setTestLabBusy('');
+    }
+  };
+
+  const openTestLab = async () => {
+    if (!testLab?.academy_id || !testLab?.can_open || testLabBusy) return;
+    setTestLabBusy('open');
+    setError('');
+    try {
+      await loadMemberships({ throwOnError: true });
+      await prepareAcademyWorkspace(testLab.academy_id);
+      const firstTab = {
+        billing: 'payments',
+        attendance: 'attendance',
+        staff: 'staff',
+      }[testLab.active_scenario] || 'home';
+      setActiveTab(firstTab);
+      leaveWorkspace();
+      setWorkspacePicked(true);
+    } catch (labError) {
+      setError(labError?.message || '테스트 학원을 열지 못했어요.');
+      setTestLabBusy('');
+    }
+  };
+
+  const openInvitationState = async () => {
+    if (testLabBusy) return;
+    await loadMyPendingInvitations();
+    leaveWorkspace();
+    setCurrentAcademyId(null);
+    setWorkspacePicked(false);
+  };
+
   const totalCount = feedback[0]?.total_count ?? feedback.length;
 
   return (
@@ -213,6 +309,16 @@ export default function DeveloperWorkspace() {
             </p>
           </div>
         </section>
+
+        <TestLabPanel
+          lab={testLab}
+          busy={testLabBusy}
+          canManage={canManageTestLab}
+          onPrepare={prepareTestLab}
+          onPersonaChange={changeTestPersona}
+          onOpen={openTestLab}
+          onOpenInvitation={openInvitationState}
+        />
 
         {error && (
           <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700" role="alert">
@@ -370,6 +476,153 @@ export default function DeveloperWorkspace() {
         </section>
       </main>
     </div>
+  );
+}
+
+function TestLabPanel({
+  lab,
+  busy,
+  canManage,
+  onPrepare,
+  onPersonaChange,
+  onOpen,
+  onOpenInvitation,
+}) {
+  const exists = lab?.exists === true;
+  const currentPersona = TEST_PERSONAS.find((persona) => persona.id === lab?.active_persona);
+  const isBusy = Boolean(busy);
+
+  return (
+    <section className="overflow-hidden rounded-3xl border border-indigo-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-4 bg-gradient-to-r from-indigo-600 to-blue-600 px-5 py-5 text-white md:flex-row md:items-center md:justify-between md:px-6">
+        <div className="flex items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15">
+            <FlaskConical size={22} />
+          </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-bold">기능 테스트 랩</h2>
+              <span className="rounded-full bg-white/15 px-2 py-1 text-[10px] font-bold">합성 데이터 전용</span>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-indigo-100">
+              로그아웃 없이 역할을 바꾸고, 잠긴 수납·급여를 포함한 실제 학원 화면을 테스트해요.
+            </p>
+          </div>
+        </div>
+        {exists && (
+          <button
+            type="button"
+            onClick={lab.can_open ? onOpen : onOpenInvitation}
+            disabled={isBusy}
+            className="pressable-surface flex h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-bold text-indigo-700 disabled:opacity-60"
+          >
+            {busy === 'open' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+            {lab.can_open ? '현재 역할로 열기' : lab.active_persona === 'invited' ? '초대 화면 열기' : '접근 차단 확인'}
+          </button>
+        )}
+      </div>
+
+      {!exists ? (
+        <div className="px-5 py-6 md:px-6">
+          <p className="text-sm font-bold text-gray-900">아직 테스트 학원이 없어요</p>
+          <p className="mt-1 text-xs leading-5 text-gray-500">
+            실제 고객 데이터와 분리된 테스트 학원과 학생·수업·근무·수납·급여 예시를 한 번에 만들어요.
+          </p>
+          <button
+            type="button"
+            onClick={() => onPrepare('full')}
+            disabled={!canManage || isBusy || lab?.setup_missing}
+            className="pressable-surface mt-4 flex h-11 items-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {isBusy ? <Loader2 size={16} className="animate-spin" /> : <FlaskConical size={16} />}
+            테스트 학원 만들기
+          </button>
+          {lab?.setup_missing && (
+            <p className="mt-3 text-xs font-semibold text-amber-600">테스트 랩 DB 마이그레이션을 먼저 적용해야 해요.</p>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-6 px-5 py-5 md:px-6">
+          <div className="flex flex-col gap-3 rounded-2xl bg-indigo-50 px-4 py-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-bold text-indigo-950">{lab.academy_name}</p>
+              <p className="mt-1 text-xs text-indigo-700">
+                현재 {currentPersona?.label || lab.active_persona} · 학생 {number(lab.student_count)}명 · 반 {number(lab.class_count)}개 · 수납 {number(lab.payment_count)}건 · 급여 {number(lab.payroll_count)}건
+              </p>
+            </div>
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-indigo-700">
+              <UserRoundCog size={14} /> 실제 RLS 역할 전환
+            </span>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">빠른 역할 전환</h3>
+                <p className="mt-1 text-xs text-gray-500">같은 계정으로 서버 권한까지 바꿔 확인해요.</p>
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {TEST_PERSONAS.map((persona) => {
+                const active = lab.active_persona === persona.id;
+                const personaBusy = busy === `persona:${persona.id}`;
+                return (
+                  <button
+                    key={persona.id}
+                    type="button"
+                    onClick={() => onPersonaChange(persona.id)}
+                    disabled={!canManage || isBusy}
+                    aria-pressed={active}
+                    className={`pressable-surface rounded-2xl border px-4 py-3 text-left disabled:opacity-60 ${
+                      active ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white'
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className={`text-sm font-bold ${active ? 'text-indigo-700' : 'text-gray-800'}`}>{persona.label}</span>
+                      {personaBusy ? <Loader2 size={15} className="animate-spin text-indigo-600" /> : active ? <CheckCircle2 size={15} className="text-indigo-600" /> : null}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-gray-500">{persona.detail}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">시나리오 초기화</h3>
+            <p className="mt-1 text-xs leading-5 text-gray-500">
+              모든 합성 데이터를 새로 만들고 선택한 기능 화면에서 시작해요. 테스트 중 수정한 내용은 사라져요.
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {TEST_SCENARIOS.map((scenario) => {
+                const scenarioBusy = busy === `scenario:${scenario.id}`;
+                return (
+                  <button
+                    key={scenario.id}
+                    type="button"
+                    onClick={() => onPrepare(scenario.id)}
+                    disabled={!canManage || isBusy}
+                    className="pressable-surface rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-left disabled:opacity-60"
+                  >
+                    <span className="flex items-center gap-2 text-sm font-bold text-gray-800">
+                      {scenarioBusy ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                      {scenario.label}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-gray-500">{scenario.detail}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {!canManage && (
+            <p className="rounded-xl bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500">
+              developer 역할만 테스트 학원과 역할을 변경할 수 있어요.
+            </p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

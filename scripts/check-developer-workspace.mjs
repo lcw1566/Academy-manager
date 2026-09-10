@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 
 const files = {
   migration: '../supabase/sql/078_developer_workspace.sql',
+  testLabMigration: '../supabase/migrations/20260911090000_developer_test_lab.sql',
   api: '../src/services/supabase/developerApi.js',
   selection: '../src/features/auth/WorkspaceSelectionPage.jsx',
   app: '../src/App.jsx',
@@ -29,6 +30,26 @@ for (const functionName of [
 if (!sources.migration.includes('developer_action_logs')) {
   throw new Error('개발자 변경 이력 기록이 누락됐습니다.');
 }
+for (const functionName of [
+  'get_developer_test_lab',
+  'get_my_developer_test_context',
+  'prepare_developer_test_lab',
+  'set_developer_test_persona',
+]) {
+  if (!sources.testLabMigration.includes(functionName)) {
+    throw new Error(`개발자 테스트 랩 서버 함수가 누락됐습니다: ${functionName}`);
+  }
+}
+if (!sources.testLabMigration.includes('developer_test_workspaces')) {
+  throw new Error('개발자 테스트 학원 서버 등록부가 누락됐습니다.');
+}
+if (!sources.testLabMigration.includes("'test_lab.reset'")
+  || !sources.testLabMigration.includes("'test_lab.persona_changed'")) {
+  throw new Error('테스트 랩 변경 감사 로그가 누락됐습니다.');
+}
+if (!sources.testLabMigration.includes('synthetic_data_only')) {
+  throw new Error('테스트 랩 합성 데이터 표기가 누락됐습니다.');
+}
 if (/import\.meta\.env\.(?:SUPABASE_SECRET_KEY|VITE_SUPABASE_SERVICE)/.test(sources.api + sources.page)) {
   throw new Error('개발자 프론트엔드에 서버 비밀 키를 넣을 수 없습니다.');
 }
@@ -43,6 +64,9 @@ if (!sources.selection.includes('handlePickTutor') || !sources.app.includes('has
 }
 if (!sources.page.includes('개인정보') || !sources.page.includes('학생 연락처')) {
   throw new Error('개발자 워크스페이스 개인정보 안내가 누락됐습니다.');
+}
+if (!sources.page.includes('기능 테스트 랩') || !sources.page.includes('실제 RLS 역할 전환')) {
+  throw new Error('개발자 테스트 랩 UI 또는 권한 안내가 누락됐습니다.');
 }
 
 console.log('developer workspace guardrails: ok');

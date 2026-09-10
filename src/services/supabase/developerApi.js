@@ -3,6 +3,8 @@ import { FEEDBACK_BUCKET } from './feedbackApi';
 
 const FEEDBACK_STATUSES = new Set(['received', 'reviewing', 'planned', 'resolved', 'closed']);
 const FEEDBACK_CATEGORIES = new Set(['bug', 'improvement']);
+const TEST_LAB_SCENARIOS = new Set(['full', 'billing', 'attendance', 'staff']);
+const TEST_LAB_PERSONAS = new Set(['owner', 'manager', 'teacher', 'assistant', 'invited', 'inactive']);
 
 function assertConfigured() {
   if (!isSupabaseConfigured || !supabase) {
@@ -33,6 +35,57 @@ export async function getDeveloperDashboardStats() {
   const { data, error } = await supabase.rpc('get_developer_dashboard_stats');
   if (error) throw error;
   return data || {};
+}
+
+export async function getDeveloperTestLab() {
+  assertConfigured();
+  const { data, error } = await supabase.rpc('get_developer_test_lab');
+  if (error) {
+    if (error?.code === '42883' || error?.code === 'PGRST202') {
+      return { exists: false, setup_missing: true };
+    }
+    throw error;
+  }
+  return data || { exists: false };
+}
+
+export async function getMyDeveloperTestContext(academyId) {
+  assertConfigured();
+  if (!academyId) return { is_test_lab: false };
+  const { data, error } = await supabase.rpc('get_my_developer_test_context', {
+    p_academy_id: academyId,
+  });
+  if (error) {
+    if (error?.code === '42883' || error?.code === 'PGRST202') {
+      return { is_test_lab: false, setup_missing: true };
+    }
+    throw error;
+  }
+  return data || { is_test_lab: false };
+}
+
+export async function prepareDeveloperTestLab(scenario = 'full') {
+  assertConfigured();
+  if (!TEST_LAB_SCENARIOS.has(scenario)) {
+    throw new Error('테스트 시나리오가 올바르지 않아요.');
+  }
+  const { data, error } = await supabase.rpc('prepare_developer_test_lab', {
+    p_scenario: scenario,
+  });
+  if (error) throw error;
+  return data || { exists: false };
+}
+
+export async function setDeveloperTestPersona(persona) {
+  assertConfigured();
+  if (!TEST_LAB_PERSONAS.has(persona)) {
+    throw new Error('테스트 역할이 올바르지 않아요.');
+  }
+  const { data, error } = await supabase.rpc('set_developer_test_persona', {
+    p_persona: persona,
+  });
+  if (error) throw error;
+  return data || { exists: false };
 }
 
 export async function listDeveloperFeedback({

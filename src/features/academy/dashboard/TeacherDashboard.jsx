@@ -42,7 +42,7 @@ function formatTimeRange(start, end) {
   return `${s || '-'} - ${e || '-'}`;
 }
 
-export default function TeacherDashboard() {
+export default function TeacherDashboard({ pilotFeaturesEnabled = false }) {
   const academyStudents = useAcademyStore((s) => s.academyStudents);
   const classGroups = useAcademyStore((s) => s.classGroups);
   const classSessions = useAcademyStore((s) => s.classSessions);
@@ -413,6 +413,7 @@ export default function TeacherDashboard() {
         role="teacher"
         myPayroll={myPayroll}
         myStaffProfile={myTeacher}
+        enabled={pilotFeaturesEnabled}
         onOpen={() => setActiveTab('payroll')}
       />
 
