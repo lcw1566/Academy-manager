@@ -4,6 +4,7 @@ const files = {
   migration: '../supabase/sql/078_developer_workspace.sql',
   testLabMigration: '../supabase/migrations/20260911090000_developer_test_lab.sql',
   testPermissionMigration: '../supabase/migrations/20260911140000_developer_test_permission_controls.sql',
+  testCollaborationMigration: '../supabase/migrations/20260911150000_developer_test_collaboration.sql',
   api: '../src/services/supabase/developerApi.js',
   selection: '../src/features/auth/WorkspaceSelectionPage.jsx',
   app: '../src/App.jsx',
@@ -13,6 +14,15 @@ const files = {
   payroll: '../src/features/academy/payroll/PayrollPage.jsx',
   work: '../src/features/academy/work/MyWorkPage.jsx',
   shiftAction: '../src/features/academy/dashboard/MyTodayShiftCard.jsx',
+  e2eEnv: './local-supabase-env.mjs',
+  e2eRunner: './run-playwright.mjs',
+  e2eSupport: '../tests/e2e/support/supabase.js',
+  e2eAccounts: '../tests/e2e/support/accounts.js',
+  e2eProvision: '../tests/e2e/support/provision.js',
+  e2eRoleTest: '../tests/e2e/role-collaboration.spec.js',
+  e2eConfig: '../playwright.config.js',
+  e2eWorkflow: '../.github/workflows/e2e.yml',
+  vite: '../vite.config.js',
 };
 
 const sources = Object.fromEntries(await Promise.all(
@@ -61,6 +71,10 @@ for (const functionName of [
 }
 if (!sources.testLabMigration.includes('developer_test_workspaces')) {
   throw new Error('개발자 테스트 학원 서버 등록부가 누락됐습니다.');
+}
+if (!sources.testCollaborationMigration.includes('member.status = \'active\'')
+  || !sources.testCollaborationMigration.includes("developer.role = 'developer'")) {
+  throw new Error('테스트 학원 협업 문맥의 활성 멤버십 또는 개발자 검증이 누락됐습니다.');
 }
 if (!sources.testLabMigration.includes("'test_lab.reset'")
   || !sources.testLabMigration.includes("'test_lab.persona_changed'")) {
@@ -111,6 +125,40 @@ if (!sources.academyLayout.includes("id: 'my-work'")
 if (!sources.settlement.includes("'bg-seenit-brand text-seenit-on-brand'")
   || !sources.settlement.includes('bg-seenit-brand py-2.5')) {
   throw new Error('수납·급여 완료 버튼의 라이트·다크 대비 토큰이 누락됐습니다.');
+}
+if (!sources.e2eEnv.includes('assertLocalSupabaseUrl')
+  || !sources.e2eEnv.includes("['127.0.0.1', 'localhost', '::1']")
+  || !sources.e2eSupport.includes('assertLocalE2eEnvironment')
+  || !sources.e2eSupport.includes('browserUrl.origin !== url.origin')) {
+  throw new Error('E2E의 운영 Supabase 실행 차단 장치가 누락됐습니다.');
+}
+if ((sources.e2eEnv + sources.e2eRunner + sources.e2eSupport)
+  .includes('VITE_SUPABASE_SERVICE_ROLE')) {
+  throw new Error('E2E service-role 키를 브라우저 환경변수에 넣을 수 없습니다.');
+}
+for (const accountKey of ['owner', 'manager', 'teacher', 'invited']) {
+  if (!sources.e2eAccounts.includes(`${accountKey}.e2e@example.test`)
+    || !sources.e2eAccounts.includes(`${accountKey}.json`)) {
+    throw new Error(`역할별 독립 E2E 계정이 누락됐습니다: ${accountKey}`);
+  }
+}
+if (!sources.e2eProvision.includes('create_academy_invitation_guarded')
+  || !sources.e2eProvision.includes('accept_academy_invitation')
+  || !sources.e2eRoleTest.includes('browser.newContext')) {
+  throw new Error('역할별 초대·수락 또는 독립 브라우저 세션 검증이 누락됐습니다.');
+}
+if (!sources.e2eConfig.includes('workers: 1')
+  || !sources.e2eConfig.includes("trace: 'retain-on-failure'")) {
+  throw new Error('공유 테스트 학원 격리 또는 Playwright 실패 trace 설정이 누락됐습니다.');
+}
+if (!sources.e2eWorkflow.includes('npm run test:db')
+  || !sources.e2eWorkflow.includes('npm run test:e2e')
+  || sources.e2eWorkflow.indexOf('npm run test:db') > sources.e2eWorkflow.indexOf('npm run test:e2e')
+  || !sources.e2eWorkflow.includes('npm run supabase:start')) {
+  throw new Error('E2E CI의 로컬 DB 준비·역할 테스트 순서가 올바르지 않습니다.');
+}
+if (!sources.vite.includes("command === 'build' && mode === 'production'")) {
+  throw new Error('Sentry source map 업로드는 production build로 제한해야 합니다.');
 }
 
 console.log('developer workspace guardrails: ok');
