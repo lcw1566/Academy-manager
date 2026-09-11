@@ -351,6 +351,7 @@ input[type="month"].input {
   --seenit-color-muted: 107 118 132;
   --seenit-color-subtle: 139 149 161;
   --seenit-color-brand: 0 100 255;
+  --seenit-color-on-brand: 255 255 255;
   --seenit-color-brand-soft: 232 243 255;
   --seenit-color-brand-muted: 242 247 255;
   --seenit-color-success-soft: 236 253 245;
@@ -375,6 +376,7 @@ html.dark {
   --seenit-color-muted: 173 182 194;
   --seenit-color-subtle: 146 156 169;
   --seenit-color-brand: 101 170 255;
+  --seenit-color-on-brand: 15 23 42;
   --seenit-color-brand-soft: 27 48 74;
   --seenit-color-brand-muted: 28 41 57;
   --seenit-color-success-soft: 29 58 49;

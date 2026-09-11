@@ -127,7 +127,7 @@ export default function UpdateAnnouncementModal() {
         <button
           type="button"
           onClick={acknowledge}
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-seenit-brand text-sm font-bold text-white"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-seenit-brand text-sm font-bold text-seenit-on-brand"
         >
           <Check size={18} />
           확인했어요

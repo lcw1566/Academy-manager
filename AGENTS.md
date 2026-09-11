@@ -40,6 +40,8 @@ These rules apply to every change in this repository, including work performed i
 
 - Card-style and list-row buttons should use the shared `pressable-surface` interaction class so hover and press states have the same soft surface-color transition and restrained scale feedback as the attendance group buttons. Keep destructive buttons, selection controls, switches, and text-only actions on their purpose-specific feedback styles.
 - Preserve `prefers-reduced-motion` behavior when adding or changing interaction motion. New press effects must remain theme-aware by using semantic Seenit color tokens rather than hard-coded light-only colors.
+- Review every new or changed layout in both light and dark mode before considering it complete. Check text/background contrast, borders, disabled and selected states, overlays, shadows, and focus/hover/press feedback; do not pair semantic foreground tokens such as `text-seenit-ink` with backgrounds that can resolve to the same color in dark mode.
+- When extending an existing flow, inspect and reuse its established animation, transition, loading, empty, and success-feedback patterns. Verify motion in both themes and with `prefers-reduced-motion` enabled so visual polish does not reduce readability or accessibility.
 - Home dashboard operational metrics must use `src/components/HomeSummaryBar.jsx` so owner, manager, teacher, assistant, and private-mode homes keep the same compact single-row layout. Express role-specific differences through the component's `items`; do not recreate separate 2-column summary-card grids.
 
 ## Typography

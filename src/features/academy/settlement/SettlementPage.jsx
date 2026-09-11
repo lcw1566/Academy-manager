@@ -1145,14 +1145,14 @@ function TestLabPayments({ summary, students, payments, canManage, onGenerate, o
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <p className="truncate text-sm font-bold text-seenit-ink">{student.name}</p>
-                    {adjusted && <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700">예외 적용</span>}
+                    {adjusted && <span className="rounded-full bg-seenit-purple-soft px-2 py-0.5 text-[10px] font-bold text-seenit-purple">예외 적용</span>}
                   </div>
                   <p className="mt-0.5 text-xs text-seenit-subtle">
                     {payment ? `${formatWon(payment.amount)} · ${payment.status === 'paid' ? '납부 완료' : '미납'}` : '아직 청구 없음'}
                   </p>
                 </div>
                 {payment && canManage && (
-                  <button type="button" onClick={() => onTogglePaid(payment)} className={`pressable-surface h-9 rounded-xl px-3 text-xs font-bold ${payment.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-seenit-control text-seenit-secondary'}`}>
+                  <button type="button" onClick={() => onTogglePaid(payment)} className={`pressable-surface h-9 rounded-xl px-3 text-xs font-bold ${payment.status === 'paid' ? 'bg-seenit-success-soft text-seenit-success' : 'bg-seenit-brand text-seenit-on-brand'}`}>
                     {payment.status === 'paid' ? '완료' : '입금 확인'}
                   </button>
                 )}
@@ -1196,7 +1196,7 @@ function TestLabPayrolls({ summary, payrolls, onGenerate, onOpenDetail, onMarkPa
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <p className="truncate text-sm font-bold text-seenit-ink">{getStaffName(payroll)}</p>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${payroll.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${payroll.status === 'completed' ? 'bg-seenit-success-soft text-seenit-success' : 'bg-seenit-warning-soft text-seenit-warning'}`}>
                       {payroll.status === 'completed' ? '지급 완료' : '지급 예정'}
                     </span>
                   </div>
@@ -1212,7 +1212,7 @@ function TestLabPayrolls({ summary, payrolls, onGenerate, onOpenDetail, onMarkPa
                 </div>
               </div>
               {payroll.status !== 'completed' && (
-                <button type="button" onClick={() => onMarkPaid(payroll)} className="pressable-surface mt-3 w-full rounded-xl bg-seenit-ink py-2.5 text-xs font-bold text-white">
+                <button type="button" onClick={() => onMarkPaid(payroll)} className="pressable-surface mt-3 w-full rounded-xl bg-seenit-brand py-2.5 text-xs font-bold text-seenit-on-brand shadow-sm">
                   지급 완료로 표시
                 </button>
               )}
@@ -1225,7 +1225,7 @@ function TestLabPayrolls({ summary, payrolls, onGenerate, onOpenDetail, onMarkPa
 }
 
 function FinanceMetric({ label, value, tone = 'default' }) {
-  const color = tone === 'blue' ? 'text-seenit-brand' : tone === 'red' ? 'text-red-500' : tone === 'green' ? 'text-emerald-600' : 'text-seenit-ink';
+  const color = tone === 'blue' ? 'text-seenit-brand' : tone === 'red' ? 'text-seenit-danger' : tone === 'green' ? 'text-seenit-success' : 'text-seenit-ink';
   return (
     <div className="rounded-2xl border border-seenit-border-soft bg-seenit-surface p-4 shadow-sm">
       <p className="text-[11px] font-semibold text-seenit-subtle">{label}</p>
@@ -1246,7 +1246,7 @@ function PaymentAdjustmentModal({ data, form, setForm, onClose, onSave, month })
       title="학생별 학원비 조정"
       fitContent
       footer={(
-        <motion.button type="button" whileTap={{ scale: 0.98 }} onClick={onSave} disabled={!form.amount} className="w-full rounded-2xl bg-seenit-brand py-3.5 text-sm font-bold text-white disabled:opacity-40">
+        <motion.button type="button" whileTap={{ scale: 0.98 }} onClick={onSave} disabled={!form.amount} className="w-full rounded-2xl bg-seenit-brand py-3.5 text-sm font-bold text-seenit-on-brand disabled:opacity-40">
           이 금액으로 적용
         </motion.button>
       )}
@@ -1291,7 +1291,7 @@ function PayrollDetailModal({ detail, onClose, getStaffName, attendanceLogs }) {
           <div className="rounded-2xl bg-seenit-control p-4">
             <p className="text-sm font-bold text-seenit-ink">{getStaffName(payroll)} · {formatMonth(payroll.month)}</p>
             <p className="mt-1 text-2xl font-extrabold tabular-nums text-seenit-ink">{formatWon(payroll.amount)}</p>
-            <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${payroll.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+            <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${payroll.status === 'completed' ? 'bg-seenit-success-soft text-seenit-success' : 'bg-seenit-warning-soft text-seenit-warning'}`}>
               {payroll.status === 'completed' ? `${payroll.paidDate || ''} 지급 완료` : '지급 예정'}
             </span>
           </div>
@@ -1324,7 +1324,7 @@ function PayrollDetailModal({ detail, onClose, getStaffName, attendanceLogs }) {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-bold tabular-nums text-seenit-ink">{formatHours(staffAttendanceMinutes(log) / 60)}시간</p>
-                    <p className={`text-[10px] font-bold ${isPayableStaffAttendance(log) ? 'text-emerald-600' : 'text-amber-600'}`}>{isPayableStaffAttendance(log) ? '급여 반영' : '미확정'}</p>
+                    <p className={`text-[10px] font-bold ${isPayableStaffAttendance(log) ? 'text-seenit-success' : 'text-seenit-warning'}`}>{isPayableStaffAttendance(log) ? '급여 반영' : '미확정'}</p>
                   </div>
                 </div>
               ))}
@@ -1340,7 +1340,7 @@ function DetailLine({ label, value, tone = 'default', strong = false }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-seenit-border-soft px-4 py-3 last:border-0">
       <p className="text-xs font-semibold text-seenit-subtle">{label}</p>
-      <p className={`${strong ? 'text-base font-extrabold' : 'text-sm font-bold'} ${tone === 'amber' ? 'text-amber-600' : 'text-seenit-ink'} tabular-nums`}>{value}</p>
+      <p className={`${strong ? 'text-base font-extrabold' : 'text-sm font-bold'} ${tone === 'amber' ? 'text-seenit-warning' : 'text-seenit-ink'} tabular-nums`}>{value}</p>
     </div>
   );
 }
@@ -1353,7 +1353,7 @@ function BillingDayModal({ kind, salaryPaymentDay, tuitionDueDay, onClose, onSav
       <p className="mb-4 text-xs leading-relaxed text-seenit-secondary">이 탭에 필요한 날짜 설정만 간단하게 바꿀 수 있어요.</p>
       <div className="grid grid-cols-7 gap-1.5">
         {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
-          <button key={day} type="button" onClick={() => onSave(kind, day)} className={`pressable-surface aspect-square rounded-xl text-sm font-bold ${day === current ? 'bg-seenit-brand text-white' : 'bg-seenit-control text-seenit-ink'}`}>
+          <button key={day} type="button" onClick={() => onSave(kind, day)} className={`pressable-surface aspect-square rounded-xl text-sm font-bold ${day === current ? 'bg-seenit-brand text-seenit-on-brand' : 'bg-seenit-control text-seenit-ink'}`}>
             {day}
           </button>
         ))}

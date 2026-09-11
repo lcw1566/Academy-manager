@@ -29,6 +29,7 @@ const loadChatPage = () => import('./chat/ChatPage');
 const loadDrivePage = () => import('./drive/DrivePage');
 const loadSettlementPage = () => import('./settlement/SettlementPage');
 const loadPayrollPage = () => import('./payroll/PayrollPage');
+const loadMyWorkPage = () => import('./work/MyWorkPage');
 
 const OwnerDashboard = lazy(loadOwnerDashboard);
 const TeacherDashboard = lazy(loadTeacherDashboard);
@@ -45,6 +46,7 @@ const ChatPage = lazy(loadChatPage);
 const DrivePage = lazy(loadDrivePage);
 const SettlementPage = lazy(loadSettlementPage);
 const PayrollPage = lazy(loadPayrollPage);
+const MyWorkPage = lazy(loadMyWorkPage);
 
 const COMMON_ACADEMY_TAB_LOADERS = [
   loadClassGroupsPage,
@@ -55,11 +57,9 @@ const COMMON_ACADEMY_TAB_LOADERS = [
   loadAcademyMorePage,
 ];
 
-// Phase 40 — 기존 "근무" 탭을 "직원" 으로 통합. 직원 리스트 + 근무 스케줄 +
-// 계약/권한/배정까지 한 탭에서 처리한다. More 탭은 학원·계정 설정만 남긴다.
-//
-// 강사/보조강사는 본인 출퇴근만 Home 카드에서 처리한다. 운영 매니저는
-// 데스크 실무를 위해 직원·수납·공유자료 탭에 접근하되, 원장 전용 급여는 제외한다.
+// 직원 관리의 근무 스케줄·계약·권한은 "직원" 탭에서 다룬다. 테스트 학원의
+// 직원 본인 화면은 "근무"에서 내 출퇴근 이력, "급여"에서 지급 상태를 분리해 검증한다.
+// 선생님과 운영 매니저의 당일 출퇴근 기록은 홈 상단 액션에서 바로 처리한다.
 const TAB_CONFIG = {
   owner: [
     { id: 'home',       label: '홈',    Icon: Home },
@@ -81,6 +81,7 @@ const TAB_CONFIG = {
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
     { id: 'staff',    label: '직원', Icon: UserCog },
     { id: 'payments', label: '수납', Icon: CreditCard, pilotLocked: true },
+    { id: 'my-work',  label: '근무', Icon: Clock3, pilotLocked: true },
     { id: 'payroll',  label: '급여', Icon: CreditCard, pilotLocked: true },
     { id: 'drive',    label: '드라이브', Icon: FolderOpen },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
@@ -95,6 +96,7 @@ const TAB_CONFIG = {
     { id: 'clinic',   label: '클리닉', Icon: ClipboardList },
     { id: 'staff',    label: '직원', Icon: UserCog },
     { id: 'payments', label: '수납', Icon: CreditCard, pilotLocked: true },
+    { id: 'my-work',  label: '근무', Icon: Clock3, pilotLocked: true },
     { id: 'payroll',  label: '급여', Icon: CreditCard, pilotLocked: true },
     { id: 'drive',    label: '드라이브', Icon: FolderOpen },
     { id: 'more',     label: '더보기', Icon: MoreHorizontal },
@@ -107,6 +109,7 @@ const TAB_CONFIG = {
     { id: 'clinic',     label: '클리닉', Icon: ClipboardList },
     { id: 'staff',      label: '직원',  Icon: UserCog },
     { id: 'payments',   label: '수납',  Icon: CreditCard, pilotLocked: true },
+    { id: 'my-work',    label: '근무',  Icon: Clock3, pilotLocked: true },
     { id: 'payroll',    label: '급여',  Icon: BarChart2, pilotLocked: true },
     { id: 'drive',      label: '드라이브', Icon: FolderOpen },
     { id: 'more',       label: '더보기', Icon: MoreHorizontal },
@@ -117,7 +120,7 @@ const TAB_CONFIG = {
 // 권한이나 학원 설정으로 항목이 빠지면 뒤의 후보(직원·수납 등)로 채워
 // 가능한 경우 항상 6칸을 유지한다.
 const MOBILE_PRIMARY_TAB_IDS = ['home', 'attendance', 'classes', 'students', 'clinic'];
-const MOBILE_FALLBACK_TAB_IDS = ['staff', 'payments', 'payroll', 'owner-payroll', 'drive'];
+const MOBILE_FALLBACK_TAB_IDS = ['my-work', 'staff', 'payments', 'payroll', 'owner-payroll', 'drive'];
 
 function FallbackScreen() {
   const setActiveTab = useAcademyStore((s) => s.setActiveTab);
@@ -149,6 +152,10 @@ const PILOT_LOCKED_FEATURES = {
   payroll: {
     title: '급여',
     description: '근무 기록과 급여 계산을 충분히 검증한 뒤 정식으로 제공할 예정이에요.',
+  },
+  'my-work': {
+    title: '근무',
+    description: '내 출퇴근 기록을 급여와 분리해 확인하는 기능은 테스트 학원에서 먼저 검증하고 있어요.',
   },
   drive: {
     title: '드라이브',
@@ -326,7 +333,7 @@ export default function AcademyAppLayout() {
       : role === 'assistant'
       ? [loadClinicPage]
       : [];
-    const testLabLoaders = isDeveloperTestLab ? [loadSettlementPage, loadPayrollPage] : [];
+    const testLabLoaders = isDeveloperTestLab ? [loadSettlementPage, loadPayrollPage, loadMyWorkPage] : [];
     const preload = () => [...COMMON_ACADEMY_TAB_LOADERS, ...roleLoaders, ...testLabLoaders]
       .forEach((load) => load().catch(() => {}));
     if (typeof window.requestIdleCallback === 'function') {
@@ -585,6 +592,11 @@ export default function AcademyAppLayout() {
             : <PayrollPage testLabMode />;
         }
         return <PilotLockedFeature featureId={activeTab} onReturn={() => setActiveTab('classes')} />;
+      }
+      if (activeTab === 'my-work') {
+        return isDeveloperTestLab
+          ? <MyWorkPage />
+          : <PilotLockedFeature featureId="my-work" onReturn={() => setActiveTab('home')} />;
       }
       if (activeTab === 'staff')      return <StaffPage />;
       if (activeTab === 'drive')      return <DrivePage />;

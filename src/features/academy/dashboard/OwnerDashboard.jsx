@@ -34,6 +34,8 @@ import {
 import HomeActionList from './HomeActionList';
 import HomeSummaryBar from '../../../components/HomeSummaryBar';
 import { getActionableClassSessions, summarizeStudentPresence } from './homeDashboardUtils';
+import MyTodayShiftCard from './MyTodayShiftCard';
+import { findLocalStaffForUser } from '../../../utils/staffMatch';
 
 function formatClock(value) {
   if (!value) return '';
@@ -66,12 +68,22 @@ export default function OwnerDashboard({ operationsOnly = false, pilotFeaturesEn
   const showToast = useAcademyStore((s) => s.showToast);
   const academyInvitations = useWorkspaceStore((s) => s.academyInvitations) ?? [];
   const authUserId = useAuthStore((s) => s.user?.id);
+  const authUserEmail = useAuthStore((s) => s.user?.email);
   const studentCheckEvents = useWorkspaceStore((s) => s.studentCheckEvents) ?? [];
   const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
   const staffAttendanceLogs = useWorkspaceStore((s) => s.staffAttendanceLogs) ?? [];
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
-  const currentAcademy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
+  const currentMembership = memberships.find((m) => m.academy_id === currentAcademyId) || null;
+  const currentAcademy = currentMembership?.academy || null;
+  const myManager = useMemo(
+    () => findLocalStaffForUser(academyManagers, {
+      userId: authUserId,
+      memberId: currentMembership?.id,
+      email: authUserEmail,
+    }),
+    [academyManagers, authUserEmail, authUserId, currentMembership?.id],
+  );
   const attendance = readAttendanceSettings(currentAcademy);
   const studentAttendanceEnabled = attendance.studentCheckMethod !== 'disabled';
   // Phase 44.6 / Phase B — 룰 기반 예정 세션 데이터.
@@ -368,10 +380,15 @@ export default function OwnerDashboard({ operationsOnly = false, pilotFeaturesEn
   return (
     <div className="pt-6 pb-4">
       {/* 인사 */}
-      <div className="px-5 mb-5">
-        <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
-        <h2 className="text-xl font-bold text-seenit-ink mt-0.5">오늘 학원 운영</h2>
-        <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)} · {academyProfile.name || '학원'}</p>
+      <div className="px-5 mb-5 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
+          <h2 className="text-xl font-bold text-seenit-ink mt-0.5">오늘 학원 운영</h2>
+          <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)} · {academyProfile.name || '학원'}</p>
+        </div>
+        {operationsOnly && pilotFeaturesEnabled && (
+          <MyTodayShiftCard staff={myManager} staffRole="manager" variant="action" />
+        )}
       </div>
 
       <HomeActionList items={homeActions} />

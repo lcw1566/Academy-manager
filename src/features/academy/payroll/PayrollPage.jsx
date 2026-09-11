@@ -67,11 +67,11 @@ function formatTime(value) {
 }
 
 function getStatusMeta(status) {
-  if (status === 'approved') return { label: '확정', className: 'bg-emerald-50 text-emerald-700' };
-  if (status === 'completed') return { label: '급여 반영', className: 'bg-blue-50 text-blue-700' };
-  if (status === 'pending') return { label: '퇴근 필요', className: 'bg-amber-50 text-amber-700' };
-  if (status === 'rejected') return { label: '제외', className: 'bg-red-50 text-red-600' };
-  return { label: '기록중', className: 'bg-gray-100 text-gray-600' };
+  if (status === 'approved') return { label: '확정', className: 'bg-seenit-success-soft text-seenit-success' };
+  if (status === 'completed') return { label: '급여 반영', className: 'bg-seenit-brand-soft text-seenit-brand' };
+  if (status === 'pending') return { label: '퇴근 필요', className: 'bg-seenit-warning-soft text-seenit-warning' };
+  if (status === 'rejected') return { label: '제외', className: 'bg-seenit-danger-soft text-seenit-danger' };
+  return { label: '기록중', className: 'bg-seenit-control text-seenit-secondary' };
 }
 
 function buildFallbackStaff({ localStaff, staffProfile, membership, authUserId, authUserEmail, role }) {
@@ -284,21 +284,21 @@ export default function PayrollPage({ testLabMode = false }) {
           <button
             type="button"
             onClick={() => setMonthPickerOpen(!monthPickerOpen)}
-            className="h-10 px-3 rounded-xl bg-white border border-[#E5E8EB] text-sm font-bold text-[#191F28] inline-flex items-center gap-2"
+            className="pressable-surface h-10 px-3 rounded-xl bg-seenit-surface border border-seenit-border-soft text-sm font-bold text-seenit-ink inline-flex items-center gap-2"
           >
-            <ChevronLeft size={15} className="text-[#8B95A1]" />
+            <ChevronLeft size={15} className="text-seenit-muted" />
             {formatMonth(selectedMonth)}
-            <ChevronRight size={15} className="text-[#8B95A1]" />
+            <ChevronRight size={15} className="text-seenit-muted" />
           </button>
           {monthPickerOpen && (
-            <div className="mt-2 bg-white rounded-xl border border-[#E5E8EB] overflow-hidden">
+            <div className="mt-2 bg-seenit-surface rounded-xl border border-seenit-border-soft overflow-hidden">
               {months.map((m) => (
                 <button
                   key={m}
                   type="button"
                   onClick={() => { setSelectedMonth(m); setMonthPickerOpen(false); }}
-                  className={`w-full text-left px-4 py-3 text-sm border-b border-[#F2F4F6] last:border-0 ${
-                    m === selectedMonth ? 'font-bold text-[#0064FF]' : 'text-[#4E5968]'
+                  className={`pressable-surface w-full text-left px-4 py-3 text-sm border-b border-seenit-border-soft last:border-0 ${
+                    m === selectedMonth ? 'font-bold text-seenit-brand bg-seenit-brand-soft' : 'text-seenit-secondary'
                   }`}
                 >
                   {formatMonth(m)}
@@ -309,11 +309,11 @@ export default function PayrollPage({ testLabMode = false }) {
         </div>
 
         <section className="px-4 mb-4">
-          <div className="bg-white rounded-2xl p-5 border border-[#E5E8EB]">
-            <p className="text-[12px] font-bold text-[#8B95A1] mb-1">
+          <div className="bg-seenit-surface rounded-2xl p-5 border border-seenit-border-soft">
+            <p className="text-[12px] font-bold text-seenit-muted mb-1">
               {isConfirmedPayroll ? '이번 달 급여' : '이번 달 예상 급여'}
             </p>
-            <p className="text-[34px] leading-tight font-extrabold text-[#191F28] tracking-normal">
+            <p className="text-[34px] leading-tight font-extrabold text-seenit-ink tracking-normal tabular-nums">
               {formatWon(estimatedPayroll?.amount)}
             </p>
             {testLabMode && (
@@ -348,24 +348,26 @@ export default function PayrollPage({ testLabMode = false }) {
           </div>
         </section>
 
-        <section className="px-4 mb-4 grid grid-cols-3 gap-2">
-          <MetricCard label="근무시간" value={`${formatHours(logSummary.totalHours)}시간`} />
-          <MetricCard label="급여 반영" value={`${formatHours(logSummary.payableHours)}시간`} tone="green" />
-          <MetricCard label="미확정" value={`${formatHours(logSummary.pendingHours)}시간`} tone="amber" />
-        </section>
+        {!testLabMode && (
+          <section className="px-4 mb-4 grid grid-cols-3 gap-2">
+            <MetricCard label="근무시간" value={`${formatHours(logSummary.totalHours)}시간`} />
+            <MetricCard label="급여 반영" value={`${formatHours(logSummary.payableHours)}시간`} tone="green" />
+            <MetricCard label="미확정" value={`${formatHours(logSummary.pendingHours)}시간`} tone="amber" />
+          </section>
+        )}
 
-        <section className="px-4 mb-5">
-          <div className="bg-white rounded-2xl border border-[#E5E8EB] overflow-hidden">
-            <div className="px-4 py-3 border-b border-[#F2F4F6] flex items-center justify-between">
+        {!testLabMode && <section className="px-4 mb-5">
+          <div className="bg-seenit-surface rounded-2xl border border-seenit-border-soft overflow-hidden">
+            <div className="px-4 py-3 border-b border-seenit-border-soft flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <CalendarClock size={15} className="text-[#0064FF]" />
-                <p className="text-sm font-bold text-[#191F28]">근퇴 기록</p>
+                <CalendarClock size={15} className="text-seenit-brand" />
+                <p className="text-sm font-bold text-seenit-ink">근퇴 기록</p>
               </div>
-              <p className="text-xs text-[#8B95A1]">{logSummary.completedCount}건</p>
+              <p className="text-xs text-seenit-muted">{logSummary.completedCount}건</p>
             </div>
             {monthLogs.length === 0 ? (
               <div className="p-5 text-center">
-                <p className="text-sm text-[#8B95A1]">아직 근퇴 기록이 없어요</p>
+                <p className="text-sm text-seenit-muted">아직 근퇴 기록이 없어요</p>
               </div>
             ) : (
               monthLogs.slice(0, 8).map((log) => (
@@ -373,17 +375,17 @@ export default function PayrollPage({ testLabMode = false }) {
               ))
             )}
           </div>
-        </section>
+        </section>}
 
         <section className="px-4 mb-5">
-          <div className="bg-white rounded-2xl border border-[#E5E8EB] overflow-hidden">
-            <div className="px-4 py-3 border-b border-[#F2F4F6] flex items-center gap-2">
-              <ReceiptText size={15} className="text-[#0064FF]" />
-              <p className="text-sm font-bold text-[#191F28]">이전 급여 기록</p>
+          <div className="bg-seenit-surface rounded-2xl border border-seenit-border-soft overflow-hidden">
+            <div className="px-4 py-3 border-b border-seenit-border-soft flex items-center gap-2">
+              <ReceiptText size={15} className="text-seenit-brand" />
+              <p className="text-sm font-bold text-seenit-ink">이전 급여 기록</p>
             </div>
             {recentPayrolls.length === 0 ? (
               <div className="p-5 text-center">
-                <p className="text-sm text-[#8B95A1]">아직 이전 급여 기록이 없어요</p>
+                <p className="text-sm text-seenit-muted">아직 이전 급여 기록이 없어요</p>
               </div>
             ) : (
               recentPayrolls.map((payroll) => (
@@ -393,7 +395,7 @@ export default function PayrollPage({ testLabMode = false }) {
           </div>
         </section>
 
-        {staffType === 'teacher' && (
+        {!testLabMode && staffType === 'teacher' && (
           <ReferenceList
             title={`${formatMonth(selectedMonth)} 수업 참고`}
             empty="이 달 수업 기록이 없어요"
@@ -405,7 +407,7 @@ export default function PayrollPage({ testLabMode = false }) {
           />
         )}
 
-        {staffType === 'assistant' && (
+        {!testLabMode && staffType === 'assistant' && (
           <ReferenceList
             title={`${formatMonth(selectedMonth)} 완료 클리닉`}
             empty="이 달 완료한 클리닉이 없어요"
@@ -423,10 +425,10 @@ export default function PayrollPage({ testLabMode = false }) {
 
 function Pill({ icon: Icon, label, tone = 'gray' }) {
   const toneClass = tone === 'green'
-    ? 'bg-emerald-50 text-emerald-700'
+    ? 'bg-seenit-success-soft text-seenit-success'
     : tone === 'blue'
-    ? 'bg-blue-50 text-blue-700'
-    : 'bg-[#F2F4F6] text-[#4E5968]';
+    ? 'bg-seenit-brand-soft text-seenit-brand'
+    : 'bg-seenit-control text-seenit-secondary';
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${toneClass}`}>
       <Icon size={11} />
@@ -437,13 +439,13 @@ function Pill({ icon: Icon, label, tone = 'gray' }) {
 
 function MetricCard({ label, value, tone = 'default' }) {
   const valueClass = tone === 'green'
-    ? 'text-emerald-700'
+    ? 'text-seenit-success'
     : tone === 'amber'
-    ? 'text-amber-700'
-    : 'text-[#191F28]';
+    ? 'text-seenit-warning'
+    : 'text-seenit-ink';
   return (
-    <div className="bg-white rounded-xl border border-[#E5E8EB] px-3 py-3">
-      <p className="text-[11px] text-[#8B95A1]">{label}</p>
+    <div className="bg-seenit-surface rounded-xl border border-seenit-border-soft px-3 py-3">
+      <p className="text-[11px] text-seenit-muted">{label}</p>
       <p className={`text-base font-extrabold mt-1 ${valueClass}`}>{value}</p>
     </div>
   );
@@ -453,16 +455,16 @@ function AttendanceRow({ log }) {
   const minutes = minutesFromLog(log);
   const status = getStatusMeta(log.status);
   return (
-    <div className="px-4 py-3 border-b border-[#F2F4F6] last:border-0 flex items-center justify-between gap-3">
+    <div className="px-4 py-3 border-b border-seenit-border-soft last:border-0 flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <p className="text-sm font-bold text-[#191F28]">{log.work_date}</p>
-        <p className="text-xs text-[#8B95A1] mt-0.5">
+        <p className="text-sm font-bold text-seenit-ink">{log.work_date}</p>
+        <p className="text-xs text-seenit-muted mt-0.5">
           {formatTime(log.actual_start_time)} - {formatTime(log.actual_end_time)}
           {log.break_minutes ? ` · 휴게 ${log.break_minutes}분` : ''}
         </p>
       </div>
       <div className="text-right flex-shrink-0">
-        <p className="text-sm font-bold text-[#191F28]">{formatHours(minutes / 60)}시간</p>
+        <p className="text-sm font-bold text-seenit-ink tabular-nums">{formatHours(minutes / 60)}시간</p>
         <span className={`inline-block mt-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${status.className}`}>
           {status.label}
         </span>
@@ -474,18 +476,18 @@ function AttendanceRow({ log }) {
 function PayrollHistoryRow({ payroll }) {
   const paid = payroll.status === 'completed' || payroll.status === 'paid';
   return (
-    <div className="px-4 py-3 border-b border-[#F2F4F6] last:border-0 flex items-center justify-between gap-3">
+    <div className="px-4 py-3 border-b border-seenit-border-soft last:border-0 flex items-center justify-between gap-3">
       <div>
-        <p className="text-sm font-bold text-[#191F28]">{formatMonth(payroll.month)}</p>
-        <p className="text-xs text-[#8B95A1] mt-0.5">
+        <p className="text-sm font-bold text-seenit-ink">{formatMonth(payroll.month)}</p>
+        <p className="text-xs text-seenit-muted mt-0.5">
           {payroll.wageType === 'hourly'
             ? `${formatHours(payroll.totalHours)}시간 · 시급 ${formatWon(payroll.hourlyWage)}`
             : `월급 ${formatWon(payroll.monthlySalary)}`}
         </p>
       </div>
       <div className="text-right">
-        <p className="text-sm font-extrabold text-[#191F28]">{formatWon(payroll.amount)}</p>
-        <p className={`text-[11px] mt-0.5 ${paid ? 'text-emerald-600' : 'text-[#8B95A1]'}`}>
+        <p className="text-sm font-extrabold text-seenit-ink tabular-nums">{formatWon(payroll.amount)}</p>
+        <p className={`text-[11px] mt-0.5 ${paid ? 'text-seenit-success' : 'text-seenit-muted'}`}>
           {paid ? '지급 완료' : '지급 예정'}
         </p>
       </div>
@@ -496,21 +498,21 @@ function PayrollHistoryRow({ payroll }) {
 function ReferenceList({ title, empty, items }) {
   return (
     <section className="px-4 mb-5">
-      <p className="text-xs font-bold text-[#8B95A1] mb-2 px-1">{title}</p>
-      <div className="bg-white rounded-2xl border border-[#E5E8EB] overflow-hidden">
+      <p className="text-xs font-bold text-seenit-muted mb-2 px-1">{title}</p>
+      <div className="bg-seenit-surface rounded-2xl border border-seenit-border-soft overflow-hidden">
         {items.length === 0 ? (
           <div className="p-5 text-center">
-            <p className="text-sm text-[#8B95A1]">{empty}</p>
+                <p className="text-sm text-seenit-muted">{empty}</p>
           </div>
         ) : (
           items.map((item) => (
-            <div key={item.id} className="px-4 py-3 border-b border-[#F2F4F6] last:border-0 flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#F2F4F6] flex items-center justify-center flex-shrink-0">
-                <Clock3 size={14} className="text-[#4E5968]" />
+            <div key={item.id} className="px-4 py-3 border-b border-seenit-border-soft last:border-0 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-seenit-control flex items-center justify-center flex-shrink-0">
+                <Clock3 size={14} className="text-seenit-secondary" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-[#191F28] truncate">{item.title}</p>
-                <p className="text-xs text-[#8B95A1] mt-0.5 truncate">{item.detail}</p>
+                <p className="text-sm font-bold text-seenit-ink truncate">{item.title}</p>
+                <p className="text-xs text-seenit-muted mt-0.5 truncate">{item.detail}</p>
               </div>
             </div>
           ))
@@ -522,9 +524,9 @@ function ReferenceList({ title, empty, items }) {
 
 function EmptyState({ title, detail }) {
   return (
-    <div className="mt-8 bg-white rounded-2xl p-6 text-center border border-[#E5E8EB]">
-      <p className="text-sm font-bold text-[#4E5968]">{title}</p>
-      <p className="text-xs text-[#8B95A1] mt-1">{detail}</p>
+    <div className="mt-8 bg-seenit-surface rounded-2xl p-6 text-center border border-seenit-border-soft">
+      <p className="text-sm font-bold text-seenit-secondary">{title}</p>
+      <p className="text-xs text-seenit-muted mt-1">{detail}</p>
     </div>
   );
 }

@@ -10,6 +10,8 @@ const files = {
   academyLayout: '../src/features/academy/AcademyAppLayout.jsx',
   settlement: '../src/features/academy/settlement/SettlementPage.jsx',
   payroll: '../src/features/academy/payroll/PayrollPage.jsx',
+  work: '../src/features/academy/work/MyWorkPage.jsx',
+  shiftAction: '../src/features/academy/dashboard/MyTodayShiftCard.jsx',
 };
 
 const sources = Object.fromEntries(await Promise.all(
@@ -79,6 +81,16 @@ if (!sources.academyLayout.includes('testLabMode')
   || !sources.settlement.includes('근무 확인')
   || !sources.payroll.includes('급여가 지급되었어요')) {
   throw new Error('테스트 학원 전용 수납·급여 검증 UI가 누락됐습니다.');
+}
+if (!sources.academyLayout.includes("id: 'my-work'")
+  || !sources.work.includes('내 근무 기록')
+  || !sources.work.includes('text-seenit-ink')
+  || !sources.shiftAction.includes("variant === 'action'")) {
+  throw new Error('테스트 학원의 직원 근무·급여 분리 또는 테마 대응이 누락됐습니다.');
+}
+if (!sources.settlement.includes("'bg-seenit-brand text-seenit-on-brand'")
+  || !sources.settlement.includes('bg-seenit-brand py-2.5')) {
+  throw new Error('수납·급여 완료 버튼의 라이트·다크 대비 토큰이 누락됐습니다.');
 }
 
 console.log('developer workspace guardrails: ok');

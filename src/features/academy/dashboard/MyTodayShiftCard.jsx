@@ -10,8 +10,9 @@
 //   - 로컬 store update + (serverId 있으면) supabase update
 //
 // 본인 식별: staff prop (TeacherDashboard 의 myTeacher, AssistantDashboard 의 myAssistant)
-import { useMemo, useState } from 'react';
-import { Clock, LogIn, LogOut } from 'lucide-react';
+import { lazy, Suspense, useMemo, useState } from 'react';
+import { Clock, LogIn, LogOut, QrCode } from 'lucide-react';
+import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
@@ -24,6 +25,8 @@ import {
   plannedToStaffShiftShape,
 } from '../../../utils/schedule';
 import { readAttendanceSettings } from '../attendance/attendanceHelpers';
+
+const QrScanSheet = lazy(() => import('../attendance/QrScanSheet'));
 
 function nowHHmm() {
   return getKoreaHHMM();
@@ -41,7 +44,7 @@ function formatShiftTimeRange(start, end) {
   return `${s || '-'} - ${e || '-'}`;
 }
 
-export default function MyTodayShiftCard({ staff, staffRole }) {
+export default function MyTodayShiftCard({ staff, staffRole, variant = 'card' }) {
   const academyStaffShifts = useAcademyStore((s) => s.academyStaffShifts) ?? [];
   const academyTeachers = useAcademyStore((s) => s.academyTeachers) ?? [];
   const academyAssistants = useAcademyStore((s) => s.academyAssistants) ?? [];
@@ -58,6 +61,7 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
   const staffAttendanceLogs = useWorkspaceStore((s) => s.staffAttendanceLogs) ?? [];
   const recordStaffAttendanceLocal = useWorkspaceStore((s) => s.recordStaffAttendanceLocal);
   const [busy, setBusy] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
   const todayStr = todayDate();
   const attendanceSettings = useMemo(() => {
@@ -96,16 +100,16 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
     ) || null;
   }, [staffAttendanceLogs, staff?.serverUserId, todayStr]);
 
-  if (!myTodayShift) return null;
+  if (!staff || (variant === 'card' && !myTodayShift)) return null;
 
   // clock 상태: log 우선, 없으면 legacy shift.
-  const clockedIn = !!(myTodayLog?.actual_start_time || myTodayShift.actualStartTime);
-  const clockedOut = !!(myTodayLog?.actual_end_time || myTodayShift.actualEndTime);
+  const clockedIn = !!(myTodayLog?.actual_start_time || myTodayShift?.actualStartTime);
+  const clockedOut = !!(myTodayLog?.actual_end_time || myTodayShift?.actualEndTime);
   // serverUserId 없는 staff (계정 미연동) → 로그 INSERT 불가. legacy shift 만 사용.
   // staff_attendance_logs 가 SQL 014 미적용일 수도 있으므로 best-effort.
   const canUseLogs = !!staff?.serverUserId;
   // log 가 있으면 isPlanned 여도 출퇴근 가능. log 와 legacy 둘 다 없는 경우만 비활성.
-  const isCheckinDisabled = myTodayShift.isPlanned && !canUseLogs;
+  const isCheckinDisabled = myTodayShift?.isPlanned && !canUseLogs;
   const canUseManualClock =
     attendanceSettings.staffCheckMethod === 'manual'
     && attendanceSettings.staffManualOverrideEnabled;
@@ -118,9 +122,9 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
       workDate: todayStr,
       action,
       time,
-      scheduledStartTime: myTodayShift.scheduledStartTime || null,
-      scheduledEndTime: myTodayShift.scheduledEndTime || null,
-      breakMinutes: myTodayShift.breakMinutes ?? 0,
+      scheduledStartTime: myTodayShift?.scheduledStartTime || null,
+      scheduledEndTime: myTodayShift?.scheduledEndTime || null,
+      breakMinutes: myTodayShift?.breakMinutes ?? 0,
       source,
     });
   };
@@ -199,6 +203,48 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
     ? { bg: 'bg-purple-50', text: 'text-purple-700', iconBg: 'bg-purple-100', iconColor: 'text-purple-600' }
     : { bg: 'bg-blue-50',   text: 'text-blue-700',   iconBg: 'bg-blue-100',   iconColor: 'text-blue-600' };
 
+  if (variant === 'action') {
+    const usesQr = attendanceSettings.staffCheckMethod === 'qr';
+    const actionLabel = usesQr
+      ? 'QR 출퇴근'
+      : clockedOut ? '근무 완료' : clockedIn ? '퇴근' : '출근';
+    const ActionIcon = usesQr ? QrCode : clockedIn ? LogOut : LogIn;
+    const handleAction = () => {
+      if (usesQr) setQrOpen(true);
+      else if (clockedIn) void handleClockOut();
+      else void handleClockIn();
+    };
+    return (
+      <>
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.97 }}
+          onClick={handleAction}
+          disabled={busy || clockedOut || isCheckinDisabled || (!usesQr && !canUseManualClock)}
+          className={`pressable-surface h-9 shrink-0 rounded-xl px-3 text-sm font-bold shadow-sm inline-flex items-center justify-center gap-1.5 disabled:opacity-50 ${
+            clockedOut
+              ? 'bg-seenit-success-soft text-seenit-success'
+              : 'bg-seenit-brand text-seenit-on-brand'
+          }`}
+          aria-label={actionLabel}
+        >
+          <ActionIcon size={15} />
+          <span>{busy ? '저장 중' : actionLabel}</span>
+        </motion.button>
+        {qrOpen && (
+          <Suspense fallback={null}>
+            <QrScanSheet
+              mode="staff_self"
+              staffRoleFallback={staffRole}
+              autoStartCamera
+              onClose={() => setQrOpen(false)}
+            />
+          </Suspense>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="mx-4 mb-4">
       <div className={`rounded-2xl px-4 py-3.5 shadow-sm ${toneByRole.bg}`}>
@@ -209,8 +255,8 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
           <div className="flex-1 min-w-0">
             <p className={`text-sm font-bold ${toneByRole.text}`}>오늘 근무</p>
             <p className="text-xs text-gray-600 mt-0.5">
-              예정 {formatShiftTimeRange(myTodayShift.scheduledStartTime, myTodayShift.scheduledEndTime)}
-              {myTodayShift.breakMinutes ? ` · 휴게 ${myTodayShift.breakMinutes}분` : ''}
+              예정 {formatShiftTimeRange(myTodayShift?.scheduledStartTime, myTodayShift?.scheduledEndTime)}
+              {myTodayShift?.breakMinutes ? ` · 휴게 ${myTodayShift.breakMinutes}분` : ''}
             </p>
           </div>
           {/* Phase 44 — teacher/assistant 는 스태프 탭이 없으므로 "전체 보기" 제거. */}
@@ -218,9 +264,9 @@ export default function MyTodayShiftCard({ staff, staffRole }) {
 
         {(clockedIn || clockedOut) && (
           <p className="text-[11px] text-gray-600 mb-2">
-            {clockedIn && `출근 ${formatClock(myTodayLog?.actual_start_time || myTodayShift.actualStartTime)}`}
+            {clockedIn && `출근 ${formatClock(myTodayLog?.actual_start_time || myTodayShift?.actualStartTime)}`}
             {clockedIn && clockedOut && ' · '}
-            {clockedOut && `퇴근 ${formatClock(myTodayLog?.actual_end_time || myTodayShift.actualEndTime)}`}
+            {clockedOut && `퇴근 ${formatClock(myTodayLog?.actual_end_time || myTodayShift?.actualEndTime)}`}
           </p>
         )}
 

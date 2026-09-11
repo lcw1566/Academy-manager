@@ -326,10 +326,15 @@ export default function TeacherDashboard({ pilotFeaturesEnabled = false }) {
 
   return (
     <div className="pt-6 pb-4">
-      <div className="px-5 mb-5">
-        <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
-        <h2 className="text-xl font-bold text-seenit-ink mt-0.5">오늘 내 수업</h2>
-        <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)}</p>
+      <div className="px-5 mb-5 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-seenit-muted text-sm">{greetingByTime()}</p>
+          <h2 className="text-xl font-bold text-seenit-ink mt-0.5">오늘 내 수업</h2>
+          <p className="text-sm text-seenit-subtle mt-0.5">{formatDateShort(todayStr)}</p>
+        </div>
+        {pilotFeaturesEnabled && (
+          <MyTodayShiftCard staff={myTeacher} staffRole="teacher" variant="action" />
+        )}
       </div>
 
       <HomeActionList items={homeActions} />
@@ -347,7 +352,7 @@ export default function TeacherDashboard({ pilotFeaturesEnabled = false }) {
       </div>
 
       {/* Phase 31 — 오늘 근무 카드 + 출/퇴근 */}
-      <MyTodayShiftCard staff={myTeacher} staffRole="teacher" />
+      {!pilotFeaturesEnabled && <MyTodayShiftCard staff={myTeacher} staffRole="teacher" />}
 
       {/* 핵심 지표 — 역할에 관계없이 같은 한 줄 요약 패턴을 사용 */}
       <HomeSummaryBar
@@ -409,13 +414,15 @@ export default function TeacherDashboard({ pilotFeaturesEnabled = false }) {
       )}
 
       {/* Phase 32 — 내 급여 요약 (이번 달) — 권한 있을 때만 */}
-      <MyPayrollCard
-        role="teacher"
-        myPayroll={myPayroll}
-        myStaffProfile={myTeacher}
-        enabled={pilotFeaturesEnabled}
-        onOpen={() => setActiveTab('payroll')}
-      />
+      {!pilotFeaturesEnabled && (
+        <MyPayrollCard
+          role="teacher"
+          myPayroll={myPayroll}
+          myStaffProfile={myTeacher}
+          enabled={false}
+          onOpen={() => setActiveTab('payroll')}
+        />
+      )}
 
       {/* 클리닉 현황 */}
       {academyProfile?.clinicRequired !== false && myClinics.length > 0 && (

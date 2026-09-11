@@ -120,7 +120,7 @@ export default function FeedbackModal({ isOpen, onClose }) {
           type="button"
           onClick={submit}
           disabled={submitting || message.trim().length < 10}
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-seenit-brand text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-seenit-brand text-sm font-bold text-seenit-on-brand transition-colors disabled:cursor-not-allowed disabled:opacity-40"
         >
           {submitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
           {submitting ? '보내는 중' : '의견 보내기'}

@@ -164,7 +164,7 @@ export default function Sidebar({ tabs, badges = {}, onTabSelect, activeTabIds =
               onClick={utility.onClick}
               className={`relative flex h-11 w-11 items-center justify-center rounded-full border shadow-lg ${
                 utility.active
-                  ? 'border-seenit-brand bg-seenit-brand text-white'
+                  ? 'border-seenit-brand bg-seenit-brand text-seenit-on-brand'
                   : 'border-seenit-border bg-seenit-surface text-seenit-secondary'
               }`}
               aria-label={utility.label}

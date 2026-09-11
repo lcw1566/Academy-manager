@@ -19,6 +19,7 @@ export default {
           muted: 'rgb(var(--seenit-color-muted) / <alpha-value>)',
           subtle: 'rgb(var(--seenit-color-subtle) / <alpha-value>)',
           brand: 'rgb(var(--seenit-color-brand) / <alpha-value>)',
+          'on-brand': 'rgb(var(--seenit-color-on-brand) / <alpha-value>)',
           'brand-soft': 'rgb(var(--seenit-color-brand-soft) / <alpha-value>)',
           'brand-muted': 'rgb(var(--seenit-color-brand-muted) / <alpha-value>)',
           'success-soft': 'rgb(var(--seenit-color-success-soft) / <alpha-value>)',

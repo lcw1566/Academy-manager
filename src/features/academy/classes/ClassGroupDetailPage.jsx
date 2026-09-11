@@ -786,7 +786,7 @@ function ClassGroupScheduleCalendar({
               <button
                 type="button"
                 onClick={onAddSession}
-                className="flex h-9 w-9 items-center justify-center rounded-lg bg-seenit-brand text-white transition-colors hover:brightness-95 active:brightness-90"
+                className="flex h-9 w-9 items-center justify-center rounded-lg bg-seenit-brand text-seenit-on-brand transition-colors hover:brightness-95 active:brightness-90"
                 aria-label="수업 추가"
                 title="수업 추가"
               >
@@ -943,7 +943,7 @@ function ClassGroupScheduleCalendar({
                   type="button"
                   onClick={onGenerateMonth}
                   disabled={generatingMonth}
-                  className="mt-4 w-full rounded-lg bg-seenit-brand px-4 py-3 text-sm font-extrabold text-white active:brightness-90 disabled:opacity-60"
+                  className="mt-4 w-full rounded-lg bg-seenit-brand px-4 py-3 text-sm font-extrabold text-seenit-on-brand active:brightness-90 disabled:opacity-60"
                 >
                   {generatingMonth ? '일정 만드는 중...' : '이 달 수업 일정 만들기'}
                 </button>
