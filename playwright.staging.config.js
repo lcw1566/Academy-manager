@@ -1,20 +1,22 @@
 import { defineConfig, devices } from '@playwright/test';
 import { E2E_AUTH_FILES } from './tests/e2e/support/accounts.js';
 
+const baseURL = process.env.E2E_APP_URL;
+if (!baseURL) throw new Error('E2E_APP_URL 환경변수가 필요해요.');
+
 export default defineConfig({
   testDir: './tests/e2e',
   globalSetup: './tests/e2e/global-setup.js',
-  outputDir: 'test-artifacts/playwright-results',
+  outputDir: 'test-artifacts/playwright-staging-results',
   fullyParallel: false,
-  forbidOnly: Boolean(process.env.CI),
+  forbidOnly: true,
   retries: process.env.CI ? 1 : 0,
-  // 현재 테스트 랩은 개발자 한 명당 하나이므로 역할 전환 충돌을 막는다.
   workers: 1,
   reporter: process.env.CI
-    ? [['line'], ['html', { outputFolder: 'test-artifacts/playwright-report', open: 'never' }]]
-    : [['list'], ['html', { outputFolder: 'test-artifacts/playwright-report', open: 'never' }]],
+    ? [['line'], ['html', { outputFolder: 'test-artifacts/playwright-staging-report', open: 'never' }]]
+    : [['list'], ['html', { outputFolder: 'test-artifacts/playwright-staging-report', open: 'never' }]],
   use: {
-    baseURL: process.env.E2E_APP_URL || 'http://127.0.0.1:4173',
+    baseURL,
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
     colorScheme: 'light',
@@ -23,19 +25,13 @@ export default defineConfig({
     video: 'retain-on-failure',
     serviceWorkers: 'block',
   },
-  webServer: {
-    command: 'npm run dev -- --host 127.0.0.1 --port 4173',
-    url: 'http://127.0.0.1:4173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-  },
   projects: [
     {
       name: 'setup',
       testMatch: /auth\.setup\.js/,
     },
     {
-      name: 'chromium',
+      name: 'staging-chromium',
       use: {
         ...devices['Desktop Chrome'],
         storageState: E2E_AUTH_FILES.owner,

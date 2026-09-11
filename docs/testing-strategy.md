@@ -50,6 +50,10 @@ staging Environment secret으로만 제공하고, 운영 secret과 이름 및 �
 4. 초기화 RPC는 명시적으로 등록된 합성 테스트 학원만 변경한다.
 5. 실패 증거에 인증 토큰이나 학생·보호자 개인정보가 포함되지 않는다.
 
+구성과 실행 방법은 [`staging-environment.md`](./staging-environment.md)를 따른다. 스테이징
+Playwright는 운영 project ref를 코드 수준에서 거부하고, 배포 앱의 환경/ref 표식까지
+일치해야 시작한다.
+
 ## 기본 실행 순서
 
 ```bash

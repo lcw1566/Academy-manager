@@ -13,11 +13,28 @@ installDynamicImportRecovery();
 
 const sentryDsn = String(import.meta.env.VITE_SENTRY_DSN || '').trim();
 
+// Playwright가 배포된 앱과 연결 대상 Supabase를 서로 대조할 수 있는 공개 표식이다.
+// project ref는 Project URL에도 포함되는 공개 식별자이며 비밀키를 노출하지 않는다.
+const deploymentEnvironment = String(
+  import.meta.env.VITE_DEPLOY_ENV || (import.meta.env.DEV ? 'local' : 'production'),
+).trim();
+let supabaseProjectRef = 'unknown';
+try {
+  const supabaseHost = new URL(String(import.meta.env.VITE_SUPABASE_URL || '')).hostname;
+  supabaseProjectRef = ['127.0.0.1', 'localhost', '::1'].includes(supabaseHost)
+    ? 'local'
+    : supabaseHost.split('.')[0] || 'unknown';
+} catch {
+  // Supabase 설정 오류는 기존 클라이언트 초기화에서 사용자에게 안내한다.
+}
+document.documentElement.dataset.seenitEnvironment = deploymentEnvironment;
+document.documentElement.dataset.seenitSupabaseProject = supabaseProjectRef;
+
 if (sentryDsn) {
   Sentry.init({
     dsn: sentryDsn,
     enabled: import.meta.env.PROD,
-    environment: import.meta.env.MODE,
+    environment: deploymentEnvironment,
     sendDefaultPii: false,
     dataCollection: {
       userInfo: false,

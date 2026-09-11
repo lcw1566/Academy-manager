@@ -79,3 +79,5 @@ Playwright는 웹 화면과 Data API를 검증한다. Capacitor 카메라, 네�
 iOS/Android 권한 창은 실제 기기용 별도 테스트 대상이다.
 
 환경별 사용 원칙과 운영 테스트 계정 취급은 `docs/testing-strategy.md`를 따른다.
+별도 배포된 스테이징에서 실제 역할 계정을 검증하는 방법은
+`docs/staging-environment.md`를 따른다.

@@ -1,6 +1,6 @@
 import { getE2eAccounts } from './accounts.js';
 import {
-  assertLocalE2eEnvironment,
+  assertE2eEnvironment,
   createAdminClient,
   createAnonymousClient,
 } from './supabase.js';
@@ -97,7 +97,7 @@ async function acceptInvitation(account, invitation) {
 }
 
 export async function ensureE2eAccounts() {
-  assertLocalE2eEnvironment();
+  assertE2eEnvironment();
   const accounts = getE2eAccounts();
   const admin = createAdminClient();
   const users = {};
@@ -118,7 +118,7 @@ export async function ensureE2eAccounts() {
 }
 
 export async function provisionRoleTestLab() {
-  assertLocalE2eEnvironment();
+  assertE2eEnvironment();
   const { accounts, users } = await ensureE2eAccounts();
   const ownerClient = await signIn(accounts.owner);
 

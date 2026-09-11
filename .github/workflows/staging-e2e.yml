@@ -1,0 +1,50 @@
+name: Staging Playwright
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: staging-playwright
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      STAGING_APP_URL: ${{ vars.STAGING_APP_URL }}
+      STAGING_SUPABASE_URL: ${{ vars.STAGING_SUPABASE_URL }}
+      STAGING_SUPABASE_PROJECT_REF: ${{ vars.STAGING_SUPABASE_PROJECT_REF }}
+      STAGING_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      STAGING_E2E_USER_PASSWORD: ${{ secrets.STAGING_E2E_USER_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run repository guardrails
+        run: npm run check
+
+      - name: Run staging Playwright
+        run: npm run test:e2e:staging -- --project=staging-chromium
+
+      - name: Upload staging Playwright diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-playwright-artifacts
+          path: test-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7

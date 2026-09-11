@@ -16,12 +16,17 @@ const files = {
   shiftAction: '../src/features/academy/dashboard/MyTodayShiftCard.jsx',
   e2eEnv: './local-supabase-env.mjs',
   e2eRunner: './run-playwright.mjs',
+  stagingE2eRunner: './run-staging-playwright.mjs',
+  stagingDbRunner: './run-staging-db-push.mjs',
   e2eSupport: '../tests/e2e/support/supabase.js',
   e2eAccounts: '../tests/e2e/support/accounts.js',
   e2eProvision: '../tests/e2e/support/provision.js',
   e2eRoleTest: '../tests/e2e/role-collaboration.spec.js',
   e2eConfig: '../playwright.config.js',
+  stagingE2eConfig: '../playwright.staging.config.js',
   e2eWorkflow: '../.github/workflows/e2e.yml',
+  stagingE2eWorkflow: '../.github/workflows/staging-e2e.yml',
+  main: '../src/main.jsx',
   vite: '../vite.config.js',
 };
 
@@ -136,6 +141,30 @@ if ((sources.e2eEnv + sources.e2eRunner + sources.e2eSupport)
   .includes('VITE_SUPABASE_SERVICE_ROLE')) {
   throw new Error('E2E service-role 키를 브라우저 환경변수에 넣을 수 없습니다.');
 }
+if (!sources.stagingE2eRunner.includes('PRODUCTION_SUPABASE_PROJECT_REF')
+  || !sources.stagingE2eRunner.includes('STAGING_SUPABASE_SERVICE_ROLE_KEY')
+  || !sources.e2eSupport.includes('E2E_STAGING_PROJECT_REF')
+  || !sources.e2eSupport.includes('url.hostname !== `${expectedRef}.supabase.co`')) {
+  throw new Error('스테이징 E2E의 운영 Supabase 차단 장치가 누락됐습니다.');
+}
+if (!sources.stagingDbRunner.includes('PRODUCTION_SUPABASE_PROJECT_REF')
+  || !sources.stagingDbRunner.includes('SUPABASE_DB_PASSWORD')
+  || !sources.stagingDbRunner.includes("'--project-ref', projectRef")) {
+  throw new Error('스테이징 migration의 운영 프로젝트 차단 장치가 누락됐습니다.');
+}
+if (!sources.main.includes('seenitEnvironment')
+  || !sources.main.includes('seenitSupabaseProject')) {
+  throw new Error('배포 앱과 Supabase 대상을 검증할 공개 표식이 누락됐습니다.');
+}
+if (!sources.stagingE2eConfig.includes('workers: 1')
+  || !sources.stagingE2eConfig.includes('playwright-staging-report')
+  || !sources.stagingE2eWorkflow.includes('environment: staging')
+  || !sources.stagingE2eWorkflow.includes('workflow_dispatch')) {
+  throw new Error('승인형 스테이징 Playwright 구성 또는 진단 보고서 설정이 누락됐습니다.');
+}
+if (sources.stagingE2eWorkflow.includes('VITE_SUPABASE_SERVICE_ROLE_KEY')) {
+  throw new Error('스테이징 service-role 키를 VITE_ 환경변수로 전달할 수 없습니다.');
+}
 for (const accountKey of ['owner', 'manager', 'teacher', 'invited']) {
   if (!sources.e2eAccounts.includes(`${accountKey}.e2e@example.test`)
     || !sources.e2eAccounts.includes(`${accountKey}.json`)) {
@@ -144,7 +173,8 @@ for (const accountKey of ['owner', 'manager', 'teacher', 'invited']) {
 }
 if (!sources.e2eProvision.includes('create_academy_invitation_guarded')
   || !sources.e2eProvision.includes('accept_academy_invitation')
-  || !sources.e2eRoleTest.includes('browser.newContext')) {
+  || !sources.e2eRoleTest.includes('browser.newContext')
+  || !sources.e2eRoleTest.includes('개인 권한을 저장했어요.')) {
   throw new Error('역할별 초대·수락 또는 독립 브라우저 세션 검증이 누락됐습니다.');
 }
 if (!sources.e2eConfig.includes('workers: 1')

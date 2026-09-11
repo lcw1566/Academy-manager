@@ -80,4 +80,24 @@ test.describe('역할별 독립 테스트 계정', () => {
       await invitedContext.close();
     }
   });
+
+  test('원장 직원 탭에 실제 계정이 표시되고 개인 권한을 저장한다', async ({ page }) => {
+    await openAcademy(page, '원장');
+    await page.getByRole('button', { name: '직원', exact: true }).click();
+
+    await expect(page.getByRole('button', { name: /E2E 원장/ }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /E2E 운영 매니저/ }).first()).toBeVisible();
+    const teacherCard = page.getByRole('button', { name: /E2E 선생님/ }).first();
+    await expect(teacherCard).toBeVisible();
+
+    await teacherCard.click();
+    await page.getByRole('button', { name: '권한', exact: true }).click();
+    await expect(page.getByText('선생님 기본 권한', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: /학생 정보 조회/ }).click();
+    const saveButton = page.getByRole('button', { name: '저장', exact: true });
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+    await expect(page.getByText('개인 권한을 저장했어요.', { exact: true })).toBeVisible();
+  });
 });

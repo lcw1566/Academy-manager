@@ -1,14 +1,18 @@
+const isStaging = process.env.E2E_TARGET_KIND === 'staging';
+const authDirectory = isStaging ? 'playwright/.auth/staging' : 'playwright/.auth';
+const emailPrefix = isStaging ? 'staging-' : '';
+
 export const E2E_AUTH_FILES = {
-  owner: 'playwright/.auth/owner.json',
-  manager: 'playwright/.auth/manager.json',
-  teacher: 'playwright/.auth/teacher.json',
-  invited: 'playwright/.auth/invited.json',
+  owner: `${authDirectory}/owner.json`,
+  manager: `${authDirectory}/manager.json`,
+  teacher: `${authDirectory}/teacher.json`,
+  invited: `${authDirectory}/invited.json`,
 };
 
 const ACCOUNT_DEFINITIONS = {
   owner: {
     key: 'owner',
-    email: 'owner.e2e@example.test',
+    email: `${emailPrefix}owner.e2e@example.test`,
     displayName: 'E2E 원장',
     accountType: 'staff',
     defaultRole: 'teacher',
@@ -16,7 +20,7 @@ const ACCOUNT_DEFINITIONS = {
   },
   manager: {
     key: 'manager',
-    email: 'manager.e2e@example.test',
+    email: `${emailPrefix}manager.e2e@example.test`,
     displayName: 'E2E 운영 매니저',
     accountType: 'staff',
     defaultRole: 'manager',
@@ -24,7 +28,7 @@ const ACCOUNT_DEFINITIONS = {
   },
   teacher: {
     key: 'teacher',
-    email: 'teacher.e2e@example.test',
+    email: `${emailPrefix}teacher.e2e@example.test`,
     displayName: 'E2E 선생님',
     accountType: 'staff',
     defaultRole: 'teacher',
@@ -32,7 +36,7 @@ const ACCOUNT_DEFINITIONS = {
   },
   invited: {
     key: 'invited',
-    email: 'invited.e2e@example.test',
+    email: `${emailPrefix}invited.e2e@example.test`,
     displayName: 'E2E 초대 대기',
     accountType: 'staff',
     defaultRole: 'teacher',
