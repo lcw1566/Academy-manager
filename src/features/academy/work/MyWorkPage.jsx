@@ -2,11 +2,24 @@ import { useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, CalendarClock, ChevronDown, Clock3, LogIn, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Header from '../../../components/Header';
+import ScheduleCalendar from '../../../components/calendar/ScheduleCalendar';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
 import useWorkspaceStore from '../../../store/useWorkspaceStore';
 import { findLocalStaffForUser } from '../../../utils/staffMatch';
-import { formatMonth, getCurrentMonth, getDaysInMonth, prevMonth } from '../../../utils/date';
+import {
+  addDaysYMD,
+  formatMonth,
+  getCurrentMonth,
+  getDaysInMonth,
+  getTodayYMD,
+  prevMonth,
+} from '../../../utils/date';
+import {
+  buildPlannedStaffSchedule,
+  mergePlannedAndActualStaffShifts,
+  plannedToStaffShiftShape,
+} from '../../../utils/schedule';
 import {
   isPayableStaffAttendance,
   isPendingStaffAttendance,
@@ -55,16 +68,23 @@ export default function MyWorkPage() {
   const academyTeachers = useAcademyStore((state) => state.academyTeachers) ?? [];
   const academyAssistants = useAcademyStore((state) => state.academyAssistants) ?? [];
   const academyManagers = useAcademyStore((state) => state.academyManagers) ?? [];
+  const academyStaffShifts = useAcademyStore((state) => state.academyStaffShifts) ?? [];
   const authUserId = useAuthStore((state) => state.user?.id);
   const authUserEmail = useAuthStore((state) => state.user?.email);
   const memberships = useWorkspaceStore((state) => state.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((state) => state.currentAcademyId);
   const logs = useWorkspaceStore((state) => state.staffAttendanceLogs) ?? [];
+  const staffWorkRules = useWorkspaceStore((state) => state.staffWorkRules) ?? [];
+  const staffWorkExceptions = useWorkspaceStore((state) => state.staffWorkExceptions) ?? [];
   const loadLogs = useWorkspaceStore((state) => state.loadStaffAttendanceLogs);
+  const loadRules = useWorkspaceStore((state) => state.loadStaffWorkRules);
+  const loadExceptions = useWorkspaceStore((state) => state.loadStaffWorkExceptions);
+  const loadShifts = useWorkspaceStore((state) => state.loadServerStaffShifts);
   const isLoading = useWorkspaceStore((state) => state.isStaffAttendanceLogsLoading);
   const error = useWorkspaceStore((state) => state.staffAttendanceLogsError);
   const months = useMemo(recentMonths, []);
   const [selectedMonth, setSelectedMonth] = useState(months[0]);
+  const [selectedScheduleDate, setSelectedScheduleDate] = useState(getTodayYMD);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const membership = useMemo(
@@ -79,11 +99,62 @@ export default function MyWorkPage() {
     [academyAssistants, academyManagers, academyTeachers, authUserEmail, authUserId, membership?.id],
   );
   const staffUserId = staff?.serverUserId || authUserId;
+  const calendarRange = useMemo(() => ({
+    fromDate: addDaysYMD(selectedScheduleDate, -45),
+    toDate: addDaysYMD(selectedScheduleDate, 75),
+  }), [selectedScheduleDate]);
 
   useEffect(() => {
     if (!staffUserId) return;
     void loadLogs?.({ ...monthRange(selectedMonth), limit: 120 });
   }, [loadLogs, selectedMonth, staffUserId]);
+
+  useEffect(() => {
+    if (!staffUserId) return;
+    void Promise.all([
+      loadRules?.(),
+      loadExceptions?.(calendarRange),
+      loadShifts?.(),
+    ]);
+  }, [calendarRange, loadExceptions, loadRules, loadShifts, staffUserId]);
+
+  const workSchedules = useMemo(() => {
+    if (!staffUserId) return [];
+    const planned = buildPlannedStaffSchedule({
+      rules: staffWorkRules,
+      exceptions: staffWorkExceptions,
+      ...calendarRange,
+      staffUserId,
+    });
+    const plannedShifts = plannedToStaffShiftShape(planned, {
+      academyTeachers,
+      academyAssistants,
+      academyManagers,
+    });
+    const actualShifts = academyStaffShifts.filter((shift) => (
+      shift.status !== 'canceled'
+      && shift.date >= calendarRange.fromDate
+      && shift.date <= calendarRange.toDate
+      && (shift.staffUserId === staffUserId || (staff?.id && shift.staffId === staff.id))
+    ));
+    return mergePlannedAndActualStaffShifts(plannedShifts, actualShifts).map((shift) => ({
+      id: shift.id,
+      date: shift.date,
+      startTime: shift.scheduledStartTime || shift.startTime,
+      endTime: shift.scheduledEndTime || shift.endTime,
+      title: '근무',
+      subtitle: shift.breakMinutes ? `휴게 ${shift.breakMinutes}분` : '휴게 없음',
+      badge: shift.plannedExceptionType === 'extra'
+        ? '추가 근무'
+        : shift.plannedExceptionType === 'change' ? '변경 근무' : shift.isPlanned ? '예정' : '등록됨',
+      tone: {
+        card: 'border-seenit-brand/25 bg-seenit-brand-soft',
+        title: 'text-seenit-ink',
+        time: 'text-seenit-brand',
+        dot: 'bg-seenit-brand',
+      },
+    }));
+  }, [academyAssistants, academyManagers, academyStaffShifts, academyTeachers, calendarRange, staff?.id, staffUserId, staffWorkExceptions, staffWorkRules]);
 
   const monthLogs = useMemo(
     () => logs
@@ -140,6 +211,16 @@ export default function MyWorkPage() {
           <WorkMetric label="미확정" value={`${hours(summary.pendingMinutes)}시간`} tone="warning" />
           <WorkMetric label="퇴근 필요" value={`${summary.openCount}건`} tone={summary.openCount ? 'danger' : 'default'} />
         </section>
+
+        <ScheduleCalendar
+          selectedDate={selectedScheduleDate}
+          onSelectDate={setSelectedScheduleDate}
+          schedules={workSchedules}
+          title="내 근무 스케줄"
+          emptyText="예정된 근무가 없어요"
+          defaultMode="month"
+          className="mt-5"
+        />
 
         <section className="mt-5 px-4">
           <div className="mb-2 px-1">

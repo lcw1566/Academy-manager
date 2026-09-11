@@ -51,6 +51,7 @@ export default function MyTodayShiftCard({ staff, staffRole, variant = 'card' })
   const updateAcademyStaffShift = useAcademyStore((s) => s.updateAcademyStaffShift);
   const showToast = useAcademyStore((s) => s.showToast);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authUserId = useAuthStore((s) => s.user?.id);
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
@@ -64,6 +65,26 @@ export default function MyTodayShiftCard({ staff, staffRole, variant = 'card' })
   const [qrOpen, setQrOpen] = useState(false);
 
   const todayStr = todayDate();
+  const activeMembership = useMemo(
+    () => memberships.find((membership) => (
+      membership.academy_id === currentAcademyId
+      && membership.status === 'active'
+    )) || null,
+    [currentAcademyId, memberships],
+  );
+  // 테스트 역할 전환 직후에는 서버 멤버십이 먼저 갱신되고 로컬 직원 목록이
+  // 한 박자 늦게 들어올 수 있다. 이때도 로그인 사용자를 본인 직원으로 식별해
+  // 출퇴근 액션이 사라지지 않도록 한다.
+  const effectiveStaff = useMemo(() => {
+    if (staff) return staff;
+    if (!authUserId || !activeMembership) return null;
+    return {
+      id: `account:${authUserId}`,
+      serverUserId: authUserId,
+      academyMemberId: activeMembership.id,
+      _role: staffRole || activeMembership.role || 'teacher',
+    };
+  }, [activeMembership, authUserId, staff, staffRole]);
   const attendanceSettings = useMemo(() => {
     const academy = memberships.find((m) => m.academy_id === currentAcademyId)?.academy || null;
     return readAttendanceSettings(academy);
@@ -71,43 +92,46 @@ export default function MyTodayShiftCard({ staff, staffRole, variant = 'card' })
 
   // Phase 44.6 / Phase B — 본인 오늘 shift: 룰 기반 planned + 기존 shift 머지에서 1건.
   const myTodayShift = useMemo(() => {
-    if (!staff?.id) return null;
+    if (!effectiveStaff?.serverUserId && !effectiveStaff?.id) return null;
     const plannedRaw = buildPlannedStaffSchedule({
       rules: staffWorkRules,
       exceptions: staffWorkExceptions,
       fromDate: todayStr,
       toDate: todayStr,
-      staffUserId: staff.serverUserId || undefined,
+      staffUserId: effectiveStaff.serverUserId || undefined,
     });
     const plannedShaped = plannedToStaffShiftShape(plannedRaw, { academyTeachers, academyAssistants });
     const actualToday = academyStaffShifts.filter(
-      (sh) => sh.staffId === staff.id && sh.date === todayStr && sh.status !== 'canceled',
+      (sh) => (
+        sh.staffId === effectiveStaff.id
+        || (effectiveStaff.serverUserId && sh.staffUserId === effectiveStaff.serverUserId)
+      ) && sh.date === todayStr && sh.status !== 'canceled',
     );
     const merged = mergePlannedAndActualStaffShifts(plannedShaped, actualToday);
     // 시작 시간이 가장 빠른 것 우선
     return merged.sort(
       (a, b) => (a.scheduledStartTime || '').localeCompare(b.scheduledStartTime || ''),
     )[0] || null;
-  }, [academyStaffShifts, staff?.id, staff?.serverUserId, staffWorkRules, staffWorkExceptions, academyTeachers, academyAssistants, todayStr]);
+  }, [academyStaffShifts, effectiveStaff?.id, effectiveStaff?.serverUserId, staffWorkRules, staffWorkExceptions, academyTeachers, academyAssistants, todayStr]);
 
   // Phase 44.7 / Phase C — 오늘 본인 attendance log 1건. log 가 SoT 가 된다.
   // legacy academy_staff_shifts.actual_* 는 호환을 위해 동시에 업데이트.
   // hook 순서 유지를 위해 myTodayShift early-return 보다 위에서 호출.
   const myTodayLog = useMemo(() => {
-    if (!staff?.serverUserId) return null;
+    if (!effectiveStaff?.serverUserId) return null;
     return (staffAttendanceLogs || []).find(
-      (l) => l.staff_user_id === staff.serverUserId && l.work_date === todayStr,
+      (l) => l.staff_user_id === effectiveStaff.serverUserId && l.work_date === todayStr,
     ) || null;
-  }, [staffAttendanceLogs, staff?.serverUserId, todayStr]);
+  }, [effectiveStaff?.serverUserId, staffAttendanceLogs, todayStr]);
 
-  if (!staff || (variant === 'card' && !myTodayShift)) return null;
+  if (!effectiveStaff || (variant === 'card' && !myTodayShift)) return null;
 
   // clock 상태: log 우선, 없으면 legacy shift.
   const clockedIn = !!(myTodayLog?.actual_start_time || myTodayShift?.actualStartTime);
   const clockedOut = !!(myTodayLog?.actual_end_time || myTodayShift?.actualEndTime);
   // serverUserId 없는 staff (계정 미연동) → 로그 INSERT 불가. legacy shift 만 사용.
   // staff_attendance_logs 가 SQL 014 미적용일 수도 있으므로 best-effort.
-  const canUseLogs = !!staff?.serverUserId;
+  const canUseLogs = !!effectiveStaff?.serverUserId;
   // log 가 있으면 isPlanned 여도 출퇴근 가능. log 와 legacy 둘 다 없는 경우만 비활성.
   const isCheckinDisabled = myTodayShift?.isPlanned && !canUseLogs;
   const canUseManualClock =
@@ -117,8 +141,8 @@ export default function MyTodayShiftCard({ staff, staffRole, variant = 'card' })
   const recordToday = (action, time, source = 'manual') => {
     if (!canUseLogs) throw new Error('직원 계정 연결을 확인해주세요.');
     return recordStaffAttendanceLocal({
-      staffUserId: staff.serverUserId,
-      staffRole: staffRole || staff._role || 'teacher',
+      staffUserId: effectiveStaff.serverUserId,
+      staffRole: staffRole || effectiveStaff._role || 'teacher',
       workDate: todayStr,
       action,
       time,

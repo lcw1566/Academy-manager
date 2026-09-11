@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 const files = {
   migration: '../supabase/sql/078_developer_workspace.sql',
   testLabMigration: '../supabase/migrations/20260911090000_developer_test_lab.sql',
+  testPermissionMigration: '../supabase/migrations/20260911140000_developer_test_permission_controls.sql',
   api: '../src/services/supabase/developerApi.js',
   selection: '../src/features/auth/WorkspaceSelectionPage.jsx',
   app: '../src/App.jsx',
@@ -30,6 +31,19 @@ for (const functionName of [
   if (!sources.migration.includes(functionName)) {
     throw new Error(`개발자 서버 함수가 누락됐습니다: ${functionName}`);
   }
+}
+for (const functionName of [
+  'get_developer_test_permissions',
+  'set_developer_test_permissions',
+]) {
+  if (!sources.testPermissionMigration.includes(functionName)) {
+    throw new Error(`개발자 테스트 권한 서버 함수가 누락됐습니다: ${functionName}`);
+  }
+}
+if (!sources.testPermissionMigration.includes("'test_lab.permissions_changed'")
+  || !sources.testPermissionMigration.includes('canViewPayments')
+  || !sources.testPermissionMigration.includes('canViewPayroll')) {
+  throw new Error('테스트 권한 제한 또는 감사 로그가 누락됐습니다.');
 }
 
 if (!sources.migration.includes('developer_action_logs')) {
@@ -73,6 +87,10 @@ if (!sources.page.includes('개인정보') || !sources.page.includes('학생 연
 if (!sources.page.includes('기능 테스트 랩') || !sources.page.includes('실제 RLS 역할 전환')) {
   throw new Error('개발자 테스트 랩 UI 또는 권한 안내가 누락됐습니다.');
 }
+if (!sources.page.includes('기능 권한 테스트')
+  || !sources.api.includes('setDeveloperTestPermissions')) {
+  throw new Error('테스트 학원 권한 전환 UI가 누락됐습니다.');
+}
 if (sources.page.includes("id: 'assistant'") || sources.api.includes("'assistant', 'invited'")) {
   throw new Error('통합된 보조강사 테스트 역할이 다시 노출됐습니다.');
 }
@@ -84,8 +102,10 @@ if (!sources.academyLayout.includes('testLabMode')
 }
 if (!sources.academyLayout.includes("id: 'my-work'")
   || !sources.work.includes('내 근무 기록')
+  || !sources.work.includes('내 근무 스케줄')
   || !sources.work.includes('text-seenit-ink')
-  || !sources.shiftAction.includes("variant === 'action'")) {
+  || !sources.shiftAction.includes("variant === 'action'")
+  || !sources.shiftAction.includes('effectiveStaff')) {
   throw new Error('테스트 학원의 직원 근무·급여 분리 또는 테마 대응이 누락됐습니다.');
 }
 if (!sources.settlement.includes("'bg-seenit-brand text-seenit-on-brand'")

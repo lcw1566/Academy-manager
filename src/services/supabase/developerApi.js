@@ -88,6 +88,30 @@ export async function setDeveloperTestPersona(persona) {
   return data || { exists: false };
 }
 
+export async function getDeveloperTestPermissions() {
+  assertConfigured();
+  const { data, error } = await supabase.rpc('get_developer_test_permissions');
+  if (error) {
+    if (error?.code === '42883' || error?.code === 'PGRST202') {
+      return { exists: false, configurable: false, setup_missing: true };
+    }
+    throw error;
+  }
+  return data || { exists: false, configurable: false };
+}
+
+export async function setDeveloperTestPermissions(permissions) {
+  assertConfigured();
+  const allowedKeys = ['canViewPayments', 'canManagePayments', 'canViewPayroll'];
+  const payload = Object.fromEntries(allowedKeys.map((key) => [key, permissions?.[key] === true]));
+  if (payload.canManagePayments) payload.canViewPayments = true;
+  const { data, error } = await supabase.rpc('set_developer_test_permissions', {
+    p_permissions: payload,
+  });
+  if (error) throw error;
+  return data || { exists: false, configurable: false };
+}
+
 export async function listDeveloperFeedback({
   status = null,
   category = null,

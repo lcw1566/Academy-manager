@@ -25,9 +25,11 @@ import {
   createDeveloperFeedbackScreenshotUrl,
   getDeveloperDashboardStats,
   getDeveloperTestLab,
+  getDeveloperTestPermissions,
   listDeveloperFeedback,
   prepareDeveloperTestLab,
   setDeveloperTestPersona,
+  setDeveloperTestPermissions,
   updateDeveloperFeedbackStatus,
 } from '../../services/supabase/developerApi';
 
@@ -58,6 +60,12 @@ const TEST_PERSONAS = [
   { id: 'teacher', label: '선생님', detail: '담당 수업과 내 급여를 검증' },
   { id: 'invited', label: '초대 대기', detail: '초대 수락 전 상태를 검증' },
   { id: 'inactive', label: '퇴사·비활성', detail: '학원 접근 차단 상태를 검증' },
+];
+
+const TEST_PERMISSION_OPTIONS = [
+  { id: 'canViewPayments', label: '수납 조회', detail: '수납 탭과 납부 상태를 확인해요.' },
+  { id: 'canManagePayments', label: '수납 관리', detail: '수납 확인·조정 작업까지 테스트해요.' },
+  { id: 'canViewPayroll', label: '내 급여 조회', detail: '직원 급여 탭과 지급 상태를 확인해요.' },
 ];
 
 function statusMeta(status) {
@@ -94,6 +102,7 @@ export default function DeveloperWorkspace() {
   const [stats, setStats] = useState(null);
   const [feedback, setFeedback] = useState([]);
   const [testLab, setTestLab] = useState(null);
+  const [testPermissions, setTestPermissions] = useState(null);
   const [testLabBusy, setTestLabBusy] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -117,7 +126,7 @@ export default function DeveloperWorkspace() {
     else setLoading(true);
     setError('');
     try {
-      const [nextStats, nextFeedback, nextTestLab] = await Promise.all([
+      const [nextStats, nextFeedback, nextTestLab, nextTestPermissions] = await Promise.all([
         getDeveloperDashboardStats(),
         listDeveloperFeedback({
           status: statusFilter || null,
@@ -125,10 +134,12 @@ export default function DeveloperWorkspace() {
           limit: 100,
         }),
         getDeveloperTestLab(),
+        getDeveloperTestPermissions(),
       ]);
       setStats(nextStats);
       setFeedback(nextFeedback);
       setTestLab(nextTestLab);
+      setTestPermissions(nextTestPermissions);
       setSelectedId((current) => (
         current && nextFeedback.some((item) => item.id === current)
           ? current
@@ -199,6 +210,7 @@ export default function DeveloperWorkspace() {
     try {
       const nextLab = await prepareDeveloperTestLab(scenario);
       setTestLab(nextLab);
+      setTestPermissions(await getDeveloperTestPermissions());
       await loadMemberships({ throwOnError: true });
     } catch (labError) {
       setError(labError?.message || '테스트 학원을 준비하지 못했어요.');
@@ -214,12 +226,35 @@ export default function DeveloperWorkspace() {
     try {
       const nextLab = await setDeveloperTestPersona(persona);
       setTestLab(nextLab);
-      await Promise.all([
+      const [nextPermissions] = await Promise.all([
+        getDeveloperTestPermissions(),
         loadMemberships({ throwOnError: true }),
         loadMyPendingInvitations(),
       ]);
+      setTestPermissions(nextPermissions);
     } catch (labError) {
       setError(labError?.message || '테스트 역할을 변경하지 못했어요.');
+    } finally {
+      setTestLabBusy('');
+    }
+  };
+
+  const changeTestPermission = async (permissionKey) => {
+    if (!canManageTestLab || !testPermissions?.configurable || testLabBusy) return;
+    const nextPermissions = {
+      canViewPayments: testPermissions.canViewPayments === true,
+      canManagePayments: testPermissions.canManagePayments === true,
+      canViewPayroll: testPermissions.canViewPayroll === true,
+      [permissionKey]: testPermissions[permissionKey] !== true,
+    };
+    if (!nextPermissions.canViewPayments) nextPermissions.canManagePayments = false;
+    if (nextPermissions.canManagePayments) nextPermissions.canViewPayments = true;
+    setTestLabBusy(`permission:${permissionKey}`);
+    setError('');
+    try {
+      setTestPermissions(await setDeveloperTestPermissions(nextPermissions));
+    } catch (permissionError) {
+      setError(permissionError?.message || '테스트 권한을 변경하지 못했어요.');
     } finally {
       setTestLabBusy('');
     }
@@ -311,10 +346,12 @@ export default function DeveloperWorkspace() {
 
         <TestLabPanel
           lab={testLab}
+          permissions={testPermissions}
           busy={testLabBusy}
           canManage={canManageTestLab}
           onPrepare={prepareTestLab}
           onPersonaChange={changeTestPersona}
+          onPermissionChange={changeTestPermission}
           onOpen={openTestLab}
           onOpenInvitation={openInvitationState}
         />
@@ -480,10 +517,12 @@ export default function DeveloperWorkspace() {
 
 function TestLabPanel({
   lab,
+  permissions,
   busy,
   canManage,
   onPrepare,
   onPersonaChange,
+  onPermissionChange,
   onOpen,
   onOpenInvitation,
 }) {
@@ -587,6 +626,57 @@ function TestLabPanel({
                 );
               })}
             </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-seenit-ink">기능 권한 테스트</h3>
+                <p className="mt-1 text-xs leading-5 text-seenit-subtle">
+                  선생님·운영 매니저 역할에서 탭 노출과 실행 제한을 바로 비교해요.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-seenit-control px-2.5 py-1 text-[10px] font-bold text-seenit-muted">
+                테스트 학원 전용
+              </span>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {TEST_PERMISSION_OPTIONS.map((permission) => {
+                const enabled = permissions?.[permission.id] === true;
+                const permissionBusy = busy === `permission:${permission.id}`;
+                return (
+                  <button
+                    key={permission.id}
+                    type="button"
+                    onClick={() => onPermissionChange(permission.id)}
+                    disabled={!canManage || isBusy || !permissions?.configurable}
+                    aria-pressed={enabled}
+                    className={`pressable-surface flex items-center gap-3 rounded-2xl border px-4 py-3 text-left disabled:opacity-55 ${
+                      enabled ? 'border-seenit-brand bg-seenit-brand-soft' : 'border-seenit-border-soft bg-seenit-surface'
+                    }`}
+                  >
+                    <span className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${enabled ? 'bg-seenit-brand' : 'bg-seenit-border'}`}>
+                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-seenit-surface shadow-sm transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block text-sm font-bold ${enabled ? 'text-seenit-brand' : 'text-seenit-ink'}`}>
+                        {permission.label}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] leading-4 text-seenit-subtle">{permission.detail}</span>
+                    </span>
+                    {permissionBusy && <Loader2 size={14} className="shrink-0 animate-spin text-seenit-brand" />}
+                  </button>
+                );
+              })}
+            </div>
+            {!permissions?.configurable && (
+              <p className="mt-2 text-xs font-semibold text-seenit-warning">
+                원장은 항상 전체 권한이에요. 선생님 또는 운영 매니저로 바꾸면 권한을 켜고 끌 수 있어요.
+              </p>
+            )}
+            {permissions?.setup_missing && (
+              <p className="mt-2 text-xs font-semibold text-seenit-warning">권한 테스트 DB 업데이트를 먼저 적용해야 해요.</p>
+            )}
           </div>
 
           <div>
