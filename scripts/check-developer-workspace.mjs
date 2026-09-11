@@ -7,6 +7,9 @@ const files = {
   selection: '../src/features/auth/WorkspaceSelectionPage.jsx',
   app: '../src/App.jsx',
   page: '../src/features/developer/DeveloperWorkspace.jsx',
+  academyLayout: '../src/features/academy/AcademyAppLayout.jsx',
+  settlement: '../src/features/academy/settlement/SettlementPage.jsx',
+  payroll: '../src/features/academy/payroll/PayrollPage.jsx',
 };
 
 const sources = Object.fromEntries(await Promise.all(
@@ -67,6 +70,15 @@ if (!sources.page.includes('개인정보') || !sources.page.includes('학생 연
 }
 if (!sources.page.includes('기능 테스트 랩') || !sources.page.includes('실제 RLS 역할 전환')) {
   throw new Error('개발자 테스트 랩 UI 또는 권한 안내가 누락됐습니다.');
+}
+if (sources.page.includes("id: 'assistant'") || sources.api.includes("'assistant', 'invited'")) {
+  throw new Error('통합된 보조강사 테스트 역할이 다시 노출됐습니다.');
+}
+if (!sources.academyLayout.includes('testLabMode')
+  || !sources.settlement.includes('학생별 학원비 조정')
+  || !sources.settlement.includes('근무 확인')
+  || !sources.payroll.includes('급여가 지급되었어요')) {
+  throw new Error('테스트 학원 전용 수납·급여 검증 UI가 누락됐습니다.');
 }
 
 console.log('developer workspace guardrails: ok');

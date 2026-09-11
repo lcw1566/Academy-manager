@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Check, RefreshCw, Plus, X, Trash2, Calendar, Wallet, Settings } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { ChevronDown, ChevronLeft, ChevronRight, Check, RefreshCw, Plus, X, Trash2, Calendar, Wallet, Settings, Clock3, ReceiptText, SlidersHorizontal } from 'lucide-react';
 import { motion } from 'framer-motion';
 import useAcademyStore from '../../../store/useAcademyStore';
 import useAuthStore from '../../../store/useAuthStore';
@@ -24,6 +24,7 @@ import {
   today,
 } from '../../../utils/date';
 import { currentUserCan } from '../../../utils/staffPermissions';
+import { isPayableStaffAttendance, staffAttendanceMinutes } from '../../../utils/staffAttendance';
 
 // local 수납 → server payments 컬럼 매핑. student.serverId 없으면 null 반환.
 function mapLocalPaymentToServerPayload({ payment, student, group }) {
@@ -72,6 +73,10 @@ function formatHours(h) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
+function formatWon(value) {
+  return `${Math.max(0, Math.round(Number(value) || 0)).toLocaleString()}원`;
+}
+
 function getRecentMonths() {
   const result = [];
   let month = getCurrentMonth();
@@ -96,7 +101,7 @@ function getMonthDateRange(month) {
   };
 }
 
-export default function SettlementPage({ operationsOnly = false, initialSegment = 'payments', title = '정산' }) {
+export default function SettlementPage({ operationsOnly = false, initialSegment = 'payments', title = '정산', testLabMode = false }) {
   const {
     role, academyStudents, classGroups, academyPayments,
     academyTeachers, academyAssistants, academyManagers = [], academyPayrolls,
@@ -114,6 +119,7 @@ export default function SettlementPage({ operationsOnly = false, initialSegment 
   const loadServerPayrolls = useWorkspaceStore((s) => s.loadServerPayrolls);
   const loadMemberships = useWorkspaceStore((s) => s.loadMemberships);
   const loadStaffAttendanceLogs = useWorkspaceStore((s) => s.loadStaffAttendanceLogs);
+  const staffAttendanceLogs = useWorkspaceStore((s) => s.staffAttendanceLogs) ?? [];
   const academyStaffProfiles = useWorkspaceStore((s) => s.academyStaffProfiles) ?? [];
   const myStaffProfile = useMemo(
     () => academyStaffProfiles.find((profile) => profile.user_id === authUserId) || null,
@@ -144,8 +150,16 @@ export default function SettlementPage({ operationsOnly = false, initialSegment 
   const [addForm, setAddForm] = useState({ studentId: '', classGroupId: '', amount: '' });
   // Phase 39 — 일자 선택 시트.
   const [daySheet, setDaySheet] = useState(null); // 'salary' | 'tuition' | null
+  const [adjustmentPayment, setAdjustmentPayment] = useState(null);
+  const [adjustmentForm, setAdjustmentForm] = useState({ amount: '', reason: '', dueDate: '' });
+  const [payrollDetail, setPayrollDetail] = useState(null);
   const currentMonth = months[0];
   const canMoveNextMonth = selectedMonth < currentMonth;
+
+  useEffect(() => {
+    if (!testLabMode || initialSegment !== 'payroll' || !loadStaffAttendanceLogs) return;
+    void loadStaffAttendanceLogs(getMonthDateRange(selectedMonth));
+  }, [initialSegment, loadStaffAttendanceLogs, selectedMonth, testLabMode]);
 
   const moveMonth = (delta) => {
     const nextMonth = addMonth(selectedMonth, delta);
@@ -442,6 +456,130 @@ export default function SettlementPage({ operationsOnly = false, initialSegment 
       );
     }
   };
+
+  const openStudentAdjustment = (student, payment) => {
+    const lastDay = getDaysInMonth(selectedMonth);
+    const defaultDueDate = `${selectedMonth}-${String(Math.min(tuitionDueDay, lastDay)).padStart(2, '0')}`;
+    setAdjustmentPayment({ student, payment: payment || null });
+    setAdjustmentForm({
+      amount: String(payment?.amount ?? student?.baseTuition ?? ''),
+      reason: payment?.billingSnapshot?.manualAdjustment?.reason || '',
+      dueDate: payment?.dueDate || defaultDueDate,
+    });
+  };
+
+  const handleSaveStudentAdjustment = async () => {
+    if (!canManagePayments || !adjustmentPayment?.student) return;
+    const amount = Math.max(0, Math.round(Number(adjustmentForm.amount) || 0));
+    const reason = adjustmentForm.reason.trim();
+    const student = adjustmentPayment.student;
+    const existing = adjustmentPayment.payment;
+    const originalAmount = Number(existing?.billingSnapshot?.manualAdjustment?.originalAmount)
+      || Number(existing?.amount)
+      || Number(student.baseTuition)
+      || 0;
+    const billingSnapshot = {
+      ...(existing?.billingSnapshot || {}),
+      manualAdjustment: {
+        originalAmount,
+        adjustedAmount: amount,
+        reason: reason || '개별 학원비 조정',
+        adjustedAt: new Date().toISOString(),
+      },
+    };
+    const patch = {
+      amount,
+      dueDate: adjustmentForm.dueDate || null,
+      memo: reason ? `예외 조정 · ${reason}` : '학생별 학원비 조정',
+      billingSnapshot,
+    };
+
+    try {
+      if (existing) {
+        updateAcademyPayment(existing.id, patch);
+        if (existing.serverId && canSyncServer) {
+          await updateServerPayment(existing.serverId, {
+            amount,
+            due_date: patch.dueDate,
+            memo: patch.memo,
+            billing_snapshot: billingSnapshot,
+          });
+        }
+      } else {
+        const localPayment = addAcademyPayment({
+          studentId: student.id,
+          classGroupId: '',
+          month: selectedMonth,
+          amount,
+          dueDate: patch.dueDate,
+          paidDate: null,
+          status: 'unpaid',
+          paymentKind: 'student_monthly',
+          billingSnapshot,
+          memo: patch.memo,
+          createdAt: new Date().toISOString(),
+        });
+        if (canSyncServer && student.serverId && localPayment?.id) {
+          const created = await createAcademyPayment({
+            academyId: currentAcademyId,
+            ...mapLocalPaymentToServerPayload({ payment: localPayment, student, group: null }),
+          });
+          if (created?.id) setPaymentServerId(localPayment.id, created.id);
+        }
+      }
+      if (canSyncServer) await loadServerPayments();
+      setAdjustmentPayment(null);
+      showToast(`${student.name} 학생의 ${formatMonth(selectedMonth)} 학원비를 조정했어요.`);
+    } catch (err) {
+      console.error('[supabase] save student payment adjustment failed', err);
+      if (canSyncServer) await loadServerPayments().catch(() => {});
+      showToast(err?.message ? `학원비 조정 실패: ${err.message}` : '학원비 조정을 저장하지 못했어요.', 'error');
+    }
+  };
+
+  if (testLabMode) {
+    return (
+      <TestLabSettlementView
+        title={title}
+        mode={initialSegment === 'payroll' ? 'payroll' : 'payments'}
+        selectedMonth={selectedMonth}
+        months={months}
+        monthPickerOpen={monthPickerOpen}
+        setMonthPickerOpen={setMonthPickerOpen}
+        setSelectedMonth={setSelectedMonth}
+        moveMonth={moveMonth}
+        canMoveNextMonth={canMoveNextMonth}
+        currentMonth={currentMonth}
+        paymentSummary={paymentSummary}
+        payrollSummary={payrollSummary}
+        monthPayments={monthPayments}
+        monthPayrolls={monthPayrolls}
+        academyStudents={academyStudents}
+        canManagePayments={canManagePayments}
+        tuitionDueDay={tuitionDueDay}
+        salaryPaymentDay={salaryPaymentDay}
+        onOpenSettings={setDaySheet}
+        onAutoGeneratePayments={handleAutoGeneratePayments}
+        onAutoGeneratePayrolls={handleAutoGeneratePayrolls}
+        onTogglePaid={handleTogglePaid}
+        onOpenAdjustment={openStudentAdjustment}
+        onOpenPayrollDetail={setPayrollDetail}
+        onMarkPayrollPaid={handleMarkPayrollPaid}
+        getStaffName={getStaffName}
+        staffAttendanceLogs={staffAttendanceLogs}
+        adjustmentPayment={adjustmentPayment}
+        adjustmentForm={adjustmentForm}
+        setAdjustmentForm={setAdjustmentForm}
+        onCloseAdjustment={() => setAdjustmentPayment(null)}
+        onSaveAdjustment={handleSaveStudentAdjustment}
+        payrollDetail={payrollDetail}
+        onClosePayrollDetail={() => setPayrollDetail(null)}
+        daySheet={daySheet}
+        onCloseDaySheet={() => setDaySheet(null)}
+        onSaveBillingDay={saveBillingDay}
+      />
+    );
+  }
 
   return (
     <div>
@@ -820,5 +958,406 @@ export default function SettlementPage({ operationsOnly = false, initialSegment 
         </Modal>
       )}
     </div>
+  );
+}
+
+function TestLabSettlementView({
+  title,
+  mode,
+  selectedMonth,
+  months,
+  monthPickerOpen,
+  setMonthPickerOpen,
+  setSelectedMonth,
+  moveMonth,
+  canMoveNextMonth,
+  currentMonth,
+  paymentSummary,
+  payrollSummary,
+  monthPayments,
+  monthPayrolls,
+  academyStudents,
+  canManagePayments,
+  tuitionDueDay,
+  salaryPaymentDay,
+  onOpenSettings,
+  onAutoGeneratePayments,
+  onAutoGeneratePayrolls,
+  onTogglePaid,
+  onOpenAdjustment,
+  onOpenPayrollDetail,
+  onMarkPayrollPaid,
+  getStaffName,
+  staffAttendanceLogs,
+  adjustmentPayment,
+  adjustmentForm,
+  setAdjustmentForm,
+  onCloseAdjustment,
+  onSaveAdjustment,
+  payrollDetail,
+  onClosePayrollDetail,
+  daySheet,
+  onCloseDaySheet,
+  onSaveBillingDay,
+}) {
+  const isPayments = mode === 'payments';
+  const settingsDay = isPayments ? tuitionDueDay : salaryPaymentDay;
+  const settingKind = isPayments ? 'tuition' : 'salary';
+
+  return (
+    <div>
+      <Header title={title} />
+      <div className="pt-14 md:pt-0 pb-8">
+        <section className="px-4 pt-4 md:pt-0">
+          <div className="relative flex items-center justify-between gap-2">
+            <MonthControl
+              selectedMonth={selectedMonth}
+              months={months}
+              open={monthPickerOpen}
+              setOpen={setMonthPickerOpen}
+              setSelectedMonth={setSelectedMonth}
+              moveMonth={moveMonth}
+              canMoveNextMonth={canMoveNextMonth}
+            />
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.96 }}
+              onClick={() => onOpenSettings(settingKind)}
+              className="pressable-surface h-11 shrink-0 rounded-2xl border border-seenit-border-soft bg-seenit-surface px-3 text-xs font-bold text-seenit-secondary shadow-sm inline-flex items-center gap-1.5"
+            >
+              <Settings size={15} /> 매월 {settingsDay}일
+            </motion.button>
+          </div>
+          {selectedMonth !== currentMonth && (
+            <button
+              type="button"
+              onClick={() => { setSelectedMonth(currentMonth); setMonthPickerOpen(false); }}
+              className="mt-2 text-xs font-bold text-seenit-brand"
+            >
+              이번 달로 돌아가기
+            </button>
+          )}
+        </section>
+
+        {isPayments ? (
+          <TestLabPayments
+            summary={paymentSummary}
+            students={academyStudents}
+            payments={monthPayments}
+            canManage={canManagePayments}
+            onGenerate={onAutoGeneratePayments}
+            onTogglePaid={onTogglePaid}
+            onAdjust={onOpenAdjustment}
+          />
+        ) : (
+          <TestLabPayrolls
+            summary={payrollSummary}
+            payrolls={monthPayrolls}
+            onGenerate={onAutoGeneratePayrolls}
+            onOpenDetail={onOpenPayrollDetail}
+            onMarkPaid={onMarkPayrollPaid}
+            getStaffName={getStaffName}
+          />
+        )}
+      </div>
+
+      <PaymentAdjustmentModal
+        data={adjustmentPayment}
+        form={adjustmentForm}
+        setForm={setAdjustmentForm}
+        onClose={onCloseAdjustment}
+        onSave={onSaveAdjustment}
+        month={selectedMonth}
+      />
+      <PayrollDetailModal
+        detail={payrollDetail}
+        onClose={onClosePayrollDetail}
+        getStaffName={getStaffName}
+        attendanceLogs={staffAttendanceLogs}
+      />
+      <BillingDayModal
+        kind={daySheet}
+        salaryPaymentDay={salaryPaymentDay}
+        tuitionDueDay={tuitionDueDay}
+        onClose={onCloseDaySheet}
+        onSave={onSaveBillingDay}
+      />
+    </div>
+  );
+}
+
+function MonthControl({ selectedMonth, months, open, setOpen, setSelectedMonth, moveMonth, canMoveNextMonth }) {
+  return (
+    <div className="relative min-w-0">
+      <div className="inline-flex h-11 items-center overflow-hidden rounded-2xl border border-seenit-border-soft bg-seenit-surface shadow-sm">
+        <button type="button" aria-label="이전 달" onClick={() => moveMonth(-1)} className="pressable-surface h-11 w-10 grid place-items-center text-seenit-subtle">
+          <ChevronLeft size={17} />
+        </button>
+        <button type="button" onClick={() => setOpen(!open)} className="pressable-surface h-11 min-w-[112px] px-2 border-x border-seenit-border-soft inline-flex items-center justify-center gap-1 text-sm font-extrabold text-seenit-ink">
+          {formatMonth(selectedMonth)} <ChevronDown size={14} className={open ? 'rotate-180' : ''} />
+        </button>
+        <button type="button" aria-label="다음 달" onClick={() => moveMonth(1)} disabled={!canMoveNextMonth} className="pressable-surface h-11 w-10 grid place-items-center text-seenit-subtle disabled:opacity-30">
+          <ChevronRight size={17} />
+        </button>
+      </div>
+      {open && (
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} className="absolute left-0 top-full z-20 mt-2 w-[260px] grid grid-cols-2 gap-1 rounded-2xl border border-seenit-border-soft bg-seenit-surface p-2 shadow-xl">
+          {months.map((month) => (
+            <button key={month} type="button" onClick={() => { setSelectedMonth(month); setOpen(false); }} className={`pressable-surface rounded-xl px-3 py-2.5 text-left text-sm font-bold ${month === selectedMonth ? 'bg-seenit-brand-soft text-seenit-brand' : 'text-seenit-secondary'}`}>
+              {formatMonth(month)}
+            </button>
+          ))}
+        </motion.div>
+      )}
+    </div>
+  );
+}
+
+function TestLabPayments({ summary, students, payments, canManage, onGenerate, onTogglePaid, onAdjust }) {
+  const activeStudents = students.filter((student) => student.status !== 'inactive');
+  const paymentFor = (student) => payments.find((payment) => payment.studentId === student.id || payment.studentId === student.serverId);
+  return (
+    <>
+      <section className="px-4 mt-4 grid grid-cols-2 gap-2">
+        <FinanceMetric label="받은 학원비" value={formatWon(summary.paid)} tone="blue" />
+        <FinanceMetric label="아직 미납" value={formatWon(summary.unpaid)} tone="red" />
+      </section>
+      <section className="px-4 mt-5">
+        <div className="flex items-end justify-between gap-3 mb-2 px-1">
+          <div>
+            <p className="text-base font-bold text-seenit-ink">학생별 학원비</p>
+            <p className="text-xs text-seenit-subtle mt-0.5">할인·형제 할인 같은 이번 달 예외를 학생별로 조정해요.</p>
+          </div>
+          {canManage && (
+            <motion.button type="button" whileTap={{ scale: 0.96 }} onClick={onGenerate} className="pressable-surface shrink-0 rounded-xl bg-seenit-brand-soft px-3 py-2 text-xs font-bold text-seenit-brand inline-flex items-center gap-1">
+              <RefreshCw size={13} /> 청구 생성
+            </motion.button>
+          )}
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-seenit-border-soft bg-seenit-surface shadow-sm">
+          {activeStudents.length === 0 ? (
+            <EmptyFinanceState text="등록된 학생이 없어요." />
+          ) : activeStudents.map((student) => {
+            const payment = paymentFor(student);
+            const adjusted = Boolean(payment?.billingSnapshot?.manualAdjustment);
+            return (
+              <div key={student.id} className="flex items-center gap-3 border-b border-seenit-border-soft px-4 py-3 last:border-0">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-bold text-seenit-ink">{student.name}</p>
+                    {adjusted && <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-bold text-violet-700">예외 적용</span>}
+                  </div>
+                  <p className="mt-0.5 text-xs text-seenit-subtle">
+                    {payment ? `${formatWon(payment.amount)} · ${payment.status === 'paid' ? '납부 완료' : '미납'}` : '아직 청구 없음'}
+                  </p>
+                </div>
+                {payment && canManage && (
+                  <button type="button" onClick={() => onTogglePaid(payment)} className={`pressable-surface h-9 rounded-xl px-3 text-xs font-bold ${payment.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 'bg-seenit-control text-seenit-secondary'}`}>
+                    {payment.status === 'paid' ? '완료' : '입금 확인'}
+                  </button>
+                )}
+                {canManage && (
+                  <button type="button" onClick={() => onAdjust(student, payment)} className="pressable-surface h-9 rounded-xl bg-seenit-control px-3 text-xs font-bold text-seenit-secondary inline-flex items-center gap-1">
+                    <SlidersHorizontal size={13} /> 조정
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function TestLabPayrolls({ summary, payrolls, onGenerate, onOpenDetail, onMarkPaid, getStaffName }) {
+  return (
+    <>
+      <section className="px-4 mt-4 grid grid-cols-2 gap-2">
+        <FinanceMetric label="이번 달 급여" value={formatWon(summary.total)} />
+        <FinanceMetric label="지급 완료" value={formatWon(summary.paid)} tone="green" />
+      </section>
+      <section className="px-4 mt-5">
+        <div className="flex items-end justify-between gap-3 mb-2 px-1">
+          <div>
+            <p className="text-base font-bold text-seenit-ink">직원 급여</p>
+            <p className="text-xs text-seenit-subtle mt-0.5">확정된 근무 기록으로 계산된 금액이에요.</p>
+          </div>
+          <motion.button type="button" whileTap={{ scale: 0.96 }} onClick={onGenerate} className="pressable-surface shrink-0 rounded-xl bg-seenit-brand-soft px-3 py-2 text-xs font-bold text-seenit-brand inline-flex items-center gap-1">
+            <RefreshCw size={13} /> {payrolls.length ? '다시 계산' : '급여 계산'}
+          </motion.button>
+        </div>
+        <div className="flex flex-col gap-2">
+          {payrolls.length === 0 ? (
+            <div className="rounded-2xl border border-seenit-border-soft bg-seenit-surface shadow-sm"><EmptyFinanceState text="아직 계산된 급여가 없어요." /></div>
+          ) : payrolls.map((payroll) => (
+            <div key={payroll.id} className="rounded-2xl border border-seenit-border-soft bg-seenit-surface px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-bold text-seenit-ink">{getStaffName(payroll)}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${payroll.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                      {payroll.status === 'completed' ? '지급 완료' : '지급 예정'}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-base font-extrabold tabular-nums text-seenit-ink">{formatWon(payroll.amount)}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button type="button" onClick={() => onOpenDetail({ payroll, section: 'attendance' })} className="pressable-surface h-9 rounded-xl bg-seenit-control px-2.5 text-[11px] font-bold text-seenit-secondary inline-flex items-center gap-1">
+                    <Clock3 size={13} /> 근무 확인
+                  </button>
+                  <button type="button" onClick={() => onOpenDetail({ payroll, section: 'calculation' })} className="pressable-surface h-9 rounded-xl bg-seenit-brand-soft px-2.5 text-[11px] font-bold text-seenit-brand inline-flex items-center gap-1">
+                    <ReceiptText size={13} /> 상세
+                  </button>
+                </div>
+              </div>
+              {payroll.status !== 'completed' && (
+                <button type="button" onClick={() => onMarkPaid(payroll)} className="pressable-surface mt-3 w-full rounded-xl bg-seenit-ink py-2.5 text-xs font-bold text-white">
+                  지급 완료로 표시
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function FinanceMetric({ label, value, tone = 'default' }) {
+  const color = tone === 'blue' ? 'text-seenit-brand' : tone === 'red' ? 'text-red-500' : tone === 'green' ? 'text-emerald-600' : 'text-seenit-ink';
+  return (
+    <div className="rounded-2xl border border-seenit-border-soft bg-seenit-surface p-4 shadow-sm">
+      <p className="text-[11px] font-semibold text-seenit-subtle">{label}</p>
+      <p className={`mt-1 text-xl font-extrabold tabular-nums ${color}`}>{value}</p>
+    </div>
+  );
+}
+
+function EmptyFinanceState({ text }) {
+  return <div className="p-8 text-center text-sm font-medium text-seenit-subtle">{text}</div>;
+}
+
+function PaymentAdjustmentModal({ data, form, setForm, onClose, onSave, month }) {
+  return (
+    <Modal
+      isOpen={Boolean(data)}
+      onClose={onClose}
+      title="학생별 학원비 조정"
+      fitContent
+      footer={(
+        <motion.button type="button" whileTap={{ scale: 0.98 }} onClick={onSave} disabled={!form.amount} className="w-full rounded-2xl bg-seenit-brand py-3.5 text-sm font-bold text-white disabled:opacity-40">
+          이 금액으로 적용
+        </motion.button>
+      )}
+    >
+      {data && (
+        <div className="space-y-4">
+          <div className="rounded-2xl bg-seenit-brand-soft p-4">
+            <p className="text-sm font-bold text-seenit-ink">{data.student.name} · {formatMonth(month)}</p>
+            <p className="mt-1 text-xs leading-relaxed text-seenit-secondary">이번 달 청구에만 적용되는 예외예요. 다음 달 자동 청구는 원래 학원비 기준으로 계산돼요.</p>
+          </div>
+          <label className="block">
+            <span className="text-xs font-bold text-seenit-secondary">조정 금액</span>
+            <div className="mt-2 flex items-center rounded-2xl border border-seenit-border-soft bg-seenit-surface px-4 focus-within:border-seenit-brand">
+              <input type="number" min="0" value={form.amount} onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))} className="h-12 min-w-0 flex-1 bg-transparent text-lg font-extrabold text-seenit-ink outline-none tabular-nums" />
+              <span className="text-sm font-bold text-seenit-subtle">원</span>
+            </div>
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold text-seenit-secondary">조정 이유</span>
+            <input value={form.reason} onChange={(event) => setForm((current) => ({ ...current, reason: event.target.value }))} placeholder="예: 형제 할인, 휴원 일할 계산" className="mt-2 h-12 w-full rounded-2xl border border-seenit-border-soft bg-seenit-surface px-4 text-sm text-seenit-ink outline-none focus:border-seenit-brand" />
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold text-seenit-secondary">납부 예정일</span>
+            <input type="date" value={form.dueDate} onChange={(event) => setForm((current) => ({ ...current, dueDate: event.target.value }))} className="mt-2 h-12 w-full rounded-2xl border border-seenit-border-soft bg-seenit-surface px-4 text-sm font-semibold text-seenit-ink outline-none focus:border-seenit-brand" />
+          </label>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function PayrollDetailModal({ detail, onClose, getStaffName, attendanceLogs }) {
+  const payroll = detail?.payroll;
+  const logs = payroll
+    ? attendanceLogs.filter((log) => log.staff_user_id === payroll.staffUserId && log.work_date?.startsWith(payroll.month)).sort((a, b) => (b.work_date || '').localeCompare(a.work_date || ''))
+    : [];
+  const approvedMinutes = logs.filter(isPayableStaffAttendance).reduce((sum, log) => sum + staffAttendanceMinutes(log), 0);
+  return (
+    <Modal isOpen={Boolean(payroll)} onClose={onClose} title={detail?.section === 'attendance' ? '근무 확인' : '급여 산정 상세'} size="wide">
+      {payroll && (
+        <div className="space-y-5">
+          <div className="rounded-2xl bg-seenit-control p-4">
+            <p className="text-sm font-bold text-seenit-ink">{getStaffName(payroll)} · {formatMonth(payroll.month)}</p>
+            <p className="mt-1 text-2xl font-extrabold tabular-nums text-seenit-ink">{formatWon(payroll.amount)}</p>
+            <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${payroll.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+              {payroll.status === 'completed' ? `${payroll.paidDate || ''} 지급 완료` : '지급 예정'}
+            </span>
+          </div>
+          <section>
+            <p className="mb-2 text-xs font-bold text-seenit-subtle">계산 방법</p>
+            <div className="overflow-hidden rounded-2xl border border-seenit-border-soft">
+              <DetailLine label="급여 방식" value={payroll.wageType === 'hourly' ? '시급제' : '월급제'} />
+              {payroll.wageType === 'hourly' ? (
+                <>
+                  <DetailLine label="확정 근무" value={`${formatHours(payroll.approvedLogHours ?? payroll.totalHours)}시간`} />
+                  <DetailLine label="시급" value={formatWon(payroll.hourlyWage)} />
+                  <DetailLine label="계산식" value={`${formatWon(payroll.hourlyWage)} × ${formatHours(payroll.totalHours)}시간`} />
+                  {Number(payroll.pendingLogHours) > 0 && <DetailLine label="미반영 근무" value={`${formatHours(payroll.pendingLogHours)}시간`} tone="amber" />}
+                </>
+              ) : <DetailLine label="월 급여" value={formatWon(payroll.monthlySalary)} />}
+              <DetailLine label="최종 급여" value={formatWon(payroll.amount)} strong />
+            </div>
+          </section>
+          <section>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-bold text-seenit-subtle">근무 기록</p>
+              <p className="text-xs font-bold text-seenit-secondary">확정 {formatHours(approvedMinutes / 60)}시간 · {logs.length}건</p>
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-seenit-border-soft">
+              {logs.length === 0 ? <EmptyFinanceState text="이 직원의 근무 기록이 없어요." /> : logs.map((log) => (
+                <div key={log.id || `${log.work_date}-${log.actual_start_time}`} className="flex items-center justify-between gap-3 border-b border-seenit-border-soft px-4 py-3 last:border-0">
+                  <div>
+                    <p className="text-sm font-bold text-seenit-ink">{log.work_date}</p>
+                    <p className="mt-0.5 text-xs text-seenit-subtle">{String(log.actual_start_time || '-').slice(0, 5)}–{String(log.actual_end_time || '-').slice(0, 5)}{log.break_minutes ? ` · 휴게 ${log.break_minutes}분` : ''}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold tabular-nums text-seenit-ink">{formatHours(staffAttendanceMinutes(log) / 60)}시간</p>
+                    <p className={`text-[10px] font-bold ${isPayableStaffAttendance(log) ? 'text-emerald-600' : 'text-amber-600'}`}>{isPayableStaffAttendance(log) ? '급여 반영' : '미확정'}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function DetailLine({ label, value, tone = 'default', strong = false }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-seenit-border-soft px-4 py-3 last:border-0">
+      <p className="text-xs font-semibold text-seenit-subtle">{label}</p>
+      <p className={`${strong ? 'text-base font-extrabold' : 'text-sm font-bold'} ${tone === 'amber' ? 'text-amber-600' : 'text-seenit-ink'} tabular-nums`}>{value}</p>
+    </div>
+  );
+}
+
+function BillingDayModal({ kind, salaryPaymentDay, tuitionDueDay, onClose, onSave }) {
+  if (!kind) return null;
+  const current = kind === 'salary' ? salaryPaymentDay : tuitionDueDay;
+  return (
+    <Modal isOpen onClose={onClose} title={kind === 'salary' ? '급여 지급일 설정' : '학원비 납부일 설정'} fitContent>
+      <p className="mb-4 text-xs leading-relaxed text-seenit-secondary">이 탭에 필요한 날짜 설정만 간단하게 바꿀 수 있어요.</p>
+      <div className="grid grid-cols-7 gap-1.5">
+        {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
+          <button key={day} type="button" onClick={() => onSave(kind, day)} className={`pressable-surface aspect-square rounded-xl text-sm font-bold ${day === current ? 'bg-seenit-brand text-white' : 'bg-seenit-control text-seenit-ink'}`}>
+            {day}
+          </button>
+        ))}
+      </div>
+    </Modal>
   );
 }

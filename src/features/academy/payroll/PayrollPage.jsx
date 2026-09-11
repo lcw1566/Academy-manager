@@ -91,7 +91,7 @@ function buildFallbackStaff({ localStaff, staffProfile, membership, authUserId, 
   };
 }
 
-export default function PayrollPage() {
+export default function PayrollPage({ testLabMode = false }) {
   const {
     role,
     academyTeachers, academyAssistants, academyPayrolls,
@@ -316,6 +316,23 @@ export default function PayrollPage() {
             <p className="text-[34px] leading-tight font-extrabold text-[#191F28] tracking-normal">
               {formatWon(estimatedPayroll?.amount)}
             </p>
+            {testLabMode && (
+              <div className={`mt-4 rounded-2xl px-4 py-3 ${estimatedPayroll?.status === 'completed' ? 'bg-seenit-success-soft' : 'bg-seenit-brand-soft'}`}>
+                <div className="flex items-center gap-2">
+                  {estimatedPayroll?.status === 'completed'
+                    ? <BadgeCheck size={17} className="text-seenit-success" />
+                    : <CalendarClock size={17} className="text-seenit-brand" />}
+                  <p className={`text-sm font-bold ${estimatedPayroll?.status === 'completed' ? 'text-seenit-success' : 'text-seenit-brand'}`}>
+                    {estimatedPayroll?.status === 'completed' ? '급여가 지급되었어요' : `매월 ${salaryPaymentDay}일 지급 예정이에요`}
+                  </p>
+                </div>
+                <p className="mt-1 pl-6 text-xs text-seenit-secondary">
+                  {estimatedPayroll?.status === 'completed'
+                    ? `${estimatedPayroll.paidDate || '지급 처리일'}에 원장이 지급 완료로 확인했어요.`
+                    : isConfirmedPayroll ? '급여 명세는 확정됐고 아직 지급 전이에요.' : '현재 근무 기록을 기준으로 계산한 예상 금액이에요.'}
+                </p>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2 mt-3">
               <Pill icon={Wallet} label={`${wageTypeLabel} · ${wageDetail}`} />
               <Pill

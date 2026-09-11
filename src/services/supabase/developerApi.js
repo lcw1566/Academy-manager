@@ -4,7 +4,7 @@ import { FEEDBACK_BUCKET } from './feedbackApi';
 const FEEDBACK_STATUSES = new Set(['received', 'reviewing', 'planned', 'resolved', 'closed']);
 const FEEDBACK_CATEGORIES = new Set(['bug', 'improvement']);
 const TEST_LAB_SCENARIOS = new Set(['full', 'billing', 'attendance', 'staff']);
-const TEST_LAB_PERSONAS = new Set(['owner', 'manager', 'teacher', 'assistant', 'invited', 'inactive']);
+const TEST_LAB_PERSONAS = new Set(['owner', 'manager', 'teacher', 'invited', 'inactive']);
 
 function assertConfigured() {
   if (!isSupabaseConfigured || !supabase) {

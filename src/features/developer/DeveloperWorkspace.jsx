@@ -56,7 +56,6 @@ const TEST_PERSONAS = [
   { id: 'owner', label: '원장', detail: '모든 기능과 설정을 검증' },
   { id: 'manager', label: '운영 매니저', detail: '수납·직원 운영 권한을 검증' },
   { id: 'teacher', label: '선생님', detail: '담당 수업과 내 급여를 검증' },
-  { id: 'assistant', label: '보조강사 직책', detail: '선생님 권한 + 보조 업무 직책' },
   { id: 'invited', label: '초대 대기', detail: '초대 수락 전 상태를 검증' },
   { id: 'inactive', label: '퇴사·비활성', detail: '학원 접근 차단 상태를 검증' },
 ];
@@ -489,7 +488,9 @@ function TestLabPanel({
   onOpenInvitation,
 }) {
   const exists = lab?.exists === true;
-  const currentPersona = TEST_PERSONAS.find((persona) => persona.id === lab?.active_persona);
+  // 이전 테스트 상태가 assistant여도 화면에서는 통합된 선생님으로 안내한다.
+  const visiblePersonaId = lab?.active_persona === 'assistant' ? 'teacher' : lab?.active_persona;
+  const currentPersona = TEST_PERSONAS.find((persona) => persona.id === visiblePersonaId);
   const isBusy = Boolean(busy);
 
   return (
@@ -564,7 +565,7 @@ function TestLabPanel({
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {TEST_PERSONAS.map((persona) => {
-                const active = lab.active_persona === persona.id;
+                const active = visiblePersonaId === persona.id;
                 const personaBusy = busy === `persona:${persona.id}`;
                 return (
                   <button

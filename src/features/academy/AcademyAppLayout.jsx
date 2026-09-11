@@ -574,15 +574,15 @@ export default function AcademyAppLayout() {
       }
       if (activeTab === 'payments' || activeTab === 'settlement') {
         if (isDeveloperTestLab) {
-          return <SettlementPage operationsOnly={role === 'manager'} initialSegment="payments" title="수납" />;
+          return <SettlementPage operationsOnly={role === 'manager'} initialSegment="payments" title="수납" testLabMode />;
         }
         return <PilotLockedFeature featureId="payments" onReturn={() => setActiveTab('classes')} />;
       }
       if (activeTab === 'owner-payroll' || activeTab === 'payroll') {
         if (isDeveloperTestLab) {
           return activeTab === 'owner-payroll'
-            ? <SettlementPage initialSegment="payroll" title="급여" />
-            : <PayrollPage />;
+            ? <SettlementPage initialSegment="payroll" title="급여" testLabMode />
+            : <PayrollPage testLabMode />;
         }
         return <PilotLockedFeature featureId={activeTab} onReturn={() => setActiveTab('classes')} />;
       }
