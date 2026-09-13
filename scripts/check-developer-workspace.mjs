@@ -18,6 +18,8 @@ const files = {
   e2eRunner: './run-playwright.mjs',
   stagingE2eRunner: './run-staging-playwright.mjs',
   stagingDbRunner: './run-staging-db-push.mjs',
+  stagingDbBootstrap: './bootstrap-staging-db.mjs',
+  stagingDbBootstrapSql: '../supabase/staging/prepare_new_project.sql',
   e2eSupport: '../tests/e2e/support/supabase.js',
   e2eAccounts: '../tests/e2e/support/accounts.js',
   e2eProvision: '../tests/e2e/support/provision.js',
@@ -149,8 +151,16 @@ if (!sources.stagingE2eRunner.includes('PRODUCTION_SUPABASE_PROJECT_REF')
 }
 if (!sources.stagingDbRunner.includes('PRODUCTION_SUPABASE_PROJECT_REF')
   || !sources.stagingDbRunner.includes('SUPABASE_DB_PASSWORD')
-  || !sources.stagingDbRunner.includes("'--project-ref', projectRef")) {
+  || !sources.stagingDbRunner.includes("'link', '--project-ref', projectRef")
+  || !sources.stagingDbRunner.includes("'link', '--project-ref', originalRef")) {
   throw new Error('스테이징 migration의 운영 프로젝트 차단 장치가 누락됐습니다.');
+}
+if (!sources.stagingDbBootstrap.includes('PRODUCTION_SUPABASE_PROJECT_REF')
+  || !sources.stagingDbBootstrap.includes('poolerUrl.username !== `postgres.${projectRef}`')
+  || !sources.stagingDbBootstrap.includes('ssl: { rejectUnauthorized: false }')
+  || !sources.stagingDbBootstrapSql.includes("v_function_name <> 'rls_auto_enable'")
+  || !sources.stagingDbBootstrapSql.includes('v_has_migrations')) {
+  throw new Error('새 스테이징 DB의 automatic RLS 호환 bootstrap 보호가 누락됐습니다.');
 }
 if (!sources.main.includes('seenitEnvironment')
   || !sources.main.includes('seenitSupabaseProject')) {

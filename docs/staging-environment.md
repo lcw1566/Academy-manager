@@ -33,12 +33,20 @@ Supabase URL/ref를 대조하고, 배포 앱이 공개하는 환경/ref 표식�
 6. 문자, 푸시, 이메일, 결제 연동은 실제 발송 대신 샌드박스 또는 비활성 상태로 둔다.
 
 `.env.staging.local`에 DB 비밀번호를 넣은 뒤 migration을 먼저 미리 보고 적용한다. 두 명령은
-운영 project ref를 거부하며 기존 운영 링크도 변경하지 않는다.
+운영 project ref를 거부한다. IPv6를 사용할 수 없는 PC에서는 스테이징 IPv4 Pooler 연결을
+위해 CLI 링크를 잠시 전환하고, 명령 종료 전에 기존 운영 링크로 복원한다.
 
 ```bash
 npm run staging:db:dry-run
 npm run staging:db:push
 ```
+
+새 프로젝트 생성 시 `Enable automatic RLS`가 만든 `ensure_rls`와 기준 migration의 동일
+트리거가 충돌하면 최초 1회 `npm run staging:db:bootstrap`을 실행한다. 이 명령은 앱
+migration 이력이 비어 있고 해당 트리거가 `public.rls_auto_enable()`일 때만 제거한다.
+그다음 기준 migration이 같은 자동 RLS 보호 장치를 다시 생성한다.
+Pooler 연결은 PostgreSQL `sslmode=require`에 해당하는 TLS를 강제하고, 연결 전에
+project ref·host·DB 사용자를 서로 대조한다.
 
 ## 로컬에서 스테이징 검증
 
