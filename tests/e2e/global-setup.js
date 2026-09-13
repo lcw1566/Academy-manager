@@ -18,11 +18,17 @@ async function assertBrowserTarget() {
     const marker = await page.locator('html').evaluate((element) => ({
       environment: element.dataset.seenitEnvironment,
       supabaseProjectRef: element.dataset.seenitSupabaseProject,
+      supabaseKeyFingerprint: element.dataset.seenitSupabaseKeyFingerprint,
     }));
-    if (marker.environment !== targetKind || marker.supabaseProjectRef !== expectedProjectRef) {
+    const expectedKeyFingerprint = String(process.env.E2E_SUPABASE_ANON_KEY || '').slice(-12);
+    if (marker.environment !== targetKind
+      || marker.supabaseProjectRef !== expectedProjectRef
+      || marker.supabaseKeyFingerprint !== expectedKeyFingerprint) {
       throw new Error(
         `앱 배포 대상이 E2E 설정과 달라 실행을 차단했어요. `
-        + `expected=${targetKind}/${expectedProjectRef}, actual=${marker.environment}/${marker.supabaseProjectRef}`,
+        + `expected=${targetKind}/${expectedProjectRef}/key-match, `
+        + `actual=${marker.environment}/${marker.supabaseProjectRef}/`
+        + `${marker.supabaseKeyFingerprint === expectedKeyFingerprint ? 'key-match' : 'key-mismatch'}`,
       );
     }
   } finally {

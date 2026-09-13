@@ -163,7 +163,8 @@ if (!sources.stagingDbBootstrap.includes('PRODUCTION_SUPABASE_PROJECT_REF')
   throw new Error('새 스테이징 DB의 automatic RLS 호환 bootstrap 보호가 누락됐습니다.');
 }
 if (!sources.main.includes('seenitEnvironment')
-  || !sources.main.includes('seenitSupabaseProject')) {
+  || !sources.main.includes('seenitSupabaseProject')
+  || !sources.main.includes('seenitSupabaseKeyFingerprint')) {
   throw new Error('배포 앱과 Supabase 대상을 검증할 공개 표식이 누락됐습니다.');
 }
 if (!sources.stagingE2eConfig.includes('workers: 1')

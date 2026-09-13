@@ -23,6 +23,15 @@ try {
   if (appUrl.protocol !== 'https:' || ['127.0.0.1', 'localhost', '::1'].includes(appUrl.hostname)) {
     throw new Error('STAGING_APP_URL에는 별도 스테이징 HTTPS 주소가 필요해요.');
   }
+  const publishableKey = required('STAGING_SUPABASE_ANON_KEY');
+  const secretKey = required('STAGING_SUPABASE_SERVICE_ROLE_KEY');
+  if (!publishableKey.startsWith('sb_publishable_')
+    && !publishableKey.startsWith('eyJ')) {
+    throw new Error('STAGING_SUPABASE_ANON_KEY에는 실제 Publishable key가 필요해요.');
+  }
+  if (!secretKey.startsWith('sb_secret_') && !secretKey.startsWith('eyJ')) {
+    throw new Error('STAGING_SUPABASE_SERVICE_ROLE_KEY에는 실제 Secret key가 필요해요.');
+  }
 
   const stagingEnv = {
     ...process.env,
@@ -30,11 +39,11 @@ try {
     E2E_STAGING_PROJECT_REF: projectRef,
     E2E_APP_URL: appUrl.origin,
     E2E_SUPABASE_URL: supabaseUrl.origin,
-    E2E_SUPABASE_ANON_KEY: required('STAGING_SUPABASE_ANON_KEY'),
-    E2E_SUPABASE_SERVICE_ROLE_KEY: required('STAGING_SUPABASE_SERVICE_ROLE_KEY'),
+    E2E_SUPABASE_ANON_KEY: publishableKey,
+    E2E_SUPABASE_SERVICE_ROLE_KEY: secretKey,
     E2E_USER_PASSWORD: required('STAGING_E2E_USER_PASSWORD'),
     VITE_SUPABASE_URL: supabaseUrl.origin,
-    VITE_SUPABASE_ANON_KEY: required('STAGING_SUPABASE_ANON_KEY'),
+    VITE_SUPABASE_ANON_KEY: publishableKey,
   };
 
   console.log(`Playwright staging target verified: ${supabaseUrl.origin} (${projectRef})`);

@@ -19,6 +19,7 @@ const deploymentEnvironment = String(
   import.meta.env.VITE_DEPLOY_ENV || (import.meta.env.DEV ? 'local' : 'production'),
 ).trim();
 let supabaseProjectRef = 'unknown';
+const supabasePublishableKey = String(import.meta.env.VITE_SUPABASE_ANON_KEY || '');
 try {
   const supabaseHost = new URL(String(import.meta.env.VITE_SUPABASE_URL || '')).hostname;
   supabaseProjectRef = ['127.0.0.1', 'localhost', '::1'].includes(supabaseHost)
@@ -29,6 +30,7 @@ try {
 }
 document.documentElement.dataset.seenitEnvironment = deploymentEnvironment;
 document.documentElement.dataset.seenitSupabaseProject = supabaseProjectRef;
+document.documentElement.dataset.seenitSupabaseKeyFingerprint = supabasePublishableKey.slice(-12);
 
 if (sentryDsn) {
   Sentry.init({
