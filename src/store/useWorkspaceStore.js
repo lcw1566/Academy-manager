@@ -1158,6 +1158,10 @@ const useWorkspaceStore = create(
         if (academyId !== get().currentAcademyId) {
           get().setCurrentAcademyId(academyId);
         }
+        // 탭 노출은 현재 직원의 서버 권한에 의존한다. setCurrentAcademyId의
+        // 백그라운드 갱신만 기다리지 않고 여기서 완료시켜, 원격 환경에서도
+        // 이전 학원의 권한이나 빈 프로필로 첫 화면을 렌더하지 않게 한다.
+        await get().loadAcademyStaffProfiles();
         return preparedMembership;
       },
 

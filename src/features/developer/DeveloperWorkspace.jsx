@@ -225,12 +225,15 @@ export default function DeveloperWorkspace() {
     setError('');
     try {
       const nextLab = await setDeveloperTestPersona(persona);
-      setTestLab(nextLab);
       const [nextPermissions] = await Promise.all([
         getDeveloperTestPermissions(),
         loadMemberships({ throwOnError: true }),
         loadMyPendingInvitations(),
       ]);
+      // 원격 환경에서는 역할 RPC보다 멤버십·권한 재조회가 늦게 끝날 수 있다.
+      // 실제 준비가 끝나기 전에 선택 표시를 바꾸면 다음 권한 버튼이 활성화된
+      // 것으로 오해할 수 있으므로, 관련 서버 상태가 모두 준비된 뒤 함께 반영한다.
+      setTestLab(nextLab);
       setTestPermissions(nextPermissions);
     } catch (labError) {
       setError(labError?.message || '테스트 역할을 변경하지 못했어요.');
