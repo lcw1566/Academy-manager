@@ -76,23 +76,6 @@ values (
   current_date
 );
 
-insert into public.exam_results (id, user_id, mode, exam_name)
-values (
-  '00000000-0000-0000-0000-000000002003',
-  '00000000-0000-0000-0000-000000001007',
-  'private',
-  'SQL 084 private exam'
-);
-
-insert into public.student_events (id, user_id, mode, title, date)
-values (
-  '00000000-0000-0000-0000-000000002004',
-  '00000000-0000-0000-0000-000000001007',
-  'private',
-  'SQL 084 private event',
-  current_date
-);
-
 set local session_replication_role = origin;
 
 create function pg_temp.assert_academy_access(p_user_id uuid, p_label text)
@@ -227,29 +210,21 @@ select set_config(
   true
 );
 
+-- Private mode was retired; even the original owner cannot recreate its data.
 do $test$
-declare
-  v_count integer;
-  v_exam_id uuid := gen_random_uuid();
-  v_event_id uuid := gen_random_uuid();
 begin
-  select count(*) into v_count from public.exam_results
-  where id = '00000000-0000-0000-0000-000000002003';
-  if v_count <> 1 then raise exception 'private owner could not select own exam result'; end if;
-
-  select count(*) into v_count from public.student_events
-  where id = '00000000-0000-0000-0000-000000002004';
-  if v_count <> 1 then raise exception 'private owner could not select own student event'; end if;
-
-  insert into public.exam_results (id, user_id, mode, exam_name)
-  values (v_exam_id, auth.uid(), 'private', 'private write test');
-  update public.exam_results set memo = 'updated' where id = v_exam_id;
-  delete from public.exam_results where id = v_exam_id;
-
-  insert into public.student_events (id, user_id, mode, title, date)
-  values (v_event_id, auth.uid(), 'private', 'private write test', current_date);
-  update public.student_events set memo = 'updated' where id = v_event_id;
-  delete from public.student_events where id = v_event_id;
+  begin
+    insert into public.exam_results (user_id, mode, exam_name)
+    values (auth.uid(), 'private', 'retired private write');
+    raise exception 'private exam recreation was allowed';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.student_events (user_id, mode, title, date)
+    values (auth.uid(), 'private', 'retired private write', current_date);
+    raise exception 'private event recreation was allowed';
+  exception when check_violation then null;
+  end;
 end;
 $test$;
 

@@ -17,13 +17,6 @@ import {
 import TuitionRateFields from '../academy/onboarding/TuitionRateFields';
 
 const ACCOUNT_TYPE_HINT = {
-  tutor: {
-    title: '과외 선생님 계정',
-    desc: '개인 과외 모드로 사용할 수 있어요. 학원에 참여하지 않아도 돼요.',
-    Icon: GraduationCap,
-    iconBg: 'bg-blue-50',
-    iconColor: 'text-blue-600',
-  },
   owner: {
     title: '학원 원장 계정',
     desc: '학원 워크스페이스를 만들고 강사를 초대할 수 있어요.',
@@ -217,7 +210,7 @@ export default function WorkspaceSection() {
     );
   };
 
-  const accountType = profile?.account_type || 'tutor';
+  const accountType = profile?.account_type === 'owner' ? 'owner' : 'staff';
   const isStaffAccount = accountType === 'staff';
   const hasPendingInvitations = myPendingInvitations.length > 0;
 

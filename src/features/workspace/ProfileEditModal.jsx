@@ -17,7 +17,6 @@ import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAuthStore from '../../store/useAuthStore';
 
 const ACCOUNT_TYPE_LABEL = {
-  tutor: '과외 선생님',
   owner: '학원 원장',
   staff: '직원',
 };
@@ -57,7 +56,7 @@ export default function ProfileEditModal({ isOpen, onClose, onSaved }) {
     }
   };
 
-  const accountTypeLabel = ACCOUNT_TYPE_LABEL[profile?.account_type] || '과외 선생님';
+  const accountTypeLabel = ACCOUNT_TYPE_LABEL[profile?.account_type] || '학원 구성원';
 
   return (
     <Modal

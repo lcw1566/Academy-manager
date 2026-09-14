@@ -7,6 +7,8 @@ const testFiles = [
   'supabase/tests/085_developer_test_lab.sql',
   'supabase/tests/086_developer_test_permission_controls.sql',
   'supabase/tests/087_developer_test_collaboration.sql',
+  'supabase/tests/088_secure_public_checkin.sql',
+  'supabase/tests/089_retire_private_workspace.sql',
 ];
 
 try {
@@ -21,7 +23,10 @@ try {
       {
         cwd: process.cwd(),
         encoding: 'utf8',
-        input: readFileSync(file, 'utf8'),
+        input: readFileSync(file, 'utf8').replace(
+          /^-- @include-migration ([0-9]+_[a-z_]+\.sql)$/gm,
+          (_, name) => readFileSync(`supabase/migrations/${name}`, 'utf8'),
+        ),
       },
     );
     if (result.stdout) process.stdout.write(result.stdout);

@@ -70,7 +70,6 @@ export const evaluationLevelColors = {
 };
 
 export const roleMap = {
-  tutor: '과외 선생님',
   director: '원장',
   owner: '학원 원장',
   teacher: '선생님',
@@ -178,6 +177,5 @@ export function appRoleToLabel(role) {
   if (role === 'owner') return '원장';
   if (role === 'teacher' || role === 'assistant') return '선생님';
   if (role === 'manager') return '운영 매니저';
-  if (role === 'tutor') return '과외 선생님';
   return '';
 }
