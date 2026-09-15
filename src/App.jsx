@@ -118,8 +118,6 @@ export default function App() {
   const stopChatRealtime = useChatStore((s) => s.stopChatRealtime);
   const clearChat = useChatStore((s) => s.clearChat);
   const chatMessages = useChatStore((s) => s.messages);
-  const chatThreads = useChatStore((s) => s.threads);
-  const chatMembers = useChatStore((s) => s.members);
   const chatLoadedAt = useChatStore((s) => s.loadedAt);
   const activeChatThreadId = useChatStore((s) => s.activeThreadId);
   const openThreadFromNotification = useChatStore((s) => s.openThreadFromNotification);
@@ -179,14 +177,7 @@ export default function App() {
       if (message.sender_id === authUserId) continue;
       if (activeTab === 'chat' && activeChatThreadId === message.thread_id) continue;
 
-      const thread = chatThreads.find((item) => item.id === message.thread_id);
-      const sender = chatMembers.find((member) => member.user_id === message.sender_id);
-      const title = thread?.kind === 'group'
-        ? (thread.title || (thread.group_scope === 'custom' ? '단톡방' : '학원 전체'))
-        : (sender?.display_name || sender?.email || '새 채팅');
       showForegroundChatNotification({
-        title,
-        body: message.body,
         threadId: message.thread_id,
         onClick: () => openChatNotification(message.thread_id),
       });
@@ -194,8 +185,6 @@ export default function App() {
   }, [
     chatLoadedAt,
     chatMessages,
-    chatThreads,
-    chatMembers,
     authUserId,
     activeTab,
     activeChatThreadId,

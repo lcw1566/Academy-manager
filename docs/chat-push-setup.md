@@ -1,15 +1,19 @@
 # 채팅 푸시 알림 설정
 
-앱 코드는 PC Web Push, Android FCM, iOS APNs를 지원한다. 채팅과 사용자
-데이터는 계속 Supabase에만 저장되며, FCM/APNs는 알림 전달 통로로만 사용한다.
+앱 코드는 PC Web Push, Android FCM, iOS APNs를 지원한다. 채팅 원문은
+Supabase에서 조회하고, 푸시 제공자에는 일반 안내 문구와 채팅방·학원 ID만 전달한다.
+이름, 이메일, 채팅방 제목과 메시지 원문은 알림에 넣지 않는다.
 
 ## 1. DB와 Edge Function
 
-1. Supabase SQL Editor에서 `supabase/sql/022_chat_push_notifications.sql` 실행
-2. 함수 배포
+1. 로컬에서 새 마이그레이션을 재생하고 `npm run test:db`와 빌드를 확인한다.
+2. 배포할 프로젝트의 마이그레이션 내역과 dry-run을 확인한 후 승인된 DB 변경을 적용한다.
+   이번 변경은 `20260915032402_harden_chat_push.sql`이다.
+   `supabase/sql/022` 등 과거 SQL Editor 스크립트는 다시 실행하지 않는다.
+3. **동일한 프로젝트**에 함수 배포. Vercel 프론트 배포만으로 함수는 갱신되지 않는다.
 
 ```bash
-supabase functions deploy chat-push
+supabase functions deploy chat-push --project-ref <배포할-project-ref>
 ```
 
 `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`는 배포된
@@ -61,3 +65,8 @@ Firebase Database/Auth는 사용하지 않는다. Cloud Messaging만 사용한�
 - 앱/브라우저가 열린 상태, 백그라운드, 종료 상태 각각 확인
 - 알림 선택 시 해당 채팅방으로 이동하는지 확인
 - 로그아웃한 기기로 이전 계정의 알림이 오지 않는지 확인
+- 전체방·선택 단톡방·DM에서 퇴사자와 초대 대기자가 푸시 대상에서 제외되는지 확인
+- 알림에 원문·이름·이메일·방 제목이 없고 일반 안내만 표시되는지 확인
+- 같은 메시지로 발송 요청을 반복해도 새 푸시가 발생하지 않는지 확인
+
+발송 보장 범위, 자동 테스트와 배포 점검은 [채팅 푸시 보안 변경](./chat-push-hardening.md)을 참고한다.

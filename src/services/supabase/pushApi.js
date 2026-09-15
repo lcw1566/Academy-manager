@@ -13,11 +13,10 @@ export async function upsertPushDevice({ token, platform, provider }) {
 
 export async function disablePushDevice(token, provider) {
   if (!isSupabaseConfigured || !supabase || !token) return;
-  const { error } = await supabase
-    .from('push_devices')
-    .update({ enabled: false })
-    .eq('token', token)
-    .eq('provider', provider);
+  const { error } = await supabase.rpc('disable_my_push_device', {
+    p_token: token,
+    p_provider: provider,
+  });
   if (error) throw error;
 }
 

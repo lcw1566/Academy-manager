@@ -225,7 +225,7 @@ export default function ChatPage({ displayMode = 'page', onClose }) {
               </span>
               <span className="flex-1">
                 <span className="block text-sm font-bold text-gray-900">채팅 알림 켜기</span>
-                <span className="block text-xs text-gray-500 mt-0.5">새 메시지를 바로 알려드릴게요.</span>
+                <span className="block text-xs text-gray-500 mt-0.5">알림에는 메시지 내용이 표시되지 않아요.</span>
               </span>
             </button>
           </div>

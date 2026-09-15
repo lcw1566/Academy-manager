@@ -9,6 +9,7 @@ const testFiles = [
   'supabase/tests/087_developer_test_collaboration.sql',
   'supabase/tests/088_secure_public_checkin.sql',
   'supabase/tests/089_retire_private_workspace.sql',
+  'supabase/tests/090_harden_chat_push.sql',
 ];
 
 try {
@@ -36,6 +37,11 @@ try {
       throw new Error(`${file} 실행에 실패했어요.`);
     }
   }
+  const pushTests = spawnSync(process.execPath, ['--test', 'tests/integration/chatPush.test.mjs'], {
+    cwd: process.cwd(), stdio: 'inherit',
+  });
+  if (pushTests.error) throw pushTests.error;
+  if (pushTests.status !== 0) throw new Error('채팅 푸시 REST/동시 요청 검증에 실패했어요.');
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

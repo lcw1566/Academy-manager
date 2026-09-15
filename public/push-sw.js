@@ -21,8 +21,8 @@ self.addEventListener('push', (event) => {
     const visibleClient = clientsList.find((client) => client.visibilityState === 'visible');
     if (visibleClient) return;
 
-    await self.registration.showNotification(payload.title || '새 채팅', {
-      body: payload.body || '새 메시지가 도착했어요.',
+    await self.registration.showNotification('씨닛', {
+      body: '새 메시지가 도착했어요. 앱에서 확인해주세요.',
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       tag: payload.threadId ? `chat-${payload.threadId}` : undefined,

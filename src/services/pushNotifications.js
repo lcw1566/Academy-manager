@@ -115,12 +115,12 @@ async function ensureNativePushListeners() {
       localStorage.setItem(PUSH_TOKEN_KEY, value);
       localStorage.setItem(PUSH_PROVIDER_KEY, provider);
     } catch (err) {
-      console.warn('[push] device token save failed', err?.message || err);
+      console.warn('[push] device token save failed');
     }
   });
 
   await PushNotifications.addListener('registrationError', (err) => {
-    console.warn('[push] native registration failed', err?.error || err);
+    console.warn('[push] native registration failed');
   });
 
   await PushNotifications.addListener('pushNotificationActionPerformed', ({ notification }) => {
@@ -147,11 +147,11 @@ export async function disableCurrentPushDevice() {
   localStorage.removeItem(PUSH_PROVIDER_KEY);
 }
 
-export function showForegroundChatNotification({ title, body, threadId, onClick }) {
+export function showForegroundChatNotification({ threadId, onClick }) {
   if (isNativePushAvailable() || typeof Notification === 'undefined') return;
   if (Notification.permission !== 'granted') return;
-  const notification = new Notification(title || '새 채팅', {
-    body,
+  const notification = new Notification('씨닛', {
+    body: '새 메시지가 도착했어요. 앱에서 확인해주세요.',
     icon: '/icon-192.png',
     tag: threadId ? `chat-${threadId}` : undefined,
   });
