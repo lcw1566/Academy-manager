@@ -491,7 +491,7 @@ export default function StudentAttendancePage() {
     <div>
       <Header
         title="등하원"
-        right={qrEnabled ? (
+        right={qrEnabled && canEdit ? (
           <button
             type="button"
             onClick={openQrDisplayWindow}

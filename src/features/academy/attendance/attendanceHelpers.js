@@ -39,22 +39,6 @@ export function generateQrToken() {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// 공용 디스플레이용 페이로드. JSON 문자열로 인코딩.
-// purpose: 'staff_checkin' | 'student_checkin' | 'shared'
-//   - 'shared' 는 직원/학생 모두 가능 (현재 정책상 같은 QR 사용).
-export function buildPublicCheckinPayload({ academyId, token, purpose = 'shared', ttlSec = 90 }) {
-  const now = Math.floor(Date.now() / 1000);
-  return JSON.stringify({
-    v: 1,
-    type: 'academy_checkin',
-    academyId,
-    purpose,
-    token: token || '',
-    issuedAt: now,
-    expiresAt: now + ttlSec,
-  });
-}
-
 // 학생 개별 QR — 학원이 학생 카드/프린트물로 발급. 학생이 본인 단말이 없어도
 // 공용 단말 스캐너에 노출할 수 있도록 분리된 페이로드 사용.
 function normalizePublicBaseUrl(baseUrl) {
@@ -168,8 +152,8 @@ export function parseCheckinPayload(raw) {
 export function isPayloadExpired(payload) {
   if (!payload) return true;
   if (payload.type === 'academy_student_card') return false;
-  if (!payload.expiresAt) return false;
-  return Math.floor(Date.now() / 1000) > Number(payload.expiresAt);
+  const expiry = Number(payload.expiresAt);
+  return !Number.isFinite(expiry) || expiry <= 0 || Date.now() / 1000 >= expiry;
 }
 
 // shift 의 actual_start_time vs scheduled_start_time → 상태 라벨.

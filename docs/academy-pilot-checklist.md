@@ -1,5 +1,9 @@
 # 학원 파일럿 도입 체크리스트
 
+> 과거 파일럿 기록입니다. 개인 과외 모드는 제거됐으며 당시 SQL 일괄 적용·권한 설명은
+> 현재 운영 절차가 아닙니다. [테스트 전략](testing-strategy.md)과
+> [최신 보강·배포 절차](privacy-checkin-hardening.md)를 우선 확인하세요.
+
 > 실제 학원에서 첫 데이터를 입력하기 전 한 번에 확인하는 체크리스트.
 > 상세 시나리오는 [pilot-qa-checklist.md](./pilot-qa-checklist.md) 와
 > [academy-pilot-test-plan.md](./academy-pilot-test-plan.md) 참고.

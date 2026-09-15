@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { selectPersistedAcademyState, sanitizeAcademyStorageValue } from '../utils/academyPersistence';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { localizeUserMessage } from '../utils/localizeError';
 import { generateClassDates } from '../utils/recurringClass';
@@ -6,19 +7,16 @@ import {
   getCurrentMonth,
   getDaysInMonth,
   getKoreanWeekdayIndex,
-  getMonthsBetween,
   today as getTodayYMD,
 } from '../utils/date';
 import {
   buildPlannedStaffSchedule,
   plannedToStaffShiftShape,
 } from '../utils/schedule';
-import { generatePaymentForMonth, groupHasPayment, resolveStudentBilling } from '../utils/billing';
 import {
   calculateStudentMonthlyCharge,
   resolveStudentBaseTuition,
 } from '../utils/studentBilling';
-import { DEFAULT_PARENT_NOTICE_PROMPT, DEFAULT_STUDENT_HOMEWORK_PROMPT } from '../constants/aiPrompts';
 import {
   mapServerStudentToLocal,
   mapServerExamResultToLocal,
@@ -131,9 +129,24 @@ function createDeferredLocalStorage(delay = 250) {
   });
 
   return {
-    getItem: (name) => base.getItem(name),
+    getItem: (name) => {
+      const original = base.getItem(name);
+      if (original === null) return null;
+      const sanitized = sanitizeAcademyStorageValue(original);
+      // Remove old sensitive values synchronously, before Zustand hydrates.
+      if (sanitized !== original) {
+        try {
+          if (sanitized === null) base.removeItem(name);
+          else base.setItem(name, sanitized);
+        } catch {
+          base.removeItem(name);
+          return null;
+        }
+      }
+      return sanitized;
+    },
     setItem: (name, value) => {
-      pending.set(name, value);
+      pending.set(name, sanitizeAcademyStorageValue(value));
       schedule(name);
     },
     removeItem: (name) => {
@@ -144,20 +157,6 @@ function createDeferredLocalStorage(delay = 250) {
     },
   };
 }
-
-const defaultTutorProfile = {
-  name: '과외 선생님',
-  phone: '',
-  email: '',
-  subjects: [],
-  defaultLocation: '',
-  bankName: '',
-  bankAccount: '',
-  accountHolder: '',
-  defaultNoticeTone: 'friendly',
-  parentNoticePrompt: DEFAULT_PARENT_NOTICE_PROMPT,
-  studentHomeworkPrompt: DEFAULT_STUDENT_HOMEWORK_PROMPT,
-};
 
 function createDefaultAcademyProfile() {
   return {
@@ -214,11 +213,7 @@ const useAcademyStore = create(
     (set, get) => ({
   // === Auth / Mode ===
   role: null,
-  currentMode: 'private', // 'private' | 'academy'
-
-  // === Tutor Profile ===
-  tutorProfile: defaultTutorProfile,
-  setTutorProfile: (profile) => set({ tutorProfile: profile }),
+  currentMode: 'academy',
 
   // === School Names (autocomplete) ===
   schoolNames: [],
@@ -230,32 +225,12 @@ const useAcademyStore = create(
     });
   },
 
-  // === API Key ===
-  geminiApiKey: '',
-  setGeminiApiKey: (key) => set({ geminiApiKey: key }),
-
   // === Navigation ===
   activeTab: 'home',
-  selectedClassId: null,
-  selectedStudentId: null,
-  selectedRepeatGroupId: null,
   // Academy navigation
   selectedClassGroupId: null,
   selectedClassSessionId: null,
   selectedAcademyStudentId: null,
-
-  // === Private Workspace (과외 선생님) ===
-  students: [],
-  teachers: [],
-  classes: [],
-  attendanceRecords: [],
-  lessonRecords: [],
-  payments: [],
-  consultations: [],
-  payrolls: [],
-  repeatGroups: [],
-  studentEvents: [],
-  examResults: [],
 
   // === Academy Workspace (원장/강사/보조강사 공유) ===
   academyProfile: createDefaultAcademyProfile(),
@@ -298,36 +273,23 @@ const useAcademyStore = create(
   setRole: (role) => {
     const ACADEMY_ROLES = ['owner', 'teacher', 'assistant', 'manager'];
     set({
-      role,
-      currentMode: ACADEMY_ROLES.includes(role) ? 'academy' : 'private',
+      role: ACADEMY_ROLES.includes(role) ? role : null,
+      currentMode: 'academy',
       activeTab: 'home',
-      selectedClassId: null,
-      selectedStudentId: null,
-      selectedRepeatGroupId: null,
       selectedClassGroupId: null,
       selectedClassSessionId: null,
       selectedAcademyStudentId: null,
     });
   },
-  logout: () => set({ role: null, currentMode: 'private' }),
+  logout: () => set({ role: null, currentMode: 'academy' }),
 
-  // ─── Navigation (Private) ──────────────────────────
+  // ─── Navigation ──────────────────────────
   setActiveTab: (tab) => set({
     activeTab: tab,
-    selectedClassId: null,
-    selectedStudentId: null,
-    selectedRepeatGroupId: null,
     selectedClassGroupId: null,
     selectedClassSessionId: null,
     selectedAcademyStudentId: null,
   }),
-  navigateToClass: (id) => set({ selectedClassId: id, activeTab: 'classes', selectedRepeatGroupId: null }),
-  navigateToStudent: (id) => set({ selectedStudentId: id, activeTab: 'students' }),
-  navigateToRepeatGroup: (id) => set({ selectedRepeatGroupId: id, activeTab: 'classes', selectedClassId: null }),
-  goBackFromClass: () => set({ selectedClassId: null }),
-  goBackFromStudent: () => set({ selectedStudentId: null }),
-  goBackFromRepeatGroup: () => set({ selectedRepeatGroupId: null }),
-
   // ─── Navigation (Academy) ─────────────────────────
   navigateToClassGroup: (id) => set({ selectedClassGroupId: id, activeTab: 'classes', selectedClassSessionId: null }),
   navigateToClassSession: (id) => set({ selectedClassSessionId: id }),
@@ -343,646 +305,6 @@ const useAcademyStore = create(
     if (prev) clearTimeout(prev);
     const timer = setTimeout(() => set({ toast: null, _toastTimer: null }), 2500);
     set({ toast: { message: localizeUserMessage(message), type }, _toastTimer: timer });
-  },
-
-  // ─── Students ──────────────────────────────────────
-  addStudent: (student) => {
-    const newStudent = { ...student, id: `s${Date.now()}` };
-    set((s) => ({ students: [...s.students, newStudent] }));
-    get().showToast('학생이 추가되었습니다.');
-    return newStudent;
-  },
-  updateStudent: (id, data) => {
-    set((s) => ({ students: s.students.map((st) => (st.id === id ? { ...st, ...data } : st)) }));
-    get().showToast('학생 정보가 수정되었습니다.');
-  },
-  deleteStudent: (id) => {
-    set((s) => ({ students: s.students.filter((st) => st.id !== id) }));
-    get().showToast('학생이 삭제되었습니다.');
-  },
-
-  // ─── Student Events ────────────────────────────────
-  addStudentEvent: (eventData) => {
-    const newEvent = { ...eventData, id: `ev${Date.now()}` };
-    set((s) => ({ studentEvents: [...s.studentEvents, newEvent] }));
-    get().showToast('일정이 추가되었습니다.');
-    return newEvent;
-  },
-  updateStudentEvent: (id, data) => {
-    set((s) => ({ studentEvents: s.studentEvents.map((e) => (e.id === id ? { ...e, ...data } : e)) }));
-    get().showToast('일정이 수정되었습니다.');
-  },
-  deleteStudentEvent: (id) => {
-    set((s) => ({
-      studentEvents: s.studentEvents.filter((e) => e.id !== id),
-      examResults: s.examResults.filter((r) => r.eventId !== id),
-    }));
-    get().showToast('일정이 삭제되었습니다.');
-  },
-
-  // ─── Exam Results ──────────────────────────────────
-  addExamResult: (resultData) => {
-    const newResult = { ...resultData, id: `er${Date.now()}` };
-    set((s) => ({ examResults: [...s.examResults, newResult] }));
-    get().showToast('성적이 기록되었습니다.');
-    return newResult;
-  },
-  updateExamResult: (id, data) => {
-    set((s) => ({ examResults: s.examResults.map((r) => (r.id === id ? { ...r, ...data } : r)) }));
-    get().showToast('성적이 수정되었습니다.');
-  },
-  deleteExamResult: (id) => {
-    set((s) => ({ examResults: s.examResults.filter((r) => r.id !== id) }));
-    get().showToast('성적 기록이 삭제되었습니다.');
-  },
-
-  // ─── Single class ──────────────────────────────────
-  addClass: (cls) => {
-    const newClass = { ...cls, id: `c${Date.now()}` };
-    set((s) => ({ classes: [...s.classes, newClass] }));
-    get().showToast('수업이 추가되었습니다.');
-    return newClass;
-  },
-  updateClass: (id, data) => {
-    set((s) => ({ classes: s.classes.map((c) => (c.id === id ? { ...c, ...data } : c)) }));
-    get().showToast('수업이 수정되었습니다.');
-  },
-  updateClassInstance: (id, data) => {
-    set((s) => ({ classes: s.classes.map((c) => (c.id === id ? { ...c, ...data } : c)) }));
-  },
-  deleteClass: (id) => {
-    set((s) => ({ classes: s.classes.filter((c) => c.id !== id) }));
-    get().showToast('수업이 삭제되었습니다.');
-  },
-
-  // ─── Recurring class (정기 과외) ───────────────────
-  addRepeatGroup: (groupData) => {
-    const groupId = `rg${Date.now()}`;
-
-    // Normalize billing structure
-    const billingMode = groupData.billingMode || 'same';
-    const defaultBilling = groupData.defaultBilling || {
-      billingType: groupData.billingType || 'monthly',
-      monthlyFee: Number(groupData.monthlyFee) || 0,
-      hourlyRate: Number(groupData.hourlyRate) || 0,
-      paymentDay: Number(groupData.paymentDay) || 10,
-    };
-    const studentBillings = groupData.studentBillings || {};
-
-    const newGroup = {
-      ...groupData,
-      id: groupId,
-      billingMode,
-      defaultBilling,
-      studentBillings,
-      // Keep legacy top-level fields for backward compat
-      billingType: defaultBilling.billingType,
-      monthlyFee: defaultBilling.monthlyFee,
-      hourlyRate: defaultBilling.hourlyRate,
-      paymentDay: defaultBilling.paymentDay,
-    };
-
-    const dates = generateClassDates({
-      daysOfWeek: groupData.daysOfWeek,
-      startDate: groupData.startDate,
-      endDate: groupData.endDate || null,
-      repeatType: groupData.repeatType,
-    });
-
-    const allStudents = get().students;
-    const studentIds = groupData.studentIds || (groupData.studentId ? [groupData.studentId] : []);
-    const firstStudent = allStudents.find((s) => s.id === studentIds[0]);
-    const studentCount = studentIds.length;
-    const namePrefix =
-      studentCount <= 1
-        ? firstStudent?.name || ''
-        : `${firstStudent?.name || ''} 외 ${studentCount - 1}명`;
-    const classLabel = studentCount <= 1 ? '과외' : '그룹과외';
-
-    const ts = Date.now();
-    const newClasses = dates.map((date, i) => ({
-      id: `c${ts}_${i}`,
-      name: `${namePrefix} ${groupData.subject} ${classLabel}`,
-      type: studentCount <= 1 ? '정기 과외' : '그룹 과외',
-      subject: groupData.subject,
-      date,
-      startTime: groupData.startTime,
-      endTime: groupData.endTime,
-      location: groupData.location,
-      teacherId: '',
-      studentIds,
-      repeatGroupId: groupId,
-      repeatType: groupData.repeatType,
-      memo: groupData.memo || '',
-    }));
-
-    const startMonth = groupData.startDate?.slice(0, 7) || getCurrentMonth();
-    const currentMonth = getCurrentMonth();
-
-    const endMonthRaw = groupData.endDate ? groupData.endDate.slice(0, 7) : currentMonth;
-    const paymentEndMonth = endMonthRaw < currentMonth ? endMonthRaw : currentMonth;
-    const monthsToCreate = getMonthsBetween(startMonth, paymentEndMonth);
-
-    const newPayments = [];
-    if (groupHasPayment(newGroup)) {
-      for (const month of monthsToCreate) {
-        const monthHasClasses = newClasses.some((c) => c.date.startsWith(month));
-        if (!monthHasClasses) continue;
-
-        const [yr, mo] = month.split('-');
-
-        for (const studentId of studentIds) {
-          const existing = get().payments.find(
-            (p) => p.studentId === studentId && p.month === month && p.repeatGroupId === groupId
-          );
-          if (existing) continue;
-
-          const student = allStudents.find((s) => s.id === studentId);
-          const studentBilling = resolveStudentBilling(newGroup, studentId);
-          const payDay = String(studentBilling.paymentDay || defaultBilling.paymentDay || 10).padStart(2, '0');
-
-          const paymentInfo = generatePaymentForMonth({
-            group: newGroup,
-            classes: newClasses,
-            month,
-            studentId,
-          });
-
-          if (paymentInfo.amount <= 0 && paymentInfo.calculatedSessionCount === 0) continue;
-
-          let memo = '';
-          if (paymentInfo.isProrated) {
-            memo = `${month.replace('-', '년 ')}월은 ${paymentInfo.calculatedSessionCount}회 기준으로 계산됐어요`;
-          }
-
-          newPayments.push({
-            id: `p${ts}_${month}_${studentId}`,
-            studentId,
-            repeatGroupId: groupId,
-            month,
-            ...paymentInfo,
-            dueDate: `${yr}-${mo}-${payDay}`,
-            status: 'pending',
-            paidDate: null,
-            paidAmount: null,
-            depositorName: student?.depositorName || '',
-            memo,
-          });
-        }
-      }
-    }
-
-    set((s) => ({
-      repeatGroups: [...s.repeatGroups, newGroup],
-      classes: [...s.classes, ...newClasses],
-      payments: [...s.payments, ...newPayments],
-    }));
-
-    get().showToast(`${dates.length}개 수업이 등록되었습니다.`);
-    return { groupId, classCount: dates.length };
-  },
-
-  deleteRepeatGroupFuture: (groupId, fromDate) => {
-    set((s) => ({
-      classes: s.classes.filter(
-        (c) => !(c.repeatGroupId === groupId && c.date >= fromDate)
-      ),
-    }));
-    get().showToast('앞으로의 수업이 삭제되었습니다.');
-  },
-
-  // ─── 수업 그룹 수정 (기본 정보만) ──────────────────────────────────────────
-  updateRepeatGroup: (groupId, data) => {
-    const allStudents = get().students;
-    const studentIds = data.studentIds || [];
-    const firstStudent = allStudents.find((s) => s.id === studentIds[0]);
-    const studentCount = studentIds.length;
-    const namePrefix =
-      studentCount <= 1
-        ? firstStudent?.name || ''
-        : `${firstStudent?.name || ''} 외 ${studentCount - 1}명`;
-    const classLabel = studentCount <= 1 ? '과외' : '그룹과외';
-    const classType = studentCount <= 1 ? '정기 과외' : '그룹 과외';
-    const className = `${namePrefix} ${data.subject} ${classLabel}`;
-
-    // Normalize billing
-    const billingMode = data.billingMode || 'same';
-    const defaultBilling = data.defaultBilling || {
-      billingType: data.billingType || 'monthly',
-      monthlyFee: Number(data.monthlyFee) || 0,
-      hourlyRate: Number(data.hourlyRate) || 0,
-      paymentDay: Number(data.paymentDay) || 10,
-    };
-
-    set((s) => ({
-      repeatGroups: s.repeatGroups.map((g) =>
-        g.id === groupId
-          ? {
-              ...g, ...data,
-              billingMode,
-              defaultBilling,
-              studentBillings: data.studentBillings || g.studentBillings || {},
-              billingType: defaultBilling.billingType,
-              monthlyFee: defaultBilling.monthlyFee,
-              hourlyRate: defaultBilling.hourlyRate,
-              paymentDay: defaultBilling.paymentDay,
-            }
-          : g
-      ),
-      classes: s.classes.map((c) => {
-        if (c.repeatGroupId !== groupId) return c;
-        return {
-          ...c,
-          name: className,
-          subject: data.subject,
-          startTime: data.startTime,
-          endTime: data.endTime,
-          location: data.location,
-          studentIds,
-          type: classType,
-          memo: data.memo || c.memo,
-        };
-      }),
-    }));
-    get().showToast('수업 정보가 수정되었습니다.');
-  },
-
-  // ─── 수업 그룹 수정 + 미래 일정 재생성 + 과외비 재계산 ────────────────────
-  updateRepeatGroupFuture: (groupId, data, fromDate) => {
-    const { classes, attendanceRecords, lessonRecords, students: allStudents, payments } = get();
-
-    const studentIds = data.studentIds || [];
-    const firstStudent = allStudents.find((s) => s.id === studentIds[0]);
-    const studentCount = studentIds.length;
-    const namePrefix =
-      studentCount <= 1
-        ? firstStudent?.name || ''
-        : `${firstStudent?.name || ''} 외 ${studentCount - 1}명`;
-    const classLabel = studentCount <= 1 ? '과외' : '그룹과외';
-    const classType = studentCount <= 1 ? '정기 과외' : '그룹 과외';
-    const className = `${namePrefix} ${data.subject} ${classLabel}`;
-
-    // Normalize billing
-    const billingMode = data.billingMode || 'same';
-    const defaultBilling = data.defaultBilling || {
-      billingType: data.billingType || 'monthly',
-      monthlyFee: Number(data.monthlyFee) || 0,
-      hourlyRate: Number(data.hourlyRate) || 0,
-      paymentDay: Number(data.paymentDay) || 10,
-    };
-    const studentBillings = data.studentBillings || {};
-
-    const updatedGroup = {
-      ...data,
-      id: groupId,
-      billingMode,
-      defaultBilling,
-      studentBillings,
-      billingType: defaultBilling.billingType,
-      monthlyFee: defaultBilling.monthlyFee,
-      hourlyRate: defaultBilling.hourlyRate,
-      paymentDay: defaultBilling.paymentDay,
-    };
-
-    const futureGroupClasses = classes.filter(
-      (c) => c.repeatGroupId === groupId && c.date >= fromDate
-    );
-    const classesWithRecords = new Set(
-      futureGroupClasses
-        .filter(
-          (c) =>
-            attendanceRecords.some((a) => a.classId === c.id) ||
-            lessonRecords.some((lr) => lr.classId === c.id)
-        )
-        .map((c) => c.id)
-    );
-
-    const remainingClasses = classes
-      .filter(
-        (c) =>
-          !(c.repeatGroupId === groupId && c.date >= fromDate && !classesWithRecords.has(c.id))
-      )
-      .map((c) => {
-        if (c.repeatGroupId !== groupId) return c;
-        return { ...c, name: className, subject: data.subject, startTime: data.startTime, endTime: data.endTime, location: data.location, studentIds, type: classType };
-      });
-
-    const newDates = generateClassDates({
-      daysOfWeek: data.daysOfWeek,
-      startDate: fromDate,
-      endDate: data.endDate || null,
-      repeatType: data.repeatType,
-    });
-
-    const existingDates = new Set(
-      remainingClasses.filter((c) => c.repeatGroupId === groupId).map((c) => c.date)
-    );
-    const datesToCreate = newDates.filter((d) => !existingDates.has(d));
-
-    const ts = Date.now();
-    const newClasses = datesToCreate.map((date, i) => ({
-      id: `c${ts}_${i}`,
-      name: className,
-      type: classType,
-      subject: data.subject,
-      date,
-      startTime: data.startTime,
-      endTime: data.endTime,
-      location: data.location,
-      teacherId: '',
-      studentIds,
-      repeatGroupId: groupId,
-      repeatType: data.repeatType,
-      memo: data.memo || '',
-    }));
-
-    const allNewGroupClasses = [...remainingClasses, ...newClasses].filter(
-      (c) => c.repeatGroupId === groupId
-    );
-
-    // ── Payment recalculation ──────────────────────────────────────
-    const fromMonth = fromDate.slice(0, 7);
-
-    const keptPayments = payments.filter(
-      (p) =>
-        !(p.repeatGroupId === groupId &&
-          p.month >= fromMonth &&
-          p.status !== 'paid' &&
-          p.status !== 'exempt')
-    );
-
-    const newPayments = [];
-    if (groupHasPayment(updatedGroup)) {
-      const affectedMonths = [
-        ...new Set(
-          allNewGroupClasses
-            .filter((c) => c.date >= fromDate)
-            .map((c) => c.date.slice(0, 7))
-        ),
-      ].sort();
-
-      for (const month of affectedMonths) {
-        for (const studentId of studentIds) {
-          const alreadyKept = keptPayments.find(
-            (p) => p.studentId === studentId && p.month === month && p.repeatGroupId === groupId
-          );
-          if (alreadyKept) continue;
-
-          const student = allStudents.find((s) => s.id === studentId);
-          const [yr, mo] = month.split('-');
-          const studentBilling = resolveStudentBilling(updatedGroup, studentId);
-          const payDay = String(studentBilling.paymentDay || defaultBilling.paymentDay || 10).padStart(2, '0');
-
-          const paymentInfo = generatePaymentForMonth({
-            group: updatedGroup,
-            classes: allNewGroupClasses,
-            month,
-            studentId,
-          });
-
-          if (paymentInfo.amount <= 0 && paymentInfo.calculatedSessionCount === 0) continue;
-
-          let memo = '';
-          if (paymentInfo.isProrated) {
-            memo = `${month.replace('-', '년 ')}월은 ${paymentInfo.calculatedSessionCount}회 기준으로 계산됐어요`;
-          }
-
-          newPayments.push({
-            id: `p${ts}_${month}_${studentId}`,
-            studentId,
-            repeatGroupId: groupId,
-            month,
-            ...paymentInfo,
-            dueDate: `${yr}-${mo}-${payDay}`,
-            status: 'pending',
-            paidDate: null,
-            paidAmount: null,
-            depositorName: student?.depositorName || '',
-            memo,
-          });
-        }
-      }
-    }
-
-    set((s) => ({
-      repeatGroups: s.repeatGroups.map((g) => (g.id === groupId ? { ...g, ...updatedGroup } : g)),
-      classes: [...remainingClasses, ...newClasses],
-      payments: [...keptPayments, ...newPayments],
-    }));
-    get().showToast('앞으로의 수업 일정과 과외비가 새로 반영됐어요.');
-  },
-
-  // ─── 수업 그룹 전체 삭제 ────────────────────────────────────────────────────
-  deleteRepeatGroup: (groupId) => {
-    const classIds = new Set(
-      get().classes.filter((c) => c.repeatGroupId === groupId).map((c) => c.id)
-    );
-    set((s) => ({
-      repeatGroups: s.repeatGroups.filter((g) => g.id !== groupId),
-      classes: s.classes.filter((c) => c.repeatGroupId !== groupId),
-      attendanceRecords: s.attendanceRecords.filter((a) => !classIds.has(a.classId)),
-      lessonRecords: s.lessonRecords.filter((lr) => !classIds.has(lr.classId)),
-    }));
-    get().showToast('수업 그룹이 삭제되었습니다.');
-  },
-
-  // ─── Attendance ────────────────────────────────────
-  updateAttendance: (classId, studentId, date, status) => {
-    const existing = get().attendanceRecords.find(
-      (a) => a.classId === classId && a.studentId === studentId && a.date === date
-    );
-    if (existing) {
-      set((s) => ({
-        attendanceRecords: s.attendanceRecords.map((a) =>
-          a.id === existing.id ? { ...a, status } : a
-        ),
-      }));
-    } else {
-      set((s) => ({
-        attendanceRecords: [
-          ...s.attendanceRecords,
-          { id: `a${Date.now()}`, classId, studentId, date, status },
-        ],
-      }));
-    }
-    get().showToast('출결이 저장되었습니다.');
-  },
-
-  // ─── Lesson Records ────────────────────────────────
-  saveLessonRecord: (record) => {
-    const existing = get().lessonRecords.find(
-      (lr) => lr.classId === record.classId && lr.studentId === record.studentId && lr.date === record.date
-    );
-    if (existing) {
-      set((s) => ({
-        lessonRecords: s.lessonRecords.map((lr) =>
-          lr.id === existing.id ? { ...lr, ...record } : lr
-        ),
-      }));
-    } else {
-      set((s) => ({
-        lessonRecords: [...s.lessonRecords, { ...record, id: `lr${Date.now()}` }],
-      }));
-    }
-    get().showToast('수업 기록이 저장되었습니다.');
-  },
-  updateLessonRecord: (id, data) => {
-    set((s) => ({
-      lessonRecords: s.lessonRecords.map((lr) => (lr.id === id ? { ...lr, ...data } : lr)),
-    }));
-  },
-
-  // ─── Payments ──────────────────────────────────────
-  addPayment: (payment) => {
-    const newPayment = { ...payment, id: `p${Date.now()}` };
-    set((s) => ({ payments: [...s.payments, newPayment] }));
-    get().showToast('수납 항목이 추가되었습니다.');
-  },
-  updatePayment: (id, data) => {
-    set((s) => ({
-      payments: s.payments.map((p) => (p.id === id ? { ...p, ...data } : p)),
-    }));
-    get().showToast('수납 정보가 업데이트되었습니다.');
-  },
-
-  // ─── Payment 보정 (누락 월 자동 생성) ─────────────────
-  ensurePaymentsForRecurringLessons: () => {
-    const { repeatGroups, classes, payments, students: allStudents } = get();
-    const currentMonth = getCurrentMonth();
-    const ts = Date.now();
-    const newPayments = [];
-
-    for (const group of repeatGroups) {
-      if (!groupHasPayment(group)) continue;
-
-      const startMonth = group.startDate?.slice(0, 7);
-      if (!startMonth) continue;
-
-      const endMonthRaw = group.endDate ? group.endDate.slice(0, 7) : currentMonth;
-      const paymentEndMonth = endMonthRaw < currentMonth ? endMonthRaw : currentMonth;
-
-      const monthsNeeded = getMonthsBetween(startMonth, paymentEndMonth);
-      const studentIds = group.studentIds || (group.studentId ? [group.studentId] : []);
-      const groupClasses = classes.filter((c) => c.repeatGroupId === group.id);
-
-      for (const month of monthsNeeded) {
-        const monthHasClasses = groupClasses.some((c) => c.date.startsWith(month));
-        if (!monthHasClasses) continue;
-
-        const [yr, mo] = month.split('-');
-
-        for (const studentId of studentIds) {
-          const alreadyExists = payments.some(
-            (p) => p.repeatGroupId === group.id && p.studentId === studentId && p.month === month
-          );
-          if (alreadyExists) continue;
-
-          const student = allStudents.find((s) => s.id === studentId);
-          const studentBilling = resolveStudentBilling(group, studentId);
-          const payDay = String(studentBilling.paymentDay || group.paymentDay || 10).padStart(2, '0');
-
-          const paymentInfo = generatePaymentForMonth({ group, classes: groupClasses, month, studentId });
-
-          if (paymentInfo.amount <= 0 && paymentInfo.calculatedSessionCount === 0) continue;
-
-          let memo = '';
-          if (paymentInfo.isProrated) {
-            memo = `${month.replace('-', '년 ')}월은 ${paymentInfo.calculatedSessionCount}회 기준으로 계산됐어요`;
-          }
-
-          newPayments.push({
-            id: `p${ts}_ensure_${group.id}_${studentId}_${month}`,
-            studentId,
-            repeatGroupId: group.id,
-            month,
-            ...paymentInfo,
-            dueDate: `${yr}-${mo}-${payDay}`,
-            status: 'pending',
-            paidDate: null,
-            paidAmount: null,
-            depositorName: student?.depositorName || '',
-            memo,
-          });
-        }
-      }
-    }
-
-    if (newPayments.length > 0) {
-      set((s) => ({ payments: [...s.payments, ...newPayments] }));
-    }
-  },
-
-  // ─── Data Reset ────────────────────────────────────
-  resetAllData: () => {
-    set({
-      students: [],
-      teachers: [],
-      classes: [],
-      attendanceRecords: [],
-      lessonRecords: [],
-      payments: [],
-      consultations: [],
-      payrolls: [],
-      repeatGroups: [],
-      schoolNames: [],
-      studentEvents: [],
-      examResults: [],
-      tutorProfile: defaultTutorProfile,
-      geminiApiKey: '',
-      // Academy workspace also reset
-      academyProfile: {
-        name: '우리 학원',
-        ownerName: '',
-        address: '',
-        phone: '',
-        salaryPaymentDay: 10,
-        tuitionDueDay: 1,
-        academyType: 'core_subjects',
-        academySubjects: ['korean', 'english', 'math'],
-        clinicRequired: true,
-        clinicDefaultItems: {},
-        tuitionPolicy: 'school_level',
-        tuitionRates: {},
-      },
-      academyStudents: [],
-      classGroups: [],
-      classSessions: [],
-      clinicTasks: [],
-      clinicRecords: [],
-      academyTeachers: [],
-      academyAssistants: [],
-      academyManagers: [],
-      academyPayments: [],
-      academyLessonRecords: [],
-      academyAttendanceRecords: [],
-      academyStudentEvents: [],
-      academyExamResults: [],
-      academyConsultations: [],
-      academyPayrolls: [],
-    });
-    get().showToast('모든 데이터가 초기화되었어요.');
-  },
-
-  resetDataExceptTeachers: () => {
-    const { teachers, tutorProfile, geminiApiKey, role } = get();
-    set({
-      students: [],
-      classes: [],
-      attendanceRecords: [],
-      lessonRecords: [],
-      payments: [],
-      consultations: [],
-      payrolls: [],
-      repeatGroups: [],
-      schoolNames: [],
-      studentEvents: [],
-      examResults: [],
-      teachers,
-      tutorProfile,
-      geminiApiKey,
-      role,
-    });
-    get().showToast('강사 정보를 제외한 데이터가 초기화되었어요.');
   },
 
   // ─── Academy Profile ──────────────────────────────
@@ -2340,7 +1662,6 @@ const useAcademyStore = create(
   //   - lesson_records: sessionId 단위 (server 1 row → local N row 로 펼쳐지므로)
   //   - attendance_records: (sessionId, studentId) 자연키
   //
-  // 과외(private) 모드 데이터는 건드리지 않는다. private store 분리 구조라 자동 안전.
   hydrateAcademyFromServerSnapshot: (snapshot, options = {}) => {
     if (!snapshot || typeof snapshot !== 'object') return null;
     const {
@@ -2824,23 +2145,11 @@ const useAcademyStore = create(
     get().showToast('샘플 데이터가 생성되었습니다.');
   },
 
-  // ─── Consultations ─────────────────────────────────
-  addConsultation: (consultation) => {
-    const newCon = { ...consultation, id: `con${Date.now()}` };
-    set((s) => ({ consultations: [...s.consultations, newCon] }));
-    get().showToast('상담 기록이 추가되었습니다.');
-  },
-  updateConsultation: (id, data) => {
-    set((s) => ({
-      consultations: s.consultations.map((c) => (c.id === id ? { ...c, ...data } : c)),
-    }));
-    get().showToast('상담 기록이 수정되었습니다.');
-  },
 }),
     {
       name: 'academy-store',
       storage: createJSONStorage(() => createDeferredLocalStorage()),
-      version: 2,
+      version: 3,
       // 이전 버전에서 남아 있던 예시 학교 자동완성 캐시는 한 번 비운다.
       // 학생 레코드의 실제 school/schoolName 값은 건드리지 않는다.
       migrate: (persistedState, persistedVersion) => {
@@ -2870,60 +2179,10 @@ const useAcademyStore = create(
             academyDataOwnerRole: null,
           };
         }
-        return persistedState;
+        return selectPersistedAcademyState(persistedState);
       },
-      partialize: (s) => ({
-        // Auth
-        currentMode: s.currentMode,
-        // Private workspace
-        tutorProfile: s.tutorProfile,
-        geminiApiKey: s.geminiApiKey,
-        schoolNames: s.schoolNames,
-        students: s.students,
-        teachers: s.teachers,
-        classes: s.classes,
-        attendanceRecords: s.attendanceRecords,
-        lessonRecords: s.lessonRecords,
-        payments: s.payments,
-        consultations: s.consultations,
-        payrolls: s.payrolls,
-        repeatGroups: s.repeatGroups,
-        studentEvents: s.studentEvents,
-        examResults: s.examResults,
-        // Academy workspace
-        academyProfile: s.academyProfile,
-        academyStudents: s.academyStudents,
-        classGroups: s.classGroups,
-        classSessions: s.classSessions,
-        clinicTasks: s.clinicTasks,
-        clinicRecords: s.clinicRecords || [],
-        academyTeachers: s.academyTeachers,
-        academyAssistants: s.academyAssistants,
-        academyManagers: s.academyManagers,
-        academyPayments: s.academyPayments,
-        academyLessonRecords: s.academyLessonRecords,
-        academyAttendanceRecords: s.academyAttendanceRecords,
-        academyStudentEvents: s.academyStudentEvents,
-        academyExamResults: s.academyExamResults,
-        academyConsultations: s.academyConsultations,
-        academyPayrolls: s.academyPayrolls,
-        academyStaffShifts: s.academyStaffShifts,
-        // Phase 29 — 학원 데이터 소유자 (cross-account leak 방지용 marker)
-        academyDataOwnerUserId: s.academyDataOwnerUserId,
-        academyDataOwnerAcademyId: s.academyDataOwnerAcademyId,
-        academyDataOwnerRole: s.academyDataOwnerRole,
-      }),
-      // Migrate persisted profile to add prompt fields if missing
-      onRehydrateStorage: () => (state) => {
-        if (state?.tutorProfile) {
-          if (!state.tutorProfile.parentNoticePrompt) {
-            state.tutorProfile.parentNoticePrompt = DEFAULT_PARENT_NOTICE_PROMPT;
-          }
-          if (!state.tutorProfile.studentHomeworkPrompt) {
-            state.tutorProfile.studentHomeworkPrompt = DEFAULT_STUDENT_HOMEWORK_PROMPT;
-          }
-        }
-      },
+      partialize: selectPersistedAcademyState,
+      merge: (persisted, current) => ({ ...current, ...selectPersistedAcademyState(persisted) }),
     }
   )
 );

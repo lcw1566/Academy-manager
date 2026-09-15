@@ -93,22 +93,19 @@ export async function updateMyProfileBasic({ displayName, phone } = {}) {
 }
 
 // 회원가입 직후 / 프로필 설정에서 account_type 갱신용.
-// account_type: 'tutor' | 'owner' | 'staff'
+// account_type: 'owner' | 'staff'
 // default_role 도 매핑해 함께 저장한다 (앱 호환).
-//   tutor -> default_role='tutor'
 //   owner -> default_role='owner'
 //   staff -> default_role='teacher' (레거시 호환용 기본값일 뿐, 실제 학원 접근과
 //            역할은 academy_members의 active 멤버십 및 역할 배정으로 결정한다)
 export async function updateMyProfileAccountType({ accountType, defaultRole, displayName } = {}) {
   if (!accountType) throw new Error('accountType이 필요해요.');
-  if (!['tutor', 'owner', 'staff'].includes(accountType)) {
-    throw new Error('accountType은 tutor/owner/staff 중 하나여야 해요.');
+  if (!['owner', 'staff'].includes(accountType)) {
+    throw new Error('계정 유형은 owner/staff 중 하나여야 해요.');
   }
   const resolvedDefaultRole =
     defaultRole !== undefined
       ? defaultRole
-      : accountType === 'tutor'
-      ? 'tutor'
       : accountType === 'owner'
       ? 'owner'
       : 'teacher';
@@ -1146,4 +1143,17 @@ export async function publicStudentCheckin({ academyId, qrToken, pin, expiresAt 
   });
   if (error) throw error;
   return Array.isArray(data) ? data[0] : data;
+}
+
+export async function issueAcademyCheckinQr(academyId) {
+  assertSupabaseConfigured();
+  if (!academyId) throw new Error('학원을 선택해주세요.');
+  const { data, error } = await supabase.rpc('issue_academy_checkin_qr', {
+    p_academy_id: academyId,
+  });
+  if (error) throw error;
+  if (!data?.token || data.academyId !== academyId || !Number.isFinite(data.expiresAt)) {
+    throw new Error('QR 발급 결과를 확인하지 못했어요.');
+  }
+  return data;
 }

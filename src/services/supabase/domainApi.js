@@ -5,8 +5,7 @@
 //
 // 설계 메모:
 //   - 모든 함수는 supabase 미설정 / 미로그인 시 친절한 에러를 throw.
-//   - academy 모드와 private 모드는 별도 함수로 노출하여 호출처에서 의도를
-//     명시적으로 드러내도록 한다.
+//   - 학생 데이터는 학원 보안 RPC로 조회한다.
 //   - update / delete 는 RLS 가 row 단위로 차단하므로 호출처에서 academyId
 //     를 다시 지정할 필요는 없다 (단, 본인이 접근 가능한 row 만 영향).
 //   - update 시 mode / academy_id / user_id 같은 ownership 컬럼은 절대
@@ -41,14 +40,6 @@ export async function listAcademyStudents(academyId) {
   const { data, error } = await supabase.rpc('list_academy_students_secure', {
     p_academy_id: academyId,
   });
-  if (error) throw error;
-  return data ?? [];
-}
-
-// 개인(과외) 모드 학생 목록 — 본인 user_id 기준
-export async function listMyPrivateStudents() {
-  await getCurrentUserOrThrow();
-  const { data, error } = await supabase.rpc('list_my_private_students_secure');
   if (error) throw error;
   return data ?? [];
 }
@@ -91,24 +82,6 @@ export async function createAcademyStudent({ academyId, ...payload } = {}) {
     if (existing?.mode !== 'academy' || existing?.academy_id !== academyId) throw error;
     return existing;
   }
-  return getStudentById(data.id);
-}
-
-// 개인(과외) 모드 학생 생성. 본인 user_id 로 자동 귀속.
-export async function createPrivateStudent(payload = {}) {
-  const user = await getCurrentUserOrThrow();
-  const row = sanitizeStudentPayload({
-    ...payload,
-    mode: 'private',
-    academy_id: null,
-    user_id: user.id,
-  });
-  const { data, error } = await supabase
-    .from('students')
-    .insert(row)
-    .select('id')
-    .single();
-  if (error) throw error;
   return getStudentById(data.id);
 }
 

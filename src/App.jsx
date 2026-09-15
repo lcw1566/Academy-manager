@@ -8,8 +8,7 @@ import useChatStore from './store/useChatStore';
 import RoleSelectPage from './features/auth/RoleSelectPage';
 import AuthPage from './features/auth/AuthPage';
 import LandingPage from './features/landing/LandingPage';
-import WorkspaceSelectionPage, { wasWorkspacePicked, clearWorkspacePicked } from './features/auth/WorkspaceSelectionPage';
-import AppLayout from './components/AppLayout';
+import WorkspaceSelectionPage, { clearWorkspacePicked } from './features/auth/WorkspaceSelectionPage';
 import AcademyAppLayout from './features/academy/AcademyAppLayout';
 import PublicCheckinPage from './features/academy/attendance/PublicCheckinPage';
 import QrDisplayPage from './features/academy/attendance/QrDisplayPage';
@@ -62,24 +61,6 @@ function closeQrDisplayPage() {
 // 브라우저에서 계정을 바꾸거나 역할이 낮아졌을 때 이전 완료 표시를 재사용한다.
 function autoHydratedKey(academyId, userId, role) {
   return `auto-hydrated-${userId}-${academyId}-${role}`;
-}
-
-function wasAutoHydratedThisSession(academyId, userId, role) {
-  if (!academyId || !userId || !role || typeof sessionStorage === 'undefined') return false;
-  try {
-    return sessionStorage.getItem(autoHydratedKey(academyId, userId, role)) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function markAutoHydratedThisSession(academyId, userId, role) {
-  if (!academyId || !userId || !role || typeof sessionStorage === 'undefined') return;
-  try {
-    sessionStorage.setItem(autoHydratedKey(academyId, userId, role), '1');
-  } catch {
-    /* ignore */
-  }
 }
 
 export default function App() {
@@ -347,7 +328,6 @@ export default function App() {
       // Phase 29: 인증된 사용자가 academy-store 의 마지막 소유자와 다르면
       // 학원 로컬 데이터를 리셋. 같은 브라우저에서 다른 계정이 로그인한 경우
       // 이전 사용자의 강사/학생 등이 leak 되는 것을 막는다.
-      // (private/tutor 데이터는 건드리지 않는다.)
       if (authUserId) ensureAcademyDataOwner(authUserId);
       initializeWorkspace();
       void loadDeveloperAccess();
@@ -430,8 +410,7 @@ export default function App() {
   ]);
 
   // ─── 앱 내 채팅 로드 + 실시간 ──────────────────────────────
-  // 학원 멤버십이 있는 사용자(owner/teacher/assistant)만. 과외(tutor) 단독
-  // 사용자는 currentAcademyId 멤버십이 없어 자연히 제외된다.
+  // 현재 학원의 활성 멤버만 채팅을 불러온다.
   const hasAcademyMembership = useMemo(
     () => !!currentAcademyId && memberships.some(
       (m) => m.academy_id === currentAcademyId && m.status === 'active',
@@ -480,9 +459,8 @@ export default function App() {
   //
   // 우선순위:
   //   1) currentAcademyId 의 membership → membership.role
-  //   2) account_type === 'tutor' & 멤버십 없음 → 'tutor'
-  //   3) account_type === 'owner' & 멤버십 없음 → 'owner' (학원 생성 안내)
-  //   4) account_type === 'staff' & 멤버십 없음 → role 유지 (워크스페이스 선택 화면이 처리)
+  //   2) account_type === 'owner' & 멤버십 없음 → 'owner' (학원 생성 안내)
+  //   3) account_type === 'staff' & 멤버십 없음 → role 유지 (워크스페이스 선택 화면이 처리)
   //
   // 사용자가 명시적으로 모드를 바꿔도 다음 effect 트리거 시 다시 권장값으로
   // 되돌리지 않도록, "마지막에 우리가 권장해서 설정한 role" 을 기억하고
@@ -499,8 +477,6 @@ export default function App() {
     let nextRole = null;
     if (currentMembership) {
       nextRole = membershipRoleToAppRole(currentMembership.role);
-    } else if (profile?.account_type === 'tutor') {
-      nextRole = 'tutor';
     } else if (profile?.account_type === 'owner') {
       nextRole = 'owner';
     }
@@ -526,7 +502,8 @@ export default function App() {
   //   - 핵심 server count 3개 (학생/반/회차) 로드 완료
   //   - 같은 세션에서 자동 hydrate 한 적 없음
   //
-  // 사용자·학원·역할 단위 sessionStorage 키로 중복 실행을 차단한다.
+  // 현재 페이지의 사용자·학원·역할 범위로 중복 실행을 차단한다.
+  // 학생 목록은 영구 캐시하지 않으므로 새로고침마다 보안 RPC로 다시 받는다.
   // 서버 snapshot 과 매칭되는 항목은 최신 값으로 교체하고, 아직 서버 저장에 실패한
   // local-only 항목은 보존한다. 조회 자체가 실패하면 세션 성공 표시도 남기지 않는다.
   const hydratingRef = useRef(null);
@@ -546,7 +523,7 @@ export default function App() {
     if (!membershipRole || role !== membershipRole) return;
     const scopeKey = autoHydratedKey(currentAcademyId, authUserId, role);
     if (hydratingRef.current === scopeKey) return;
-    if (wasAutoHydratedThisSession(currentAcademyId, authUserId, role)) return;
+    if (hydratedScopeKey === scopeKey) return;
 
     // 핵심 카운터가 백그라운드 초기 로딩을 한 번이라도 마쳤는지
     const hasInitialServerLoad = !!(
@@ -588,7 +565,6 @@ export default function App() {
         if (total > 0) {
           showToast(`접속 완료!`);
         }
-        markAutoHydratedThisSession(currentAcademyId, authUserId, role);
         setHydratedScopeKey(scopeKey);
       } catch (err) {
         console.error('[auto-hydrate] fetchAcademySnapshot failed', err);
@@ -604,7 +580,7 @@ export default function App() {
     authUserId, currentAcademyId, memberships, role,
     serverStudentsLoadedAt, serverClassGroupsLoadedAt, serverClassSessionsLoadedAt,
     isServerStudentsLoading, isServerClassGroupsLoading, isServerClassSessionsLoading,
-    hydrateAcademyFromServerSnapshot, showToast,
+    hydrateAcademyFromServerSnapshot, showToast, hydratedScopeKey,
   ]);
 
   useEffect(() => {
@@ -614,10 +590,7 @@ export default function App() {
     if (role !== 'owner') return;
     if (!currentAcademyId) return;
     const scopeKey = autoHydratedKey(currentAcademyId, authUserId, role);
-    if (
-      hydratedScopeKey !== scopeKey
-      && !wasAutoHydratedThisSession(currentAcademyId, authUserId, role)
-    ) return;
+    if (hydratedScopeKey !== scopeKey) return;
     if (hydratingRef.current === scopeKey) return;
 
     const runKey = `${currentAcademyId}:${getTodayYMD()}`;
@@ -718,26 +691,15 @@ export default function App() {
 
     const activeMemberships = memberships.filter((membership) => membership.status === 'active');
 
-    // 모든 워크스페이스형 계정은 이번 세션에서 대상을 선택하지 않았다면 선택 화면을
-    // 거친다. 직원은 활성 학원이 0개가 되는 즉시 선택 화면으로 돌아가 초대와
-    // 개발자 워크스페이스를 함께 확인한다. 과외 계정도 개인 워크스페이스 카드를
-    // 통해 진입하므로 향후 학원+과외 통합 시 같은 선택 구조를 재사용할 수 있다.
-    // store 의 reactive 한 workspacePicked 를 subscribe 해서 mark 직후 즉시
-    // re-render 가 일어나도록 한다.
-    const hasWorkspaceAccount = (
-      ACADEMY_ROLES.includes(role)
-      || role === 'tutor'
-      || ['owner', 'staff', 'tutor'].includes(profile?.account_type)
-      || developerAccess?.has_access
-    );
+    // Every authenticated account selects an academy (or developer workspace).
+    // Legacy tutor profiles and stale browser selections cannot enter a private UI.
     const mustChooseWorkspace = (
       !workspacePicked
-      || (profile?.account_type === 'staff' && activeMemberships.length === 0)
+      || !activeMemberships.some((member) => member.academy_id === currentAcademyId)
     );
     if (
       isAuthenticated &&
       isWorkspaceReady &&
-      hasWorkspaceAccount &&
       mustChooseWorkspace
     ) {
       return <WorkspaceSelectionPage />;
@@ -747,7 +709,7 @@ export default function App() {
     // 인증 전에는 위에서 AuthPage 로 분기되므로 이 코드에 도달하지 않는다.
     if (!role) return <RoleSelectPage />;
     if (ACADEMY_ROLES.includes(role)) return <AcademyAppLayout />;
-    return <AppLayout />;
+    return <WorkspaceSelectionPage />;
   };
 
   return (

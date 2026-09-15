@@ -1,89 +1,49 @@
 # 씨닛 (Seenit)
 
-React + Vite + Tailwind 기반 과외 선생님용 MVP 관리 앱.
+학원 운영을 위한 React + Vite + Tailwind 애플리케이션. 인증과 학원 데이터는
+Supabase에서 관리하며, 서버 RLS와 보안 RPC가 사용자별 권한을 검증한다.
 
-## 시작하기
+## 개발 시작
+
+Node.js 24와 Docker가 필요하다. `.env.example`을 참고해 Git에서 제외되는
+`.env.local`에 개발 대상의 공개 Supabase URL/key를 설정한다.
+운영 프로젝트를 자동 테스트 대상으로 사용하지 않는다.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-## AI 알림장 설정 (Gemini API)
-
-AI 알림장 기능을 사용하려면 Gemini API 키가 필요합니다.
-
-### 1. API 키 발급
-
-1. [Google AI Studio](https://aistudio.google.com) 접속
-2. Google 계정으로 로그인
-3. "Get API key" 클릭 후 키 복사
-
-### 2. 환경변수 설정 (선택)
-
-프로젝트 루트에 `.env.local` 파일을 생성하세요.
-
-```
-VITE_GEMINI_API_KEY=여기에_API_키_입력
-VITE_GEMINI_MODEL=gemini-2.5-flash
-```
-
-> `.env.local`은 `.gitignore`에 포함되어 있어 GitHub에 업로드되지 않습니다.
-
-환경변수를 설정하지 않아도 앱 내 **더보기 → AI 알림장 설정**에서 API 키를 직접 입력할 수 있습니다 (기기 localStorage에만 저장).
-
-### 3. Vercel 배포 시 환경변수 설정
-
-Vercel에 배포하는 경우 환경변수를 대시보드에서 설정하세요.
-
-1. Vercel 대시보드 → 프로젝트 → **Settings → Environment Variables**
-2. `VITE_GEMINI_API_KEY` 추가
-3. `VITE_GEMINI_MODEL` 추가 (선택, 기본값: `gemini-2.5-flash`)
-4. **Redeploy** 실행
-
-> **주의:** `VITE_` 접두사가 붙은 환경변수는 빌드 시 번들에 포함됩니다.  
-> 브라우저에서 직접 Gemini API를 호출하므로 API 키가 클라이언트 번들에 노출됩니다.  
-> Google AI Studio에서 키에 **HTTP 리퍼러 제한**을 설정하면 무단 사용을 방지할 수 있습니다.
-
-### 4. 사용 모델 및 fallback 순서
-
-기본 모델 시도 순서:
-
-1. `gemini-2.5-flash` (기본)
-2. `gemini-2.5-flash-lite`
-3. `gemini-2.0-flash`
-
-`VITE_GEMINI_MODEL`이 설정된 경우 해당 모델을 가장 먼저 시도합니다.  
-404 오류(모델 없음)일 때만 다음 모델로 넘어갑니다.
-
-### 모델 오류 발생 시
-
-오류 예: `model is not found for API version v1beta`
-
-현재 사용 가능한 모델을 확인하려면:
+## 검증
 
 ```bash
-curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_API_KEY"
+npm run supabase:start
+npx supabase migration up --local
+npm run test:db
+npm run test:e2e
+SENTRY_UPLOAD_SOURCEMAPS=0 npm run build
 ```
 
-또는 [Google AI Studio 문서](https://ai.google.dev/gemini-api/docs/models) 참고.
+E2E 실행기가 로컬 전용 환경변수와 합성 테스트 계정을 준비한다.
+Chromium 설치 등은 [E2E 가이드](docs/e2e-testing.md)를 따른다.
+위 빌드 명령은 로컬 검증에서 외부 Sentry 업로드를 생략한다.
 
-## 개인정보 주의사항
+## 환경과 데이터
 
-AI 알림장 생성 시 학생 이름, 수업 내용, 평가 항목 등 일부 정보가 Google Gemini API로 전송됩니다.
+- 로컬/CI: Docker Supabase와 자동 회귀 테스트.
+- 스테이징: 별도 Supabase와 Vercel 프로젝트에서 합성 계정으로 배포 검증.
+- 운영: 실제 고객 데이터와 서비스. 검증한 staging 변경을 PR로 master에 병합한다.
 
-**절대 전송하지 않는 정보:**
-- 학부모/학생 전화번호
-- 주소
-- 계좌번호 및 결제 정보
+개인 과외 모드와 개인 과외용 AI 알림장은 제거했다. 학생 목록·연락처·보호자 정보·
+체크인 PIN은 Zustand 영구 캐시에 저장하지 않고, 새로고침마다 서버에서 권한을 확인해
+불러온다. 그 외 일부 학원 화면 데이터와 로그인 세션은 브라우저에 저장된다.
 
-실사용 시 학생 이름 대신 이니셜을 사용하거나, 민감한 내용은 수업 기록에 적지 않도록 주의하세요.
+## 운영 문서
 
-## 무료 API 한도
+- [테스트 전략](docs/testing-strategy.md)
+- [스테이징 구성과 배포 검증](docs/staging-environment.md)
+- [개발자 워크스페이스](docs/developer-workspace.md)
+- [개인 과외 제거·개인정보 캐시·공개 QR 변경과 배포 절차](docs/privacy-checkin-hardening.md)
 
-- 하루 1,500건
-- 분당 15건
-
-## 데이터 저장
-
-모든 데이터는 브라우저 `localStorage`에 저장됩니다. 외부 서버로 전송되지 않습니다.
+스키마 변경은 `supabase/migrations/`의 timestamp migration으로 관리한다.
+`supabase/sql/`은 과거 SQL Editor 기록이며 운영에 다시 일괄 적용하지 않는다.

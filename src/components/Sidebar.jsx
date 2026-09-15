@@ -6,7 +6,7 @@
 //   <Sidebar tabs={TAB_CONFIG[role]} />
 //
 // tabs 항목은 { id, label, Icon } 또는 { id, label, icon } 형식 둘 다 지원
-// (학원 모드 = Icon, 과외 모드 BottomNav = icon).
+// 탭 설정에 정의된 아이콘을 사용한다.
 import { useState } from 'react';
 import { Building2, MessageCircleQuestion } from 'lucide-react';
 import useAcademyStore from '../store/useAcademyStore';
@@ -17,7 +17,6 @@ import UpdateAnnouncementModal from './UpdateAnnouncementModal';
 import SeenitLogo from './SeenitLogo';
 
 const ROLE_LABEL = {
-  tutor: '과외 선생님',
   owner: '원장',
   teacher: '선생님',
   assistant: '선생님',

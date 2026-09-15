@@ -814,7 +814,8 @@ const useWorkspaceStore = create(
         if (!isSupabaseConfigured) return null;
         try {
           const authUser = useAuthStore.getState().user;
-          const pendingAccountType = readPendingAccountType();
+          const pendingType = readPendingAccountType();
+          const pendingAccountType = ['owner', 'staff'].includes(pendingType) ? pendingType : null;
           const pendingProfile = readPendingProfileInfo();
           const pendingDisplayName = (pendingProfile?.displayName || '').trim() || null;
           const pendingPhone = (pendingProfile?.phone || '').trim() || null;
@@ -830,9 +831,7 @@ const useWorkspaceStore = create(
               phone: pendingPhone ?? undefined,
               accountType: pendingAccountType ?? null,
               defaultRole:
-                pendingAccountType === 'tutor'
-                  ? 'tutor'
-                  : pendingAccountType === 'owner'
+                pendingAccountType === 'owner'
                   ? 'owner'
                   : pendingAccountType === 'staff'
                   ? 'teacher'

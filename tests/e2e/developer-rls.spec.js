@@ -72,10 +72,22 @@ test.describe('개발자 테스트 랩 RLS', () => {
       expect(teacherStudents.error).toBeNull();
       expect(teacherStudents.data).toHaveLength(5);
       for (const student of teacherStudents.data) {
-        expect(student.phone).toBeNull();
-        expect(student.parent_phone).toBeNull();
-        expect(student.checkin_pin).toBeNull();
+        for (const field of ['phone', 'parent_phone', 'parent_name', 'parent_title', 'parent_title_custom', 'checkin_pin']) {
+          expect(student[field]).toBeNull();
+        }
       }
+      const studentId = teacherStudents.data[0].id;
+      const detail = await client.rpc('get_student_secure', { p_student_id: studentId });
+      expect(detail.error).toBeNull();
+      for (const field of ['phone', 'parent_phone', 'parent_name', 'parent_title', 'parent_title_custom', 'checkin_pin']) {
+        expect(detail.data[field]).toBeNull();
+      }
+      const write = await client.from('students').update({ phone: '01000009999' }).eq('id', studentId);
+      expect(write.error).not.toBeNull();
+      await setDeveloperPersona(client, 'owner');
+      const unchanged = await client.rpc('get_student_secure', { p_student_id: studentId });
+      expect(unchanged.error).toBeNull();
+      expect(unchanged.data.phone).toBe(ownerStudents.data.find((student) => student.id === studentId).phone);
     } finally {
       await client.auth.signOut();
     }

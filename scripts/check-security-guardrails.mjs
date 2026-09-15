@@ -85,7 +85,7 @@ const domainApiSource = await readFile(
   'utf8',
 );
 const academyStudentCreateSource = domainApiSource.match(
-  /export async function createAcademyStudent[\s\S]*?export async function createPrivateStudent/,
+  /export async function createAcademyStudent[\s\S]*?export async function updateStudent/,
 )?.[0] || '';
 if (!academyStudentCreateSource.includes(".from('students')\n    .insert(row)")) {
   failures.push('학원 학생 신규 등록은 students INSERT를 사용해야 합니다.');
