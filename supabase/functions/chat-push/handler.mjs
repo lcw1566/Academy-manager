@@ -1,7 +1,7 @@
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -31,15 +31,18 @@ export function parseWebPushSubscription(token) {
 
 // Dependencies are injected so tests exercise the real HTTP handler without
 // credentials, outbound notifications or an additional test runtime.
-export function createChatPushHandler({ authenticate, admin, prepareProviders, send, log = console.error }) {
+export function createChatPushHandler({ authenticate, admin, prepareProviders, send, getWebPushPublicKey = () => null, log = console.error }) {
   return async (req) => {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-    if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
+    if (!['GET', 'POST'].includes(req.method)) return json({ error: 'Method not allowed' }, 405);
     try {
       const authorization = req.headers.get('Authorization') || '';
       if (!/^Bearer \S+$/i.test(authorization)) return json({ error: 'Unauthorized' }, 401);
       const user = await authenticate(authorization.slice(7));
       if (!user) return json({ error: 'Unauthorized' }, 401);
+      // Public registration key only. Read from the same project as the sender
+      // to avoid requiring a separate Vercel secret/configuration rollout.
+      if (req.method === 'GET') return json({ publicKey: getWebPushPublicKey() });
       let input;
       try { input = await req.json(); } catch { return json({ error: 'Invalid JSON' }, 400); }
       const messageId = input?.messageId;

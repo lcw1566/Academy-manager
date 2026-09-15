@@ -27,11 +27,12 @@ VAPID 키를 한 번 생성한다.
 npx web-push generate-vapid-keys
 ```
 
-- 공개키: Vercel의 `VITE_WEB_PUSH_VAPID_PUBLIC_KEY`
+- 앱은 로그인 후 `chat-push` 함수에서 공개키를 조회한다. 별도 Vercel 설정은 필요 없다.
+  기존 `VITE_WEB_PUSH_VAPID_PUBLIC_KEY`가 있으면 그 값을 우선 사용하므로 함수의 공개키와 일치해야 한다.
 - Edge Function secret: `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`
 - `WEB_PUSH_SUBJECT`: 운영자 연락처(`mailto:admin@example.com` 형식)
 
-로컬에서는 `.env.local`에도 공개키만 추가한다. Web Push는 운영 HTTPS 주소에서
+로컬에서는 `.env.local`에 공개키만 추가할 수도 있다. Web Push는 대상 HTTPS 주소에서
 실기기 검증한다.
 
 ## 3. Android

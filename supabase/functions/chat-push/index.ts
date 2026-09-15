@@ -163,6 +163,7 @@ const admin = createClient(required('SUPABASE_URL'), required('SUPABASE_SERVICE_
 });
 Deno.serve(createChatPushHandler({
   admin,
+  getWebPushPublicKey: () => Deno.env.get('WEB_PUSH_VAPID_PUBLIC_KEY') || null,
   authenticate: async (token: string) => {
     const { data, error } = await admin.auth.getUser(token);
     return error ? null : data.user;

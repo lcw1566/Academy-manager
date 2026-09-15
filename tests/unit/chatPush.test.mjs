@@ -27,9 +27,10 @@ function setup(overrides = {}) {
   return { handler: createChatPushHandler(deps), calls, deliveries, logs };
 }
 
-test('only POST and authenticated valid message IDs reach the database', async () => {
+test('unsupported methods and unauthenticated or invalid requests cannot reach the database', async () => {
   const { handler, calls } = setup();
-  assert.equal((await handler(request(undefined, {}, 'GET'))).status, 405);
+  assert.equal((await handler(request(undefined, {}, 'PUT'))).status, 405);
+  assert.equal((await handler(request(undefined, {}, 'GET'))).status, 401);
   assert.equal((await handler(request(undefined, {}, 'OPTIONS'))).status, 200);
   assert.equal((await handler(request(undefined, {}))).status, 401);
   for (const input of [null, {}, { messageId: 'bad' }, { messageId: {} }]) {
@@ -38,6 +39,14 @@ test('only POST and authenticated valid message IDs reach the database', async (
   assert.equal((await handler(new Request('https://local.invalid', { method: 'POST', headers: { Authorization: 'Bearer verified-token' }, body: '{' }))).status, 400);
   assert.equal(calls.length, 0);
   assert.equal((await setup({ authenticate: async () => null }).handler(request())).status, 401);
+});
+
+test('authenticated GET returns only the public registration key without claiming or sending', async () => {
+  const { handler, calls, deliveries } = setup({ getWebPushPublicKey: () => 'public-registration-key' });
+  const response = await handler(request(undefined, { Authorization: 'Bearer verified-token' }, 'GET'));
+  assert.deepEqual(await response.json(), { publicKey: 'public-registration-key' });
+  assert.equal(calls.length, 0);
+  assert.equal(deliveries.length, 0);
 });
 
 test('caller-provided sender, recipients and body are ignored; delivery uses verified identity', async () => {

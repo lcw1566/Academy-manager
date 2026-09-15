@@ -1,5 +1,5 @@
 import { Capacitor } from '@capacitor/core';
-import { disablePushDevice, upsertPushDevice } from './supabase/pushApi';
+import { disablePushDevice, getWebPushPublicKey, upsertPushDevice } from './supabase/pushApi';
 
 let nativeListenersReady = false;
 let actionHandler = null;
@@ -14,8 +14,9 @@ function urlBase64ToUint8Array(value) {
 }
 
 async function registerWebPush() {
-  const publicKey = import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY;
-  if (!publicKey || !('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  const publicKey = import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY || await getWebPushPublicKey();
+  if (!publicKey) throw new Error('브라우저 푸시 설정을 확인해주세요.');
   await navigator.serviceWorker.register('/push-sw.js');
   // 최초 설치 직후에는 registration 객체가 아직 installing/waiting 상태일 수
   // 있다. active worker가 준비되기 전에 subscribe하면 Chrome이

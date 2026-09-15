@@ -1,5 +1,12 @@
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 
+export async function getWebPushPublicKey() {
+  if (!isSupabaseConfigured || !supabase) return null;
+  const { data, error } = await supabase.functions.invoke('chat-push', { method: 'GET' });
+  if (error) throw error;
+  return data?.publicKey || null;
+}
+
 export async function upsertPushDevice({ token, platform, provider }) {
   if (!isSupabaseConfigured || !supabase || !token) return null;
   const { data, error } = await supabase.rpc('register_push_device', {
