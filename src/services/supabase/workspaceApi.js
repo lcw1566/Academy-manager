@@ -6,6 +6,7 @@
 // 모든 함수는 supabase 미설정 / 미로그인 시 친절한 에러를 throw 합니다.
 
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { getAcademySyncAccess } from './syncAccessApi';
 
 const STARTUP_QUERY_TIMEOUT_MS = 8000;
 
@@ -250,15 +251,16 @@ export async function createAcademyInvitation({
 export async function listAcademyInvitations(academyId) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
+  const access = await getAcademySyncAccess(academyId);
   const [invitationResult, accountResult] = await Promise.all([
     supabase
       .from('academy_invitations')
       .select('*')
       .eq('academy_id', academyId)
       .order('created_at', { ascending: false }),
-    supabase.rpc('list_academy_invitation_accounts', {
+    access.invitationAccounts ? supabase.rpc('list_academy_invitation_accounts', {
       p_academy_id: academyId,
-    }),
+    }) : Promise.resolve({ data: [], error: null }),
   ]);
   if (invitationResult.error) throw invitationResult.error;
 
@@ -778,13 +780,15 @@ function sanitizeStaffProfilePayload(input = {}) {
 export async function listAcademyStaffProfiles(academyId) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
+  const access = await getAcademySyncAccess(academyId);
   const [{ data, error }, accessResult] = await Promise.all([
     supabase
       .from('academy_staff_profiles')
       .select('*')
       .eq('academy_id', academyId)
       .order('created_at', { ascending: true }),
-    supabase.rpc('list_academy_staff_access_profiles', { p_academy_id: academyId }),
+    access.staffAccess ? supabase.rpc('list_academy_staff_access_profiles', { p_academy_id: academyId })
+      : Promise.resolve({ data: [], error: null }),
   ]);
   if (error) throw error;
   // SQL 067 적용 전에는 기존 owner/self 조회만으로 동작을 유지한다.

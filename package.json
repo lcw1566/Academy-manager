@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "npm run check && vite build",
-    "check": "npm run check:academy-help && npm run check:security && npm run check:staff-exit-cache && npm run check:staff-invitations && npm run check:developer-workspace && npm run check:brand-assets && npm run check:privacy-cache && npm run check:chat-push",
+    "check": "npm run check:academy-help && npm run check:security && npm run check:staff-exit-cache && npm run check:staff-invitations && npm run check:developer-workspace && npm run check:brand-assets && npm run check:privacy-cache && npm run check:chat-push && npm run check:test-login",
     "check:academy-help": "node scripts/check-academy-help.mjs",
     "check:security": "node scripts/check-security-guardrails.mjs",
     "check:staff-exit-cache": "node scripts/check-staff-exit-cache.mjs",
@@ -35,7 +35,8 @@
     "cap:open:ios": "cap open ios",
     "cap:open:android": "cap open android",
     "check:privacy-cache": "node --test tests/unit/academyPersistence.test.js",
-    "check:chat-push": "node --test tests/unit/chatPush.test.mjs"
+    "check:chat-push": "node --test tests/unit/chatPush.test.mjs",
+    "check:test-login": "node --test tests/unit/testLogin.test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.0",

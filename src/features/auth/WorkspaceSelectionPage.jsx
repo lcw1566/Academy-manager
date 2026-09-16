@@ -37,6 +37,7 @@ import ClinicDefaultItemsEditor from '../academy/clinic/ClinicDefaultItemsEditor
 import { localizeError } from '../../utils/localizeError';
 import useDeveloperStore from '../../store/useDeveloperStore';
 import SeenitLogo from '../../components/SeenitLogo';
+import StagingAccountSwitcher from '../../components/StagingAccountSwitcher';
 
 export const WORKSPACE_PICKED_KEY = 'workspace-picked';
 
@@ -279,6 +280,8 @@ export default function WorkspaceSelectionPage() {
               : '진입할 학원을 선택하면 해당 학원의 운영 화면이 열려요.'}
           </p>
         </div>
+
+        <StagingAccountSwitcher className="mb-5" />
 
         {hasDeveloperAccess && (
           <div className="mb-5">

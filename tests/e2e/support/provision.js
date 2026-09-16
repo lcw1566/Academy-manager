@@ -135,6 +135,21 @@ export async function provisionRoleTestLab() {
     await acceptInvitation(accounts.manager, managerInvitation);
     await acceptInvitation(accounts.teacher, teacherInvitation);
 
+    if (process.env.E2E_SUPABASE_URL === 'https://owitlzsgxxuthgbmweyt.supabase.co') {
+      const admin = createAdminClient();
+      const { error: auditError } = await admin.from('developer_action_logs').insert({
+        actor_user_id: users.owner.id, action: 'staging_test_login_registration_requested',
+        target_type: 'academy', target_id: lab.academy_id, details: { source: 'e2e_fixture' },
+      });
+      if (auditError) throw auditError;
+      const { error } = await admin.from('developer_test_login_accounts').upsert(
+        Object.entries(users).map(([persona, user]) => ({
+          user_id: user.id, academy_id: lab.academy_id, persona, enabled: true,
+        })), { onConflict: 'user_id' },
+      );
+      if (error) throw error;
+    }
+
     return {
       accounts,
       users,

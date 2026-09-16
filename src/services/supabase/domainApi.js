@@ -12,6 +12,7 @@
 //     변경하지 못하도록 화이트리스트 필터링.
 
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { getAcademySyncAccess } from './syncAccessApi';
 
 function assertSupabaseConfigured() {
   if (!isSupabaseConfigured || !supabase) {
@@ -35,6 +36,7 @@ async function getCurrentUserOrThrow() {
 export async function listAcademyStudents(academyId) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
+  if (!(await getAcademySyncAccess(academyId)).students) return [];
   // 연락처 컬럼은 테이블 직접 SELECT 권한이 없다. 서버 함수가 호출자의
   // canViewStudentContacts 권한을 확인한 뒤 허용된 경우에만 원문을 반환한다.
   const { data, error } = await supabase.rpc('list_academy_students_secure', {

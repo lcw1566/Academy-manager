@@ -19,6 +19,8 @@ import {
   Users,
 } from 'lucide-react';
 import useDeveloperStore from '../../store/useDeveloperStore';
+import StagingAccountSwitcher from '../../components/StagingAccountSwitcher';
+import { isStagingTestLogin } from '../../services/supabase/testLoginApi';
 import useWorkspaceStore from '../../store/useWorkspaceStore';
 import useAcademyStore from '../../store/useAcademyStore';
 import {
@@ -548,7 +550,7 @@ function TestLabPanel({
               <span className="rounded-full bg-white/15 px-2 py-1 text-[10px] font-bold">합성 데이터 전용</span>
             </div>
             <p className="mt-1 text-xs leading-5 text-indigo-100">
-              로그아웃 없이 역할을 바꾸고, 잠긴 수납·급여를 포함한 실제 학원 화면을 테스트해요.
+              등록된 테스트 환경에서 잠긴 수납·급여를 포함한 실제 학원 화면을 테스트해요.
             </p>
           </div>
         </div>
@@ -594,10 +596,11 @@ function TestLabPanel({
               </p>
             </div>
             <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-indigo-700">
-              <UserRoundCog size={14} /> 실제 RLS 역할 전환
+              <UserRoundCog size={14} /> {isStagingTestLogin ? '독립 테스트 계정' : '실제 RLS 역할 전환'}
             </span>
           </div>
 
+          {isStagingTestLogin ? <StagingAccountSwitcher expanded /> : <>
           <div>
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -681,6 +684,8 @@ function TestLabPanel({
               <p className="mt-2 text-xs font-semibold text-seenit-warning">권한 테스트 DB 업데이트를 먼저 적용해야 해요.</p>
             )}
           </div>
+
+          </>}
 
           <div>
             <h3 className="text-sm font-bold text-gray-900">시나리오 초기화</h3>

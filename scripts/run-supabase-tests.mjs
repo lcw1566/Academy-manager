@@ -10,6 +10,7 @@ const testFiles = [
   'supabase/tests/088_secure_public_checkin.sql',
   'supabase/tests/089_retire_private_workspace.sql',
   'supabase/tests/090_harden_chat_push.sql',
+  'supabase/tests/091_workspace_sync_and_test_login.sql',
 ];
 
 try {

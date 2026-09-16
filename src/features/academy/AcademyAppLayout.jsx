@@ -12,6 +12,8 @@ import AttendanceSettingsSheet from './attendance/AttendanceSettingsSheet';
 import { readAttendanceSettings } from './attendance/attendanceHelpers';
 import TuitionPolicyOnboardingSheet from './onboarding/TuitionPolicyOnboardingSheet';
 import Sidebar from '../../components/Sidebar';
+import StagingAccountSwitcher from '../../components/StagingAccountSwitcher';
+import { isStagingTestLogin } from '../../services/supabase/testLoginApi';
 import AcademyTabHelpModal from './help/AcademyTabHelpModal';
 
 const loadOwnerDashboard = () => import('./dashboard/OwnerDashboard');
@@ -665,15 +667,16 @@ export default function AcademyAppLayout() {
                   합성 데이터 · {developerTestContext.active_persona || role} 역할 · 수납·급여 잠금 해제
                 </p>
               </div>
-              <button
+              {!isStagingTestLogin && <button
                 type="button"
                 onClick={() => enterDeveloperWorkspace()}
                 className="pressable-surface h-9 shrink-0 rounded-xl bg-indigo-600 px-3 text-xs font-bold text-white"
               >
                 역할 바꾸기
-              </button>
+              </button>}
             </div>
           )}
+          <StagingAccountSwitcher className="mx-4 mb-3 md:mx-0" />
           {currentAcademyId && (hasSyncError || isRealtimeReconnecting) && (
             <div className="mx-4 mb-3 flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 md:mx-0">
               <div className="min-w-0">
