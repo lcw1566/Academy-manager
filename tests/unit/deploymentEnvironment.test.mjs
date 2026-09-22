@@ -24,6 +24,13 @@ test("accepts exact staging and production deployment pairs", () => {
   }
 });
 
+test("uses the canonical app URL when Vercel has no usable URL variable", () => {
+  for (const publicUrl of [undefined, '', '<staging app URL>']) {
+    const result = validateDeploymentEnvironment(remote('staging', { VITE_PUBLIC_APP_URL: publicUrl }));
+    assert.equal(result.appOrigin, DEPLOYMENT_TARGETS.staging.appOrigin);
+  }
+});
+
 test("rejects missing environment on remote builds", () => {
   assert.throws(
     () =>

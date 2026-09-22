@@ -27,7 +27,10 @@ Supabase URL/ref를 대조하고, 배포 앱이 공개하는 환경/ref 표식�
    - `VITE_DEPLOY_ENV=staging`
    - `VITE_SUPABASE_URL=<스테이징 Project URL>`
    - `VITE_SUPABASE_ANON_KEY=<스테이징 anon key>`
-   - `VITE_PUBLIC_APP_URL=<스테이징 앱 주소>`
+
+   공개 앱 주소는 `src/config/deploymentTargets.js`의 스테이징 값으로 고정된다.
+   기존 `VITE_PUBLIC_APP_URL`이 비어 있거나 URL 형식이 아니어도 빌드는 해당 고정 주소를
+   사용한다. 유효한 URL이 다른 환경의 주소를 가리키면 빌드가 중단된다.
 
 5. `STAGING_SUPABASE_SERVICE_ROLE_KEY`는 Vercel에 넣지 않는다. 로컬의
    `.env.staging.local` 또는 GitHub `staging` Environment secret에서만 사용한다.

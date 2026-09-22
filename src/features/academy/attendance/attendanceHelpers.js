@@ -2,6 +2,7 @@
 //
 // 출결·등하원 설정 / QR 토큰 / 페이로드 유틸. 어디서나 import 해서 사용.
 
+import { DEPLOYMENT_TARGETS } from '../../../config/deploymentTargets.js';
 import {
   formatDateToYMD,
   getKoreaHHMM,
@@ -48,9 +49,10 @@ function normalizePublicBaseUrl(baseUrl) {
 }
 
 export function getPublicCheckinBaseUrl() {
+  const canonicalAppUrl = DEPLOYMENT_TARGETS[import.meta.env?.VITE_DEPLOY_ENV]?.appOrigin;
   const envBaseUrl = import.meta.env?.VITE_PUBLIC_APP_URL || import.meta.env?.VITE_APP_URL || '';
   const windowOrigin = typeof window !== 'undefined' ? window.location.origin : '';
-  return normalizePublicBaseUrl(envBaseUrl) || normalizePublicBaseUrl(windowOrigin);
+  return canonicalAppUrl || normalizePublicBaseUrl(envBaseUrl) || normalizePublicBaseUrl(windowOrigin);
 }
 
 export function buildQrDisplayUrl() {

@@ -1,13 +1,6 @@
-export const DEPLOYMENT_TARGETS = {
-  production: {
-    supabaseOrigin: "https://vfiiieqnxawnhtgrvmxn.supabase.co",
-    appOrigin: "https://academy-manager-ashen.vercel.app",
-  },
-  staging: {
-    supabaseOrigin: "https://owitlzsgxxuthgbmweyt.supabase.co",
-    appOrigin: "https://academy-manager-staging.vercel.app",
-  },
-};
+import { DEPLOYMENT_TARGETS } from '../src/config/deploymentTargets.js';
+
+export { DEPLOYMENT_TARGETS };
 
 function origin(value, label) {
   try {
@@ -54,12 +47,19 @@ export function validateDeploymentEnvironment(env, { command = "build" } = {}) {
       `${environment} build is connected to the wrong Supabase project`,
     );
   }
-  if (!isRemoteBuild && !explicitEnvironment && !env.VITE_PUBLIC_APP_URL) {
-    return { environment, supabaseOrigin, appOrigin: null };
+  // The canonical URL is versioned with the matching Supabase project. An
+  // absent or malformed legacy Vercel variable must not block a safe build.
+  // A valid, conflicting URL is still rejected instead of silently ignored.
+  let configuredAppOrigin = null;
+  if (env.VITE_PUBLIC_APP_URL) {
+    try {
+      configuredAppOrigin = origin(env.VITE_PUBLIC_APP_URL, "VITE_PUBLIC_APP_URL");
+    } catch {
+      // The client uses target.appOrigin below, not this malformed value.
+    }
   }
-  const appOrigin = origin(env.VITE_PUBLIC_APP_URL, "VITE_PUBLIC_APP_URL");
-  if (appOrigin !== target.appOrigin) {
+  if (configuredAppOrigin && configuredAppOrigin !== target.appOrigin) {
     throw new Error(`${environment} build has the wrong public app URL`);
   }
-  return { environment, supabaseOrigin, appOrigin };
+  return { environment, supabaseOrigin, appOrigin: target.appOrigin };
 }

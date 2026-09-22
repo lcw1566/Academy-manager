@@ -50,9 +50,10 @@
 
 ## 환경 변수
 
-운영 Vercel은 `VITE_DEPLOY_ENV=production`, 운영 Supabase URL·publishable key,
-`VITE_PUBLIC_APP_URL=https://academy-manager-ashen.vercel.app`을 **Production 범위**에
-설정한다. 스테이징 Vercel은 별도 프로젝트와 `staging` 범위 값을 사용한다. 같은
+운영 Vercel은 `VITE_DEPLOY_ENV=production`, 운영 Supabase URL·publishable key를
+**Production 범위**에 설정한다. 스테이징 Vercel은 별도 프로젝트와 `staging` 범위
+값을 사용한다. 앱 주소는 `src/config/deploymentTargets.js`의 환경별 값으로 고정하며,
+기존 `VITE_PUBLIC_APP_URL`이 비어 있거나 잘못된 형식이어도 이 주소를 사용한다. 같은
 Supabase 값을 Production/Preview/Development 전부에 복사하지 않는다. 빌드 검증은
 환경·앱 주소·Supabase 프로젝트 조합이 맞지 않으면 실패한다. `SENTRY_AUTH_TOKEN`은
 필요할 때 Production 빌드 전용 비밀로 두고 `VITE_` 접두사를 붙이지 않는다.
