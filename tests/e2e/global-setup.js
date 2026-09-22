@@ -39,5 +39,5 @@ async function assertBrowserTarget() {
 export default async function globalSetup() {
   assertE2eEnvironment();
   await assertBrowserTarget();
-  await provisionRoleTestLab();
+  await provisionRoleTestLab({ resetExistingCredentials: true });
 }

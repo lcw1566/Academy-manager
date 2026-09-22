@@ -37,7 +37,12 @@ test.describe('개발자 기능 테스트 랩', () => {
 
     await expect(page.getByRole('heading', { name: '기능 테스트 랩' })).toBeVisible();
     await expect(page.getByText(/현재 원장 · 학생 5명 · 반 2개 · 수납 4건 · 급여 1건/)).toBeVisible();
-    await expect(page.getByText(/학생 연락처·학부모 연락처·체크인 PIN은 개발자 권한으로도 조회하지 않습니다/)).toBeVisible();
+    if (isStaging) {
+      await expect(page.getByText('독립 테스트 계정', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '운영 관제' })).toHaveCount(0);
+    } else {
+      await expect(page.getByText(/학생 연락처·학부모 연락처·체크인 PIN은 개발자 권한으로도 조회하지 않습니다/)).toBeVisible();
+    }
   });
 
   test('선생님 역할과 수납 조회 권한을 실제 학원 화면에 반영한다', async ({ page }) => {

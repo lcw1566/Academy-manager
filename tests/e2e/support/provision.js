@@ -5,6 +5,9 @@ import {
   createAnonymousClient,
 } from './supabase.js';
 
+let cachedAccounts = null;
+const provisioningClients = new Map();
+
 async function findUserByEmail(admin, email) {
   for (let page = 1; page <= 10; page += 1) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 });
@@ -17,16 +20,22 @@ async function findUserByEmail(admin, email) {
 }
 
 async function signIn(account) {
+  const existing = provisioningClients.get(account.key);
+  if (existing) {
+    const { data: { session } } = await existing.auth.getSession();
+    if (session) return existing;
+  }
   const client = createAnonymousClient();
   const { error } = await client.auth.signInWithPassword({
     email: account.email,
     password: account.password,
   });
   if (error) throw error;
+  provisioningClients.set(account.key, client);
   return client;
 }
 
-async function ensureAccount(admin, account) {
+async function ensureAccount(admin, account, { resetExistingCredentials }) {
   let user = await findUserByEmail(admin, account.email);
   const attributes = {
     email: account.email,
@@ -43,7 +52,7 @@ async function ensureAccount(admin, account) {
     const { data, error } = await admin.auth.admin.createUser(attributes);
     if (error) throw error;
     user = data.user;
-  } else {
+  } else if (resetExistingCredentials) {
     const { data, error } = await admin.auth.admin.updateUserById(user.id, {
       password: account.password,
       user_metadata: attributes.user_metadata,
@@ -52,19 +61,15 @@ async function ensureAccount(admin, account) {
     user = data.user;
   }
 
-  const client = await signIn(account);
-  try {
-    const { error } = await client.from('profiles').upsert({
-      id: user.id,
-      email: account.email,
-      display_name: account.displayName,
-      account_type: account.accountType,
-      default_role: account.defaultRole,
-    }, { onConflict: 'id' });
-    if (error) throw error;
-  } finally {
-    await client.auth.signOut({ scope: 'local' });
-  }
+  const profileClient = await signIn(account);
+  const { error: profileError } = await profileClient.from('profiles').upsert({
+    id: user.id,
+    email: account.email,
+    display_name: account.displayName,
+    account_type: account.accountType,
+    default_role: account.defaultRole,
+  }, { onConflict: 'id' });
+  if (profileError) throw profileError;
   return user;
 }
 
@@ -82,28 +87,25 @@ async function createInvitation(ownerClient, academyId, account) {
 
 async function acceptInvitation(account, invitation) {
   const client = await signIn(account);
-  try {
-    const { data, error } = await client.rpc('accept_academy_invitation', {
-      p_invitation_id: invitation.id,
-    });
-    if (error) throw error;
-    const result = Array.isArray(data) ? data[0] : data;
-    if (result?.out_role !== account.key) {
-      throw new Error(`${account.key} 테스트 계정에 잘못된 역할이 배정됐어요.`);
-    }
-  } finally {
-    await client.auth.signOut({ scope: 'local' });
+  const { data, error } = await client.rpc('accept_academy_invitation', {
+    p_invitation_id: invitation.id,
+  });
+  if (error) throw error;
+  const result = Array.isArray(data) ? data[0] : data;
+  if (result?.out_role !== account.key) {
+    throw new Error(`${account.key} 테스트 계정에 잘못된 역할이 배정됐어요.`);
   }
 }
 
-export async function ensureE2eAccounts() {
+export async function ensureE2eAccounts({ resetExistingCredentials = false } = {}) {
   assertE2eEnvironment();
+  if (cachedAccounts && !resetExistingCredentials) return cachedAccounts;
   const accounts = getE2eAccounts();
   const admin = createAdminClient();
   const users = {};
 
   for (const account of Object.values(accounts)) {
-    users[account.key] = await ensureAccount(admin, account);
+    users[account.key] = await ensureAccount(admin, account, { resetExistingCredentials });
   }
 
   const { error: environmentAuditError } = await admin.from('developer_action_logs').insert({
@@ -127,53 +129,50 @@ export async function ensureE2eAccounts() {
   }, { onConflict: 'user_id' });
   if (error) throw error;
 
-  return { accounts, users };
+  cachedAccounts = { accounts, users };
+  return cachedAccounts;
 }
 
-export async function provisionRoleTestLab() {
+export async function provisionRoleTestLab({ resetExistingCredentials = false } = {}) {
   assertE2eEnvironment();
-  const { accounts, users } = await ensureE2eAccounts();
+  const { accounts, users } = await ensureE2eAccounts({ resetExistingCredentials });
   const ownerClient = await signIn(accounts.owner);
 
-  try {
-    const { data: lab, error: prepareError } = await ownerClient.rpc('prepare_developer_test_lab', {
-      p_scenario: 'full',
+  const { data: lab, error: prepareError } = await ownerClient.rpc('prepare_developer_test_lab', {
+    p_scenario: 'full',
+  });
+  if (prepareError) throw prepareError;
+
+  const managerInvitation = await createInvitation(ownerClient, lab.academy_id, accounts.manager);
+  const teacherInvitation = await createInvitation(ownerClient, lab.academy_id, accounts.teacher);
+  const invitedInvitation = await createInvitation(ownerClient, lab.academy_id, accounts.invited);
+
+  await acceptInvitation(accounts.manager, managerInvitation);
+  await acceptInvitation(accounts.teacher, teacherInvitation);
+
+  if (process.env.E2E_SUPABASE_URL === 'https://owitlzsgxxuthgbmweyt.supabase.co') {
+    const admin = createAdminClient();
+    const { error: auditError } = await admin.from('developer_action_logs').insert({
+      actor_user_id: users.owner.id, action: 'staging_test_login_registration_requested',
+      target_type: 'academy', target_id: lab.academy_id, details: { source: 'e2e_fixture' },
     });
-    if (prepareError) throw prepareError;
-
-    const managerInvitation = await createInvitation(ownerClient, lab.academy_id, accounts.manager);
-    const teacherInvitation = await createInvitation(ownerClient, lab.academy_id, accounts.teacher);
-    const invitedInvitation = await createInvitation(ownerClient, lab.academy_id, accounts.invited);
-
-    await acceptInvitation(accounts.manager, managerInvitation);
-    await acceptInvitation(accounts.teacher, teacherInvitation);
-
-    if (process.env.E2E_SUPABASE_URL === 'https://owitlzsgxxuthgbmweyt.supabase.co') {
-      const admin = createAdminClient();
-      const { error: auditError } = await admin.from('developer_action_logs').insert({
-        actor_user_id: users.owner.id, action: 'staging_test_login_registration_requested',
-        target_type: 'academy', target_id: lab.academy_id, details: { source: 'e2e_fixture' },
-      });
-      if (auditError) throw auditError;
-      const { error } = await admin.from('developer_test_login_accounts').upsert(
-        Object.entries(users).map(([persona, user]) => ({
-          user_id: user.id, academy_id: lab.academy_id, persona, enabled: true,
-        })), { onConflict: 'user_id' },
-      );
-      if (error) throw error;
-    }
-
-    return {
-      accounts,
-      users,
-      lab,
-      invitations: {
-        manager: managerInvitation,
-        teacher: teacherInvitation,
-        invited: invitedInvitation,
-      },
-    };
-  } finally {
-    await ownerClient.auth.signOut({ scope: 'local' });
+    if (auditError) throw auditError;
+    const { error } = await admin.from('developer_test_login_accounts').upsert(
+      Object.entries(users).map(([persona, user]) => ({
+        user_id: user.id, academy_id: lab.academy_id, persona, enabled: true,
+      })), { onConflict: 'user_id' },
+    );
+    if (error) throw error;
   }
+
+  return {
+    accounts,
+    users,
+    lab,
+    invitations: {
+      manager: managerInvitation,
+      teacher: teacherInvitation,
+      invited: invitedInvitation,
+    },
+  };
 }
