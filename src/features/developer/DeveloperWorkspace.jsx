@@ -613,7 +613,7 @@ function TestLabPanel({
             type="button"
             onClick={lab.can_open ? onOpen : onOpenInvitation}
             disabled={isBusy}
-            className="pressable-surface flex h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-bold text-indigo-700 disabled:opacity-60"
+            className="pressable-surface flex h-11 items-center justify-center gap-2 rounded-xl bg-seenit-surface px-4 text-sm font-bold text-seenit-ink disabled:opacity-60"
           >
             {busy === 'open' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
             {lab.can_open ? '현재 역할로 열기' : lab.active_persona === 'invited' ? '초대 화면 열기' : '접근 차단 확인'}
@@ -642,14 +642,14 @@ function TestLabPanel({
         </div>
       ) : (
         <div className="space-y-6 px-5 py-5 md:px-6">
-          <div className="flex flex-col gap-3 rounded-2xl bg-indigo-50 px-4 py-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-3 rounded-2xl bg-seenit-brand-soft px-4 py-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-sm font-bold text-indigo-950">{lab.academy_name}</p>
-              <p className="mt-1 text-xs text-indigo-700">
+              <p className="text-sm font-bold text-seenit-ink">{lab.academy_name}</p>
+              <p className="mt-1 text-xs text-seenit-secondary">
                 현재 {currentPersona?.label || lab.active_persona} · 학생 {number(lab.student_count)}명 · 반 {number(lab.class_count)}개 · 수납 {number(lab.payment_count)}건 · 급여 {number(lab.payroll_count)}건
               </p>
             </div>
-            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-indigo-700">
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-seenit-surface px-3 py-1.5 text-xs font-bold text-seenit-brand">
               <UserRoundCog size={14} /> {isStagingTestLogin ? '독립 테스트 계정' : '실제 RLS 역할 전환'}
             </span>
           </div>
