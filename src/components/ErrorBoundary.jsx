@@ -2,6 +2,7 @@ import { Component } from 'react';
 import * as Sentry from '@sentry/react';
 import useAcademyStore from '../store/useAcademyStore';
 import { isDynamicImportError } from '../utils/dynamicImportRecovery';
+import { sanitizeTelemetryString } from '../utils/observabilityPrivacy';
 
 // Functional fallback so we can use hooks (store)
 function ErrorFallback({ error, componentStack, onReset }) {
@@ -29,7 +30,7 @@ function ErrorFallback({ error, componentStack, onReset }) {
         <div className="w-full max-w-sm mb-4 text-left">
           <p className="text-xs font-bold text-red-500 mb-1">오류 메시지</p>
           <p className="text-xs text-red-400 bg-red-50 rounded-xl px-3 py-2 break-all mb-2">
-            {error.message}
+            {sanitizeTelemetryString(error.message)}
           </p>
           {componentStack && (
             <>
@@ -91,8 +92,8 @@ export default class ErrorBoundary extends Component {
 
     console.error('[ErrorBoundary] 렌더링 오류 발생', {
       '── 오류 정보 ──': '',
-      message: error.message,
-      stack: error.stack?.split('\n').slice(0, 8).join('\n'),
+      message: sanitizeTelemetryString(error.message),
+      stack: sanitizeTelemetryString(error.stack?.split('\n').slice(0, 8).join('\n')),
       componentStack: info?.componentStack?.trim().split('\n').slice(0, 10).join('\n'),
       '── 상태 정보 ──': '',
       role: store.role,

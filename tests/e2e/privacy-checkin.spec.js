@@ -23,7 +23,7 @@ async function prepareQr() {
 test('학생은 새로고침 후 서버에서 복원되고 영구 캐시에는 남지 않는다', async ({ page }) => {
   test.skip(getE2eTargetKind() !== 'local', '개발 서버의 메모리 상태와 영구 저장소를 함께 검사한다');
   const { client } = await resetDeveloperLab('full');
-  await client.auth.signOut();
+  await client.auth.signOut({ scope: 'local' });
   await page.addInitScript(() => {
     if (sessionStorage.getItem('privacy-fixture-installed')) return;
     sessionStorage.setItem('privacy-fixture-installed', '1');
@@ -74,13 +74,69 @@ test('공개 REST/RPC는 만료 변조·생략·직접 토큰 접근을 거절�
     const valid = await anonymous.rpc('public_student_checkin', { ...params, p_expires_at: qr.expiresAt });
     expect(valid.error).toBeNull();
     expect(valid.data[0].ok).toBe(true);
-  } finally { await client.auth.signOut(); }
+  } finally { await client.auth.signOut({ scope: 'local' }); }
+});
+
+test('인증된 학생·직원 출결은 직접 테이블 쓰기와 다른 직원 지정 요청을 거절한다', async () => {
+  const { lab, users } = await provisionRoleTestLab();
+  const teacher = await createRoleClient('teacher');
+  try {
+    const students = await teacher.rpc('list_academy_students_secure', {
+      p_academy_id: lab.academy_id,
+    });
+    expect(students.error).toBeNull();
+    const studentId = students.data[0]?.id;
+    expect(studentId).toBeTruthy();
+
+    const directStudent = await teacher.from('student_check_events').insert({
+      academy_id: lab.academy_id,
+      student_id: studentId,
+      event_type: 'check_in',
+      source: 'teacher_manual',
+      event_time: new Date().toISOString(),
+      created_by: users.teacher.id,
+    });
+    expect(directStudent.error).not.toBeNull();
+
+    const directStaff = await teacher.from('staff_attendance_logs').insert({
+      academy_id: lab.academy_id,
+      staff_user_id: users.teacher.id,
+      staff_role: 'teacher',
+      work_date: new Date().toISOString().slice(0, 10),
+      actual_start_time: '00:01',
+      source: 'manual',
+    });
+    expect(directStaff.error).not.toBeNull();
+
+    const forgedStaff = await teacher.rpc('record_staff_attendance', {
+      p_academy_id: lab.academy_id,
+      p_staff_user_id: users.manager.id,
+      p_staff_role: 'manager',
+      p_work_date: new Date().toISOString().slice(0, 10),
+      p_action: 'clock_in',
+      p_time: '00:01',
+      p_source: 'manual',
+    });
+    expect(forgedStaff.error).not.toBeNull();
+
+    const validManual = await teacher.rpc('record_student_manual_check_event', {
+      p_academy_id: lab.academy_id,
+      p_student_id: studentId,
+      p_event_type: 'check_in',
+      p_event_time: new Date().toISOString(),
+    });
+    expect(validManual.error).toBeNull();
+    expect(validManual.data.source).toBe('teacher_manual');
+    expect(validManual.data.created_by).toBe(users.teacher.id);
+  } finally {
+    await teacher.auth.signOut({ scope: 'local' });
+  }
 });
 
 for (const theme of ['light', 'dark']) {
   test(`공용 QR 화면과 만료 안내 (${theme}, 동작 감소)`, async ({ page }, testInfo) => {
     const { client } = await prepareQr();
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: 'local' });
     await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
     await page.addInitScript((value) => localStorage.setItem('seenit-theme-preference', value), theme);
     await page.goto('/');
@@ -120,7 +176,7 @@ test('기존 tutor 프로필과 이전 선택 상태도 학원 초대 화면으�
   } finally {
     const restored = await client.from('profiles').update(original.data).eq('id', user.id);
     await context.close();
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: 'local' });
     expect(restored.error).toBeNull();
   }
 });

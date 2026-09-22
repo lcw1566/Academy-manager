@@ -45,7 +45,7 @@ test.describe('개발자 테스트 랩 RLS', () => {
       expect(forbiddenUpdate.error).toBeNull();
       expect(forbiddenUpdate.data).toHaveLength(0);
     } finally {
-      await client.auth.signOut();
+      await client.auth.signOut({ scope: 'local' });
     }
   });
 
@@ -89,7 +89,7 @@ test.describe('개발자 테스트 랩 RLS', () => {
       expect(unchanged.error).toBeNull();
       expect(unchanged.data.phone).toBe(ownerStudents.data.find((student) => student.id === studentId).phone);
     } finally {
-      await client.auth.signOut();
+      await client.auth.signOut({ scope: 'local' });
     }
   });
 });

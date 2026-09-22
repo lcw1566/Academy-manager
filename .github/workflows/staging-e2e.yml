@@ -41,10 +41,10 @@ jobs:
         run: npm run test:e2e:staging -- --project=staging-chromium
 
       - name: Upload staging Playwright diagnostics
-        if: ${{ !cancelled() }}
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: staging-playwright-artifacts
-          path: test-artifacts/
+          path: test-artifacts/playwright-staging-report/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1

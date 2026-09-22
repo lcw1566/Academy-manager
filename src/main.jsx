@@ -6,6 +6,15 @@ import App from './App';
 import './index.css';
 import { initializeTheme } from './utils/theme';
 import { installDynamicImportRecovery } from './utils/dynamicImportRecovery';
+import {
+  installPrivacySafeConsole,
+  sanitizeSentryBreadcrumb,
+  sanitizeSentryEvent,
+} from './utils/observabilityPrivacy';
+
+// Console breadcrumbs are collected by observability SDKs. Install this before
+// application work starts so raw provider errors never reach browser logs.
+installPrivacySafeConsole();
 
 // 열린 탭이 배포 교체 전의 해시 청크를 요청하면 최신 HTML을 한 번 다시 받아온다.
 // React 렌더링보다 먼저 등록해야 첫 lazy import 실패도 놓치지 않는다.
@@ -42,33 +51,8 @@ if (sentryDsn) {
       userInfo: false,
       httpBodies: [],
     },
-    beforeSend(event) {
-      if (!event.request) return event;
-
-      const request = { ...event.request };
-      delete request.cookies;
-      delete request.data;
-      if (request.url) {
-        try {
-          const url = new URL(request.url);
-          url.search = '';
-          url.hash = '';
-          request.url = url.toString();
-        } catch {
-          request.url = String(request.url).split(/[?#]/)[0];
-        }
-      }
-      if (request.headers) {
-        const headers = { ...request.headers };
-        for (const key of Object.keys(headers)) {
-          if (['authorization', 'cookie', 'set-cookie'].includes(key.toLowerCase())) {
-            delete headers[key];
-          }
-        }
-        request.headers = headers;
-      }
-      return { ...event, request };
-    },
+    beforeBreadcrumb: sanitizeSentryBreadcrumb,
+    beforeSend: sanitizeSentryEvent,
   });
 }
 

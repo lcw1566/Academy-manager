@@ -11,6 +11,8 @@ const testFiles = [
   'supabase/tests/089_retire_private_workspace.sql',
   'supabase/tests/090_harden_chat_push.sql',
   'supabase/tests/091_workspace_sync_and_test_login.sql',
+  'supabase/tests/092_isolate_developer_test_environment.sql',
+  'supabase/tests/093_authenticated_attendance_paths.sql',
 ];
 
 try {

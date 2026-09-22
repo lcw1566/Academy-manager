@@ -20,9 +20,11 @@ export default defineConfig({
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
     colorScheme: 'light',
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    // Remote Auth responses contain reusable sessions. Staging CI keeps the
+    // textual HTML result only; traces, screenshots and videos are local-only.
+    trace: 'off',
+    screenshot: 'off',
+    video: 'off',
     serviceWorkers: 'block',
   },
   projects: [

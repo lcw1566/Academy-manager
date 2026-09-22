@@ -55,10 +55,7 @@ Deno.serve(async (req) => {
     if (fileError) throw fileError;
     if (!file) return json({ error: '자료를 찾을 수 없어요.' }, 404);
     if (!file.storage_path.startsWith(`${file.academy_id}/`)) {
-      console.error('[academy-drive-file] invalid storage path', {
-        fileId: file.id,
-        academyId: file.academy_id,
-      });
+      console.error('[academy-drive-file] invalid storage path');
       return json({ error: '자료의 저장 경로가 올바르지 않아요.' }, 409);
     }
 
@@ -112,8 +109,8 @@ Deno.serve(async (req) => {
     if (!signed?.signedUrl) throw new Error('파일 주소를 만들지 못했어요.');
 
     return json({ url: signed.signedUrl, expiresIn: 60 });
-  } catch (error) {
-    console.error('[academy-drive-file]', error);
+  } catch {
+    console.error('[academy-drive-file] request failed');
     return json({
       error: '파일 서버에서 요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요.',
     }, 500);

@@ -1,5 +1,7 @@
 \set ON_ERROR_STOP on
 begin;
+insert into public.developer_test_environment_config(singleton, enabled)
+values(true, true) on conflict(singleton) do update set enabled=excluded.enabled;
 set local session_replication_role=replica;
 insert into auth.users(id,email) select ('00000000-0000-0000-0000-00000009100'||i)::uuid,'test-091-'||i||'@example.invalid' from generate_series(1,7) i;
 insert into public.app_developers(user_id,role) values('00000000-0000-0000-0000-000000091001','developer');

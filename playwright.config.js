@@ -18,9 +18,9 @@ export default defineConfig({
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
     colorScheme: 'light',
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    trace: process.env.CI ? 'off' : 'retain-on-failure',
+    screenshot: process.env.CI ? 'off' : 'only-on-failure',
+    video: process.env.CI ? 'off' : 'retain-on-failure',
     serviceWorkers: 'block',
   },
   webServer: {

@@ -29,7 +29,7 @@ test.describe('개발자 기능 테스트 랩', () => {
       return;
     }
     const { client } = await resetDeveloperLab('full');
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: 'local' });
   });
 
   test('합성 데이터와 개인정보 보호 안내를 표시한다', async ({ page }) => {

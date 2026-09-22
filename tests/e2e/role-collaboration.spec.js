@@ -47,9 +47,9 @@ test.describe('역할별 독립 테스트 계정', () => {
       });
       expect(invitedStudents.error).not.toBeNull();
     } finally {
-      await manager.auth.signOut();
-      await teacher.auth.signOut();
-      await invited.auth.signOut();
+      await manager.auth.signOut({ scope: 'local' });
+      await teacher.auth.signOut({ scope: 'local' });
+      await invited.auth.signOut({ scope: 'local' });
     }
   });
 

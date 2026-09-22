@@ -2,6 +2,9 @@
 
 begin;
 
+insert into public.developer_test_environment_config(singleton, enabled)
+values(true, true) on conflict(singleton) do update set enabled=excluded.enabled;
+
 set local session_replication_role = replica;
 
 insert into auth.users (id, email)

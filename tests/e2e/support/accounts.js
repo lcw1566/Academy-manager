@@ -1,6 +1,8 @@
 const isStaging = process.env.E2E_TARGET_KIND === 'staging';
 const authDirectory = isStaging ? 'playwright/.auth/staging' : 'playwright/.auth';
-const emailPrefix = isStaging ? 'staging-' : '';
+// Remote automation never signs into the four accounts used for manual QA.
+// Its developer identity, lab, sessions, permissions and chat data are separate.
+const emailPrefix = isStaging ? 'staging-auto-' : '';
 
 export const E2E_AUTH_FILES = {
   owner: `${authDirectory}/owner.json`,

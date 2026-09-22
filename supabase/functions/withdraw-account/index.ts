@@ -66,8 +66,8 @@ Deno.serve(async (req) => {
     if (authError) throw authError;
 
     return json({ withdrawn: true });
-  } catch (error) {
-    console.error('[withdraw-account]', error);
+  } catch {
+    console.error('[withdraw-account] request failed');
     return json({ error: '탈퇴 요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요.' }, 500);
   }
 });

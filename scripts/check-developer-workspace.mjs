@@ -5,6 +5,7 @@ const files = {
   testLabMigration: '../supabase/migrations/20260911090000_developer_test_lab.sql',
   testPermissionMigration: '../supabase/migrations/20260911140000_developer_test_permission_controls.sql',
   testCollaborationMigration: '../supabase/migrations/20260911150000_developer_test_collaboration.sql',
+  testEnvironmentMigration: '../supabase/migrations/20260918022750_isolate_developer_test_environment.sql',
   api: '../src/services/supabase/developerApi.js',
   selection: '../src/features/auth/WorkspaceSelectionPage.jsx',
   app: '../src/App.jsx',
@@ -79,6 +80,20 @@ for (const functionName of [
 if (!sources.testLabMigration.includes('developer_test_workspaces')) {
   throw new Error('개발자 테스트 학원 서버 등록부가 누락됐습니다.');
 }
+for (const required of [
+  'developer_test_environment_config',
+  'developer_test_environment_is_enabled',
+  'get_developer_test_lab_unrestricted',
+  'environment_disabled',
+]) {
+  if (!sources.testEnvironmentMigration.includes(required)) {
+    throw new Error(`운영 테스트 랩 서버 차단 장치가 누락됐습니다: ${required}`);
+  }
+}
+if (!sources.page.includes('testLab?.environment_disabled !== true')
+  || !sources.page.includes('운영 관제')) {
+  throw new Error('운영 관제와 테스트 관제 화면이 분리되지 않았습니다.');
+}
 if (!sources.testCollaborationMigration.includes('member.status = \'active\'')
   || !sources.testCollaborationMigration.includes("developer.role = 'developer'")) {
   throw new Error('테스트 학원 협업 문맥의 활성 멤버십 또는 개발자 검증이 누락됐습니다.');
@@ -105,7 +120,7 @@ if (sources.selection.includes('handlePickTutor') || sources.app.includes('retur
 if (!sources.app.includes('mustChooseWorkspace')) {
   throw new Error('학원·개발자 워크스페이스 선택 경로가 누락됐습니다.');
 }
-if (!sources.page.includes('개인정보') || !sources.page.includes('학생 연락처')) {
+if (!sources.page.includes('개인정보') || !/학생\s+연락처/.test(sources.page)) {
   throw new Error('개발자 워크스페이스 개인정보 안내가 누락됐습니다.');
 }
 if (!sources.page.includes('기능 테스트 랩') || !sources.page.includes('실제 RLS 역할 전환')) {
@@ -185,6 +200,13 @@ for (const accountKey of ['owner', 'manager', 'teacher', 'invited']) {
     throw new Error(`역할별 독립 E2E 계정이 누락됐습니다: ${accountKey}`);
   }
 }
+if (!sources.e2eAccounts.includes("'staging-auto-'")
+  || sources.e2eAccounts.includes("? 'staging-' : ''")) {
+  throw new Error('스테이징 자동 E2E 계정은 수동 QA 계정과 분리해야 합니다.');
+}
+if (/\.auth\.signOut\(\)/.test(sources.e2eProvision + sources.e2eSupport + sources.e2eRoleTest)) {
+  throw new Error('E2E 준비 코드가 공유 테스트 계정의 전체 세션을 종료하면 안 됩니다.');
+}
 if (!sources.e2eProvision.includes('create_academy_invitation_guarded')
   || !sources.e2eProvision.includes('accept_academy_invitation')
   || !sources.e2eRoleTest.includes('browser.newContext')
@@ -192,7 +214,7 @@ if (!sources.e2eProvision.includes('create_academy_invitation_guarded')
   throw new Error('역할별 초대·수락 또는 독립 브라우저 세션 검증이 누락됐습니다.');
 }
 if (!sources.e2eConfig.includes('workers: 1')
-  || !sources.e2eConfig.includes("trace: 'retain-on-failure'")) {
+  || !sources.e2eConfig.includes("process.env.CI ? 'off' : 'retain-on-failure'")) {
   throw new Error('공유 테스트 학원 격리 또는 Playwright 실패 trace 설정이 누락됐습니다.');
 }
 if (!sources.e2eWorkflow.includes('npm run test:db')

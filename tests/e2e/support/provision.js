@@ -63,7 +63,7 @@ async function ensureAccount(admin, account) {
     }, { onConflict: 'id' });
     if (error) throw error;
   } finally {
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: 'local' });
   }
   return user;
 }
@@ -92,7 +92,7 @@ async function acceptInvitation(account, invitation) {
       throw new Error(`${account.key} 테스트 계정에 잘못된 역할이 배정됐어요.`);
     }
   } finally {
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: 'local' });
   }
 }
 
@@ -105,6 +105,19 @@ export async function ensureE2eAccounts() {
   for (const account of Object.values(accounts)) {
     users[account.key] = await ensureAccount(admin, account);
   }
+
+  const { error: environmentAuditError } = await admin.from('developer_action_logs').insert({
+    actor_user_id: users.owner.id,
+    action: 'test_environment.enabled_for_automation',
+    target_type: 'test_account',
+    target_id: users.owner.id,
+    details: { target_kind: process.env.E2E_TARGET_KIND || 'local' },
+  });
+  if (environmentAuditError) throw environmentAuditError;
+  const { error: environmentError } = await admin
+    .from('developer_test_environment_config')
+    .upsert({ singleton: true, enabled: true, updated_at: new Date().toISOString() });
+  if (environmentError) throw environmentError;
 
   const { error } = await admin.from('app_developers').upsert({
     user_id: users.owner.id,
@@ -161,6 +174,6 @@ export async function provisionRoleTestLab() {
       },
     };
   } finally {
-    await ownerClient.auth.signOut();
+    await ownerClient.auth.signOut({ scope: 'local' });
   }
 }

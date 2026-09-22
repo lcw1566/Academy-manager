@@ -1,21 +1,28 @@
 import { sentryVitePlugin } from "@sentry/vite-plugin";
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { validateDeploymentEnvironment } from './scripts/deployment-environment.mjs';
 
 export default defineConfig(({ command, mode }) => {
+  const env = { ...process.env, ...loadEnv(mode, process.cwd(), '') };
   const isProductionBuild = command === 'build' && mode === 'production';
+  if (command === 'build') validateDeploymentEnvironment(env, { command });
+  const uploadSourceMaps = isProductionBuild
+    && env.SENTRY_UPLOAD_SOURCEMAPS !== '0'
+    && Boolean(env.SENTRY_AUTH_TOKEN);
 
   return {
     plugins: [
       react(),
       // 개발 서버와 E2E 빌드가 Sentry release/source map 업로드를 시도하지 않게 한다.
       // Vite의 기본 `build` 모드인 production에서만 업로드 플러그인을 활성화한다.
-      ...(isProductionBuild ? [sentryVitePlugin({
+      ...(uploadSourceMaps ? [sentryVitePlugin({
         org: "student-n02",
         project: "javascript-react",
-        // 로컬 검증처럼 외부 release를 만들면 안 되는 production-mode 빌드에서는
-        // SENTRY_UPLOAD_SOURCEMAPS=0으로 명시적으로 끌 수 있다.
-        disable: process.env.SENTRY_UPLOAD_SOURCEMAPS === '0',
+        sourcemaps: {
+          // Upload first, then remove maps before Vercel collects dist.
+          filesToDeleteAfterUpload: './dist/**/*.map',
+        },
       })] : []),
     ],
     build: {
@@ -43,7 +50,8 @@ export default defineConfig(({ command, mode }) => {
           },
         },
       },
-      sourcemap: true,
+      // Hidden maps still exist as files; only create them for Sentry upload.
+      sourcemap: uploadSourceMaps ? 'hidden' : false,
     },
   };
 })

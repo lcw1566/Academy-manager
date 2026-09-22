@@ -29,6 +29,20 @@ const identities = ["owner", "manager", "teacher", "invited"].map((persona) => {
   return { user_id: user.id, persona };
 });
 const owner = identities[0].user_id;
+const { error: environmentAuditError } = await admin
+  .from("developer_action_logs")
+  .insert({
+    actor_user_id: owner,
+    action: "test_environment.enabled_for_manual_qa",
+    target_type: "test_account",
+    target_id: owner,
+    details: { project_ref: "owitlzsgxxuthgbmweyt" },
+  });
+if (environmentAuditError) throw new Error("Environment audit failed");
+const { error: environmentError } = await admin
+  .from("developer_test_environment_config")
+  .upsert({ singleton: true, enabled: true, updated_at: new Date().toISOString() });
+if (environmentError) throw new Error("Test environment enable failed");
 const { data: lab, error } = await admin
   .from("developer_test_workspaces")
   .select("academy_id,active_persona")

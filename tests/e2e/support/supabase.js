@@ -98,7 +98,7 @@ export async function resetDeveloperLab(scenario = 'full') {
     if (error) throw error;
     return { client, lab: data };
   } catch (error) {
-    await client.auth.signOut();
+    await client.auth.signOut({ scope: 'local' });
     throw error;
   }
 }

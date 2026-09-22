@@ -2360,14 +2360,14 @@ const useWorkspaceStore = create(
       },
 
       // 학생 등·하원 이벤트 1건 생성. 로컬 캐시도 즉시 prepend.
-      createStudentCheckEventLocal: async ({ studentId, eventType, source = 'qr', sessionId, eventTime }) => {
+      createStudentCheckEventLocal: async ({ studentId, eventType, sessionId, eventTime }) => {
         if (!isSupabaseConfigured) {
           throw new Error('Supabase가 설정되지 않았어요.');
         }
         const academyId = get().currentAcademyId;
         if (!academyId) throw new Error('학원을 먼저 선택해주세요.');
         const created = await createStudentCheckEvent({
-          academyId, studentId, eventType, source, sessionId, eventTime,
+          academyId, studentId, eventType, sessionId, eventTime,
         });
         if (created) {
           set((s) => ({ studentCheckEvents: [created, ...(s.studentCheckEvents || [])] }));
@@ -2573,7 +2573,6 @@ const useWorkspaceStore = create(
                   code: error?.code || null,
                   status: error?.status || error?.statusCode || null,
                   hadRememberedAcademy: Boolean(get().currentAcademyId),
-                  originalError: error && typeof error === 'object' ? error : null,
                 },
               });
               set({

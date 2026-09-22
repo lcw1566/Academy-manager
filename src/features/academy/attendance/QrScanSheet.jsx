@@ -31,7 +31,6 @@ import {
   SHIFT_STATUS_LABELS,
   classifyShiftStatus,
   getAcademyYmd,
-  getStudentDayCheckState,
 } from './attendanceHelpers';
 import { canUseNativeQrScanner, scanNativeQrCode } from './nativeQrScanner';
 import { getKoreaHHMM } from '../../../utils/date';
@@ -64,8 +63,6 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
   const memberships = useWorkspaceStore((s) => s.memberships) ?? [];
   const currentAcademyId = useWorkspaceStore((s) => s.currentAcademyId);
   const loadServerStaffShifts = useWorkspaceStore((s) => s.loadServerStaffShifts);
-  const loadStudentCheckEvents = useWorkspaceStore((s) => s.loadStudentCheckEvents);
-  const createStudentCheckEventLocal = useWorkspaceStore((s) => s.createStudentCheckEventLocal);
   const toggleStudentCheckEventLocal = useWorkspaceStore((s) => s.toggleStudentCheckEventLocal);
 
   const myMembership = useMemo(
@@ -225,7 +222,11 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
       }
 
       if (mode === 'staff_self') {
-        await handleStaffCheckin();
+        if (payload.type !== 'academy_checkin') {
+          setResult({ ok: false, title: '공용 출퇴근 QR이 아니에요.' });
+          return;
+        }
+        await handleStaffCheckin(payload);
         return;
       }
       if (mode === 'student_scan') {
@@ -245,7 +246,7 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
     }
   };
 
-  const handleStaffCheckin = async () => {
+  const handleStaffCheckin = async (payload) => {
     const staffUserId = myStaff?.serverUserId || authUserId;
     const staffRoleForLog = myStaff?._role || staffRoleFallback || (
       role === 'assistant' ? 'assistant' : role === 'manager' ? 'manager' : 'teacher'
@@ -278,6 +279,8 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
         scheduledEndTime: todayShift?.scheduledEndTime || null,
         breakMinutes: todayShift?.breakMinutes ?? 0,
         source: 'qr',
+        qrToken: payload.token,
+        qrExpiresAt: payload.expiresAt,
       });
       if (!savedLog?.id) {
         throw new Error('서버에서 근태 저장 결과를 확인하지 못했어요.');
@@ -367,63 +370,24 @@ export default function QrScanSheet({ mode = 'staff_self', staffRoleFallback, au
         studentId: serverStudentId,
         source: 'qr',
       });
-      if (atomicResult?.event) {
-        const eventType = atomicResult.event.event_type;
-        const eventLabel = eventType === 'check_out' ? '하원' : '등원';
-        showToast(
-          atomicResult.duplicate
-            ? `이미 ${eventLabel} 처리됐어요.`
-            : `${eventLabel}으로 기록했어요.`,
-        );
-        setResult({
-          ok: true,
-          title: atomicResult.duplicate
-            ? `이미 ${eventLabel} 처리됐어요.`
-            : `${eventLabel} 처리됐어요.`,
-          detail: atomicResult.duplicate
-            ? `${student.name || '학생'} · 중복 스캔은 기록하지 않았어요.`
-            : `${student.name || '학생'} · ${nowHHmm()}`,
-        });
-        closeAfterSuccess();
-        return;
-      }
-
-      // SQL 035 적용 전 배포에서도 전날 기록과 연속 스캔을 안전하게 처리한다.
-      // 캐시의 전날 기록으로 다음 날 첫 스캔이 하원이 되는 일을 막기 위해
-      // 한국 시간 기준 오늘 기록을 서버에서 다시 확인한다.
-      const todayYmd = getAcademyYmd();
-      await loadStudentCheckEvents({ sinceDateYMD: todayYmd, limit: 1000 });
-      const state = getStudentDayCheckState(
-        serverStudentId,
-        todayYmd,
-        useWorkspaceStore.getState().studentCheckEvents || [],
+      if (!atomicResult?.event) throw new Error('서버에서 등하원 저장 결과를 확인하지 못했어요.');
+      const eventType = atomicResult.event.event_type;
+      const eventLabel = eventType === 'check_out' ? '하원' : '등원';
+      showToast(
+        atomicResult.duplicate
+          ? `이미 ${eventLabel} 처리됐어요.`
+          : `${eventLabel}으로 기록했어요.`,
       );
-      const latestTime = state.latest?.event_time
-        ? new Date(state.latest.event_time).getTime()
-        : 0;
-      if (latestTime && Date.now() - latestTime < 8000) {
-        const latestLabel = state.latest.event_type === 'check_out' ? '하원' : '등원';
-        setResult({
-          ok: true,
-          title: `이미 ${latestLabel} 처리됐어요.`,
-          detail: `${student.name || '학생'} · 중복 스캔은 기록하지 않았어요.`,
-        });
-        closeAfterSuccess();
-        return;
-      }
-
-      const nextType = state.isInside ? 'check_out' : 'check_in';
-      await createStudentCheckEventLocal({
-        studentId: serverStudentId,
-        eventType: nextType,
-        source: 'qr',
-      });
-      showToast(nextType === 'check_in' ? '등원으로 기록했어요.' : '하원으로 기록했어요.');
       setResult({
         ok: true,
-        title: nextType === 'check_in' ? '등원 처리됐어요.' : '하원 처리됐어요.',
-        detail: `${student.name || '학생'} · ${nowHHmm()}`,
+        title: atomicResult.duplicate
+          ? `이미 ${eventLabel} 처리됐어요.`
+          : `${eventLabel} 처리됐어요.`,
+        detail: atomicResult.duplicate
+          ? `${student.name || '학생'} · 중복 스캔은 기록하지 않았어요.`
+          : `${student.name || '학생'} · ${nowHHmm()}`,
       });
+      closeAfterSuccess();
     } catch (err) {
       setResult({ ok: false, title: '체크인 저장 실패', detail: err?.message ?? '잠시 후 다시 시도해주세요.' });
     }

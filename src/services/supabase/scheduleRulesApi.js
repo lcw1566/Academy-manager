@@ -235,6 +235,8 @@ export async function recordStaffAttendance({
   scheduledEndTime = null,
   breakMinutes = 0,
   source = 'manual',
+  qrToken = null,
+  qrExpiresAt = null,
 } = {}) {
   assertSupabaseConfigured();
   if (!academyId || !staffUserId || !workDate) {
@@ -251,6 +253,8 @@ export async function recordStaffAttendance({
     p_scheduled_end_time: scheduledEndTime,
     p_break_minutes: Math.max(0, Number(breakMinutes) || 0),
     p_source: source,
+    p_qr_token: qrToken,
+    p_qr_expires_at: qrExpiresAt == null ? null : Number(qrExpiresAt),
   });
   if (error) {
     if (['42883', 'PGRST202'].includes(error.code)) {

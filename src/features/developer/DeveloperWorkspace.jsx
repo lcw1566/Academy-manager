@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
+  Activity,
   ArrowLeft,
   Bug,
   Building2,
   CheckCircle2,
   Clock3,
+  Database,
   FlaskConical,
   ExternalLink,
   Image as ImageIcon,
@@ -70,6 +72,13 @@ const TEST_PERMISSION_OPTIONS = [
   { id: 'canViewPayroll', label: '내 급여 조회', detail: '직원 급여 탭과 지급 상태를 확인해요.' },
 ];
 
+const OPERATIONS_LINKS = [
+  { label: 'Sentry 장애', detail: '새 오류와 영향 범위 확인', href: 'https://student-n02.sentry.io/issues/', Icon: AlertCircle },
+  { label: 'Vercel 배포', detail: '빌드와 배포 상태 확인', href: 'https://vercel.com/chan-u-lee-s-projects/academy-manager', Icon: Activity },
+  { label: 'Supabase 운영', detail: 'DB·Auth·함수 상태 확인', href: 'https://supabase.com/dashboard/project/vfiiieqnxawnhtgrvmxn', Icon: Database },
+  { label: 'GitHub Actions', detail: '필수 자동 검사 결과 확인', href: 'https://github.com/lcw1566/Academy-manager/actions', Icon: CheckCircle2 },
+];
+
 function statusMeta(status) {
   return STATUS_OPTIONS.find((item) => item.id === status) || STATUS_OPTIONS[0];
 }
@@ -117,6 +126,8 @@ export default function DeveloperWorkspace() {
   const [screenshotLoading, setScreenshotLoading] = useState(false);
   const canManageFeedback = ['developer', 'support'].includes(access?.role);
   const canManageTestLab = access?.role === 'developer';
+  const showOperationsWorkspace = !isStagingTestLogin;
+  const showTestWorkspace = Boolean(testLab) && testLab?.environment_disabled !== true;
 
   const selected = useMemo(
     () => feedback.find((item) => item.id === selectedId) || feedback[0] || null,
@@ -128,16 +139,19 @@ export default function DeveloperWorkspace() {
     else setLoading(true);
     setError('');
     try {
-      const [nextStats, nextFeedback, nextTestLab, nextTestPermissions] = await Promise.all([
-        getDeveloperDashboardStats(),
-        listDeveloperFeedback({
-          status: statusFilter || null,
-          category: categoryFilter || null,
-          limit: 100,
-        }),
+      const [operations, nextTestLab, nextTestPermissions] = await Promise.all([
+        showOperationsWorkspace ? Promise.all([
+          getDeveloperDashboardStats(),
+          listDeveloperFeedback({
+            status: statusFilter || null,
+            category: categoryFilter || null,
+            limit: 100,
+          }),
+        ]) : Promise.resolve([{}, []]),
         getDeveloperTestLab(),
         getDeveloperTestPermissions(),
       ]);
+      const [nextStats, nextFeedback] = operations;
       setStats(nextStats);
       setFeedback(nextFeedback);
       setTestLab(nextTestLab);
@@ -153,7 +167,7 @@ export default function DeveloperWorkspace() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [categoryFilter, statusFilter]);
+  }, [categoryFilter, showOperationsWorkspace, statusFilter]);
 
   useEffect(() => {
     void load();
@@ -330,6 +344,7 @@ export default function DeveloperWorkspace() {
       </header>
 
       <main className="mx-auto max-w-[1440px] space-y-5 px-4 py-5 md:px-8 md:py-8">
+        {showOperationsWorkspace && (<>
         <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <StatCard label="새로 접수" value={stats?.received} Icon={Clock3} tone="blue" />
           <StatCard label="검토 중" value={stats?.reviewing} Icon={Bug} tone="amber" />
@@ -349,7 +364,10 @@ export default function DeveloperWorkspace() {
           </div>
         </section>
 
-        <TestLabPanel
+        <OperationsLinks />
+        </>)}
+
+        {showTestWorkspace && <TestLabPanel
           lab={testLab}
           permissions={testPermissions}
           busy={testLabBusy}
@@ -359,7 +377,7 @@ export default function DeveloperWorkspace() {
           onPermissionChange={changeTestPermission}
           onOpen={openTestLab}
           onOpenInvitation={openInvitationState}
-        />
+        />}
 
         {error && (
           <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700" role="alert">
@@ -368,7 +386,7 @@ export default function DeveloperWorkspace() {
           </div>
         )}
 
-        <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
+        {showOperationsWorkspace && <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-gray-100 px-4 py-4 md:flex-row md:items-center md:justify-between md:px-6">
             <div>
               <h2 className="text-lg font-bold">버그·개선 제안 접수함</h2>
@@ -514,9 +532,45 @@ export default function DeveloperWorkspace() {
               )}
             </div>
           )}
-        </section>
+        </section>}
       </main>
     </div>
+  );
+}
+
+function OperationsLinks() {
+  return (
+    <section className="rounded-3xl border border-seenit-border bg-seenit-surface px-5 py-5 shadow-sm md:px-6">
+      <div>
+        <h2 className="text-lg font-bold text-seenit-ink">운영 관제</h2>
+        <p className="mt-1 text-xs leading-5 text-seenit-secondary">
+          장애·배포·DB 상태는 각 서비스의 원본 화면에서 확인해요. 씨닛에는 익명 집계와 처리할 사용자 의견만 보관합니다.
+        </p>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {OPERATIONS_LINKS.map(({ label, detail, href, Icon }) => (
+          <a
+            key={label}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="pressable-surface flex items-center gap-3 rounded-2xl border border-seenit-border-soft bg-seenit-control px-4 py-3 text-left"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-seenit-surface text-seenit-brand">
+              <Icon size={17} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-seenit-ink">{label}</span>
+              <span className="mt-0.5 block text-xs text-seenit-secondary">{detail}</span>
+            </span>
+            <ExternalLink size={14} className="shrink-0 text-seenit-muted" />
+          </a>
+        ))}
+      </div>
+      <p className="mt-3 text-xs leading-5 text-seenit-secondary">
+        외부 화면의 변경 작업은 각 서비스에서 별도로 승인하세요. 이 링크들은 관리자 토큰이나 고객 데이터를 씨닛으로 가져오지 않습니다.
+      </p>
+    </section>
   );
 }
 

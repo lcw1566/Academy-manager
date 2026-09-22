@@ -3,7 +3,7 @@ name: Local Supabase and Playwright
 on:
   pull_request:
   push:
-    branches: [master, main]
+    branches: [master, main, staging]
 
 jobs:
   e2e:
@@ -35,17 +35,26 @@ jobs:
       - name: Run database role tests
         run: npm run test:db
 
+      - name: Run production build and public artifact check
+        run: npm run build:local-production
+
       - name: Run Playwright
         run: npm run test:e2e -- --project=chromium
+
+      - name: Record tested release inputs
+        if: ${{ success() }}
+        run: npm run release:manifest
 
       - name: Upload Playwright diagnostics
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-artifacts
-          path: test-artifacts/
+          path: |
+            test-artifacts/playwright-report/
+            test-artifacts/release-manifest.json
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 3
 
       - name: Stop local Supabase
         if: ${{ always() }}

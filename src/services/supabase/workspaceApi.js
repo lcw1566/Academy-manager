@@ -1029,19 +1029,6 @@ function nextYmd(ymd) {
   ].join('-');
 }
 
-function currentAcademyYmd() {
-  const parts = {};
-  for (const part of new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date())) {
-    if (part.type !== 'literal') parts[part.type] = part.value;
-  }
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
 export async function listStudentCheckEvents(academyId, {
   sinceDateYMD,
   studentId,
@@ -1071,7 +1058,7 @@ export async function listStudentCheckEvents(academyId, {
 }
 
 export async function createStudentCheckEvent({
-  academyId, studentId, eventType, source = 'qr', sessionId, eventTime,
+  academyId, studentId, eventType, sessionId, eventTime,
 }) {
   assertSupabaseConfigured();
   if (!academyId) throw new Error('academyId가 필요해요.');
@@ -1079,27 +1066,20 @@ export async function createStudentCheckEvent({
   if (!['check_in', 'check_out'].includes(eventType)) {
     throw new Error("eventType 은 'check_in' 또는 'check_out' 이어야 해요.");
   }
-  const user = await getCurrentUserOrThrow();
-  const payload = {
-    academy_id: academyId,
-    student_id: studentId,
-    event_type: eventType,
-    source: source || 'qr',
-    session_id: sessionId || null,
-    created_by: user.id,
-  };
-  if (eventTime) payload.event_time = eventTime;
-  const { data, error } = await supabase
-    .from('student_check_events')
-    .insert(payload)
-    .select()
-    .single();
+  if (!eventTime) throw new Error('eventTime이 필요해요.');
+  const { data, error } = await supabase.rpc('record_student_manual_check_event', {
+    p_academy_id: academyId,
+    p_student_id: studentId,
+    p_event_type: eventType,
+    p_event_time: eventTime,
+    p_session_id: sessionId || null,
+  });
   if (error) throw error;
   return data;
 }
 
-// SQL 035가 적용된 환경에서는 등원/하원 결정을 서버 transaction 안에서 처리한다.
-// 아직 migration이 적용되지 않은 배포에는 null을 반환해 기존 안전 fallback을 쓴다.
+// 등원/하원 결정과 중복 방지는 서버 transaction 안에서 처리한다. RPC가 없는
+// 환경에서 직접 테이블 쓰기로 우회하지 않고 migration 누락으로 명확히 실패한다.
 export async function toggleStudentCheckEvent({
   academyId, studentId, source = 'qr',
 }) {
@@ -1112,27 +1092,12 @@ export async function toggleStudentCheckEvent({
     p_source: source || 'qr',
   });
   if (error) {
-    // PostgREST schema cache 또는 DB에서 함수가 아직 발견되지 않는 경우.
-    if (error.code !== 'PGRST202' && error.code !== '42883') throw error;
-
-    // SQL 035 적용 전 안전 fallback. 동시 단말 직렬화는 migration 적용 후 보장된다.
-    const todayYmd = currentAcademyYmd();
-    const events = await listStudentCheckEvents(academyId, {
-      sinceDateYMD: todayYmd,
-      limit: 1000,
-    });
-    const latest = events.find((event) => event.student_id === studentId) || null;
-    const latestTime = latest?.event_time ? new Date(latest.event_time).getTime() : 0;
-    if (latestTime && Date.now() - latestTime < 8000) {
-      return { event: latest, duplicate: true };
+    if (['PGRST202', '42883'].includes(error.code)) {
+      const migrationError = new Error('등하원 안전 저장 기능이 서버에 적용되지 않았어요.');
+      migrationError.code = 'STUDENT_CHECK_EVENT_SAFETY_NOT_INSTALLED';
+      throw migrationError;
     }
-    const event = await createStudentCheckEvent({
-      academyId,
-      studentId,
-      eventType: latest?.event_type === 'check_in' ? 'check_out' : 'check_in',
-      source,
-    });
-    return { event, duplicate: false };
+    throw error;
   }
   return data || null;
 }

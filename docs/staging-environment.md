@@ -60,10 +60,15 @@ npm run test:e2e:staging
 실행 시 스테이징 Auth에 아래 계정을 생성 또는 갱신하고, 실제 초대 RPC로 한 테스트 학원에
 연결한다.
 
-- 스테이징 E2E 원장
-- 스테이징 E2E 운영 매니저
-- 스테이징 E2E 선생님
-- 스테이징 E2E 초대 대기 계정
+- 스테이징 자동 E2E 원장 (`staging-auto-owner.e2e@example.test`)
+- 스테이징 자동 E2E 운영 매니저 (`staging-auto-manager.e2e@example.test`)
+- 스테이징 자동 E2E 선생님 (`staging-auto-teacher.e2e@example.test`)
+- 스테이징 자동 E2E 초대 대기 (`staging-auto-invited.e2e@example.test`)
+
+수동 확인용 `staging-owner/manager/teacher/invited` 계정과 학원은 자동화에서 사용하지
+않는다. 자동화는 `staging-auto-*` 전용 개발자와 테스트 학원만 초기화하며, 로그아웃도
+현재 테스트 클라이언트의 로컬 세션만 종료한다. 따라서 전체 스테이징 E2E를 실행해도
+수동 확인 중인 로그인, 개인 권한, 채팅과 시나리오 상태가 바뀌지 않아야 한다.
 
 직원 탭에는 원장·매니저·선생님이 실제 멤버로 표시된다. 원장 세션에서 선생님의 개인
 권한을 저장하고, 각 계정의 독립 세션에서 서버 권한과 메뉴 노출을 함께 확인한다. 테스트
