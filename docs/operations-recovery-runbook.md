@@ -41,4 +41,13 @@ Edge Function 소스, 배포 환경 설정·비밀값의 복구 방법까지 따
    조치·재발 방지를 기록한다.
 
 운영 DB 덤프나 Storage 객체 다운로드는 이 가이드를 작성하면서 수행하지 않았다.
-복구 가능성은 실제 백업과 격리 복원 검증 전까지 **미확인** 상태다.
+저장소의 `npm run ops:rehearse-recovery`는 로컬 합성 Supabase를 임시 DB로 백업·복원하고,
+마이그레이션 이력·RLS·비공개 Storage 버킷·핵심 RPC를 확인한 뒤 덤프와 임시 DB를
+삭제한다. GitHub Actions의 `Synthetic recovery rehearsal`이 매월 1일과 수동 실행 시
+같은 연습을 수행하고 개인정보가 없는 결과 JSON만 30일 보관한다. 이 검사는 복원
+도구와 스키마의 기계적 호환성을 확인할 뿐, 운영 백업이 존재하거나 운영 Storage
+객체까지 복구된다는 증거가 아니다.
+
+운영 복구 가능성은 실제 운영 백업과 격리 복원 검증 전까지 **미확인** 상태다.
+오류·배포·서비스 장애 알림의 최소 기준과 확인 상태는
+[`operations-alerting.md`](./operations-alerting.md)를 따른다.

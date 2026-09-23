@@ -13,6 +13,7 @@ const testFiles = [
   'supabase/tests/091_workspace_sync_and_test_login.sql',
   'supabase/tests/092_isolate_developer_test_environment.sql',
   'supabase/tests/093_authenticated_attendance_paths.sql',
+  'supabase/tests/094_private_storage_access.sql',
 ];
 
 try {
@@ -40,11 +41,16 @@ try {
       throw new Error(`${file} 실행에 실패했어요.`);
     }
   }
-  const pushTests = spawnSync(process.execPath, ['--test', 'tests/integration/chatPush.test.mjs'], {
-    cwd: process.cwd(), stdio: 'inherit',
-  });
-  if (pushTests.error) throw pushTests.error;
-  if (pushTests.status !== 0) throw new Error('채팅 푸시 REST/동시 요청 검증에 실패했어요.');
+  for (const [file, label] of [
+    ['tests/integration/chatPush.test.mjs', '채팅 푸시 REST/동시 요청'],
+    ['tests/integration/storageAccess.test.mjs', 'Storage 업로드/다운로드 권한'],
+  ]) {
+    const integration = spawnSync(process.execPath, ['--test', file], {
+      cwd: process.cwd(), stdio: 'inherit',
+    });
+    if (integration.error) throw integration.error;
+    if (integration.status !== 0) throw new Error(`${label} 검증에 실패했어요.`);
+  }
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

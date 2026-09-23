@@ -66,3 +66,8 @@ npm run test:e2e
 CI도 동일한 순서로 실행하고 production build에서 공개 소스맵이 없는지 확인한다.
 스테이징 E2E는 별도 수동 실행이며, 운영에서는 데이터 변경이 없는 스모크 점검만
 수행한다.
+
+`npm run test:db`에는 비공개 Storage 버킷 설정과 실제 로컬 Storage API 업로드·다운로드
+검사가 포함된다. 파일 권한의 상세 범위는 [`storage-hardening.md`](./storage-hardening.md)를
+따른다. `npm run ops:rehearse-recovery`는 합성 로컬 DB만 임시 DB로 복원하며 운영 백업
+여부를 대신하지 않는다.

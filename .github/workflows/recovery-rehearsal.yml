@@ -1,0 +1,43 @@
+name: Synthetic recovery rehearsal
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 1 1 * *'
+
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start synthetic local Supabase
+        run: npm run supabase:start
+
+      - name: Rehearse isolated database restore
+        run: npm run ops:rehearse-recovery
+
+      - name: Upload non-sensitive recovery result
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-rehearsal-result
+          path: test-artifacts/recovery-rehearsal.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Stop local Supabase
+        if: ${{ always() }}
+        run: npm run supabase:stop

@@ -80,6 +80,10 @@ const advisorPerformanceMigrationSql = await readFile(
   new URL('../supabase/migrations/20260910164500_advisor_performance.sql', import.meta.url),
   'utf8',
 );
+const privateStorageMigrationSql = await readFile(
+  new URL('../supabase/migrations/20260923153742_enforce_private_storage_buckets.sql', import.meta.url),
+  'utf8',
+);
 const domainApiSource = await readFile(
   new URL('../src/services/supabase/domainApi.js', import.meta.url),
   'utf8',
@@ -197,6 +201,21 @@ for (const required of [
 }
 if (advisorPerformanceSql !== advisorPerformanceMigrationSql) {
   failures.push('SQL 084 검토용 원본과 CLI 마이그레이션이 일치해야 합니다.');
+}
+
+for (const required of [
+  "'academy-drive'",
+  "'feedback-attachments'",
+  'public = excluded.public',
+  'file_size_limit = excluded.file_size_limit',
+  'allowed_mime_types = excluded.allowed_mime_types',
+  'public.can_upload_academy_drive_object(name)',
+  'public.is_owner_of_academy_drive_object(name)',
+  "split_part(name, '/', 1) = auth.uid()::text",
+]) {
+  if (!privateStorageMigrationSql.includes(required)) {
+    failures.push(`비공개 Storage 마이그레이션 보호 누락: ${required}`);
+  }
 }
 
 if (failures.length > 0) throw new Error(failures.join('\n'));
